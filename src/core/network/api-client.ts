@@ -18,6 +18,11 @@ function distributionChannel(): string {
   return typeof value === "string" ? value : "development";
 }
 
+function publicExtra(name: string, fallback: string): string {
+  const value = Constants.expoConfig?.extra?.[name];
+  return typeof value === "string" && value !== "" ? value : fallback;
+}
+
 function buildNumber(): string {
   if (Platform.OS === "ios") {
     return Constants.expoConfig?.ios?.buildNumber ?? "0";
@@ -31,6 +36,8 @@ export const appRuntime = {
   platform: Platform.OS === "ios" ? "ios" : "android",
   distributionChannel: distributionChannel(),
   runtimeVersion: Updates.runtimeVersion ?? "embedded",
+  tenantSlug: publicExtra("tenantSlug", "default"),
+  applicationId: publicExtra("applicationId", "dex-mobile"),
 } as const;
 
 class ApiClient {
@@ -58,6 +65,7 @@ class ApiClient {
           "X-Platform": appRuntime.platform,
           "X-Distribution-Channel": appRuntime.distributionChannel,
           "X-Runtime-Version": appRuntime.runtimeVersion,
+          "X-Application-ID": appRuntime.applicationId,
           ...options?.headers,
         },
       });

@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { z } from "zod";
-import { apiClient } from "../network/api-client";
+import { apiClient, appRuntime } from "../network/api-client";
 import {
   bootstrapSchema,
   type BootstrapConfig,
@@ -22,7 +22,7 @@ export type BootstrapSnapshot = {
 };
 
 function cacheKey(locale: SupportedLocale): string {
-  return `foundation.bootstrap.v1.${locale}`;
+  return `foundation.bootstrap.v1.${appRuntime.tenantSlug}.${locale}`;
 }
 
 async function discardInvalidCache(key: string): Promise<void> {
@@ -65,7 +65,7 @@ export async function loadBootstrap(
 ): Promise<BootstrapSnapshot> {
   try {
     const config = await apiClient.get(
-      `/v1/mobile/bootstrap?locale=${encodeURIComponent(locale)}`,
+      `/v1/mobile/bootstrap?locale=${encodeURIComponent(locale)}&tenant=${encodeURIComponent(appRuntime.tenantSlug)}`,
       bootstrapSchema,
       { signal },
     );

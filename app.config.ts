@@ -3,6 +3,8 @@ import type { ExpoConfig, ConfigContext } from "expo/config";
 const distributionChannel =
   process.env.EXPO_PUBLIC_DISTRIBUTION_CHANNEL ?? "development";
 const updatesUrl = process.env.EXPO_UPDATES_URL;
+const tenantSlug = process.env.EXPO_PUBLIC_TENANT_SLUG ?? "default";
+const applicationId = process.env.EXPO_PUBLIC_APPLICATION_ID ?? "dex-mobile";
 const apiBaseUrl =
   process.env.EXPO_PUBLIC_API_BASE_URL ??
   (distributionChannel === "development" ? "http://localhost:3000" : "");
@@ -11,6 +13,12 @@ if (!apiBaseUrl) {
   throw new Error(
     "EXPO_PUBLIC_API_BASE_URL is required outside the development profile",
   );
+}
+if (!/^[a-z0-9][a-z0-9-]{1,62}$/.test(tenantSlug)) {
+  throw new Error("EXPO_PUBLIC_TENANT_SLUG must be a valid tenant slug");
+}
+if (!/^[a-z0-9][a-z0-9_-]{1,119}$/.test(applicationId)) {
+  throw new Error("EXPO_PUBLIC_APPLICATION_ID must be a valid application id");
 }
 if (
   distributionChannel !== "development" &&
@@ -63,5 +71,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   extra: {
     apiBaseUrl,
     distributionChannel,
+    tenantSlug,
+    applicationId,
   },
 });

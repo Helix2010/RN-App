@@ -25,6 +25,21 @@ for (const [profileName, expectedChannel] of Object.entries(expectedChannels)) {
     );
   }
 
+  const tenantSlug = profile.env?.EXPO_PUBLIC_TENANT_SLUG;
+  const applicationId = profile.env?.EXPO_PUBLIC_APPLICATION_ID;
+  if (
+    typeof tenantSlug !== "string" ||
+    !/^[a-z0-9][a-z0-9-]{1,62}$/.test(tenantSlug)
+  ) {
+    throw new Error(`${profileName} must declare a valid tenant slug`);
+  }
+  if (
+    typeof applicationId !== "string" ||
+    !/^[a-z0-9][a-z0-9_-]{1,119}$/.test(applicationId)
+  ) {
+    throw new Error(`${profileName} must declare a valid application id`);
+  }
+
   const apiBaseUrl = profile.env?.EXPO_PUBLIC_API_BASE_URL;
   if (profileName === "development") {
     if (apiBaseUrl !== "http://localhost:3000") {
@@ -44,5 +59,5 @@ for (const [profileName, expectedChannel] of Object.entries(expectedChannels)) {
 }
 
 console.log(
-  "EAS build profiles use explicit API URLs and distribution channels.",
+  "EAS build profiles pin API, tenant, application and distribution.",
 );
