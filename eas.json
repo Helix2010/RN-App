@@ -1,0 +1,49 @@
+{
+  "cli": { "version": ">= 16.0.0", "appVersionSource": "local" },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "channel": "development",
+      "env": {
+        "EXPO_PUBLIC_DISTRIBUTION_CHANNEL": "development",
+        "EXPO_PUBLIC_API_BASE_URL": "http://localhost:3000"
+      }
+    },
+    "staging": {
+      "distribution": "internal",
+      "channel": "staging",
+      "env": {
+        "EXPO_PUBLIC_DISTRIBUTION_CHANNEL": "staging",
+        "EXPO_PUBLIC_API_BASE_URL": "https://api.anyfun.win"
+      }
+    },
+    "production-store": {
+      "autoIncrement": true,
+      "channel": "production",
+      "env": {
+        "EXPO_PUBLIC_DISTRIBUTION_CHANNEL": "store",
+        "EXPO_PUBLIC_API_BASE_URL": "https://api.anyfun.win"
+      }
+    },
+    "android-direct": {
+      "extends": "production-store",
+      "distribution": "internal",
+      "channel": "direct",
+      "android": { "buildType": "apk" },
+      "env": {
+        "EXPO_PUBLIC_DISTRIBUTION_CHANNEL": "direct",
+        "EXPO_PUBLIC_API_BASE_URL": "https://api.anyfun.win"
+      }
+    },
+    "ios-mdm": {
+      "extends": "production-store",
+      "distribution": "internal",
+      "channel": "mdm",
+      "env": {
+        "EXPO_PUBLIC_DISTRIBUTION_CHANNEL": "mdm",
+        "EXPO_PUBLIC_API_BASE_URL": "https://api.anyfun.win"
+      }
+    }
+  }
+}

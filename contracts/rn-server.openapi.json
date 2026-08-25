@@ -1,0 +1,261 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/health/live": {
+      "get": {
+        "operationId": "HealthController_live",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "operationId": "HealthController_ready",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "ready"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/v1/mobile/bootstrap": {
+      "get": {
+        "operationId": "BootstrapController_getBootstrap",
+        "parameters": [
+          {
+            "name": "locale",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "zh-CN",
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-app-version",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-build-number",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-platform",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-distribution-channel",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-runtime-version",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "if-none-match",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Runtime-Version",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Distribution-Channel",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Platform",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Build-Number",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-App-Version",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BootstrapResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get typed mobile locale, theme, flags and update policy",
+        "tags": [
+          "mobile"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "RN Foundation API",
+    "description": "Mobile bootstrap, localization, theme and update policy",
+    "version": "1.0.0",
+    "contact": {}
+  },
+  "tags": [],
+  "servers": [],
+  "components": {
+    "schemas": {
+      "BootstrapResponseDto": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "type": "number",
+            "example": 1
+          },
+          "configVersion": {
+            "type": "string",
+            "example": "2026.08.21.1"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ttlSeconds": {
+            "type": "number",
+            "example": 300
+          },
+          "requestId": {
+            "type": "string",
+            "example": "req-01"
+          },
+          "localization": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "theme": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "features": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "boolean"
+            }
+          },
+          "app": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "update": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "support": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "configVersion",
+          "generatedAt",
+          "ttlSeconds",
+          "requestId",
+          "localization",
+          "theme",
+          "features",
+          "app",
+          "update",
+          "support"
+        ]
+      }
+    }
+  }
+}
