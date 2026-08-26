@@ -122,7 +122,7 @@ TypeScript 类型不等于运行时安全。启动配置、认证、升级策略
 
 ### 3.2 全量更新（商店、直接分发、MDM）
 
-全量版本不强绑定公开应用商店，统一支持 `store`、`direct`、`mdm` 三种分发通道，并采用 phased rollout。远端 bootstrap 返回结构化策略：
+全量版本不强绑定公开应用商店，统一支持 `store`、`direct`、`mdm` 三种分发通道。当前开发阶段发布管理只做已校验版本的全量激活，不实现 phased rollout。远端 bootstrap 返回结构化策略：
 
 ```json
 {
@@ -133,7 +133,7 @@ TypeScript 类型不等于运行时安全。启动配置、认证、升级策略
   "distribution": {
     "channel": "store",
     "actionUrl": "platform-specific-url",
-    "artifactId": null,
+    "releaseId": null,
     "sha256": null
   },
   "messageKey": "update.1_6_available",
@@ -167,7 +167,7 @@ App 在 `mdm/direct-enterprise` 策略下打开受控安装入口并展示版本
 
 #### 多渠道一致性
 
-- 同一业务版本可以有不同 platform/channel artifact，但每个 artifact 均有独立 build、签名、哈希、状态和灰度人群。
+- 同一业务版本可以有不同 platform 的 release；每条 `app_releases` 记录均有独立 build、签名、哈希和状态。
 - 客户端上报自身 `distributionChannel`；服务端只返回该通道可达的升级路径，禁止让 direct 安装跳到商店中签名/标识不同的 App。
 - direct/MDM 不是规避平台审核、隐私或代码执行规则的手段。组织应在上线前由法务/合规确认目标国家、用户身份和 Apple/Google 条款。
 
@@ -185,8 +185,8 @@ PR gates
  -> staging native build / OTA
  -> automated smoke + contract + E2E
  -> human product/security sign-off where needed
- -> production artifact once
- -> promote same artifact to internal/canary/phased rollout
+-> production release once
+-> full activation after verification
  -> observe SLO
  -> continue / pause / rollback
 ```

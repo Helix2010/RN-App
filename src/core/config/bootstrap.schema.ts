@@ -4,6 +4,13 @@ const color = z
   .string()
   .regex(/^(#[0-9a-f]{6}|rgba?\(.+\))$/i, "Expected a safe color value");
 
+export const languageCodeSchema = z
+  .string()
+  .regex(
+    /^[a-z]{2,3}(?:-[A-Z][a-z]{3})?(?:-(?:[A-Z]{2}|[0-9]{3}))?$/,
+    "Expected canonical BCP 47 language code",
+  );
+
 export const semanticPaletteSchema = z.object({
   primary: color,
   onPrimary: color,
@@ -31,11 +38,23 @@ export const bootstrapSchema = z.object({
   ttlSeconds: z.number().int().positive().max(86_400),
   requestId: z.string().min(1),
   localization: z.object({
-    selectedLocale: z.enum(["zh-CN", "en-US"]),
-    fallbackLocale: z.literal("zh-CN"),
-    supportedLocales: z.array(z.enum(["zh-CN", "en-US"])).min(1),
+    selectedLocale: languageCodeSchema,
+    fallbackLocale: languageCodeSchema,
+    supportedLocales: z.array(languageCodeSchema).min(1),
     messagesVersion: z.string().min(1),
+    refreshIntervalSeconds: z.number().int().min(300).max(86400).optional(),
     messages: z.record(z.string(), z.string()),
+    resource: z
+      .object({
+        version: z.string(),
+        objectKey: z.string(),
+        fileUrl: z.string(),
+        sha256: z.string(),
+        size: z.number().int().nonnegative(),
+        publishedAt: z.iso.datetime(),
+      })
+      .nullable()
+      .optional(),
   }),
   theme: z.object({
     defaultMode: z.literal("system"),
@@ -70,7 +89,7 @@ export const bootstrapSchema = z.object({
     full: z.object({
       channel: z.enum(["store", "direct", "mdm", "development"]),
       actionUrl: z.url().nullable(),
-      artifactId: z.string().nullable(),
+      releaseId: z.string().nullable(),
       sha256: z.string().nullable(),
       size: z.number().int().positive().nullable(),
     }),
@@ -83,4 +102,4 @@ export const bootstrapSchema = z.object({
 
 export type BootstrapConfig = z.infer<typeof bootstrapSchema>;
 export type SemanticPalette = z.infer<typeof semanticPaletteSchema>;
-export type SupportedLocale = BootstrapConfig["localization"]["selectedLocale"];
+export type SupportedLocale = string;

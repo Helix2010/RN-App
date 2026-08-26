@@ -148,7 +148,7 @@ export function createFallbackConfig(locale: SupportedLocale): BootstrapConfig {
       full: {
         channel: "development",
         actionUrl: null,
-        artifactId: null,
+        releaseId: null,
         sha256: null,
         size: null,
       },

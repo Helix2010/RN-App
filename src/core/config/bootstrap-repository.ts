@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Crypto from "expo-crypto";
 import { z } from "zod";
 import { apiClient, appRuntime } from "../network/api-client";
 import {
@@ -13,6 +14,14 @@ const cacheSchema = z.object({
   savedAt: z.number(),
   config: bootstrapSchema,
 });
+const languagePackageSchema = z.object({
+  schemaVersion: z.literal(1),
+  tenantId: z.string(),
+  languageCode: z.string(),
+  version: z.string(),
+  generatedAt: z.string(),
+  messages: z.record(z.string(), z.string()),
+});
 
 export type BootstrapSnapshot = {
   config: BootstrapConfig;
@@ -22,7 +31,7 @@ export type BootstrapSnapshot = {
 };
 
 function cacheKey(locale: SupportedLocale): string {
-  return `foundation.bootstrap.v1.${appRuntime.tenantSlug}.${locale}`;
+  return `foundation.bootstrap.v2.${encodeURIComponent(appRuntime.apiBaseUrl)}.${appRuntime.applicationId}.${locale}`;
 }
 
 async function discardInvalidCache(key: string): Promise<void> {
@@ -59,21 +68,107 @@ async function readCache(
   return parsed.data.config;
 }
 
+function languagePackageKey(locale: SupportedLocale): string {
+  return `foundation.language.v1.${encodeURIComponent(appRuntime.apiBaseUrl)}.${appRuntime.applicationId}.${locale}`;
+}
+
+async function applyRemoteLanguagePackage(
+  config: BootstrapConfig,
+  signal?: AbortSignal,
+): Promise<BootstrapConfig> {
+  const resource = config.localization.resource;
+  if (!resource) return config;
+  const cacheKeyValue = languagePackageKey(config.localization.selectedLocale);
+  const cached = await AsyncStorage.getItem(cacheKeyValue);
+  if (cached) {
+    try {
+      const parsed = languagePackageSchema.safeParse(JSON.parse(cached));
+      if (
+        parsed.success &&
+        parsed.data.languageCode === config.localization.selectedLocale &&
+        parsed.data.version === resource.version
+      ) {
+        return {
+          ...config,
+          localization: {
+            ...config.localization,
+            messages: parsed.data.messages,
+            messagesVersion: parsed.data.version,
+          },
+        };
+      }
+    } catch {
+      await discardInvalidCache(cacheKeyValue);
+    }
+  }
+  try {
+    const result = await apiClient.getText(resource.fileUrl, { signal });
+    if (new Blob([result.text]).size !== resource.size)
+      throw new Error("language resource size mismatch");
+    const responseHash = result.headers.get("x-content-sha256");
+    if (responseHash && responseHash !== resource.sha256)
+      throw new Error("language resource header hash mismatch");
+    const hash = await Crypto.digestStringAsync(
+      Crypto.CryptoDigestAlgorithm.SHA256,
+      result.text,
+      { encoding: Crypto.CryptoEncoding.HEX },
+    );
+    if (hash !== resource.sha256)
+      throw new Error("language resource hash mismatch");
+    const packageValue = languagePackageSchema.parse(JSON.parse(result.text));
+    if (
+      packageValue.languageCode !== config.localization.selectedLocale ||
+      packageValue.version !== resource.version
+    )
+      throw new Error("language resource identity mismatch");
+    await AsyncStorage.setItem(cacheKeyValue, result.text);
+    return {
+      ...config,
+      localization: {
+        ...config.localization,
+        messages: packageValue.messages,
+        messagesVersion: packageValue.version,
+      },
+    };
+  } catch {
+    if (!cached) return config;
+    try {
+      const parsed = languagePackageSchema.safeParse(JSON.parse(cached));
+      if (
+        !parsed.success ||
+        parsed.data.languageCode !== config.localization.selectedLocale
+      )
+        return config;
+      return {
+        ...config,
+        localization: {
+          ...config.localization,
+          messages: parsed.data.messages,
+          messagesVersion: parsed.data.version,
+        },
+      };
+    } catch {
+      return config;
+    }
+  }
+}
+
 export async function loadBootstrap(
   locale: SupportedLocale,
   signal?: AbortSignal,
 ): Promise<BootstrapSnapshot> {
   try {
     const config = await apiClient.get(
-      `/v1/mobile/bootstrap?locale=${encodeURIComponent(locale)}&tenant=${encodeURIComponent(appRuntime.tenantSlug)}`,
+      `/v1/mobile/bootstrap?locale=${encodeURIComponent(locale)}`,
       bootstrapSchema,
       { signal },
     );
+    const enriched = await applyRemoteLanguagePackage(config, signal);
     await AsyncStorage.setItem(
       cacheKey(locale),
-      JSON.stringify({ savedAt: Date.now(), config }),
+      JSON.stringify({ savedAt: Date.now(), config: enriched }),
     );
-    return { config, source: "remote", stale: false };
+    return { config: enriched, source: "remote", stale: false };
   } catch (error) {
     const lastError =
       error instanceof Error ? error : new Error("Unknown error");

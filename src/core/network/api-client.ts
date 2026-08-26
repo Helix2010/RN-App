@@ -36,16 +36,15 @@ export const appRuntime = {
   platform: Platform.OS === "ios" ? "ios" : "android",
   distributionChannel: distributionChannel(),
   runtimeVersion: Updates.runtimeVersion ?? "embedded",
-  tenantSlug: publicExtra("tenantSlug", "default"),
+  apiBaseUrl: baseUrl(),
   applicationId: publicExtra("applicationId", "dex-mobile"),
 } as const;
 
 class ApiClient {
-  async get<T>(
+  private async response(
     path: string,
-    schema: z.ZodType<T>,
     options?: { signal?: AbortSignal; headers?: Record<string, string> },
-  ): Promise<T> {
+  ): Promise<Response> {
     const controller = new AbortController();
     const timeout = setTimeout(
       () => controller.abort("timeout"),
@@ -53,7 +52,6 @@ class ApiClient {
     );
     const abortFromCaller = (): void => controller.abort("cancelled");
     options?.signal?.addEventListener("abort", abortFromCaller, { once: true });
-
     try {
       const response = await globalThis.fetch(`${baseUrl()}${path}`, {
         method: "GET",
@@ -69,7 +67,6 @@ class ApiClient {
           ...options?.headers,
         },
       });
-
       const requestId = response.headers.get("x-request-id") ?? undefined;
       if (!response.ok) {
         throw new AppError(
@@ -79,22 +76,9 @@ class ApiClient {
           requestId,
         );
       }
-
-      const parsed = schema.safeParse(await response.json());
-      if (!parsed.success) {
-        throw new AppError(
-          "incompatible_response",
-          "The server response does not match the mobile contract",
-          false,
-          requestId,
-          { cause: parsed.error },
-        );
-      }
-      return parsed.data;
+      return response;
     } catch (error) {
-      if (error instanceof AppError) {
-        throw error;
-      }
+      if (error instanceof AppError) throw error;
       if (controller.signal.aborted) {
         const timedOut = controller.signal.reason === "timeout";
         throw new AppError(
@@ -110,14 +94,51 @@ class ApiClient {
         "The service is unreachable",
         true,
         undefined,
-        {
-          cause: error,
-        },
+        { cause: error },
       );
     } finally {
       clearTimeout(timeout);
       options?.signal?.removeEventListener("abort", abortFromCaller);
     }
+  }
+
+  async get<T>(
+    path: string,
+    schema: z.ZodType<T>,
+    options?: { signal?: AbortSignal; headers?: Record<string, string> },
+  ): Promise<T> {
+    const response = await this.response(path, options);
+    const requestId = response.headers.get("x-request-id") ?? undefined;
+    try {
+      const parsed = schema.safeParse(await response.json());
+      if (!parsed.success) {
+        throw new AppError(
+          "incompatible_response",
+          "The server response does not match the mobile contract",
+          false,
+          requestId,
+          { cause: parsed.error },
+        );
+      }
+      return parsed.data;
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      throw new AppError(
+        "incompatible_response",
+        "The server response is not valid JSON",
+        false,
+        requestId,
+        { cause: error },
+      );
+    }
+  }
+
+  async getText(
+    path: string,
+    options?: { signal?: AbortSignal; headers?: Record<string, string> },
+  ): Promise<{ text: string; headers: Headers }> {
+    const response = await this.response(path, options);
+    return { text: await response.text(), headers: response.headers };
   }
 }
 

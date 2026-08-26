@@ -3,9 +3,11 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   type PropsWithChildren,
 } from "react";
+import { AppState } from "react-native";
 import type { BootstrapSnapshot } from "../core/config/bootstrap-repository";
 import type {
   BootstrapConfig,
@@ -65,6 +67,20 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   const refresh = useCallback(async () => {
     await query.refetch();
   }, [query]);
+  useEffect(() => {
+    const interval =
+      Math.max(300, config.localization.refreshIntervalSeconds ?? 21600) * 1000;
+    const timer = setInterval(() => {
+      if (AppState.currentState === "active") void query.refetch();
+    }, interval);
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") void query.refetch();
+    });
+    return () => {
+      clearInterval(timer);
+      subscription.remove();
+    };
+  }, [config.localization.refreshIntervalSeconds, query]);
   const value = useMemo<RuntimeValue>(
     () => ({
       config,

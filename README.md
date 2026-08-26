@@ -18,7 +18,7 @@ pnpm start:go
 
 Expo Go 可预览 UI 和服务端配置；OTA、原生权限和真实发布行为必须使用 `pnpm prebuild` 后的 Development Build 验证。Android 模拟器访问本机服务时可执行 `adb reverse tcp:3000 tcp:3000`。
 
-每个项目构建必须通过 `EXPO_PUBLIC_TENANT_SLUG` 与 `EXPO_PUBLIC_APPLICATION_ID` 固定 RN-Server 租户和应用身份；bootstrap 请求与本地缓存均按 tenant 隔离。这两个值会进入客户端包，不能放任何秘密。
+每个项目构建通过 `EXPO_PUBLIC_API_BASE_URL` 的域名绑定 RN-Server 租户，`EXPO_PUBLIC_APPLICATION_ID` 只标识客户端应用。bootstrap 请求不再携带 tenant 参数，本地缓存按 API 域名、应用身份和语言隔离。
 
 执行 `pnpm check` 可运行格式、Lint、类型、测试和 API 契约检查。
 

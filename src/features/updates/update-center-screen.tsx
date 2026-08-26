@@ -134,7 +134,7 @@ export function UpdateCenterScreen({ navigation, locked = false }: Props) {
             <Label>DIAGNOSTICS</Label>
             <Body>request · {config.support.diagnosticId}</Body>
             <Body>
-              artifact · {config.update.full.artifactId ?? "not configured"}
+              release · {config.update.full.releaseId ?? "not configured"}
             </Body>
             <Body>runtime · {config.app.runtimeVersion}</Body>
           </Card>

@@ -25,14 +25,7 @@ for (const [profileName, expectedChannel] of Object.entries(expectedChannels)) {
     );
   }
 
-  const tenantSlug = profile.env?.EXPO_PUBLIC_TENANT_SLUG;
   const applicationId = profile.env?.EXPO_PUBLIC_APPLICATION_ID;
-  if (
-    typeof tenantSlug !== "string" ||
-    !/^[a-z0-9][a-z0-9-]{1,62}$/.test(tenantSlug)
-  ) {
-    throw new Error(`${profileName} must declare a valid tenant slug`);
-  }
   if (
     typeof applicationId !== "string" ||
     !/^[a-z0-9][a-z0-9_-]{1,119}$/.test(applicationId)
@@ -59,5 +52,5 @@ for (const [profileName, expectedChannel] of Object.entries(expectedChannels)) {
 }
 
 console.log(
-  "EAS build profiles pin API, tenant, application and distribution.",
+  "EAS build profiles pin the tenant API domain, application and distribution.",
 );

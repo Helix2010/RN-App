@@ -63,8 +63,10 @@ export function FoundationHomeScreen({ navigation }: Props) {
   ];
   const localeOptions: { value: LocalePreference; label: string }[] = [
     { value: "system", label: t("theme.system") },
-    { value: "zh-CN", label: "中文" },
-    { value: "en-US", label: "English" },
+    ...config.localization.supportedLocales.map((code) => ({
+      value: code,
+      label: code,
+    })),
   ];
 
   return (
