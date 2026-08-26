@@ -48,7 +48,7 @@ describe("loadBootstrap", () => {
     expect(snapshot.stale).toBe(true);
     expect(snapshot.config.localization.fallbackLocale).toBe("zh-CN");
     expect(storage.removeItem).toHaveBeenCalledWith(
-      "foundation.bootstrap.v2.https%3A%2F%2Ftenant-a.example.com.dex-mobile.zh-CN",
+      "foundation.bootstrap.v3.https%3A%2F%2Ftenant-a.example.com.dex-mobile.zh-CN",
     );
   });
 
@@ -65,7 +65,7 @@ describe("loadBootstrap", () => {
       { signal: undefined },
     );
     expect(storage.setItem).toHaveBeenCalledWith(
-      "foundation.bootstrap.v2.https%3A%2F%2Ftenant-a.example.com.dex-mobile.en-US",
+      "foundation.bootstrap.v3.https%3A%2F%2Ftenant-a.example.com.dex-mobile.en-US",
       expect.any(String),
     );
   });

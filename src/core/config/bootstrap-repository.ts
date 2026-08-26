@@ -8,6 +8,7 @@ import {
   type SupportedLocale,
 } from "./bootstrap.schema";
 import { createFallbackConfig } from "./fallback-config";
+import { normalizeMessages } from "./localization";
 
 const MAX_CACHE_AGE_MS = 7 * 24 * 60 * 60 * 1_000;
 const cacheSchema = z.object({
@@ -31,7 +32,17 @@ export type BootstrapSnapshot = {
 };
 
 function cacheKey(locale: SupportedLocale): string {
-  return `foundation.bootstrap.v2.${encodeURIComponent(appRuntime.apiBaseUrl)}.${appRuntime.applicationId}.${locale}`;
+  return `foundation.bootstrap.v3.${encodeURIComponent(appRuntime.apiBaseUrl)}.${appRuntime.applicationId}.${locale}`;
+}
+
+function normalizeConfig(config: BootstrapConfig): BootstrapConfig {
+  return {
+    ...config,
+    localization: {
+      ...config.localization,
+      messages: normalizeMessages(config.localization.messages),
+    },
+  };
 }
 
 async function discardInvalidCache(key: string): Promise<void> {
@@ -65,11 +76,11 @@ async function readCache(
     await discardInvalidCache(key);
     return null;
   }
-  return parsed.data.config;
+  return normalizeConfig(parsed.data.config);
 }
 
 function languagePackageKey(locale: SupportedLocale): string {
-  return `foundation.language.v1.${encodeURIComponent(appRuntime.apiBaseUrl)}.${appRuntime.applicationId}.${locale}`;
+  return `foundation.language.v2.${encodeURIComponent(appRuntime.apiBaseUrl)}.${appRuntime.applicationId}.${locale}`;
 }
 
 async function applyRemoteLanguagePackage(
@@ -92,7 +103,7 @@ async function applyRemoteLanguagePackage(
           ...config,
           localization: {
             ...config.localization,
-            messages: parsed.data.messages,
+            messages: normalizeMessages(parsed.data.messages),
             messagesVersion: parsed.data.version,
           },
         };
@@ -126,7 +137,7 @@ async function applyRemoteLanguagePackage(
       ...config,
       localization: {
         ...config.localization,
-        messages: packageValue.messages,
+        messages: normalizeMessages(packageValue.messages),
         messagesVersion: packageValue.version,
       },
     };
@@ -143,7 +154,7 @@ async function applyRemoteLanguagePackage(
         ...config,
         localization: {
           ...config.localization,
-          messages: parsed.data.messages,
+          messages: normalizeMessages(parsed.data.messages),
           messagesVersion: parsed.data.version,
         },
       };
@@ -163,7 +174,10 @@ export async function loadBootstrap(
       bootstrapSchema,
       { signal },
     );
-    const enriched = await applyRemoteLanguagePackage(config, signal);
+    const enriched = await applyRemoteLanguagePackage(
+      normalizeConfig(config),
+      signal,
+    );
     await AsyncStorage.setItem(
       cacheKey(locale),
       JSON.stringify({ savedAt: Date.now(), config: enriched }),

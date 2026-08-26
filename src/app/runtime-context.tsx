@@ -14,6 +14,7 @@ import type {
   SupportedLocale,
 } from "../core/config/bootstrap.schema";
 import { createFallbackConfig } from "../core/config/fallback-config";
+import { translateMessage } from "../core/config/localization";
 import { useBootstrap } from "../core/config/use-bootstrap";
 import {
   usePreferencesStore,
@@ -61,7 +62,7 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   );
   const config = snapshot.config;
   const t = useCallback(
-    (key: string) => config.localization.messages[key] ?? key,
+    (key: string) => translateMessage(config.localization.messages, key),
     [config.localization.messages],
   );
   const refresh = useCallback(async () => {
