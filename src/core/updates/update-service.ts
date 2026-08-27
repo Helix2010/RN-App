@@ -3,38 +3,37 @@ import * as Updates from "expo-updates";
 import type { BootstrapConfig } from "../config/bootstrap.schema";
 
 export type OtaCheckResult =
-  | { status: "disabled"; message: string }
-  | { status: "current"; message: string }
-  | { status: "ready"; message: string }
-  | { status: "error"; message: string };
+  | { status: "disabled"; messageKey: string }
+  | { status: "current"; messageKey: string }
+  | { status: "ready"; messageKey: string }
+  | { status: "error"; messageKey: string };
 
 export async function checkAndDownloadOta(
   config: BootstrapConfig,
 ): Promise<OtaCheckResult> {
   if (!config.features.otaEnabled || !config.update.ota.enabled) {
-    return { status: "disabled", message: "OTA 已被远程策略关闭" };
+    return { status: "disabled", messageKey: "update.otaDisabled" };
   }
   if (!Updates.isEnabled) {
     return {
       status: "disabled",
-      message:
-        "当前开发容器未启用 OTA；请使用 Development Build 或发布构建验证",
+      messageKey: "update.otaUnavailable",
     };
   }
 
   try {
     const check = await Updates.checkForUpdateAsync();
     if (!check.isAvailable) {
-      return { status: "current", message: "当前 runtime 已是最新 OTA" };
+      return { status: "current", messageKey: "update.otaCurrent" };
     }
     const result = await Updates.fetchUpdateAsync();
     return result.isNew
-      ? { status: "ready", message: "OTA 已下载，重启后应用" }
-      : { status: "current", message: "没有新的兼容 OTA" };
-  } catch (error) {
+      ? { status: "ready", messageKey: "update.otaReady" }
+      : { status: "current", messageKey: "update.otaCurrent" };
+  } catch {
     return {
       status: "error",
-      message: error instanceof Error ? error.message : "OTA 检查失败",
+      messageKey: "update.otaError",
     };
   }
 }
@@ -46,6 +45,13 @@ export async function applyDownloadedOta(): Promise<void> {
 export async function openFullUpdate(
   config: BootstrapConfig,
 ): Promise<boolean> {
+  if (
+    config.app.platform === "android" &&
+    config.app.distribution === "direct" &&
+    !config.features.directUpdateEnabled
+  ) {
+    return false;
+  }
   const url = config.update.full.actionUrl;
   if (!url || !(await Linking.canOpenURL(url))) return false;
   await Linking.openURL(url);

@@ -7,6 +7,7 @@ import { useTheme } from "tamagui";
 import { useFoundationRuntime } from "../app/runtime-context";
 import { FoundationHomeScreen } from "../features/foundation/foundation-home-screen";
 import { UpdateCenterScreen } from "../features/updates/update-center-screen";
+import { SettingsScreen } from "../features/settings/settings-screen";
 import type { RootStackParamList } from "./types";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -15,7 +16,7 @@ export function FoundationNavigator() {
   const theme = useTheme();
   const { config } = useFoundationRuntime();
   const navigationTheme: NavigationTheme = {
-    dark: false,
+    dark: theme.background.val === config.theme.dark.background,
     colors: {
       primary: theme.primary.val,
       background: theme.background.val,
@@ -49,6 +50,7 @@ export function FoundationNavigator() {
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen name="FoundationHome" component={FoundationHomeScreen} />
         <Stack.Screen name="UpdateCenter" component={UpdateCenterScreen} />
+        <Stack.Screen name="Settings" component={SettingsScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

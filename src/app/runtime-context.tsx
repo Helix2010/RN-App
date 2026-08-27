@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useState,
   type PropsWithChildren,
 } from "react";
 import { AppState } from "react-native";
@@ -22,6 +23,7 @@ import {
   type ThemePreference,
 } from "../core/preferences/preferences-store";
 import { FoundationThemeProvider } from "../design-system";
+import { LaunchScreen } from "./launch-screen";
 
 type RuntimeValue = {
   config: BootstrapConfig;
@@ -61,6 +63,8 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
     [fallback, query.data],
   );
   const config = snapshot.config;
+  const [launchMinimumElapsed, setLaunchMinimumElapsed] = useState(false);
+  const [launchTimeout, setLaunchTimeout] = useState(false);
   const t = useCallback(
     (key: string) => translateMessage(config.localization.messages, key),
     [config.localization.messages],
@@ -68,6 +72,14 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   const refresh = useCallback(async () => {
     await query.refetch();
   }, [query]);
+  useEffect(() => {
+    const minimumTimer = setTimeout(() => setLaunchMinimumElapsed(true), 700);
+    const timeoutTimer = setTimeout(() => setLaunchTimeout(true), 1_800);
+    return () => {
+      clearTimeout(minimumTimer);
+      clearTimeout(timeoutTimer);
+    };
+  }, []);
   useEffect(() => {
     const interval =
       Math.max(300, config.localization.refreshIntervalSeconds ?? 21600) * 1000;
@@ -112,7 +124,11 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   return (
     <FoundationThemeProvider config={config} preference={themePreference}>
       <RuntimeContext.Provider value={value}>
-        {children}
+        {launchMinimumElapsed && (!query.isPending || launchTimeout) ? (
+          children
+        ) : (
+          <LaunchScreen message={t("status.loading")} />
+        )}
       </RuntimeContext.Provider>
     </FoundationThemeProvider>
   );

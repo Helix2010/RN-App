@@ -29,21 +29,21 @@ if (
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
-  name: "RN Foundation",
-  slug: "rn-foundation",
-  scheme: "rnfoundation",
-  version: "1.0.2",
+  name: "AnyFun",
+  slug: "anyfun-foundation",
+  scheme: "anyfun",
+  version: "1.1.0",
   orientation: "portrait",
   userInterfaceStyle: "automatic",
   icon: "./assets/icon.png",
   ios: {
     supportsTablet: true,
     bundleIdentifier: "com.anyfun.foundation",
-    buildNumber: "1",
+    buildNumber: "2",
   },
   android: {
     package: "com.anyfun.foundation",
-    versionCode: 3,
+    versionCode: 4,
     predictiveBackGestureEnabled: true,
     adaptiveIcon: {
       backgroundColor: "#E9F0FF",

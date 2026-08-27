@@ -47,9 +47,7 @@ export function UpdateCenterScreen({ navigation, locked = false }: Props) {
     setBusy(true);
     const opened = await openFullUpdate(config);
     setFullMessage(
-      opened
-        ? "已打开当前分发渠道的升级入口"
-        : "服务端尚未为当前分发渠道配置可安装地址",
+      opened ? t("update.fullOpened") : t("update.fullUnavailable"),
     );
     setBusy(false);
   };
@@ -63,18 +61,18 @@ export function UpdateCenterScreen({ navigation, locked = false }: Props) {
               alignSelf="flex-start"
               onPress={() => navigation.goBack()}
             >
-              返回
+              {t("action.back")}
             </SecondaryButton>
           ) : null}
           <Stack gap="$2" paddingVertical="$3">
-            <Label>RELEASE CONTROL</Label>
+            <Label>{t("update.releaseControl")}</Label>
             <Heading>{t("home.update")}</Heading>
             <Body>{t(`update.${config.update.decision}`)}</Body>
           </Stack>
 
           <Card>
             <Row justifyContent="space-between" alignItems="center">
-              <SectionTitle>版本策略</SectionTitle>
+              <SectionTitle>{t("update.policy")}</SectionTitle>
               <Badge>
                 <InlineText
                   color={
@@ -88,39 +86,45 @@ export function UpdateCenterScreen({ navigation, locked = false }: Props) {
               </Badge>
             </Row>
             <Body>
-              当前版本：{config.app.version} ({config.app.buildNumber})
+              {t("update.currentVersion")}：{config.app.version} (
+              {config.app.buildNumber})
             </Body>
-            <Body>最低支持：{config.update.minSupportedVersion}</Body>
-            <Body>最新版本：{config.update.latestVersion}</Body>
-            <Body>分发通道：{config.update.full.channel}</Body>
+            <Body>
+              {t("update.minimumVersion")}：{config.update.minSupportedVersion}
+            </Body>
+            <Body>
+              {t("update.latestVersion")}：{config.update.latestVersion}
+            </Body>
+            <Body>
+              {t("update.channel")}：{config.update.full.channel}
+            </Body>
           </Card>
 
           <Card>
             <Label>OTA / {config.update.ota.channel}</Label>
-            <SectionTitle>JS 与资源热更新</SectionTitle>
-            <Body>runtime · {config.update.ota.runtimeVersion}</Body>
+            <SectionTitle>{t("update.otaTitle")}</SectionTitle>
+            <Body>
+              {t("update.runtime")} · {config.update.ota.runtimeVersion}
+            </Body>
             {ota ? (
               <Body color={ota.status === "error" ? "$danger" : "$textMuted"}>
-                {ota.message}
+                {t(ota.messageKey)}
               </Body>
             ) : null}
             <PrimaryButton disabled={busy} onPress={() => void checkOta()}>
-              {busy ? "检查中…" : t("action.checkUpdate")}
+              {busy ? t("update.checking") : t("action.checkupdate")}
             </PrimaryButton>
             {ota?.status === "ready" ? (
               <SecondaryButton onPress={() => void applyDownloadedOta()}>
-                重启并应用 OTA
+                {t("update.apply")}
               </SecondaryButton>
             ) : null}
           </Card>
 
           <Card>
             <Label>{config.update.full.channel.toUpperCase()}</Label>
-            <SectionTitle>全量更新</SectionTitle>
-            <Body>
-              Store 打开应用市场；Android direct 打开签名 APK；iOS MDM
-              打开受控企业入口。
-            </Body>
+            <SectionTitle>{t("update.fullTitle")}</SectionTitle>
+            <Body>{t("update.fullDescription")}</Body>
             {config.update.releaseNotes.map((note) => (
               <Body key={note}>• {note}</Body>
             ))}
@@ -131,12 +135,17 @@ export function UpdateCenterScreen({ navigation, locked = false }: Props) {
           </Card>
 
           <Card>
-            <Label>DIAGNOSTICS</Label>
-            <Body>request · {config.support.diagnosticId}</Body>
+            <Label>{t("update.diagnostics")}</Label>
             <Body>
-              release · {config.update.full.releaseId ?? "not configured"}
+              {t("update.requestId")} · {config.support.diagnosticId}
             </Body>
-            <Body>runtime · {config.app.runtimeVersion}</Body>
+            <Body>
+              {t("update.release")} ·{" "}
+              {config.update.full.releaseId ?? t("update.notConfigured")}
+            </Body>
+            <Body>
+              {t("update.runtime")} · {config.app.runtimeVersion}
+            </Body>
           </Card>
         </Content>
       </PageScroll>

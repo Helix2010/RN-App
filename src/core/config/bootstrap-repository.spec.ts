@@ -102,6 +102,9 @@ describe("loadBootstrap", () => {
     const snapshot = await loadBootstrap("zh-CN");
 
     expect(snapshot.config.localization.messages["app.name"]).toBe("远程名称");
+    expect(snapshot.config.localization.messages["settings.title"]).toBe(
+      "设置",
+    );
     expect(snapshot.config.localization.messagesVersion).toBe("2");
   });
 });

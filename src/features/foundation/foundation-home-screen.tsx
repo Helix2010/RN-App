@@ -1,18 +1,14 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../app/runtime-context";
-import type {
-  LocalePreference,
-  ThemePreference,
-} from "../../core/preferences/preferences-store";
 import {
   AddressText,
   AmountText,
+  AppHeader,
   Badge,
   Body,
   Card,
   Content,
-  Heading,
   InlineText,
   Label,
   Page,
@@ -20,30 +16,13 @@ import {
   PriceChange,
   PrimaryButton,
   Row,
+  SecondaryButton,
   SectionTitle,
-  SegmentedControl,
   Stack,
 } from "../../design-system";
 import type { RootStackParamList } from "../../navigation/types";
 
 type Props = NativeStackScreenProps<RootStackParamList, "FoundationHome">;
-
-function FlagRow({ label, value }: { label: string; value: boolean }) {
-  return (
-    <Row justifyContent="space-between" alignItems="center" gap="$3">
-      <Body flex={1}>{label}</Body>
-      <Badge backgroundColor={value ? "$surfaceVariant" : "$background"}>
-        <InlineText
-          color={value ? "$success" : "$textMuted"}
-          fontWeight="700"
-          fontSize={12}
-        >
-          {value ? "ON" : "OFF"}
-        </InlineText>
-      </Badge>
-    </Row>
-  );
-}
 
 export function FoundationHomeScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
@@ -56,19 +35,6 @@ export function FoundationHomeScreen({ navigation }: Props) {
         ? t("status.cached")
         : t("status.error");
 
-  const themeOptions: { value: ThemePreference; label: string }[] = [
-    { value: "system", label: t("theme.system") },
-    { value: "light", label: t("theme.light") },
-    { value: "dark", label: t("theme.dark") },
-  ];
-  const localeOptions: { value: LocalePreference; label: string }[] = [
-    { value: "system", label: t("theme.system") },
-    ...config.localization.supportedLocales.map((code) => ({
-      value: code,
-      label: code,
-    })),
-  ];
-
   return (
     <Page>
       <PageScroll
@@ -79,36 +45,82 @@ export function FoundationHomeScreen({ navigation }: Props) {
         }}
       >
         <Content paddingTop={insets.top + 24}>
-          <Stack gap="$3" paddingBottom="$2">
-            <Label color="$primary">{t("home.eyebrow")}</Label>
-            <Heading>{t("home.title")}</Heading>
-            <Body fontSize={16}>{t("home.description")}</Body>
-            <Row gap="$2" flexWrap="wrap">
-              <Badge>
-                <InlineText
-                  color={snapshot.source === "remote" ? "$success" : "$warning"}
-                  fontSize={12}
-                >
-                  {sourceLabel}
-                </InlineText>
-              </Badge>
-              <Badge>
-                <InlineText color="$textMuted" fontSize={12}>
-                  config {config.configVersion}
-                </InlineText>
-              </Badge>
-            </Row>
-          </Stack>
+          <AppHeader
+            eyebrow={t("home.eyebrow")}
+            title={t("home.title")}
+            subtitle={t("home.description")}
+            action={
+              <SecondaryButton
+                size="$3"
+                paddingHorizontal="$3"
+                onPress={() => navigation.navigate("Settings")}
+                accessibilityLabel={t("action.settings")}
+              >
+                {t("action.settings")}
+              </SecondaryButton>
+            }
+          />
 
-          <Card accessibilityLabel="Web3 design system reference">
+          <Row gap="$2" flexWrap="wrap">
+            <Badge>
+              <InlineText
+                color={snapshot.source === "remote" ? "$success" : "$warning"}
+                fontSize={12}
+              >
+                {sourceLabel}
+              </InlineText>
+            </Badge>
+            <Badge>
+              <InlineText color="$textMuted" fontSize={12}>
+                {t("settings.configVersion")} {config.configVersion} ·{" "}
+                {config.localization.selectedLocale} ·{" "}
+                {config.theme.paletteVersion}
+              </InlineText>
+            </Badge>
+          </Row>
+
+          <Card
+            backgroundColor="$primary"
+            borderColor="$primary"
+            accessibilityLabel={t("home.portfolio")}
+          >
+            <Label color="$onPrimary">{t("home.portfolio")}</Label>
+            <AmountText color="$onPrimary">¥ 128,640.00</AmountText>
+            <InlineText color="$onPrimary" opacity={0.78} fontSize={12}>
+              {t("home.portfolioChange")}
+            </InlineText>
+            <Row gap="$2">
+              <PrimaryButton
+                flex={1}
+                backgroundColor="$onPrimary"
+                color="$primary"
+                onPress={() => navigation.navigate("Settings")}
+              >
+                {t("home.secondaryAction")}
+              </PrimaryButton>
+              {config.features.updateCenter ? (
+                <SecondaryButton
+                  flex={1}
+                  backgroundColor="$primary"
+                  color="$onPrimary"
+                  borderColor="$onPrimary"
+                  onPress={() => navigation.navigate("UpdateCenter")}
+                >
+                  {t("home.primaryAction")}
+                </SecondaryButton>
+              ) : null}
+            </Row>
+          </Card>
+
+          <Card accessibilityLabel={t("home.market")}>
             <Row justifyContent="space-between" alignItems="flex-start">
               <Stack gap="$1">
-                <Label>Market reference</Label>
+                <Label>{t("home.market")}</Label>
                 <SectionTitle>ETH / USDC</SectionTitle>
               </Stack>
               <Badge>
                 <InlineText color="$info" fontWeight="700" fontSize={12}>
-                  Ethereum
+                  {t("home.network")}
                 </InlineText>
               </Badge>
             </Row>
@@ -117,36 +129,8 @@ export function FoundationHomeScreen({ navigation }: Props) {
               <PriceChange value={2.14} />
             </Row>
             <AddressText numberOfLines={1}>
-              0x71C7…F8A2 · wallet display contract
+              0x71C7…F8A2 · {t("home.contract")}
             </AddressText>
-            <Body>
-              金额使用等宽数字，涨跌色与风险色独立；地址使用等宽字体并保留首尾校验位。
-            </Body>
-          </Card>
-
-          <Card>
-            <Label>{t("home.theme")}</Label>
-            <SegmentedControl
-              accessibilityLabel={t("home.theme")}
-              value={runtime.themePreference}
-              options={themeOptions}
-              onChange={runtime.setTheme}
-            />
-            <Body>palette · {config.theme.paletteVersion}</Body>
-          </Card>
-
-          <Card>
-            <Label>{t("home.language")}</Label>
-            <SegmentedControl
-              accessibilityLabel={t("home.language")}
-              value={runtime.localePreference}
-              options={localeOptions}
-              onChange={runtime.setLocale}
-            />
-            <Body>
-              {config.localization.selectedLocale} · messages{" "}
-              {config.localization.messagesVersion}
-            </Body>
           </Card>
 
           <Card>
@@ -167,40 +151,31 @@ export function FoundationHomeScreen({ navigation }: Props) {
               {config.app.platform} / {config.app.distribution} /{" "}
               {config.app.runtimeVersion}
             </Body>
-            <PrimaryButton onPress={() => navigation.navigate("UpdateCenter")}>
-              {t("action.checkUpdate")}
-            </PrimaryButton>
+            {config.features.updateCenter ? (
+              <PrimaryButton
+                onPress={() => navigation.navigate("UpdateCenter")}
+              >
+                {t("action.checkupdate")}
+              </PrimaryButton>
+            ) : null}
           </Card>
 
           <Card>
-            <Label>{t("home.features")}</Label>
-            <FlagRow
-              label="Update center"
-              value={config.features.updateCenter}
-            />
-            <FlagRow label="OTA" value={config.features.otaEnabled} />
-            <FlagRow
-              label="Android direct"
-              value={config.features.directUpdateEnabled}
-            />
-            <FlagRow
-              label="Diagnostics"
-              value={config.features.diagnosticsEnabled}
-            />
-          </Card>
-
-          <Card>
-            <Label>{t("home.remoteConfig")}</Label>
-            <Body>request · {config.requestId}</Body>
-            <Body>
-              generated · {new Date(config.generatedAt).toLocaleString()}
-            </Body>
-            <PrimaryButton
-              onPress={() => void runtime.refresh()}
-              disabled={runtime.isRefreshing}
-            >
-              {t("action.refresh")}
-            </PrimaryButton>
+            <Label>{t("home.security")}</Label>
+            <SectionTitle>{t("home.securityTitle")}</SectionTitle>
+            <Body>{t("home.securityDescription")}</Body>
+            <Row gap="$2" flexWrap="wrap">
+              <Badge>
+                <InlineText color="$success" fontSize={12} fontWeight="700">
+                  {t("home.secureStorage")}
+                </InlineText>
+              </Badge>
+              <Badge>
+                <InlineText color="$info" fontSize={12} fontWeight="700">
+                  {t("home.signedUpdates")}
+                </InlineText>
+              </Badge>
+            </Row>
           </Card>
         </Content>
       </PageScroll>

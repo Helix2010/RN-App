@@ -58,7 +58,7 @@ export const bootstrapSchema = z.object({
   }),
   theme: z.object({
     defaultMode: z.literal("system"),
-    allowUserOverride: z.literal(true),
+    allowUserOverride: z.boolean(),
     paletteVersion: z.string().min(1),
     light: semanticPaletteSchema,
     dark: semanticPaletteSchema,

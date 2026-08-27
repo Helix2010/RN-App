@@ -36,11 +36,17 @@ function cacheKey(locale: SupportedLocale): string {
 }
 
 function normalizeConfig(config: BootstrapConfig): BootstrapConfig {
+  const embeddedMessages = createFallbackConfig(
+    config.localization.selectedLocale,
+  ).localization.messages;
   return {
     ...config,
     localization: {
       ...config.localization,
-      messages: normalizeMessages(config.localization.messages),
+      messages: {
+        ...embeddedMessages,
+        ...normalizeMessages(config.localization.messages),
+      },
     },
   };
 }
@@ -103,7 +109,10 @@ async function applyRemoteLanguagePackage(
           ...config,
           localization: {
             ...config.localization,
-            messages: normalizeMessages(parsed.data.messages),
+            messages: {
+              ...config.localization.messages,
+              ...normalizeMessages(parsed.data.messages),
+            },
             messagesVersion: parsed.data.version,
           },
         };
@@ -137,7 +146,10 @@ async function applyRemoteLanguagePackage(
       ...config,
       localization: {
         ...config.localization,
-        messages: normalizeMessages(packageValue.messages),
+        messages: {
+          ...config.localization.messages,
+          ...normalizeMessages(packageValue.messages),
+        },
         messagesVersion: packageValue.version,
       },
     };
@@ -154,7 +166,10 @@ async function applyRemoteLanguagePackage(
         ...config,
         localization: {
           ...config.localization,
-          messages: normalizeMessages(parsed.data.messages),
+          messages: {
+            ...config.localization.messages,
+            ...normalizeMessages(parsed.data.messages),
+          },
           messagesVersion: parsed.data.version,
         },
       };

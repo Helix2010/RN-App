@@ -25,6 +25,88 @@ export const Row = styled(XStack, {
 
 export const InlineText = styled(Text, {});
 
+export function BrandMark({ size = 48 }: { size?: number }) {
+  return (
+    <YStack
+      width={size}
+      height={size}
+      alignItems="center"
+      justifyContent="center"
+      borderRadius={size * 0.28}
+      backgroundColor="$primary"
+      shadowColor="$shadowColor"
+      shadowOpacity={0.2}
+      shadowRadius={12}
+      shadowOffset={{ width: 0, height: 6 }}
+      accessibilityLabel="AnyFun 品牌标志"
+    >
+      <YStack
+        position="absolute"
+        left={size * 0.2}
+        bottom={size * 0.16}
+        width={size * 0.15}
+        height={size * 0.62}
+        borderRadius={999}
+        backgroundColor="$onPrimary"
+        opacity={0.9}
+        rotate="-24deg"
+      />
+      <YStack
+        position="absolute"
+        right={size * 0.2}
+        bottom={size * 0.16}
+        width={size * 0.15}
+        height={size * 0.62}
+        borderRadius={999}
+        backgroundColor="$onPrimary"
+        opacity={0.72}
+        rotate="24deg"
+      />
+      <YStack
+        position="absolute"
+        top={size * 0.31}
+        width={size * 0.2}
+        height={size * 0.2}
+        rotate="45deg"
+        borderRadius={size * 0.04}
+        backgroundColor="$onPrimary"
+      />
+    </YStack>
+  );
+}
+
+export function AppHeader({
+  eyebrow,
+  title,
+  subtitle,
+  action,
+}: {
+  eyebrow?: string;
+  title: string;
+  subtitle?: string;
+  action?: ReactNode;
+}) {
+  return (
+    <XStack justifyContent="space-between" alignItems="center" gap="$3">
+      <XStack alignItems="center" gap="$3" flex={1}>
+        <BrandMark size={46} />
+        <Stack gap="$1" flex={1}>
+          {eyebrow ? <Label>{eyebrow}</Label> : null}
+          <Heading fontSize={26}>{title}</Heading>
+          {subtitle ? <Body>{subtitle}</Body> : null}
+        </Stack>
+      </XStack>
+      {action}
+    </XStack>
+  );
+}
+
+export const Divider = styled(YStack, {
+  height: 1,
+  width: "100%",
+  backgroundColor: "$borderColor",
+});
+
 export const Content = styled(YStack, {
   width: "100%",
   maxWidth: 720,

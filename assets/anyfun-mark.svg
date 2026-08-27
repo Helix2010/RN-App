@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#07152f"/><stop offset="1" stop-color="#102b63"/></linearGradient>
+    <linearGradient id="left" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#8ed7ff"/><stop offset=".55" stop-color="#2d83f7"/><stop offset="1" stop-color="#3157d5"/></linearGradient>
+    <linearGradient id="right" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#c8edff"/><stop offset=".48" stop-color="#5ba8ff"/><stop offset="1" stop-color="#3157d5"/></linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="226" fill="url(#bg)"/>
+  <circle cx="512" cy="512" r="350" fill="none" stroke="#79bdff" stroke-opacity=".12" stroke-width="18"/>
+  <path d="M226 766 431 309c31-69 131-69 162 0l45 101-130 289-76-170-112 250c-20 45-73 65-118 45-45-20-65-73-45-118Z" fill="url(#left)"/>
+  <path d="m798 766-205-457c-31-69-131-69-162 0l-45 101 130 289 76-170 112 250c20 45 73 65 118 45 45-20 65-73 45-118Z" fill="url(#right)"/>
+  <path d="M512 451 565 552 512 653 459 552Z" fill="#f5fbff"/><circle cx="512" cy="552" r="18" fill="#3157d5"/>
+</svg>

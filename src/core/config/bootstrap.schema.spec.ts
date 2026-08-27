@@ -3,8 +3,12 @@ import { createFallbackConfig } from "./fallback-config";
 
 describe("bootstrapSchema", () => {
   it("accepts the embedded safe configuration", () => {
-    const parsed = bootstrapSchema.safeParse(createFallbackConfig("zh-CN"));
+    const config = createFallbackConfig("zh-CN");
+    const parsed = bootstrapSchema.safeParse(config);
     expect(parsed.success).toBe(true);
+    expect(config.localization.messages["home.portfoliochange"]).toBe(
+      "过去 24 小时 · 数据仅用于展示",
+    );
   });
 
   it("rejects arbitrary remote theme values", () => {
