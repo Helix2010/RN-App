@@ -32,18 +32,18 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   name: "AnyFun",
   slug: "anyfun-foundation",
   scheme: "anyfun",
-  version: "1.1.0",
+  version: "1.1.1",
   orientation: "portrait",
   userInterfaceStyle: "automatic",
   icon: "./assets/icon.png",
   ios: {
     supportsTablet: true,
     bundleIdentifier: "com.anyfun.foundation",
-    buildNumber: "2",
+    buildNumber: "3",
   },
   android: {
     package: "com.anyfun.foundation",
-    versionCode: 4,
+    versionCode: 5,
     predictiveBackGestureEnabled: true,
     adaptiveIcon: {
       backgroundColor: "#E9F0FF",
