@@ -17,12 +17,15 @@ export function FoundationThemeProvider({
   children,
 }: Props) {
   const systemScheme = useColorScheme();
-  const resolved =
-    preference === "system"
+  const effectivePreference = config.theme.allowUserOverride
+    ? preference
+    : "system";
+  const resolved: "light" | "dark" =
+    effectivePreference === "system"
       ? systemScheme === "dark"
         ? "dark"
         : "light"
-      : preference;
+      : effectivePreference;
   const tamaguiConfig = useMemo(
     () => createFoundationTamaguiConfig(config.theme.light, config.theme.dark),
     [config.theme.dark, config.theme.light],
