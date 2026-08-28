@@ -6,9 +6,12 @@ import {
   applyDownloadedOta,
   checkAndDownloadOta,
   getCurrentUpdateMetadata,
-  openFullUpdate,
   type OtaCheckResult,
 } from "../../core/updates/update-service";
+import {
+  downloadAndInstallApk,
+  type ApkDownloadProgress,
+} from "../../core/updates/apk-update-service";
 import { useUpdateStatus } from "../../core/updates/use-update-status";
 import {
   Badge,
@@ -38,6 +41,15 @@ export function UpdateCenterScreen({ navigation, locked = false }: Props) {
   const [ota, setOta] = useState<OtaCheckResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [fullMessage, setFullMessage] = useState<string | null>(null);
+  const [apkDownloadState, setApkDownloadState] = useState<
+    "idle" | "downloading" | "error"
+  >("idle");
+  const [apkProgress, setApkProgress] = useState<ApkDownloadProgress>({
+    written: 0,
+    total: config.update.full.size ?? 0,
+    percentage: 0,
+  });
+  const [apkError, setApkError] = useState<string | null>(null);
   const currentUpdate = getCurrentUpdateMetadata();
   const nativeOta = useUpdateStatus();
   const displayedOta =
@@ -80,12 +92,36 @@ export function UpdateCenterScreen({ navigation, locked = false }: Props) {
     }
   };
 
-  const openFull = async (): Promise<void> => {
+  const checkUpdates = async (): Promise<void> => {
+    if (busy || apkDownloadState === "downloading") return;
     setBusy(true);
-    const opened = await openFullUpdate(config);
-    setFullMessage(
-      opened ? t("update.fullOpened") : t("update.fullUnavailable"),
-    );
+    setFullMessage(null);
+    setApkError(null);
+    const hasFullUpdate =
+      config.update.decision !== "none" &&
+      Boolean(config.update.full.actionUrl);
+    if (hasFullUpdate && config.update.full.actionUrl) {
+      setApkDownloadState("downloading");
+      setApkProgress({
+        written: 0,
+        total: config.update.full.size ?? 0,
+        percentage: 0,
+      });
+      try {
+        await downloadAndInstallApk(config, setApkProgress);
+        setFullMessage(t("update.apkInstallerOpened"));
+        setApkDownloadState("idle");
+      } catch (error) {
+        setApkDownloadState("error");
+        setApkError(
+          error instanceof Error ? error.message : t("update.apkDownloadError"),
+        );
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+    await checkOta();
     setBusy(false);
   };
 
@@ -173,7 +209,7 @@ export function UpdateCenterScreen({ navigation, locked = false }: Props) {
             displayedOta.metadata.applyStrategy === "immediate" ? (
               <Body color="$warning">{t("update.otaImmediateRequired")}</Body>
             ) : null}
-            <PrimaryButton disabled={busy} onPress={() => void checkOta()}>
+            <PrimaryButton disabled={busy} onPress={() => void checkUpdates()}>
               {busy ? t("update.checking") : t("action.checkupdate")}
             </PrimaryButton>
             {(displayedOta.status === "ready" &&
@@ -195,9 +231,7 @@ export function UpdateCenterScreen({ navigation, locked = false }: Props) {
               <Body key={note}>• {note}</Body>
             ))}
             {fullMessage ? <Body color="$warning">{fullMessage}</Body> : null}
-            <PrimaryButton disabled={busy} onPress={() => void openFull()}>
-              {t("action.install")}
-            </PrimaryButton>
+            {apkError ? <Body color="$danger">{apkError}</Body> : null}
           </Card>
 
           <Card>
@@ -215,6 +249,63 @@ export function UpdateCenterScreen({ navigation, locked = false }: Props) {
           </Card>
         </Content>
       </PageScroll>
+      {apkDownloadState !== "idle" ? (
+        <Stack
+          position="absolute"
+          top={0}
+          right={0}
+          bottom={0}
+          left={0}
+          zIndex={90}
+          justifyContent="center"
+          padding="$4"
+          backgroundColor="$backdrop"
+          accessibilityRole="alert"
+        >
+          <Card width="100%" maxWidth={460} alignSelf="center">
+            <Stack gap="$2">
+              <Heading>{t("update.apkDownloadTitle")}</Heading>
+              <Body>
+                {apkDownloadState === "error"
+                  ? t("update.apkDownloadError")
+                  : t("update.apkDownloading")}
+              </Body>
+              {apkDownloadState === "downloading" ? (
+                <>
+                  <Body>
+                    {apkProgress.percentage}% ·{" "}
+                    {formatBytes(apkProgress.written)} /{" "}
+                    {formatBytes(apkProgress.total)}
+                  </Body>
+                  <Stack
+                    height={8}
+                    overflow="hidden"
+                    borderRadius="$4"
+                    backgroundColor="$surfaceVariant"
+                  >
+                    <Stack
+                      width={`${apkProgress.percentage}%`}
+                      height="100%"
+                      backgroundColor="$primary"
+                    />
+                  </Stack>
+                </>
+              ) : null}
+              {apkDownloadState === "error" ? (
+                <PrimaryButton onPress={() => void checkUpdates()}>
+                  {t("action.retry")}
+                </PrimaryButton>
+              ) : null}
+            </Stack>
+          </Card>
+        </Stack>
+      ) : null}
     </Page>
   );
+}
+
+function formatBytes(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return "-";
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
 }

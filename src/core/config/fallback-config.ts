@@ -68,6 +68,7 @@ const zhCN = {
   "action.refresh": "刷新配置",
   "action.checkupdate": "检查更新",
   "action.install": "前往更新",
+  "action.retry": "重新下载",
   "action.settings": "设置",
   "action.back": "返回",
   "action.later": "稍后处理",
@@ -125,6 +126,10 @@ const zhCN = {
   "update.notConfigured": "尚未配置",
   "update.fullOpened": "已打开当前分发渠道的升级入口",
   "update.fullUnavailable": "当前分发渠道尚未配置可安装地址",
+  "update.apkDownloadTitle": "正在准备应用升级",
+  "update.apkDownloading": "正在安全下载完整安装包，请保持网络连接。",
+  "update.apkDownloadError": "安装包下载失败，请检查网络后重试。",
+  "update.apkInstallerOpened": "安装包已下载，已打开系统安装确认页面。",
   "feature.updateCenter": "升级中心",
   "feature.ota": "OTA 热更新",
   "feature.directUpdate": "Android 直装更新",
@@ -181,6 +186,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "action.refresh": "Refresh configuration",
   "action.checkupdate": "Check for updates",
   "action.install": "Open update",
+  "action.retry": "Download again",
   "action.settings": "Settings",
   "action.back": "Back",
   "action.later": "Later",
@@ -246,6 +252,13 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "update.fullOpened": "Opened the update entry for this distribution channel",
   "update.fullUnavailable":
     "No install URL is configured for this distribution channel",
+  "update.apkDownloadTitle": "Preparing app update",
+  "update.apkDownloading":
+    "Downloading the signed APK. Keep the network connection active.",
+  "update.apkDownloadError":
+    "The APK download failed. Check your connection and try again.",
+  "update.apkInstallerOpened":
+    "The APK is ready and the system installation confirmation was opened.",
   "feature.updateCenter": "Update center",
   "feature.ota": "OTA hot update",
   "feature.directUpdate": "Android direct update",

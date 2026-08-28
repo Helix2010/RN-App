@@ -1,4 +1,5 @@
 import Constants from "expo-constants";
+import * as Application from "expo-application";
 import * as Updates from "expo-updates";
 import { Platform } from "react-native";
 import type { z } from "zod";
@@ -24,10 +25,14 @@ function publicExtra(name: string, fallback: string): string {
 }
 
 function appVersion(): string {
-  return publicExtra("appVersion", Constants.expoConfig?.version ?? "1.0.0");
+  return (
+    Application.nativeApplicationVersion ??
+    publicExtra("appVersion", Constants.expoConfig?.version ?? "1.0.0")
+  );
 }
 
 function buildNumber(): string {
+  if (Application.nativeBuildVersion) return Application.nativeBuildVersion;
   const configured = Constants.expoConfig?.extra?.buildNumber;
   if (typeof configured === "string" && configured !== "") return configured;
   if (Platform.OS === "ios") {
