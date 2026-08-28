@@ -13,7 +13,7 @@
 
 1. Given 构建配置包含租户 API 域名，When 生成非开发 Expo 配置，Then OTA URL 默认是同域名 `/v1/ota/manifest`，并使用 `checkAutomatically=NEVER`。
 2. Given Bootstrap 返回 `otaEnabled=false`，When App 启动或进入升级中心，Then 不调用 expo-updates 检查，继续使用 embedded/当前 bundle。
-3. Given Bootstrap 成功且 OTA 开启，When 后台或用户手动检查，Then 状态按 checking → available → downloading → ready/current/error 更新，且不阻塞 App 启动。
+3. Given Bootstrap 成功且 OTA 开启，When 后台或用户手动检查，Then 状态按 checking → available → downloading → ready/current/error 更新，且不阻塞 App 启动；Manifest `metadata.applyStrategy=next_launch` 只提示 ready，`immediate` 也必须等待用户确认重启。
 4. Given OTA 服务返回 `isRollBackToEmbedded`，When App 检查，Then 状态为 rollback 并保留 embedded 安全路径。
 5. Given OTA 检查或下载失败，When App 继续运行，Then 使用 expo-updates 已缓存的最后稳定更新或 embedded bundle，且仅上报脱敏 updateId/runtime/channel。
 

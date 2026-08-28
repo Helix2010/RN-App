@@ -79,7 +79,7 @@ export function UpdateCenterScreen({ navigation, locked = false }: Props) {
   const applyOta = async (): Promise<void> => {
     setBusy(true);
     try {
-      await applyDownloadedOta();
+      await applyDownloadedOta(displayedOta.metadata.applyStrategy);
     } catch {
       setOta((previous) =>
         previous
@@ -156,17 +156,20 @@ export function UpdateCenterScreen({ navigation, locked = false }: Props) {
             >
               {t(displayedOta.messageKey)}
             </Body>
+            {displayedOta.status === "ready" &&
+            displayedOta.metadata.applyStrategy === "immediate" ? (
+              <Body color="$warning">{t("update.otaImmediateConfirm")}</Body>
+            ) : null}
             <PrimaryButton disabled={busy} onPress={() => void checkOta()}>
               {busy ? t("update.checking") : t("action.checkupdate")}
             </PrimaryButton>
-            {displayedOta.status === "ready" ||
+            {(displayedOta.status === "ready" &&
+              displayedOta.metadata.applyStrategy === "immediate") ||
             displayedOta.status === "rollback" ? (
               <SecondaryButton disabled={busy} onPress={() => void applyOta()}>
-                {t(
-                  displayedOta.status === "rollback"
-                    ? "update.rollbackApply"
-                    : "update.apply",
-                )}
+                {displayedOta.status === "rollback"
+                  ? t("update.rollbackApply")
+                  : t("update.applyImmediate")}
               </SecondaryButton>
             ) : null}
           </Card>

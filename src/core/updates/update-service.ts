@@ -21,6 +21,7 @@ export type UpdateMetadata = {
   channel: string | null;
   isEmbedded: boolean;
   createdAt: string | null;
+  applyStrategy: "next_launch" | "immediate";
 };
 
 export type OtaCheckResult = {
@@ -42,6 +43,7 @@ function currentMetadata(): UpdateMetadata {
     channel: Updates.channel ?? appRuntime.otaChannel,
     isEmbedded: Updates.isEmbeddedLaunch,
     createdAt: Updates.createdAt?.toISOString() ?? null,
+    applyStrategy: "next_launch",
   };
 }
 
@@ -134,15 +136,22 @@ async function performCheckAndDownloadOta(
       return { ...resultValue("rollback", "update.otaRollback") };
     }
     if (fetched.isNew) {
-      const metadata = metadataFromManifest(fetched.manifest);
+      const metadata = getUpdateMetadataFromManifest(fetched.manifest);
       transition("ready");
       emitUpdateTelemetry({
         stage: "ready",
         updateId: metadata.updateId,
         runtimeVersion: metadata.runtimeVersion,
         channel: metadata.channel,
+        applyStrategy: metadata.applyStrategy,
       });
-      return resultValue("ready", "update.otaReady", metadata);
+      return resultValue(
+        "ready",
+        metadata.applyStrategy === "immediate"
+          ? "update.otaReadyImmediate"
+          : "update.otaReadyNextLaunch",
+        metadata,
+      );
     }
     emitUpdateTelemetry({ stage: "current" });
     return resultValue("current", "update.otaCurrent");
@@ -161,7 +170,9 @@ function resultValue(
   return { status, messageKey, metadata };
 }
 
-function metadataFromManifest(manifest: unknown): UpdateMetadata {
+export function getUpdateMetadataFromManifest(
+  manifest: unknown,
+): UpdateMetadata {
   const record =
     typeof manifest === "object" && manifest !== null
       ? (manifest as Record<string, unknown>)
@@ -177,11 +188,24 @@ function metadataFromManifest(manifest: unknown): UpdateMetadata {
     channel: Updates.channel ?? appRuntime.otaChannel,
     isEmbedded: false,
     createdAt: typeof record.createdAt === "string" ? record.createdAt : null,
+    applyStrategy: applyStrategyFromManifest(record),
   };
 }
 
-export async function applyDownloadedOta(): Promise<void> {
-  emitUpdateTelemetry({ stage: "applying" });
+function applyStrategyFromManifest(
+  manifest: Record<string, unknown>,
+): "next_launch" | "immediate" {
+  const metadata =
+    typeof manifest.metadata === "object" && manifest.metadata !== null
+      ? (manifest.metadata as Record<string, unknown>)
+      : {};
+  return metadata.applyStrategy === "immediate" ? "immediate" : "next_launch";
+}
+
+export async function applyDownloadedOta(
+  applyStrategy: UpdateMetadata["applyStrategy"] = "next_launch",
+): Promise<void> {
+  emitUpdateTelemetry({ stage: "applying", applyStrategy });
   await Updates.reloadAsync();
 }
 

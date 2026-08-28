@@ -38,6 +38,7 @@ describe("update service feature flags", () => {
         channel: "development",
         isEmbedded: true,
         createdAt: null,
+        applyStrategy: "next_launch",
       },
     });
   });
@@ -62,7 +63,15 @@ describe("update service feature flags", () => {
     (Updates.checkForUpdateAsync as jest.Mock).mockResolvedValue({
       isAvailable: true,
     });
-    (Updates.fetchUpdateAsync as jest.Mock).mockResolvedValue({ isNew: true });
+    (Updates.fetchUpdateAsync as jest.Mock).mockResolvedValue({
+      isNew: true,
+      manifest: {
+        id: "update-1",
+        runtimeVersion: "test",
+        createdAt: "2026-08-28T00:00:00.000Z",
+        metadata: { applyStrategy: "immediate" },
+      },
+    });
 
     const transitions: string[] = [];
     await expect(
@@ -71,11 +80,12 @@ describe("update service feature flags", () => {
       }),
     ).resolves.toEqual({
       status: "ready",
-      messageKey: "update.otaReady",
+      messageKey: "update.otaReadyImmediate",
       metadata: expect.objectContaining({
         runtimeVersion: "test",
         channel: "development",
         isEmbedded: false,
+        applyStrategy: "immediate",
       }),
     });
     expect(transitions).toEqual([

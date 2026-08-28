@@ -1,12 +1,15 @@
 import * as Updates from "expo-updates";
 import {
   getCurrentUpdateMetadata,
+  getUpdateMetadataFromManifest,
   type OtaCheckResult,
 } from "./update-service";
 
 export function useUpdateStatus(): OtaCheckResult {
   const state = Updates.useUpdates();
-  const metadata = getCurrentUpdateMetadata();
+  const metadata = state.downloadedUpdate?.manifest
+    ? getUpdateMetadataFromManifest(state.downloadedUpdate.manifest)
+    : getCurrentUpdateMetadata();
 
   if (state.currentlyRunning.isEmergencyLaunch) {
     return { status: "rollback", messageKey: "update.otaRollback", metadata };
@@ -15,7 +18,14 @@ export function useUpdateStatus(): OtaCheckResult {
     return { status: "applying", messageKey: "update.otaApplying", metadata };
   }
   if (state.isUpdatePending) {
-    return { status: "ready", messageKey: "update.otaReady", metadata };
+    return {
+      status: "ready",
+      messageKey:
+        metadata.applyStrategy === "immediate"
+          ? "update.otaReadyImmediate"
+          : "update.otaReadyNextLaunch",
+      metadata,
+    };
   }
   if (state.isDownloading) {
     return {

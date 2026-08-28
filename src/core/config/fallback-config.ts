@@ -70,6 +70,7 @@ const zhCN = {
   "action.install": "前往更新",
   "action.settings": "设置",
   "action.back": "返回",
+  "action.later": "稍后处理",
   "theme.system": "跟随系统",
   "theme.light": "浅色",
   "theme.dark": "深色",
@@ -95,13 +96,18 @@ const zhCN = {
   "update.otaAvailable": "发现兼容更新，准备下载",
   "update.otaDownloading": "正在下载 OTA 更新",
   "update.otaApplying": "正在重启并应用 OTA",
+  "update.otaImmediateConfirm":
+    "此更新标记为立即应用，只有在你确认后才会重启应用。",
+  "update.otaImmediateTitle": "更新已准备好",
   "update.apply": "重启并应用 OTA",
+  "update.applyImmediate": "确认并重启应用",
   "update.rollbackApply": "重启并回到安全版本",
   "update.otaDisabled": "OTA 已被远程策略关闭",
   "update.otaUnavailable": "当前构建未启用 OTA，请使用开发构建或发布版本验证。",
   "update.otaIncompatible": "当前通道或运行时没有兼容的 OTA",
   "update.otaCurrent": "当前已是最新兼容版本",
-  "update.otaReady": "更新已下载，重启后应用",
+  "update.otaReadyNextLaunch": "更新已下载，将在下次启动时自动应用",
+  "update.otaReadyImmediate": "更新已下载，可由你确认后立即重启应用",
   "update.otaRollback": "检测到 OTA 回退，当前使用安全版本",
   "update.embedded": "内置版本",
   "update.embeddedCurrent": "当前使用 APK 内置版本",
@@ -165,6 +171,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "action.install": "Open update",
   "action.settings": "Settings",
   "action.back": "Back",
+  "action.later": "Later",
   "theme.system": "System",
   "theme.light": "Light",
   "theme.dark": "Dark",
@@ -190,7 +197,11 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "update.otaAvailable": "A compatible update is available",
   "update.otaDownloading": "Downloading OTA update",
   "update.otaApplying": "Restarting to apply OTA",
+  "update.otaImmediateConfirm":
+    "This update is marked for immediate application. The app will restart only after you confirm.",
+  "update.otaImmediateTitle": "Update ready",
   "update.apply": "Restart and apply OTA",
+  "update.applyImmediate": "Confirm and restart app",
   "update.rollbackApply": "Restart and return to the safe version",
   "update.otaDisabled": "OTA is disabled by remote policy",
   "update.otaUnavailable":
@@ -198,7 +209,10 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "update.otaIncompatible":
     "No compatible OTA exists for this channel and runtime",
   "update.otaCurrent": "This runtime is up to date",
-  "update.otaReady": "Update downloaded and ready after restart",
+  "update.otaReadyNextLaunch":
+    "Update downloaded and will be applied on the next launch",
+  "update.otaReadyImmediate":
+    "Update downloaded and can be applied after you confirm a restart",
   "update.otaRollback":
     "An OTA rollback was detected; the safe version is active",
   "update.embedded": "Embedded version",
@@ -286,6 +300,7 @@ export function createFallbackConfig(locale: SupportedLocale): BootstrapConfig {
         enabled: false,
         channel: "embedded",
         runtimeVersion: appRuntime.runtimeVersion,
+        applyStrategy: "next_launch",
         revision: null,
         updateId: null,
         baseReleaseId: null,

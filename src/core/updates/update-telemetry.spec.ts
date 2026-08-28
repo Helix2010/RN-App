@@ -12,6 +12,7 @@ describe("update telemetry adapter", () => {
       updateId: "update-safe",
       runtimeVersion: "runtime-safe",
       channel: "production",
+      applyStrategy: "immediate",
       error: new Error("secret-token-should-not-be-forwarded"),
     });
     restore();
@@ -21,6 +22,7 @@ describe("update telemetry adapter", () => {
         updateId: "update-safe",
         runtimeVersion: "runtime-safe",
         channel: "production",
+        applyStrategy: "immediate",
       },
     ]);
   });

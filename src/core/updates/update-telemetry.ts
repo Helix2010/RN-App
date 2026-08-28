@@ -11,6 +11,7 @@ export type UpdateTelemetry = {
   updateId?: unknown;
   runtimeVersion?: unknown;
   channel?: unknown;
+  applyStrategy?: unknown;
   error?: unknown;
 };
 
@@ -19,6 +20,7 @@ export type UpdateTelemetrySink = (event: {
   updateId?: string;
   runtimeVersion?: string;
   channel?: string;
+  applyStrategy?: "next_launch" | "immediate";
 }) => void;
 
 let sink: UpdateTelemetrySink = () => undefined;
@@ -43,6 +45,8 @@ export function emitUpdateTelemetry(event: UpdateTelemetry): void {
       updateId: safeString(event.updateId),
       runtimeVersion: safeString(event.runtimeVersion),
       channel: safeString(event.channel),
+      applyStrategy:
+        event.applyStrategy === "immediate" ? "immediate" : "next_launch",
     });
   } catch {
     // Telemetry must never affect update safety or app startup.

@@ -23,8 +23,19 @@ import {
   type LocalePreference,
   type ThemePreference,
 } from "../core/preferences/preferences-store";
-import { checkAndDownloadOta } from "../core/updates/update-service";
-import { FoundationThemeProvider } from "../design-system";
+import {
+  applyDownloadedOta,
+  checkAndDownloadOta,
+  type OtaCheckResult,
+} from "../core/updates/update-service";
+import {
+  Body,
+  Card,
+  FoundationThemeProvider,
+  PrimaryButton,
+  SecondaryButton,
+  Stack,
+} from "../design-system";
 import { LaunchScreen } from "./launch-screen";
 
 type RuntimeValue = {
@@ -38,6 +49,8 @@ type RuntimeValue = {
   isInitialLoading: boolean;
   isRefreshing: boolean;
   refresh: () => Promise<void>;
+  otaResult: OtaCheckResult | null;
+  applyPendingOta: () => Promise<void>;
 };
 
 const RuntimeContext = createContext<RuntimeValue | null>(null);
@@ -66,6 +79,10 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   );
   const config = snapshot.config;
   const otaAttemptedRef = useRef<string | null>(null);
+  const [otaResult, setOtaResult] = useState<OtaCheckResult | null>(null);
+  const [dismissedUpdateId, setDismissedUpdateId] = useState<string | null>(
+    null,
+  );
   const [launchMinimumElapsed, setLaunchMinimumElapsed] = useState(false);
   const [launchTimeout, setLaunchTimeout] = useState(false);
   const t = useCallback(
@@ -111,8 +128,24 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
     // OTA is deliberately a background, non-blocking operation. The native
     // module uses checkAutomatically=NEVER, so this is the only automatic
     // check and it always observes the tenant Bootstrap policy.
-    void checkAndDownloadOta(config);
+    void checkAndDownloadOta(config, {
+      onStateChange: (status) =>
+        setOtaResult((previous) => (previous ? { ...previous, status } : null)),
+    }).then(setOtaResult);
   }, [config, query.isPending, snapshot.stale]);
+  const applyPendingOta = useCallback(async () => {
+    if (!otaResult || otaResult.status !== "ready") return;
+    setOtaResult({ ...otaResult, status: "applying" });
+    try {
+      await applyDownloadedOta(otaResult.metadata.applyStrategy);
+    } catch {
+      setOtaResult({
+        ...otaResult,
+        status: "error",
+        messageKey: "update.otaError",
+      });
+    }
+  }, [otaResult]);
   const value = useMemo<RuntimeValue>(
     () => ({
       config,
@@ -125,9 +158,12 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
       isInitialLoading: query.isPending,
       isRefreshing: query.isFetching && !query.isPending,
       refresh,
+      otaResult,
+      applyPendingOta,
     }),
     [
       config,
+      applyPendingOta,
       localePreference,
       query.isFetching,
       query.isPending,
@@ -137,6 +173,7 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
       snapshot,
       t,
       themePreference,
+      otaResult,
     ],
   );
 
@@ -148,6 +185,30 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
         ) : (
           <LaunchScreen message={t("status.loading")} />
         )}
+        {otaResult?.status === "ready" &&
+        otaResult.metadata.applyStrategy === "immediate" &&
+        dismissedUpdateId !== otaResult.metadata.updateId ? (
+          <Stack position="absolute" top="$4" left="$4" right="$4" zIndex={100}>
+            <Card borderColor="$warning" backgroundColor="$surface">
+              <Stack gap="$2">
+                <Body fontWeight="800">{t("update.otaImmediateTitle")}</Body>
+                <Body>{t("update.otaImmediateConfirm")}</Body>
+                <PrimaryButton onPress={() => void applyPendingOta()}>
+                  {t("update.applyImmediate")}
+                </PrimaryButton>
+                <SecondaryButton
+                  onPress={() =>
+                    setDismissedUpdateId(
+                      otaResult.metadata.updateId ?? "pending",
+                    )
+                  }
+                >
+                  {t("action.later")}
+                </SecondaryButton>
+              </Stack>
+            </Card>
+          </Stack>
+        ) : null}
       </RuntimeContext.Provider>
     </FoundationThemeProvider>
   );
