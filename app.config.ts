@@ -12,8 +12,8 @@ const codeSigningCertificate =
   process.env.EXPO_UPDATES_CODE_SIGNING_CERTIFICATE;
 const codeSigningKeyId = process.env.EXPO_UPDATES_CODE_SIGNING_KEY_ID ?? "main";
 const applicationId = process.env.EXPO_PUBLIC_APPLICATION_ID ?? "dex-mobile";
-const appVersion = "1.1.3";
-const androidVersionCode = 7;
+const appVersion = "1.1.4";
+const androidVersionCode = 8;
 const iosBuildNumber = "3";
 const apiBaseUrl =
   process.env.EXPO_PUBLIC_API_BASE_URL ??
