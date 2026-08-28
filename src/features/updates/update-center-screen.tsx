@@ -171,7 +171,7 @@ export function UpdateCenterScreen({ navigation, locked = false }: Props) {
             </Body>
             {displayedOta.status === "ready" &&
             displayedOta.metadata.applyStrategy === "immediate" ? (
-              <Body color="$warning">{t("update.otaImmediateConfirm")}</Body>
+              <Body color="$warning">{t("update.otaImmediateRequired")}</Body>
             ) : null}
             <PrimaryButton disabled={busy} onPress={() => void checkOta()}>
               {busy ? t("update.checking") : t("action.checkupdate")}

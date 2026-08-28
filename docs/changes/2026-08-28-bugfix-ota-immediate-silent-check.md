@@ -11,7 +11,7 @@
 
 ## Given / When / Then
 
-1. Given 服务端 OTA 策略为 `immediate`，When OTA 资源下载完成，Then App 展示确认层，用户确认后才重启应用。
+1. Given 服务端 OTA 策略为 `immediate`，When OTA 资源下载完成，Then App 展示不可跳过的全屏确认层，用户必须确认后才重启应用。
 2. Given 服务端 OTA 策略为 `next_launch`，When OTA 资源下载完成，Then App 不打断当前操作，并在下次启动时应用。
 3. Given App 启动完成或从后台回到前台，When Bootstrap 策略允许 OTA，Then App 在后台静默检查；失败不阻塞用户使用。
 4. Given原生 Manifest 丢失自定义 metadata，When Bootstrap 返回 `immediate`，Then仍按 `immediate` 展示确认层。
@@ -20,7 +20,7 @@
 
 - loading / empty / content：升级中心继续展示检查中、当前版本、已下载和当前状态。
 - error / timeout / offline：静默检查失败仅记录错误状态和遥测；手动进入升级中心可再次检查。
-- 重复提交 / 取消 / 返回：检查请求全局合并；立即重启必须显式点击确认，可选择稍后。
+- 重复提交 / 取消 / 返回：检查请求全局合并；立即重启确认层不可关闭、不可稍后处理，Android 返回键被拦截；重启失败保留确认层并允许重试。
 - light / dark / 字体放大 / 无障碍：立即升级使用主题化遮罩和卡片，确认层使用 alert 语义。
 
 ## 技术影响

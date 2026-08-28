@@ -98,7 +98,11 @@ const zhCN = {
   "update.otaApplying": "正在重启并应用 OTA",
   "update.otaImmediateConfirm":
     "此更新标记为立即应用，只有在你确认后才会重启应用。",
+  "update.otaImmediateRequired":
+    "更新已下载完成，为保证应用正常运行，需要立即重启应用。重启预计需要几秒钟，请点击下方按钮继续。",
   "update.otaImmediateTitle": "更新已准备好",
+  "update.otaImmediateRetryTitle": "更新未应用",
+  "update.otaImmediateRetry": "应用更新时遇到问题，请再次点击重启并更新。",
   "update.apply": "重启并应用 OTA",
   "update.applyImmediate": "确认并重启应用",
   "update.rollbackApply": "重启并回到安全版本",
@@ -199,7 +203,12 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "update.otaApplying": "Restarting to apply OTA",
   "update.otaImmediateConfirm":
     "This update is marked for immediate application. The app will restart only after you confirm.",
+  "update.otaImmediateRequired":
+    "The update is ready and requires an immediate restart. This should take a few seconds; tap the button below to continue.",
   "update.otaImmediateTitle": "Update ready",
+  "update.otaImmediateRetryTitle": "Update not applied",
+  "update.otaImmediateRetry":
+    "The update could not be applied. Tap the button to retry restarting and applying it.",
   "update.apply": "Restart and apply OTA",
   "update.applyImmediate": "Confirm and restart app",
   "update.rollbackApply": "Restart and return to the safe version",

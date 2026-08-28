@@ -9,7 +9,7 @@ import {
   useState,
   type PropsWithChildren,
 } from "react";
-import { AppState } from "react-native";
+import { AppState, BackHandler } from "react-native";
 import type { BootstrapSnapshot } from "../core/config/bootstrap-repository";
 import type {
   BootstrapConfig,
@@ -34,7 +34,6 @@ import {
   Card,
   FoundationThemeProvider,
   PrimaryButton,
-  SecondaryButton,
   Stack,
 } from "../design-system";
 import { LaunchScreen } from "./launch-screen";
@@ -81,9 +80,6 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   const config = snapshot.config;
   const otaLastCheckRef = useRef<{ key: string; at: number } | null>(null);
   const [otaResult, setOtaResult] = useState<OtaCheckResult | null>(null);
-  const [dismissedUpdateId, setDismissedUpdateId] = useState<string | null>(
-    null,
-  );
   const [launchMinimumElapsed, setLaunchMinimumElapsed] = useState(false);
   const [launchTimeout, setLaunchTimeout] = useState(false);
   const nativeUpdateStatus = useUpdateStatus();
@@ -146,7 +142,10 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   }, [config.localization.refreshIntervalSeconds, query, runSilentOtaCheck]);
   const pendingOta = useMemo(
     () =>
-      otaResult?.status === "ready"
+      otaResult &&
+      (otaResult.status === "ready" ||
+        (otaResult.metadata.applyStrategy === "immediate" &&
+          (otaResult.status === "applying" || otaResult.status === "error")))
         ? otaResult
         : nativeUpdateStatus.status === "ready"
           ? {
@@ -162,8 +161,12 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
     [config.update.ota.applyStrategy, nativeUpdateStatus, otaResult],
   );
   const applyPendingOta = useCallback(async () => {
-    if (!pendingOta) return;
-    setOtaResult({ ...pendingOta, status: "applying" });
+    if (!pendingOta || pendingOta.status === "applying") return;
+    setOtaResult({
+      ...pendingOta,
+      status: "applying",
+      messageKey: "update.otaApplying",
+    });
     try {
       await applyDownloadedOta(pendingOta.metadata.applyStrategy);
     } catch {
@@ -174,6 +177,19 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
       });
     }
   }, [pendingOta]);
+  const immediateOtaVisible =
+    pendingOta?.metadata.applyStrategy === "immediate" &&
+    (pendingOta.status === "ready" ||
+      pendingOta.status === "applying" ||
+      pendingOta.status === "error");
+  useEffect(() => {
+    if (!immediateOtaVisible) return;
+    const subscription = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => true,
+    );
+    return () => subscription.remove();
+  }, [immediateOtaVisible]);
   const value = useMemo<RuntimeValue>(
     () => ({
       config,
@@ -213,8 +229,7 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
         ) : (
           <LaunchScreen message={t("status.loading")} />
         )}
-        {pendingOta?.metadata.applyStrategy === "immediate" &&
-        dismissedUpdateId !== pendingOta.metadata.updateId ? (
+        {immediateOtaVisible ? (
           <Stack
             position="absolute"
             top={0}
@@ -235,20 +250,30 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
               backgroundColor="$surface"
             >
               <Stack gap="$2">
-                <Body fontWeight="800">{t("update.otaImmediateTitle")}</Body>
-                <Body>{t("update.otaImmediateConfirm")}</Body>
-                <PrimaryButton onPress={() => void applyPendingOta()}>
-                  {t("update.applyImmediate")}
-                </PrimaryButton>
-                <SecondaryButton
-                  onPress={() =>
-                    setDismissedUpdateId(
-                      pendingOta.metadata.updateId ?? "pending",
-                    )
-                  }
+                <Body fontWeight="800">
+                  {t(
+                    pendingOta.status === "error"
+                      ? "update.otaImmediateRetryTitle"
+                      : "update.otaImmediateTitle",
+                  )}
+                </Body>
+                <Body>
+                  {t(
+                    pendingOta.status === "applying"
+                      ? "update.otaApplying"
+                      : pendingOta.status === "error"
+                        ? "update.otaImmediateRetry"
+                        : "update.otaImmediateRequired",
+                  )}
+                </Body>
+                <PrimaryButton
+                  disabled={pendingOta.status === "applying"}
+                  onPress={() => void applyPendingOta()}
                 >
-                  {t("action.later")}
-                </SecondaryButton>
+                  {pendingOta.status === "applying"
+                    ? t("update.otaApplying")
+                    : t("update.applyImmediate")}
+                </PrimaryButton>
               </Stack>
             </Card>
           </Stack>
