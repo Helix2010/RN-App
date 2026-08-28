@@ -19,6 +19,7 @@ import {
   SectionTitle,
   Stack,
 } from "../../design-system";
+import { getCurrentUpdateMetadata } from "../../core/updates/update-service";
 import type {
   LocalePreference,
   ThemePreference,
@@ -38,6 +39,12 @@ export function SettingsScreen({ navigation }: Props) {
     setLocale,
     setTheme,
   } = useFoundationRuntime();
+  const currentUpdate = getCurrentUpdateMetadata();
+  const currentOtaRevision =
+    currentUpdate.updateId &&
+    currentUpdate.updateId === config.update.ota.updateId
+      ? config.update.ota.revision
+      : null;
   const themeOptions: { value: ThemePreference; label: string }[] = config.theme
     .allowUserOverride
     ? [
@@ -123,7 +130,10 @@ export function SettingsScreen({ navigation }: Props) {
           </Card>
           <Card>
             <Label>{t("settings.about")}</Label>
-            <RowItem label={t("settings.version")} value={config.app.version} />
+            <RowItem
+              label={t("settings.version")}
+              value={`${config.app.version} (${t("settings.installVersion")})`}
+            />
             <RowItem
               label={t("settings.build")}
               value={config.app.buildNumber}
@@ -132,6 +142,26 @@ export function SettingsScreen({ navigation }: Props) {
               label={t("settings.runtime")}
               value={config.app.runtimeVersion}
             />
+            <RowItem
+              label={t("settings.updateSource")}
+              value={
+                currentUpdate.isEmbedded
+                  ? t("settings.embeddedBundle")
+                  : t("settings.otaBundle")
+              }
+            />
+            {!currentUpdate.isEmbedded ? (
+              <>
+                <RowItem
+                  label={t("settings.otaRevision")}
+                  value={currentOtaRevision ? String(currentOtaRevision) : "-"}
+                />
+                <RowItem
+                  label={t("settings.otaUpdateId")}
+                  value={currentUpdate.updateId ?? "-"}
+                />
+              </>
+            ) : null}
             <RowItem
               label={t("settings.configVersion")}
               value={config.configVersion}
