@@ -38,3 +38,21 @@
 - iOS / Android：`pnpm typecheck`、相关 Jest、Expo config profile 已运行；iOS/Android Development Build 未运行，需在执行 prebuild 后全量验证原生 `EXUpdatesEnabled=true` 与 `NEVER`。
 - 灰度指标与停止条件：本期不做灰度；上线前观察 OTA check/download error、启动失败、emergency launch 和 embedded fallback。
 - 回滚：服务端关闭 Bootstrap `otaEnabled`；暂停/撤回 OTA；客户端失败时继续缓存或 embedded；原生配置问题通过上一全量包回退。
+
+## OTA 构建与发布命令
+
+先提交代码，再从租户对应的 API 域名生成完整 OTA 包：
+
+```bash
+pnpm ota:build -- \
+  --platform android \
+  --channel production \
+  --distribution-channel direct \
+  --api-base-url https://api.anyfun.win \
+  --application-id dex-mobile \
+  --runtime-version 629bcba8f8b7a118f129d7085f7d7b27ced0884e \
+  --apply-strategy next_launch \
+  --output-zip ./artifacts/ota-android-production.zip
+```
+
+脚本会完整导出 Expo Bundle、读取 Android/iOS Runtime Fingerprint、生成 UUID、计算资源 SHA-256、补充租户 `scopeKey`，并生成可直接上传到 RN-Admin 的 `ota-package.zip`。如果需要与已经构建的 APK 完全一致，建议把管理端基线 APK 展示的 Runtime Version 作为 `--runtime-version` 传入。当前 Manifest 签名尚未接入，生成包只用于开发验证，不能直接作为生产安全 OTA。

@@ -21,6 +21,7 @@
     "test:watch": "jest --watch",
     "api:check": "node scripts/check-api-contract.mjs",
     "config:check": "node scripts/check-build-profiles.mjs",
+    "ota:build": "node scripts/build-ota.mjs",
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm api:check && pnpm config:check",
     "workflow:new": "node scripts/create-change.mjs"
   },
