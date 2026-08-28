@@ -12,6 +12,9 @@ const codeSigningCertificate =
   process.env.EXPO_UPDATES_CODE_SIGNING_CERTIFICATE;
 const codeSigningKeyId = process.env.EXPO_UPDATES_CODE_SIGNING_KEY_ID ?? "main";
 const applicationId = process.env.EXPO_PUBLIC_APPLICATION_ID ?? "dex-mobile";
+const appVersion = "1.1.2";
+const androidVersionCode = 6;
+const iosBuildNumber = "3";
 const apiBaseUrl =
   process.env.EXPO_PUBLIC_API_BASE_URL ??
   (distributionChannel === "development" ? "http://localhost:3000" : "");
@@ -55,18 +58,18 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   name: "AnyFun",
   slug: "anyfun-foundation",
   scheme: "anyfun",
-  version: "1.1.2",
+  version: appVersion,
   orientation: "portrait",
   userInterfaceStyle: "automatic",
   icon: "./assets/icon.png",
   ios: {
     supportsTablet: true,
     bundleIdentifier: "com.anyfun.foundation",
-    buildNumber: "3",
+    buildNumber: iosBuildNumber,
   },
   android: {
     package: "com.anyfun.foundation",
-    versionCode: 6,
+    versionCode: androidVersionCode,
     predictiveBackGestureEnabled: true,
     adaptiveIcon: {
       backgroundColor: "#E9F0FF",
@@ -107,5 +110,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     distributionChannel,
     otaChannel,
     applicationId,
+    appVersion,
+    buildNumber:
+      process.env.EXPO_OS === "ios"
+        ? iosBuildNumber
+        : String(androidVersionCode),
   },
 });

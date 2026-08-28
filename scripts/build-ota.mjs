@@ -43,6 +43,23 @@ const zipPath = resolve(
 const applyStrategy = args.get("apply-strategy") ?? "next_launch";
 const runtimeVersionOverride = args.get("runtime-version");
 const allowDirty = args.get("allow-dirty") === "true";
+const resolvedExpoConfig = JSON.parse(
+  execFileSync(
+    "pnpm",
+    ["exec", "expo", "config", "--json", "--type", "public"],
+    {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        EXPO_PUBLIC_API_BASE_URL: apiBaseUrl,
+        EXPO_PUBLIC_DISTRIBUTION_CHANNEL: distributionChannel,
+        EXPO_PUBLIC_OTA_CHANNEL: channel,
+        EXPO_PUBLIC_APPLICATION_ID: applicationId,
+        EXPO_OS: platform,
+      },
+    },
+  ),
+);
 
 if (!platform || !["android", "ios"].includes(platform)) {
   fail(
@@ -152,7 +169,21 @@ try {
       ),
     platform,
     channel,
-    extra: { scopeKey: apiOrigin },
+    extra: {
+      scopeKey: apiOrigin,
+      // expo-constants resolves Constants.expoConfig from this nested
+      // standard Expo Updates field after a remote OTA launch.
+      expoClient: resolvedExpoConfig,
+      apiBaseUrl,
+      distributionChannel,
+      otaChannel: channel,
+      applicationId,
+      appVersion: resolvedExpoConfig.version,
+      buildNumber:
+        platform === "ios"
+          ? resolvedExpoConfig.ios?.buildNumber
+          : String(resolvedExpoConfig.android?.versionCode ?? "0"),
+    },
     metadata: { channel, applyStrategy, sourceCommitSha: commitSha },
     launchAsset: {
       path: bundlePath,

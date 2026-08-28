@@ -23,7 +23,13 @@ function publicExtra(name: string, fallback: string): string {
   return typeof value === "string" && value !== "" ? value : fallback;
 }
 
+function appVersion(): string {
+  return publicExtra("appVersion", Constants.expoConfig?.version ?? "1.0.0");
+}
+
 function buildNumber(): string {
+  const configured = Constants.expoConfig?.extra?.buildNumber;
+  if (typeof configured === "string" && configured !== "") return configured;
   if (Platform.OS === "ios") {
     return Constants.expoConfig?.ios?.buildNumber ?? "0";
   }
@@ -31,7 +37,7 @@ function buildNumber(): string {
 }
 
 export const appRuntime = {
-  version: Constants.expoConfig?.version ?? "1.0.0",
+  version: appVersion(),
   buildNumber: buildNumber(),
   platform: Platform.OS === "ios" ? "ios" : "android",
   distributionChannel: distributionChannel(),

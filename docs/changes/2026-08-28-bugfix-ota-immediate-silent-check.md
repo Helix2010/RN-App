@@ -5,7 +5,7 @@
 ## 用户场景与现状证据
 
 - 用户/角色：已安装 AnyFun APK 的终端用户。
-- 当前行为或复现：管理端选择“立即重启”后，App 仍显示“下次启动生效”；升级检查需要用户手动进入升级中心。
+- 当前行为或复现：管理端选择“立即重启”后，App 仍显示“下次启动生效”；升级检查需要用户手动进入升级中心。第一次修复 OTA 后，页面还出现 `1.0.0 / development / embedded`，原因是 OTA Manifest 覆盖了 `Constants.expoConfig`，旧 OTA 没有携带 API 与客户端身份。
 - 代码调用链：`FoundationRuntimeProvider` → `checkAndDownloadOta` → `expo-updates`；策略来自服务端 Bootstrap 与 OTA Manifest。
 - 非目标：不改变 Native ABI、APK 全量升级、EAS 账户托管或服务端 OTA 发布状态机。
 
@@ -14,7 +14,8 @@
 1. Given 服务端 OTA 策略为 `immediate`，When OTA 资源下载完成，Then App 展示不可跳过的全屏确认层，用户必须确认后才重启应用。
 2. Given 服务端 OTA 策略为 `next_launch`，When OTA 资源下载完成，Then App 不打断当前操作，并在下次启动时应用。
 3. Given App 启动完成或从后台回到前台，When Bootstrap 策略允许 OTA，Then App 在后台静默检查；失败不阻塞用户使用。
-4. Given原生 Manifest 丢失自定义 metadata，When Bootstrap 返回 `immediate`，Then仍按 `immediate` 展示确认层。
+4. Given 原生 Manifest 丢失自定义 metadata，When Bootstrap 返回 `immediate`，Then 仍按 `immediate` 展示确认层。
+5. Given OTA Bundle 已切换 `Constants.expoConfig`，When App 发起 Bootstrap，Then 使用 OTA Manifest 携带的固定 API、渠道、应用身份、版本和 Build，不回退到 localhost/development/1.0.0。
 
 ## UI 与交互状态
 
