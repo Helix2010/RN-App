@@ -11,6 +11,13 @@ const expectedChannels = {
   "android-direct": "direct",
   "ios-mdm": "mdm",
 };
+const expectedOtaChannels = {
+  development: "development",
+  staging: "staging",
+  "production-store": "production",
+  "android-direct": "production",
+  "ios-mdm": "production",
+};
 
 for (const [profileName, expectedChannel] of Object.entries(expectedChannels)) {
   const profile = eas.build?.[profileName];
@@ -22,6 +29,13 @@ for (const [profileName, expectedChannel] of Object.entries(expectedChannels)) {
   if (channel !== expectedChannel) {
     throw new Error(
       `${profileName} must use distribution channel ${expectedChannel}, received ${channel ?? "missing"}`,
+    );
+  }
+
+  const otaChannel = profile.env?.EXPO_PUBLIC_OTA_CHANNEL;
+  if (otaChannel !== expectedOtaChannels[profileName]) {
+    throw new Error(
+      `${profileName} must use OTA channel ${expectedOtaChannels[profileName]}, received ${otaChannel ?? "missing"}`,
     );
   }
 

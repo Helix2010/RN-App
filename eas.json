@@ -7,6 +7,7 @@
       "channel": "development",
       "env": {
         "EXPO_PUBLIC_DISTRIBUTION_CHANNEL": "development",
+        "EXPO_PUBLIC_OTA_CHANNEL": "development",
         "EXPO_PUBLIC_API_BASE_URL": "http://localhost:3000",
         "EXPO_PUBLIC_APPLICATION_ID": "dex-mobile"
       }
@@ -16,6 +17,7 @@
       "channel": "staging",
       "env": {
         "EXPO_PUBLIC_DISTRIBUTION_CHANNEL": "staging",
+        "EXPO_PUBLIC_OTA_CHANNEL": "staging",
         "EXPO_PUBLIC_API_BASE_URL": "https://api.anyfun.win",
         "EXPO_PUBLIC_APPLICATION_ID": "dex-mobile"
       }
@@ -25,6 +27,7 @@
       "channel": "production",
       "env": {
         "EXPO_PUBLIC_DISTRIBUTION_CHANNEL": "store",
+        "EXPO_PUBLIC_OTA_CHANNEL": "production",
         "EXPO_PUBLIC_API_BASE_URL": "https://api.anyfun.win",
         "EXPO_PUBLIC_APPLICATION_ID": "dex-mobile"
       }
@@ -36,6 +39,7 @@
       "android": { "buildType": "apk" },
       "env": {
         "EXPO_PUBLIC_DISTRIBUTION_CHANNEL": "direct",
+        "EXPO_PUBLIC_OTA_CHANNEL": "production",
         "EXPO_PUBLIC_API_BASE_URL": "https://api.anyfun.win",
         "EXPO_PUBLIC_APPLICATION_ID": "dex-mobile"
       }
@@ -46,6 +50,7 @@
       "channel": "mdm",
       "env": {
         "EXPO_PUBLIC_DISTRIBUTION_CHANNEL": "mdm",
+        "EXPO_PUBLIC_OTA_CHANNEL": "production",
         "EXPO_PUBLIC_API_BASE_URL": "https://api.anyfun.win",
         "EXPO_PUBLIC_APPLICATION_ID": "dex-mobile"
       }

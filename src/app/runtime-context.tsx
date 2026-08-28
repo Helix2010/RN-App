@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type PropsWithChildren,
 } from "react";
@@ -22,6 +23,7 @@ import {
   type LocalePreference,
   type ThemePreference,
 } from "../core/preferences/preferences-store";
+import { checkAndDownloadOta } from "../core/updates/update-service";
 import { FoundationThemeProvider } from "../design-system";
 import { LaunchScreen } from "./launch-screen";
 
@@ -63,6 +65,7 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
     [fallback, query.data],
   );
   const config = snapshot.config;
+  const otaAttemptedRef = useRef<string | null>(null);
   const [launchMinimumElapsed, setLaunchMinimumElapsed] = useState(false);
   const [launchTimeout, setLaunchTimeout] = useState(false);
   const t = useCallback(
@@ -94,6 +97,22 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
       subscription.remove();
     };
   }, [config.localization.refreshIntervalSeconds, query]);
+  useEffect(() => {
+    if (query.isPending || snapshot.stale) return;
+    const key = [
+      config.configVersion,
+      config.features.otaEnabled,
+      config.update.ota.enabled,
+      config.update.ota.channel,
+      config.update.ota.runtimeVersion,
+    ].join(":");
+    if (otaAttemptedRef.current === key) return;
+    otaAttemptedRef.current = key;
+    // OTA is deliberately a background, non-blocking operation. The native
+    // module uses checkAutomatically=NEVER, so this is the only automatic
+    // check and it always observes the tenant Bootstrap policy.
+    void checkAndDownloadOta(config);
+  }, [config, query.isPending, snapshot.stale]);
   const value = useMemo<RuntimeValue>(
     () => ({
       config,

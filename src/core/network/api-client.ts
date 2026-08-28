@@ -35,6 +35,7 @@ export const appRuntime = {
   buildNumber: buildNumber(),
   platform: Platform.OS === "ios" ? "ios" : "android",
   distributionChannel: distributionChannel(),
+  otaChannel: publicExtra("otaChannel", distributionChannel()),
   runtimeVersion: Updates.runtimeVersion ?? "embedded",
   apiBaseUrl: baseUrl(),
   applicationId: publicExtra("applicationId", "dex-mobile"),

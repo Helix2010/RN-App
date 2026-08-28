@@ -1,45 +1,192 @@
 import * as Linking from "expo-linking";
 import * as Updates from "expo-updates";
 import type { BootstrapConfig } from "../config/bootstrap.schema";
+import { appRuntime } from "../network/api-client";
+import { emitUpdateTelemetry } from "./update-telemetry";
 
-export type OtaCheckResult =
-  | { status: "disabled"; messageKey: string }
-  | { status: "current"; messageKey: string }
-  | { status: "ready"; messageKey: string }
-  | { status: "error"; messageKey: string };
+export type UpdateState =
+  | "embedded"
+  | "checking"
+  | "available"
+  | "downloading"
+  | "ready"
+  | "applying"
+  | "current"
+  | "error"
+  | "rollback";
+
+export type UpdateMetadata = {
+  updateId: string | null;
+  runtimeVersion: string;
+  channel: string | null;
+  isEmbedded: boolean;
+  createdAt: string | null;
+};
+
+export type OtaCheckResult = {
+  status: UpdateState;
+  messageKey: string;
+  metadata: UpdateMetadata;
+};
+
+export type OtaCheckOptions = {
+  onStateChange?: (state: UpdateState) => void;
+};
+
+let inFlightCheck: Promise<OtaCheckResult> | null = null;
+
+function currentMetadata(): UpdateMetadata {
+  return {
+    updateId: Updates.updateId ?? null,
+    runtimeVersion: Updates.runtimeVersion ?? "embedded",
+    channel: Updates.channel ?? appRuntime.otaChannel,
+    isEmbedded: Updates.isEmbeddedLaunch,
+    createdAt: Updates.createdAt?.toISOString() ?? null,
+  };
+}
+
+function result(
+  status: UpdateState,
+  messageKey: string,
+  metadata = currentMetadata(),
+): OtaCheckResult {
+  return { status, messageKey, metadata };
+}
+
+function isRollback(value: unknown): value is { isRollBackToEmbedded: true } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "isRollBackToEmbedded" in value &&
+    value.isRollBackToEmbedded === true
+  );
+}
 
 export async function checkAndDownloadOta(
   config: BootstrapConfig,
+  options?: OtaCheckOptions,
 ): Promise<OtaCheckResult> {
-  if (!config.features.otaEnabled || !config.update.ota.enabled) {
-    return { status: "disabled", messageKey: "update.otaDisabled" };
-  }
-  if (!Updates.isEnabled) {
-    return {
-      status: "disabled",
-      messageKey: "update.otaUnavailable",
-    };
-  }
-
+  if (inFlightCheck) return inFlightCheck;
+  inFlightCheck = performCheckAndDownloadOta(config, options);
   try {
-    const check = await Updates.checkForUpdateAsync();
-    if (!check.isAvailable) {
-      return { status: "current", messageKey: "update.otaCurrent" };
-    }
-    const result = await Updates.fetchUpdateAsync();
-    return result.isNew
-      ? { status: "ready", messageKey: "update.otaReady" }
-      : { status: "current", messageKey: "update.otaCurrent" };
-  } catch {
-    return {
-      status: "error",
-      messageKey: "update.otaError",
-    };
+    return await inFlightCheck;
+  } finally {
+    inFlightCheck = null;
   }
 }
 
+async function performCheckAndDownloadOta(
+  config: BootstrapConfig,
+  options?: OtaCheckOptions,
+): Promise<OtaCheckResult> {
+  const transition = (state: UpdateState): void => {
+    options?.onStateChange?.(state);
+  };
+  if (!config.features.otaEnabled || !config.update.ota.enabled) {
+    const status = Updates.isEmbeddedLaunch ? "embedded" : "current";
+    transition(status);
+    return result(status, "update.otaDisabled");
+  }
+  if (!Updates.isEnabled) {
+    const status = Updates.isEmbeddedLaunch ? "embedded" : "current";
+    transition(status);
+    return result(status, "update.otaUnavailable");
+  }
+  if (
+    config.update.ota.runtimeVersion !== appRuntime.runtimeVersion ||
+    config.update.ota.channel !== appRuntime.otaChannel
+  ) {
+    const status = Updates.isEmbeddedLaunch ? "embedded" : "current";
+    transition(status);
+    emitUpdateTelemetry({ stage: "current" });
+    return result(status, "update.otaIncompatible");
+  }
+
+  transition("checking");
+  emitUpdateTelemetry({ stage: "checking" });
+  try {
+    const check = await Updates.checkForUpdateAsync();
+    if (isRollback(check)) {
+      const rollback = await Updates.fetchUpdateAsync();
+      if (!isRollback(rollback)) {
+        transition("error");
+        emitUpdateTelemetry({ stage: "error" });
+        return resultValue("error", "update.otaError");
+      }
+      transition("rollback");
+      emitUpdateTelemetry({ stage: "rollback" });
+      return result("rollback", "update.otaRollback");
+    }
+    if (!check.isAvailable) {
+      const status = Updates.isEmbeddedLaunch ? "embedded" : "current";
+      transition(status);
+      emitUpdateTelemetry({ stage: "current" });
+      return result(status, "update.otaCurrent");
+    }
+    transition("available");
+    emitUpdateTelemetry({ stage: "available", updateId: check.manifest?.id });
+    transition("downloading");
+    emitUpdateTelemetry({ stage: "downloading", updateId: check.manifest?.id });
+    const fetched = await Updates.fetchUpdateAsync();
+    if (isRollback(fetched)) {
+      transition("rollback");
+      emitUpdateTelemetry({ stage: "rollback" });
+      return { ...resultValue("rollback", "update.otaRollback") };
+    }
+    if (fetched.isNew) {
+      const metadata = metadataFromManifest(fetched.manifest);
+      transition("ready");
+      emitUpdateTelemetry({
+        stage: "ready",
+        updateId: metadata.updateId,
+        runtimeVersion: metadata.runtimeVersion,
+        channel: metadata.channel,
+      });
+      return resultValue("ready", "update.otaReady", metadata);
+    }
+    emitUpdateTelemetry({ stage: "current" });
+    return resultValue("current", "update.otaCurrent");
+  } catch (error) {
+    transition("error");
+    emitUpdateTelemetry({ stage: "error", error });
+    return resultValue("error", "update.otaError");
+  }
+}
+
+function resultValue(
+  status: UpdateState,
+  messageKey: string,
+  metadata = currentMetadata(),
+): OtaCheckResult {
+  return { status, messageKey, metadata };
+}
+
+function metadataFromManifest(manifest: unknown): UpdateMetadata {
+  const record =
+    typeof manifest === "object" && manifest !== null
+      ? (manifest as Record<string, unknown>)
+      : {};
+  const runtimeVersion =
+    typeof record.runtimeVersion === "string"
+      ? record.runtimeVersion
+      : (Updates.runtimeVersion ?? "embedded");
+  return {
+    updateId:
+      typeof record.id === "string" ? record.id : (Updates.updateId ?? null),
+    runtimeVersion,
+    channel: Updates.channel ?? appRuntime.otaChannel,
+    isEmbedded: false,
+    createdAt: typeof record.createdAt === "string" ? record.createdAt : null,
+  };
+}
+
 export async function applyDownloadedOta(): Promise<void> {
+  emitUpdateTelemetry({ stage: "applying" });
   await Updates.reloadAsync();
+}
+
+export function getCurrentUpdateMetadata(): UpdateMetadata {
+  return currentMetadata();
 }
 
 export async function openFullUpdate(

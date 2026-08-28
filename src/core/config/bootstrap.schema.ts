@@ -85,6 +85,10 @@ export const bootstrapSchema = z.object({
       enabled: z.boolean(),
       channel: z.string().min(1),
       runtimeVersion: z.string().min(1),
+      revision: z.number().int().positive().nullable().optional(),
+      updateId: z.string().min(1).nullable().optional(),
+      baseReleaseId: z.string().min(1).nullable().optional(),
+      releaseNotes: z.array(z.string()).optional(),
     }),
     full: z.object({
       channel: z.enum(["store", "direct", "mdm", "development"]),

@@ -5,9 +5,11 @@ import { useFoundationRuntime } from "../../app/runtime-context";
 import {
   applyDownloadedOta,
   checkAndDownloadOta,
+  getCurrentUpdateMetadata,
   openFullUpdate,
   type OtaCheckResult,
 } from "../../core/updates/update-service";
+import { useUpdateStatus } from "../../core/updates/use-update-status";
 import {
   Badge,
   Body,
@@ -36,11 +38,33 @@ export function UpdateCenterScreen({ navigation, locked = false }: Props) {
   const [ota, setOta] = useState<OtaCheckResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [fullMessage, setFullMessage] = useState<string | null>(null);
+  const currentUpdate = getCurrentUpdateMetadata();
+  const nativeOta = useUpdateStatus();
+  const displayedOta = ota ?? nativeOta;
 
   const checkOta = async (): Promise<void> => {
     setBusy(true);
-    setOta(await checkAndDownloadOta(config));
-    setBusy(false);
+    try {
+      setOta(
+        await checkAndDownloadOta(config, {
+          onStateChange: (status) =>
+            setOta((previous) => ({
+              status,
+              messageKey:
+                status === "checking"
+                  ? "update.checking"
+                  : status === "available"
+                    ? "update.otaAvailable"
+                    : status === "downloading"
+                      ? "update.otaDownloading"
+                      : (previous?.messageKey ?? "update.otaCurrent"),
+              metadata: previous?.metadata ?? getCurrentUpdateMetadata(),
+            })),
+        }),
+      );
+    } finally {
+      setBusy(false);
+    }
   };
 
   const openFull = async (): Promise<void> => {
@@ -50,6 +74,21 @@ export function UpdateCenterScreen({ navigation, locked = false }: Props) {
       opened ? t("update.fullOpened") : t("update.fullUnavailable"),
     );
     setBusy(false);
+  };
+
+  const applyOta = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      await applyDownloadedOta();
+    } catch {
+      setOta((previous) =>
+        previous
+          ? { ...previous, status: "error", messageKey: "update.otaError" }
+          : null,
+      );
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -106,17 +145,28 @@ export function UpdateCenterScreen({ navigation, locked = false }: Props) {
             <Body>
               {t("update.runtime")} · {config.update.ota.runtimeVersion}
             </Body>
-            {ota ? (
-              <Body color={ota.status === "error" ? "$danger" : "$textMuted"}>
-                {t(ota.messageKey)}
-              </Body>
-            ) : null}
+            <Body>
+              {t("update.release")} ·{" "}
+              {currentUpdate.isEmbedded
+                ? t("update.embedded")
+                : (currentUpdate.updateId ?? t("update.notConfigured"))}
+            </Body>
+            <Body
+              color={displayedOta.status === "error" ? "$danger" : "$textMuted"}
+            >
+              {t(displayedOta.messageKey)}
+            </Body>
             <PrimaryButton disabled={busy} onPress={() => void checkOta()}>
               {busy ? t("update.checking") : t("action.checkupdate")}
             </PrimaryButton>
-            {ota?.status === "ready" ? (
-              <SecondaryButton onPress={() => void applyDownloadedOta()}>
-                {t("update.apply")}
+            {displayedOta.status === "ready" ||
+            displayedOta.status === "rollback" ? (
+              <SecondaryButton disabled={busy} onPress={() => void applyOta()}>
+                {t(
+                  displayedOta.status === "rollback"
+                    ? "update.rollbackApply"
+                    : "update.apply",
+                )}
               </SecondaryButton>
             ) : null}
           </Card>
