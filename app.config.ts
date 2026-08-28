@@ -55,7 +55,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   name: "AnyFun",
   slug: "anyfun-foundation",
   scheme: "anyfun",
-  version: "1.1.1",
+  version: "1.1.2",
   orientation: "portrait",
   userInterfaceStyle: "automatic",
   icon: "./assets/icon.png",
@@ -66,7 +66,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   android: {
     package: "com.anyfun.foundation",
-    versionCode: 5,
+    versionCode: 6,
     predictiveBackGestureEnabled: true,
     adaptiveIcon: {
       backgroundColor: "#E9F0FF",
