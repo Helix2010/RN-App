@@ -100,6 +100,8 @@ const zhCN = {
     "此更新标记为立即应用，只有在你确认后才会重启应用。",
   "update.otaImmediateRequired":
     "更新已下载完成，为保证应用正常运行，需要立即重启应用。重启预计需要几秒钟，请点击下方按钮继续。",
+  "update.otaImmediateRequiredLabel": "必须完成更新",
+  "update.otaImmediateHint": "请保持网络连接，重启期间请勿退出应用。",
   "update.otaImmediateTitle": "更新已准备好",
   "update.otaImmediateRetryTitle": "更新未应用",
   "update.otaImmediateRetry": "应用更新时遇到问题，请再次点击重启并更新。",
@@ -205,6 +207,9 @@ const enUS: Record<keyof typeof zhCN, string> = {
     "This update is marked for immediate application. The app will restart only after you confirm.",
   "update.otaImmediateRequired":
     "The update is ready and requires an immediate restart. This should take a few seconds; tap the button below to continue.",
+  "update.otaImmediateRequiredLabel": "Update required",
+  "update.otaImmediateHint":
+    "Keep your network connection available and do not close the app while it restarts.",
   "update.otaImmediateTitle": "Update ready",
   "update.otaImmediateRetryTitle": "Update not applied",
   "update.otaImmediateRetry":

@@ -9,7 +9,7 @@ import {
   useState,
   type PropsWithChildren,
 } from "react";
-import { AppState, BackHandler } from "react-native";
+import { AppState, BackHandler, Modal } from "react-native";
 import type { BootstrapSnapshot } from "../core/config/bootstrap-repository";
 import type {
   BootstrapConfig,
@@ -33,7 +33,9 @@ import {
   Body,
   Card,
   FoundationThemeProvider,
+  Label,
   PrimaryButton,
+  SectionTitle,
   Stack,
 } from "../design-system";
 import { LaunchScreen } from "./launch-screen";
@@ -229,55 +231,76 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
         ) : (
           <LaunchScreen message={t("status.loading")} />
         )}
-        {immediateOtaVisible ? (
-          <Stack
-            position="absolute"
-            top={0}
-            right={0}
-            bottom={0}
-            left={0}
-            zIndex={100}
-            justifyContent="center"
-            padding="$4"
-            backgroundColor="$backdrop"
-            accessibilityRole="alert"
-          >
-            <Card
-              width="100%"
-              maxWidth={460}
-              alignSelf="center"
-              borderColor="$warning"
-              backgroundColor="$surface"
+        <Modal
+          visible={immediateOtaVisible}
+          transparent
+          animationType="fade"
+          statusBarTranslucent
+          navigationBarTranslucent
+          presentationStyle="overFullScreen"
+          onRequestClose={() => undefined}
+        >
+          <FoundationThemeProvider config={config} preference={themePreference}>
+            <Stack
+              flex={1}
+              justifyContent="center"
+              padding="$4"
+              backgroundColor="$backdrop"
+              accessibilityRole="alert"
+              accessibilityViewIsModal
             >
-              <Stack gap="$2">
-                <Body fontWeight="800">
-                  {t(
-                    pendingOta.status === "error"
-                      ? "update.otaImmediateRetryTitle"
-                      : "update.otaImmediateTitle",
-                  )}
-                </Body>
-                <Body>
-                  {t(
-                    pendingOta.status === "applying"
-                      ? "update.otaApplying"
-                      : pendingOta.status === "error"
-                        ? "update.otaImmediateRetry"
-                        : "update.otaImmediateRequired",
-                  )}
-                </Body>
-                <PrimaryButton
-                  disabled={pendingOta.status === "applying"}
-                  onPress={() => void applyPendingOta()}
+              {pendingOta ? (
+                <Card
+                  width="100%"
+                  maxWidth={460}
+                  alignSelf="center"
+                  borderColor="$warning"
+                  backgroundColor="$surface"
+                  padding="$5"
                 >
-                  {pendingOta.status === "applying"
-                    ? t("update.otaApplying")
-                    : t("update.applyImmediate")}
-                </PrimaryButton>
-              </Stack>
-            </Card>
-          </Stack>
-        ) : null}
+                  <Stack gap="$3">
+                    <Label color="$warning">
+                      {t("update.otaImmediateRequiredLabel")}
+                    </Label>
+                    <SectionTitle>
+                      {t(
+                        pendingOta.status === "error"
+                          ? "update.otaImmediateRetryTitle"
+                          : "update.otaImmediateTitle",
+                      )}
+                    </SectionTitle>
+                    <Body>
+                      {t(
+                        pendingOta.status === "applying"
+                          ? "update.otaApplying"
+                          : pendingOta.status === "error"
+                            ? "update.otaImmediateRetry"
+                            : "update.otaImmediateRequired",
+                      )}
+                    </Body>
+                    <Stack
+                      padding="$3"
+                      borderRadius="$3"
+                      backgroundColor="$surfaceVariant"
+                    >
+                      <Body color="$textMuted" fontSize={13}>
+                        {t("update.otaImmediateHint")}
+                      </Body>
+                    </Stack>
+                    <PrimaryButton
+                      disabled={pendingOta.status === "applying"}
+                      onPress={() => void applyPendingOta()}
+                    >
+                      {pendingOta.status === "applying"
+                        ? t("update.otaApplying")
+                        : t("update.applyImmediate")}
+                    </PrimaryButton>
+                  </Stack>
+                </Card>
+              ) : null}
+            </Stack>
+          </FoundationThemeProvider>
+        </Modal>
       </RuntimeContext.Provider>
     </FoundationThemeProvider>
   );
