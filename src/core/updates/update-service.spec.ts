@@ -1,7 +1,11 @@
 import * as Linking from "expo-linking";
 import * as Updates from "expo-updates";
 import { createFallbackConfig } from "../config/fallback-config";
-import { checkAndDownloadOta, openFullUpdate } from "./update-service";
+import {
+  checkAndDownloadOta,
+  getUpdateMetadataFromManifest,
+  openFullUpdate,
+} from "./update-service";
 
 jest.mock("expo-linking", () => ({
   canOpenURL: jest.fn(),
@@ -60,6 +64,7 @@ describe("update service feature flags", () => {
     config.update.ota.enabled = true;
     config.update.ota.channel = "development";
     config.update.ota.runtimeVersion = "test";
+    config.update.ota.applyStrategy = "immediate";
     (Updates.checkForUpdateAsync as jest.Mock).mockResolvedValue({
       isAvailable: true,
     });
@@ -69,7 +74,7 @@ describe("update service feature flags", () => {
         id: "update-1",
         runtimeVersion: "test",
         createdAt: "2026-08-28T00:00:00.000Z",
-        metadata: { applyStrategy: "immediate" },
+        metadata: { applyStrategy: "next_launch" },
       },
     });
 
@@ -94,6 +99,44 @@ describe("update service feature flags", () => {
       "downloading",
       "ready",
     ]);
+  });
+
+  it("reads immediate apply strategy from an Expo manifest extra payload", () => {
+    const metadata = getUpdateMetadataFromManifest({
+      id: "update-extra",
+      runtimeVersion: "test",
+      extra: { metadata: { applyStrategy: "immediate" } },
+    });
+
+    expect(metadata.applyStrategy).toBe("immediate");
+  });
+
+  it("uses the tenant Bootstrap strategy when the native manifest omits it", async () => {
+    const config = createFallbackConfig("zh-CN");
+    config.features.otaEnabled = true;
+    config.update.ota.enabled = true;
+    config.update.ota.channel = "development";
+    config.update.ota.runtimeVersion = "test";
+    config.update.ota.applyStrategy = "immediate";
+    (Updates.checkForUpdateAsync as jest.Mock).mockResolvedValue({
+      isAvailable: true,
+    });
+    (Updates.fetchUpdateAsync as jest.Mock).mockResolvedValue({
+      isNew: true,
+      manifest: {
+        id: "update-bootstrap-policy",
+        runtimeVersion: "test",
+        createdAt: "2026-08-28T00:00:00.000Z",
+      },
+    });
+
+    await expect(checkAndDownloadOta(config)).resolves.toEqual(
+      expect.objectContaining({
+        status: "ready",
+        messageKey: "update.otaReadyImmediate",
+        metadata: expect.objectContaining({ applyStrategy: "immediate" }),
+      }),
+    );
   });
 
   it("does not contact OTA when Bootstrap targets another runtime", async () => {

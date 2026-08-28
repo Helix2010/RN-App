@@ -24,6 +24,8 @@ Expo Go 可预览 UI 和服务端配置；Logo、原生图标、版本号和真�
 
 Feature Flags 的实际作用：`updateCenter` 控制升级入口是否展示，`otaEnabled` 控制 OTA 检查与下载，`directUpdateEnabled` 控制 Android 非商店直装入口，`diagnosticsEnabled` 控制设置页诊断信息。主题的 `allowUserOverride=false` 时，App 只允许跟随系统主题。
 
+OTA 检查在 Bootstrap 成功后后台静默执行，并在 App 从后台回到前台时按 15 分钟节流窗口再次检查。服务端策略为 `immediate` 时，资源下载完成后显示确认层，用户确认后才重启；`next_launch` 则延迟到下次启动应用。
+
 ## 设计入口
 
 - [总体架构](docs/ARCHITECTURE.md)

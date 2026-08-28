@@ -136,7 +136,19 @@ async function performCheckAndDownloadOta(
       return { ...resultValue("rollback", "update.otaRollback") };
     }
     if (fetched.isNew) {
-      const metadata = getUpdateMetadataFromManifest(fetched.manifest);
+      const manifestMetadata = getUpdateMetadataFromManifest(fetched.manifest);
+      const manifestApplyStrategy = getApplyStrategyFromManifest(
+        fetched.manifest,
+      );
+      const metadata = {
+        ...manifestMetadata,
+        // Bootstrap is the server's tenant-scoped release policy. Keep it as
+        // the source of truth when a provider strips custom manifest metadata.
+        applyStrategy:
+          config.update.ota.applyStrategy ??
+          manifestApplyStrategy ??
+          manifestMetadata.applyStrategy,
+      };
       transition("ready");
       emitUpdateTelemetry({
         stage: "ready",
@@ -195,11 +207,35 @@ export function getUpdateMetadataFromManifest(
 function applyStrategyFromManifest(
   manifest: Record<string, unknown>,
 ): "next_launch" | "immediate" {
-  const metadata =
-    typeof manifest.metadata === "object" && manifest.metadata !== null
-      ? (manifest.metadata as Record<string, unknown>)
-      : {};
-  return metadata.applyStrategy === "immediate" ? "immediate" : "next_launch";
+  return getApplyStrategyFromManifest(manifest) ?? "next_launch";
+}
+
+function getApplyStrategyFromManifest(
+  manifest: Record<string, unknown>,
+): "next_launch" | "immediate" | undefined {
+  const metadata = manifestMetadataFromManifest(manifest);
+  if (metadata.applyStrategy === "immediate") return "immediate";
+  if (metadata.applyStrategy === "next_launch") return "next_launch";
+  return undefined;
+}
+
+function manifestMetadataFromManifest(
+  manifest: Record<string, unknown>,
+): Record<string, unknown> {
+  const candidates: unknown[] = [manifest.metadata];
+  const extra = manifest.extra;
+  if (typeof extra === "object" && extra !== null) {
+    const extraRecord = extra as Record<string, unknown>;
+    candidates.push(extraRecord.metadata, extraRecord);
+  }
+  return (
+    (candidates.find(
+      (value) =>
+        typeof value === "object" &&
+        value !== null &&
+        typeof (value as Record<string, unknown>).applyStrategy === "string",
+    ) as Record<string, unknown> | undefined) ?? {}
+  );
 }
 
 export async function applyDownloadedOta(

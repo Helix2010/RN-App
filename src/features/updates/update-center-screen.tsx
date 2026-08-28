@@ -34,13 +34,26 @@ type Props = NativeStackScreenProps<RootStackParamList, "UpdateCenter"> & {
 
 export function UpdateCenterScreen({ navigation, locked = false }: Props) {
   const insets = useSafeAreaInsets();
-  const { config, t } = useFoundationRuntime();
+  const { config, otaResult, t } = useFoundationRuntime();
   const [ota, setOta] = useState<OtaCheckResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [fullMessage, setFullMessage] = useState<string | null>(null);
   const currentUpdate = getCurrentUpdateMetadata();
   const nativeOta = useUpdateStatus();
-  const displayedOta = ota ?? nativeOta;
+  const displayedOta =
+    ota ??
+    otaResult ??
+    (nativeOta.status === "ready"
+      ? {
+          ...nativeOta,
+          metadata: {
+            ...nativeOta.metadata,
+            applyStrategy:
+              config.update.ota.applyStrategy ??
+              nativeOta.metadata.applyStrategy,
+          },
+        }
+      : nativeOta);
 
   const checkOta = async (): Promise<void> => {
     setBusy(true);
