@@ -9,7 +9,7 @@ import {
   useState,
   type PropsWithChildren,
 } from "react";
-import { AppState, BackHandler, Modal } from "react-native";
+import { AppState, BackHandler, Modal, useColorScheme } from "react-native";
 import type { BootstrapSnapshot } from "../core/config/bootstrap-repository";
 import type {
   BootstrapConfig,
@@ -39,6 +39,11 @@ import {
   Stack,
 } from "../design-system";
 import { LaunchScreen } from "./launch-screen";
+import {
+  collectBrandingAssets,
+  hydrateCachedBranding,
+  warmBrandingAssets,
+} from "../core/config/branding-assets";
 
 type RuntimeValue = {
   config: BootstrapConfig;
@@ -64,6 +69,7 @@ function systemLocale(): SupportedLocale {
 export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   const localePreference = usePreferencesStore((state) => state.locale);
   const themePreference = usePreferencesStore((state) => state.theme);
+  const systemTheme = useColorScheme();
   const setLocale = usePreferencesStore((state) => state.setLocale);
   const setTheme = usePreferencesStore((state) => state.setTheme);
   const locale =
@@ -84,6 +90,14 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   const [otaResult, setOtaResult] = useState<OtaCheckResult | null>(null);
   const [launchMinimumElapsed, setLaunchMinimumElapsed] = useState(false);
   const [launchTimeout, setLaunchTimeout] = useState(false);
+  const [launchBranding, setLaunchBranding] = useState(config.branding);
+  const launchTheme =
+    themePreference === "system"
+      ? systemTheme === "dark"
+        ? "dark"
+        : "light"
+      : themePreference;
+  const launchVisual = launchBranding?.launch.visuals[launchTheme];
   const nativeUpdateStatus = useUpdateStatus();
   const t = useCallback(
     (key: string) => translateMessage(config.localization.messages, key),
@@ -93,13 +107,45 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
     await query.refetch();
   }, [query]);
   useEffect(() => {
-    const minimumTimer = setTimeout(() => setLaunchMinimumElapsed(true), 700);
-    const timeoutTimer = setTimeout(() => setLaunchTimeout(true), 1_800);
+    const minimumMs = config.branding?.launch.minDisplayMs ?? 700;
+    const maximumMs = config.branding?.launch.maxDisplayMs ?? 1_800;
+    const minimumTimer = setTimeout(
+      () => setLaunchMinimumElapsed(true),
+      minimumMs,
+    );
+    const timeoutTimer = setTimeout(() => setLaunchTimeout(true), maximumMs);
     return () => {
       clearTimeout(minimumTimer);
       clearTimeout(timeoutTimer);
     };
-  }, []);
+  }, [
+    config.branding?.launch.maxDisplayMs,
+    config.branding?.launch.minDisplayMs,
+  ]);
+  useEffect(() => {
+    let active = true;
+    const remoteBranding = config.branding;
+    if (!remoteBranding) return () => undefined;
+    void hydrateCachedBranding({ ...config, branding: remoteBranding }).then(
+      (cached) => {
+        if (active) setLaunchBranding(cached.branding);
+      },
+    );
+    void warmBrandingAssets(
+      collectBrandingAssets(config),
+      remoteBranding.cachePolicy,
+    ).then(() => {
+      if (!active) return;
+      void hydrateCachedBranding({ ...config, branding: remoteBranding }).then(
+        (cached) => {
+          if (active) setLaunchBranding(cached.branding);
+        },
+      );
+    });
+    return () => {
+      active = false;
+    };
+  }, [config]);
   const runSilentOtaCheck = useCallback((candidate: BootstrapConfig) => {
     if (!candidate.features.otaEnabled || !candidate.update.ota.enabled) return;
     const key = [
@@ -229,7 +275,15 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
         {launchMinimumElapsed && (!query.isPending || launchTimeout) ? (
           children
         ) : (
-          <LaunchScreen message={t("status.loading")} />
+          <LaunchScreen
+            message={launchBranding?.launch.subtitle || t("status.loading")}
+            title={launchBranding?.launch.title || t("app.name")}
+            backgroundColor={launchVisual?.backgroundColor}
+            logo={launchVisual?.logo}
+            backgroundImage={launchVisual?.backgroundImage}
+            animationType={launchBranding?.launch.animation.type}
+            animationDurationMs={launchBranding?.launch.animation.durationMs}
+          />
         )}
         <Modal
           visible={immediateOtaVisible}

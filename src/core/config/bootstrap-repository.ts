@@ -9,6 +9,7 @@ import {
 } from "./bootstrap.schema";
 import { createFallbackConfig } from "./fallback-config";
 import { normalizeMessages } from "./localization";
+import { hydrateCachedBranding } from "./branding-assets";
 
 const MAX_CACHE_AGE_MS = 7 * 24 * 60 * 60 * 1_000;
 const cacheSchema = z.object({
@@ -82,7 +83,7 @@ async function readCache(
     await discardInvalidCache(key);
     return null;
   }
-  return normalizeConfig(parsed.data.config);
+  return hydrateCachedBranding(normalizeConfig(parsed.data.config));
 }
 
 function languagePackageKey(locale: SupportedLocale): string {
@@ -189,9 +190,8 @@ export async function loadBootstrap(
       bootstrapSchema,
       { signal },
     );
-    const enriched = await applyRemoteLanguagePackage(
-      normalizeConfig(config),
-      signal,
+    const enriched = await hydrateCachedBranding(
+      await applyRemoteLanguagePackage(normalizeConfig(config), signal),
     );
     await AsyncStorage.setItem(
       cacheKey(locale),

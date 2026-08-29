@@ -31,6 +31,61 @@ export const semanticPaletteSchema = z.object({
   backdrop: color,
 });
 
+export const brandingAssetSchema = z.object({
+  assetId: z.string().min(1),
+  objectKey: z.string().min(1),
+  fileUrl: z.string().min(1),
+  fileName: z.string().min(1),
+  mimeType: z.enum(["image/png", "image/jpeg"]),
+  size: z
+    .number()
+    .int()
+    .positive()
+    .max(10 * 1024 * 1024),
+  sha256: z.string().regex(/^[0-9a-f]{64}$/),
+  width: z.number().int().min(64).max(4096),
+  height: z.number().int().min(64).max(4096),
+  localFileUrl: z.string().optional(),
+});
+
+const brandingVisualSchema = z.object({
+  backgroundColor: color,
+  logo: brandingAssetSchema.optional(),
+  backgroundImage: brandingAssetSchema.optional(),
+});
+
+export const brandingSchema = z.object({
+  schemaVersion: z.literal(1),
+  version: z.number().int().positive(),
+  enabled: z.boolean(),
+  selectedLocale: languageCodeSchema,
+  fallbackLocale: languageCodeSchema,
+  launch: z.object({
+    enabled: z.boolean(),
+    minDisplayMs: z.number().int().min(0).max(3000),
+    maxDisplayMs: z.number().int().min(300).max(5000),
+    animation: z.object({
+      type: z.enum(["fade_scale", "fade", "none"]),
+      durationMs: z.number().int().min(0).max(1500),
+    }),
+    title: z.string(),
+    subtitle: z.string(),
+    visuals: z.object({
+      light: brandingVisualSchema,
+      dark: brandingVisualSchema,
+    }),
+  }),
+  cachePolicy: z.object({
+    maxBytes: z
+      .number()
+      .int()
+      .min(1024 * 1024)
+      .max(100 * 1024 * 1024),
+    keepVersions: z.number().int().min(1).max(3),
+    staleAfterSeconds: z.number().int().min(86400).max(2592000),
+  }),
+});
+
 export const bootstrapSchema = z.object({
   schemaVersion: z.literal(1),
   configVersion: z.string().min(1),
@@ -69,6 +124,7 @@ export const bootstrapSchema = z.object({
     directUpdateEnabled: z.boolean(),
     diagnosticsEnabled: z.boolean(),
   }),
+  branding: brandingSchema.optional(),
   app: z.object({
     version: z.string().min(1),
     buildNumber: z.string().min(1),
@@ -106,5 +162,6 @@ export const bootstrapSchema = z.object({
 });
 
 export type BootstrapConfig = z.infer<typeof bootstrapSchema>;
+export type BrandingAsset = z.infer<typeof brandingAssetSchema>;
 export type SemanticPalette = z.infer<typeof semanticPaletteSchema>;
 export type SupportedLocale = string;
