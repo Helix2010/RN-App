@@ -1,5 +1,5 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Modal } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../app/runtime-context";
@@ -24,7 +24,7 @@ type AppTab = "home" | "assets" | "profile";
 
 export function AppShellScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
-  const { config, t } = useFoundationRuntime();
+  const { config, t, notificationIntent } = useFoundationRuntime();
   const [tab, setTab] = useState<AppTab>("home");
   const updateKey = `${config.update.full.releaseId ?? "none"}:${config.update.latestVersion}`;
   const [dismissedUpdateKey, setDismissedUpdateKey] = useState("");
@@ -33,6 +33,14 @@ export function AppShellScreen({ navigation }: Props) {
     (config.update.decision === "optional" ||
       config.update.decision === "recommended") &&
     dismissedUpdateKey !== updateKey;
+  useEffect(() => {
+    if (
+      notificationIntent?.type === "app_update_available" ||
+      notificationIntent?.type === "ota_updated"
+    ) {
+      navigation.navigate("UpdateCenter");
+    }
+  }, [navigation, notificationIntent]);
 
   return (
     <Page>

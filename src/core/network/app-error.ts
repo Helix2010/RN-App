@@ -12,6 +12,7 @@ export class AppError extends Error {
     message: string,
     readonly retryable: boolean,
     readonly requestId?: string,
+    readonly status?: number,
     options?: ErrorOptions,
   ) {
     super(message, options);

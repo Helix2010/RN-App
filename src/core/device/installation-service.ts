@@ -8,6 +8,7 @@ import { z } from "zod";
 import type { BootstrapConfig } from "../config/bootstrap.schema";
 import type { ThemePreference } from "../preferences/preferences-store";
 import { apiClient, appRuntime } from "../network/api-client";
+import { AppError } from "../network/app-error";
 
 const INSTALLATION_KEY = "foundation.installation-id.v1";
 const CREDENTIAL_KEY = "foundation.installation-credential.v1";
@@ -59,12 +60,10 @@ async function deviceSourceHash(): Promise<string> {
 export async function syncInstallationHeartbeat(
   config: BootstrapConfig,
   theme: ThemePreference,
-  force = false,
 ): Promise<void> {
   const last = Number(await AsyncStorage.getItem(HEARTBEAT_KEY));
   const storedCredential = await SecureStore.getItemAsync(CREDENTIAL_KEY);
   if (
-    !force &&
     storedCredential &&
     Number.isFinite(last) &&
     Date.now() - last < HEARTBEAT_INTERVAL_MS
@@ -102,24 +101,33 @@ export async function syncInstallationHeartbeat(
       keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
     });
   }
-  const response = await apiClient.post(
-    "/v1/mobile/installations/heartbeat",
-    {
-      installationId: id,
-      deviceSourceHash: await deviceSourceHash(),
-      packageId: Application.applicationId ?? appRuntime.applicationId,
-      otaChannel: appRuntime.otaChannel,
-      otaRevision: config.update.ota.revision ?? null,
-      localizationVersion: config.localization.messagesVersion,
-      brandingVersion: config.branding?.version ?? null,
-      locale: config.localization.selectedLocale,
-      theme,
-      osVersion: String(Platform.Version),
-      deviceClass: Platform.OS === "android" ? "android-phone" : "ios-device",
-    },
-    heartbeatResponseSchema,
-    { headers: { Authorization: `Installation ${credential}` } },
-  );
+  let response;
+  try {
+    response = await apiClient.post(
+      "/v1/mobile/installations/heartbeat",
+      {
+        installationId: id,
+        deviceSourceHash: await deviceSourceHash(),
+        packageId: Application.applicationId ?? appRuntime.applicationId,
+        otaChannel: appRuntime.otaChannel,
+        otaRevision: config.update.ota.revision ?? null,
+        localizationVersion: config.localization.messagesVersion,
+        brandingVersion: config.branding?.version ?? null,
+        locale: config.localization.selectedLocale,
+        theme,
+        osVersion: String(Platform.Version),
+        deviceClass: Platform.OS === "android" ? "android-phone" : "ios-device",
+      },
+      heartbeatResponseSchema,
+      { headers: { Authorization: `Installation ${credential}` } },
+    );
+  } catch (error) {
+    if (storedCredential && error instanceof AppError && error.status === 401) {
+      await SecureStore.deleteItemAsync(CREDENTIAL_KEY);
+      return syncInstallationHeartbeat(config, theme);
+    }
+    throw error;
+  }
   if (response.credentialRotated && response.installationCredential) {
     await SecureStore.setItemAsync(
       CREDENTIAL_KEY,
@@ -177,7 +185,13 @@ export async function registerPushTokenIfAuthorized(
   }
 }
 
-export function subscribeToUpdateSignals(onSignal: () => void): () => void {
+export function subscribeToUpdateSignals(
+  onSignal: (signal: {
+    opened: boolean;
+    type?: string;
+    eventId?: string;
+  }) => void,
+): () => void {
   Notifications.setNotificationHandler({
     handleNotification: async (notification) => {
       const rawVisible = notification.request.content.data?.requiresUserAction;
@@ -190,11 +204,23 @@ export function subscribeToUpdateSignals(onSignal: () => void): () => void {
       };
     },
   });
-  const received = Notifications.addNotificationReceivedListener(() =>
-    onSignal(),
+  const received = Notifications.addNotificationReceivedListener(
+    (notification) =>
+      onSignal({
+        opened: false,
+        type: String(notification.request.content.data?.type ?? ""),
+        eventId: String(notification.request.content.data?.eventId ?? ""),
+      }),
   );
-  const opened = Notifications.addNotificationResponseReceivedListener(() =>
-    onSignal(),
+  const opened = Notifications.addNotificationResponseReceivedListener(
+    (response) =>
+      onSignal({
+        opened: true,
+        type: String(response.notification.request.content.data?.type ?? ""),
+        eventId: String(
+          response.notification.request.content.data?.eventId ?? "",
+        ),
+      }),
   );
   return () => {
     received.remove();

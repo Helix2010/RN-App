@@ -64,6 +64,7 @@ type RuntimeValue = {
   applyPendingOta: () => Promise<void>;
   notificationStatus: "idle" | "registered" | "denied" | "unavailable";
   enableUpdateNotifications: () => Promise<void>;
+  notificationIntent: { type: string; eventId: string } | null;
 };
 
 const RuntimeContext = createContext<RuntimeValue | null>(null);
@@ -100,6 +101,10 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   const [notificationStatus, setNotificationStatus] = useState<
     "idle" | "registered" | "denied" | "unavailable"
   >("idle");
+  const [notificationIntent, setNotificationIntent] = useState<{
+    type: string;
+    eventId: string;
+  } | null>(null);
   const launchTheme =
     themePreference === "system"
       ? systemTheme === "dark"
@@ -205,7 +210,13 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   }, [config, snapshot.stale, themePreference]);
   useEffect(
     () =>
-      subscribeToUpdateSignals(() => {
+      subscribeToUpdateSignals((signal) => {
+        if (signal.opened && signal.type) {
+          setNotificationIntent({
+            type: signal.type,
+            eventId: signal.eventId || String(Date.now()),
+          });
+        }
         void query.refetch().then((result) => {
           if (result.data && !result.data.stale)
             runSilentOtaCheck(result.data.config);
@@ -284,6 +295,7 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
       applyPendingOta,
       notificationStatus,
       enableUpdateNotifications,
+      notificationIntent,
     }),
     [
       config,
@@ -300,6 +312,7 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
       otaResult,
       notificationStatus,
       enableUpdateNotifications,
+      notificationIntent,
     ],
   );
 

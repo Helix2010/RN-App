@@ -92,6 +92,7 @@ class ApiClient {
           `Request failed with status ${response.status}`,
           response.status >= 500 || response.status === 429,
           requestId,
+          response.status,
         );
       }
       return response;
@@ -104,6 +105,7 @@ class ApiClient {
           timedOut ? "The request timed out" : "The request was cancelled",
           timedOut,
           undefined,
+          undefined,
           { cause: error },
         );
       }
@@ -111,6 +113,7 @@ class ApiClient {
         "network",
         "The service is unreachable",
         true,
+        undefined,
         undefined,
         { cause: error },
       );
@@ -135,6 +138,7 @@ class ApiClient {
           "The server response does not match the mobile contract",
           false,
           requestId,
+          undefined,
           { cause: parsed.error },
         );
       }
@@ -146,6 +150,7 @@ class ApiClient {
         "The server response is not valid JSON",
         false,
         requestId,
+        undefined,
         { cause: error },
       );
     }
@@ -180,6 +185,7 @@ class ApiClient {
           "The server response does not match the mobile contract",
           false,
           requestId,
+          undefined,
           { cause: parsed.error },
         );
       return parsed.data;
@@ -190,6 +196,7 @@ class ApiClient {
         "The server response is not valid JSON",
         false,
         requestId,
+        undefined,
         { cause: error },
       );
     }
