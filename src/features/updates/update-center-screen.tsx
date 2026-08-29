@@ -1,7 +1,10 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useState } from "react";
+import { useIsFocused } from "@react-navigation/native";
+import { useEffect, useState } from "react";
+import { BackHandler, Modal } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../app/runtime-context";
+import type { BootstrapConfig } from "../../core/config/bootstrap.schema";
 import {
   applyDownloadedOta,
   checkAndDownloadOta,
@@ -12,6 +15,7 @@ import {
   downloadAndInstallApk,
   type ApkDownloadProgress,
 } from "../../core/updates/apk-update-service";
+import { shouldShowFullUpdatePrompt } from "../../core/updates/update-prompt";
 import { useUpdateStatus } from "../../core/updates/use-update-status";
 import {
   Badge,
@@ -38,7 +42,9 @@ type Props = NativeStackScreenProps<RootStackParamList, "UpdateCenter"> & {
 
 export function UpdateCenterScreen({ navigation, locked = false }: Props) {
   const insets = useSafeAreaInsets();
-  const { config, otaResult, refresh, t } = useFoundationRuntime();
+  const isFocused = useIsFocused();
+  const { config, notificationIntent, otaResult, refresh, t } =
+    useFoundationRuntime();
   const [ota, setOta] = useState<OtaCheckResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [fullMessage, setFullMessage] = useState<string | null>(null);
@@ -51,6 +57,10 @@ export function UpdateCenterScreen({ navigation, locked = false }: Props) {
     percentage: 0,
   });
   const [apkError, setApkError] = useState<string | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
+  const [pendingFullUpdate, setPendingFullUpdate] =
+    useState<BootstrapConfig | null>(null);
+  const [dismissedPushEventId, setDismissedPushEventId] = useState("");
   const currentUpdate = getCurrentUpdateMetadata();
   const nativeOta = useUpdateStatus();
   const displayedOta =
@@ -109,24 +119,7 @@ export function UpdateCenterScreen({ navigation, locked = false }: Props) {
         candidate.update.decision !== "none" &&
         Boolean(candidate.update.full.actionUrl);
       if (hasFullUpdate && candidate.update.full.actionUrl) {
-        setApkDownloadState("downloading");
-        setApkProgress({
-          written: 0,
-          total: candidate.update.full.size ?? 0,
-          percentage: 0,
-        });
-        try {
-          await downloadAndInstallApk(candidate, setApkProgress);
-          setFullMessage(t("update.apkInstallerOpened"));
-          setApkDownloadState("idle");
-        } catch (error) {
-          setApkDownloadState("error");
-          setApkError(
-            error instanceof Error
-              ? error.message
-              : t("update.apkDownloadError"),
-          );
-        }
+        setPendingFullUpdate(candidate);
         return;
       }
       await checkOta(candidate);
@@ -149,6 +142,49 @@ export function UpdateCenterScreen({ navigation, locked = false }: Props) {
       );
     } finally {
       setBusy(false);
+    }
+  };
+
+  const fullUpdatePromptVisible = shouldShowFullUpdatePrompt({
+    pending: pendingFullUpdate !== null,
+    signalType: notificationIntent?.type,
+    signalEventId: notificationIntent?.eventId,
+    dismissedSignalEventId: dismissedPushEventId,
+    decision: config.update.decision,
+    actionUrl: config.update.full.actionUrl,
+  });
+  const promptConfig = pendingFullUpdate ?? config;
+
+  useEffect(() => {
+    if (!isFocused || (!locked && apkDownloadState !== "downloading")) return;
+    const subscription = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => true,
+    );
+    return () => subscription.remove();
+  }, [apkDownloadState, isFocused, locked]);
+
+  const downloadFullUpdate = async (): Promise<void> => {
+    const candidate = pendingFullUpdate ?? config;
+    if (!candidate.update.full.actionUrl) return;
+    setPendingFullUpdate(null);
+    if (notificationIntent?.eventId)
+      setDismissedPushEventId(notificationIntent.eventId);
+    setApkDownloadState("downloading");
+    setApkProgress({
+      written: 0,
+      total: candidate.update.full.size ?? 0,
+      percentage: 0,
+    });
+    try {
+      await downloadAndInstallApk(candidate, setApkProgress);
+      setFullMessage(t("update.apkInstallerOpened"));
+      setApkDownloadState("idle");
+    } catch (error) {
+      setApkDownloadState("error");
+      setApkError(
+        error instanceof Error ? error.message : t("update.apkDownloadError"),
+      );
     }
   };
 
@@ -189,23 +225,14 @@ export function UpdateCenterScreen({ navigation, locked = false }: Props) {
             <Body>
               {t("update.latestVersion")}：{config.update.latestVersion}
             </Body>
-            <Body>
-              {t("update.channel")}：{config.update.full.channel}
-            </Body>
+            <PrimaryButton disabled={busy} onPress={() => void checkUpdates()}>
+              {busy ? t("update.checking") : t("action.checkupdate")}
+            </PrimaryButton>
           </Card>
 
           <Card>
             <Label>OTA / {config.update.ota.channel}</Label>
             <SectionTitle>{t("update.otaTitle")}</SectionTitle>
-            <Body>
-              {t("update.runtime")} · {config.update.ota.runtimeVersion}
-            </Body>
-            <Body>
-              {t("update.release")} ·{" "}
-              {currentUpdate.isEmbedded
-                ? t("update.embedded")
-                : (currentUpdate.updateId ?? t("update.notConfigured"))}
-            </Body>
             <Body
               color={displayedOta.status === "error" ? "$danger" : "$textMuted"}
             >
@@ -215,9 +242,6 @@ export function UpdateCenterScreen({ navigation, locked = false }: Props) {
             displayedOta.metadata.applyStrategy === "immediate" ? (
               <Body color="$warning">{t("update.otaImmediateRequired")}</Body>
             ) : null}
-            <PrimaryButton disabled={busy} onPress={() => void checkUpdates()}>
-              {busy ? t("update.checking") : t("action.checkupdate")}
-            </PrimaryButton>
             {(displayedOta.status === "ready" &&
               displayedOta.metadata.applyStrategy === "immediate") ||
             displayedOta.status === "rollback" ? (
@@ -230,19 +254,41 @@ export function UpdateCenterScreen({ navigation, locked = false }: Props) {
           </Card>
 
           <Card>
-            <Label>{config.update.full.channel.toUpperCase()}</Label>
-            <SectionTitle>{t("update.fullTitle")}</SectionTitle>
-            <Body>{t("update.fullDescription")}</Body>
-            {config.update.releaseNotes.map((note) => (
-              <Body key={note}>• {note}</Body>
-            ))}
+            <Row justifyContent="space-between" alignItems="center">
+              <Stack flex={1} gap="$1">
+                <Label>{config.update.full.channel.toUpperCase()}</Label>
+                <SectionTitle>{t("update.fullTitle")}</SectionTitle>
+              </Stack>
+              <Badge>
+                <InlineText color="$primary">
+                  {config.update.decision === "none"
+                    ? t("update.none")
+                    : config.update.latestVersion}
+                </InlineText>
+              </Badge>
+            </Row>
+            {config.update.decision !== "none" ? (
+              <Body>{t("update.fullDescription")}</Body>
+            ) : null}
             {fullMessage ? <Body color="$warning">{fullMessage}</Body> : null}
             {apkError ? <Body color="$danger">{apkError}</Body> : null}
           </Card>
 
-          {config.features.diagnosticsEnabled ? (
+          <SecondaryButton
+            onPress={() => setShowDetails((current) => !current)}
+          >
+            {showDetails ? t("action.collapse") : t("action.details")}
+          </SecondaryButton>
+          {showDetails ? (
             <Card>
-              <Label>{t("update.diagnostics")}</Label>
+              <Label>{t("update.details")}</Label>
+              <Body>
+                {t("update.minimumVersion")} ·{" "}
+                {config.update.minSupportedVersion}
+              </Body>
+              <Body>
+                {t("update.channel")} · {config.update.full.channel}
+              </Body>
               <Body>
                 {t("update.requestId")} · {config.support.diagnosticId}
               </Body>
@@ -253,6 +299,17 @@ export function UpdateCenterScreen({ navigation, locked = false }: Props) {
               <Body>
                 {t("update.runtime")} · {config.app.runtimeVersion}
               </Body>
+              <Body>
+                {t("update.otaTitle")} ·{" "}
+                {currentUpdate.isEmbedded
+                  ? t("update.embedded")
+                  : (currentUpdate.updateId ?? t("update.notConfigured"))}
+              </Body>
+              {config.features.diagnosticsEnabled ? (
+                <Body color="$textMuted">
+                  {t("update.diagnostics")} · {config.support.diagnosticId}
+                </Body>
+              ) : null}
             </Card>
           ) : null}
         </Content>
@@ -308,6 +365,60 @@ export function UpdateCenterScreen({ navigation, locked = false }: Props) {
           </Card>
         </Stack>
       ) : null}
+      <Modal
+        visible={fullUpdatePromptVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (promptConfig.update.decision === "required") return;
+          setPendingFullUpdate(null);
+          if (notificationIntent?.eventId)
+            setDismissedPushEventId(notificationIntent.eventId);
+        }}
+      >
+        <Stack
+          flex={1}
+          justifyContent="flex-end"
+          padding="$4"
+          backgroundColor="$backdrop"
+        >
+          <Card padding="$5">
+            <Stack gap="$3">
+              <Label color="$primary">
+                {t(`update.${promptConfig.update.decision}`)}
+              </Label>
+              <SectionTitle>{t("update.noticeTitle")}</SectionTitle>
+              <Body>{t("update.noticeDescription")}</Body>
+              <Body>
+                {promptConfig.app.version} → {promptConfig.update.latestVersion}
+              </Body>
+              {promptConfig.update.releaseNotes.map((note) => (
+                <Body key={note}>• {note}</Body>
+              ))}
+              <PrimaryButton
+                disabled={busy}
+                onPress={() => {
+                  void downloadFullUpdate();
+                }}
+              >
+                {t("update.confirmAndDownload")}
+              </PrimaryButton>
+              {promptConfig.update.decision !== "required" ? (
+                <SecondaryButton
+                  disabled={busy}
+                  onPress={() => {
+                    setPendingFullUpdate(null);
+                    if (notificationIntent?.eventId)
+                      setDismissedPushEventId(notificationIntent.eventId);
+                  }}
+                >
+                  {t("action.later")}
+                </SecondaryButton>
+              ) : null}
+            </Stack>
+          </Card>
+        </Stack>
+      </Modal>
     </Page>
   );
 }

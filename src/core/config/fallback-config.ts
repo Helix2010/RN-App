@@ -69,6 +69,8 @@ const zhCN = {
   "action.checkupdate": "检查更新",
   "action.install": "前往更新",
   "action.retry": "重新下载",
+  "action.details": "查看详情",
+  "action.collapse": "收起详情",
   "action.settings": "设置",
   "action.back": "返回",
   "action.later": "稍后处理",
@@ -125,6 +127,7 @@ const zhCN = {
   "update.fullDescription":
     "通过当前分发渠道安装签名版本，更新前请确认版本与来源。",
   "update.diagnostics": "诊断信息",
+  "update.details": "升级详情",
   "update.notConfigured": "尚未配置",
   "update.fullOpened": "已打开当前分发渠道的升级入口",
   "update.fullUnavailable": "当前分发渠道尚未配置可安装地址",
@@ -192,6 +195,7 @@ const zhCN = {
   "update.noticeTitle": "发现新版本",
   "update.noticeDescription": "新版本已准备好，可查看更新内容后选择升级。",
   "update.viewNow": "查看更新",
+  "update.confirmAndDownload": "确认并下载",
   "update.localizationTitle": "语言资源已更新",
   "update.localizationDescription": "新的语言包已准备好，将在下次刷新后生效。",
   "update.brandingTitle": "品牌配置已更新",
@@ -223,6 +227,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "action.checkupdate": "Check for updates",
   "action.install": "Open update",
   "action.retry": "Download again",
+  "action.details": "View details",
+  "action.collapse": "Hide details",
   "action.settings": "Settings",
   "action.back": "Back",
   "action.later": "Later",
@@ -286,6 +292,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "update.fullDescription":
     "Install a signed version through the current distribution channel.",
   "update.diagnostics": "Diagnostics",
+  "update.details": "Update details",
   "update.notConfigured": "Not configured",
   "update.fullOpened": "Opened the update entry for this distribution channel",
   "update.fullUnavailable":
@@ -361,6 +368,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "update.noticeDescription":
     "A new version is ready. Review the changes before updating.",
   "update.viewNow": "View update",
+  "update.confirmAndDownload": "Confirm and download",
   "update.localizationTitle": "Language resources updated",
   "update.localizationDescription":
     "New language resources are ready and will apply after the next refresh.",

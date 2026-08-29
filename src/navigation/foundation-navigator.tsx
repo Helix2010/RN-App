@@ -1,20 +1,25 @@
 import {
   NavigationContainer,
+  useNavigationContainerRef,
   type Theme as NavigationTheme,
 } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { BackHandler } from "react-native";
+import { useEffect } from "react";
 import { useTheme } from "tamagui";
 import { useFoundationRuntime } from "../app/runtime-context";
 import { AppShellScreen } from "../features/foundation/app-shell-screen";
 import { UpdateCenterScreen } from "../features/updates/update-center-screen";
 import { SettingsScreen } from "../features/settings/settings-screen";
 import type { RootStackParamList } from "./types";
+import { resolveSystemBack } from "./system-back";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export function FoundationNavigator() {
   const theme = useTheme();
   const { config } = useFoundationRuntime();
+  const navigationRef = useNavigationContainerRef<RootStackParamList>();
   const navigationTheme: NavigationTheme = {
     dark: theme.background.val === config.theme.dark.background,
     colors: {
@@ -33,9 +38,29 @@ export function FoundationNavigator() {
     },
   };
 
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => {
+        const route = navigationRef.getCurrentRoute();
+        const action = resolveSystemBack(
+          route?.name,
+          navigationRef.canGoBack(),
+          config.update.decision === "required",
+        );
+        if (action === "navigate") {
+          navigationRef.goBack();
+          return true;
+        }
+        return action === "consume";
+      },
+    );
+    return () => subscription.remove();
+  }, [config.update.decision, navigationRef]);
+
   if (config.update.decision === "required" && config.update.full.actionUrl) {
     return (
-      <NavigationContainer theme={navigationTheme}>
+      <NavigationContainer ref={navigationRef} theme={navigationTheme}>
         <Stack.Navigator
           screenOptions={{
             headerShown: false,
@@ -54,7 +79,7 @@ export function FoundationNavigator() {
   }
 
   return (
-    <NavigationContainer theme={navigationTheme}>
+    <NavigationContainer ref={navigationRef} theme={navigationTheme}>
       <Stack.Navigator
         screenOptions={{
           headerShown: false,

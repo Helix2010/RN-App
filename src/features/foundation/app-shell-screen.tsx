@@ -1,13 +1,7 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useIsFocused } from "@react-navigation/native";
-import { useEffect, useMemo, useState } from "react";
-import {
-  BackHandler,
-  Dimensions,
-  Modal,
-  PanResponder,
-  View,
-} from "react-native";
+import { useEffect, useState } from "react";
+import { BackHandler, Modal, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../app/runtime-context";
 import {
@@ -25,52 +19,29 @@ import type { RootStackParamList } from "../../navigation/types";
 import { AssetsScreen } from "../portfolio/assets-screen";
 import { ProfileScreen } from "../profile/profile-screen";
 import { FoundationHomeScreen } from "./foundation-home-screen";
+import { resolveAppShellBack, type AppTab } from "./app-shell-back";
 
 type Props = NativeStackScreenProps<RootStackParamList, "AppShell">;
-type AppTab = "home" | "assets" | "profile";
 
 export function AppShellScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
   const { config, t, notificationIntent } = useFoundationRuntime();
   const [tab, setTab] = useState<AppTab>("home");
-  const tabGesture = useMemo(
-    () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponder: (_, gesture) => {
-          const screenWidth = Dimensions.get("window").width;
-          const startedAtEdge =
-            gesture.x0 <= 28 || gesture.x0 >= screenWidth - 28;
-          return (
-            startedAtEdge &&
-            Math.abs(gesture.dx) > 16 &&
-            Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.25
-          );
-        },
-        onPanResponderRelease: (_, gesture) => {
-          if (Math.abs(gesture.dx) < 64) return;
-          setTab((current) => {
-            const order: AppTab[] = ["home", "assets", "profile"];
-            const index = order.indexOf(current);
-            const nextIndex = gesture.dx < 0 ? index + 1 : index - 1;
-            return order[nextIndex] ?? current;
-          });
-        },
-      }),
-    [],
-  );
   const updateKey = `${config.update.full.releaseId ?? "none"}:${config.update.latestVersion}`;
   const [dismissedUpdateKey, setDismissedUpdateKey] = useState("");
   const updateNoticeVisible =
     config.update.full.actionUrl !== null &&
     (config.update.decision === "optional" ||
       config.update.decision === "recommended") &&
+    notificationIntent?.type !== "app_update_available" &&
     dismissedUpdateKey !== updateKey;
   useEffect(() => {
     if (
       notificationIntent?.type === "app_update_available" ||
       notificationIntent?.type === "ota_updated"
     ) {
+      if (navigation.getState().routes.at(-1)?.name === "UpdateCenter") return;
       navigation.navigate("UpdateCenter");
     }
   }, [navigation, notificationIntent]);
@@ -79,8 +50,9 @@ export function AppShellScreen({ navigation }: Props) {
       "hardwareBackPress",
       () => {
         if (!isFocused) return false;
-        if (tab === "home") return false;
-        setTab("home");
+        const action = resolveAppShellBack(tab);
+        if (action === "consume") return true;
+        setTab(action);
         return true;
       },
     );
@@ -89,7 +61,7 @@ export function AppShellScreen({ navigation }: Props) {
 
   return (
     <Page>
-      <View style={{ flex: 1 }} {...tabGesture.panHandlers}>
+      <View style={{ flex: 1 }}>
         {tab === "home" ? (
           <FoundationHomeScreen onOpenAssets={() => setTab("assets")} />
         ) : tab === "assets" ? (

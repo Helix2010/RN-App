@@ -221,7 +221,10 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   useEffect(
     () =>
       subscribeToUpdateSignals((signal) => {
-        if (signal.opened && signal.type) {
+        if (
+          signal.type === "app_update_available" ||
+          (signal.opened && signal.type === "ota_updated")
+        ) {
           setNotificationIntent({
             type: signal.type,
             eventId: signal.eventId || String(Date.now()),
