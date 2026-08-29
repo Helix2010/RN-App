@@ -1,4 +1,3 @@
-import * as Linking from "expo-linking";
 import * as Updates from "expo-updates";
 import type { BootstrapConfig } from "../config/bootstrap.schema";
 import { appRuntime } from "../network/api-client";
@@ -247,20 +246,4 @@ export async function applyDownloadedOta(
 
 export function getCurrentUpdateMetadata(): UpdateMetadata {
   return currentMetadata();
-}
-
-export async function openFullUpdate(
-  config: BootstrapConfig,
-): Promise<boolean> {
-  if (
-    config.app.platform === "android" &&
-    config.app.distribution === "direct" &&
-    !config.features.directUpdateEnabled
-  ) {
-    return false;
-  }
-  const url = config.update.full.actionUrl;
-  if (!url || !(await Linking.canOpenURL(url))) return false;
-  await Linking.openURL(url);
-  return true;
 }

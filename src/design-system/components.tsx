@@ -89,11 +89,17 @@ export function AppHeader({
   return (
     <XStack justifyContent="space-between" alignItems="center" gap="$3">
       <XStack alignItems="center" gap="$3" flex={1}>
-        <BrandMark size={46} />
+        <BrandMark size={40} />
         <Stack gap="$1" flex={1}>
-          {eyebrow ? <Label>{eyebrow}</Label> : null}
-          <Heading fontSize={26}>{title}</Heading>
-          {subtitle ? <Body>{subtitle}</Body> : null}
+          {eyebrow ? <Label fontSize={11}>{eyebrow}</Label> : null}
+          <Heading fontSize={24} lineHeight={29}>
+            {title}
+          </Heading>
+          {subtitle ? (
+            <Body fontSize={13} numberOfLines={1}>
+              {subtitle}
+            </Body>
+          ) : null}
         </Stack>
       </XStack>
       {action}
@@ -166,15 +172,98 @@ export const Content = styled(YStack, {
 export const Card = styled(YStack, {
   backgroundColor: "$surface",
   borderColor: "$borderColor",
-  borderWidth: 1,
+  borderWidth: 0,
   borderRadius: "$6",
   padding: "$4",
   gap: "$3",
   shadowColor: "$shadowColor",
-  shadowOpacity: 0.08,
-  shadowRadius: 18,
-  shadowOffset: { width: 0, height: 8 },
+  shadowOpacity: 0.1,
+  shadowRadius: 20,
+  shadowOffset: { width: 0, height: 10 },
 });
+
+export const HairlineCard = styled(Card, {
+  borderWidth: 1,
+  borderColor: "$borderColor",
+  shadowOpacity: 0,
+});
+
+export function IconButton({
+  label,
+  symbol,
+  onPress,
+  backgroundColor = "$surfaceVariant",
+  color = "$color",
+}: {
+  label: string;
+  symbol: string;
+  onPress?: () => void;
+  backgroundColor?: "$surfaceVariant" | "$onPrimary";
+  color?: "$color" | "$primary";
+}) {
+  return (
+    <Button
+      width={42}
+      height={42}
+      borderRadius={999}
+      padding={0}
+      backgroundColor={backgroundColor}
+      color={color}
+      borderWidth={0}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      pressStyle={{ opacity: 0.76, scale: 0.95 }}
+    >
+      <Text fontSize={18}>{symbol}</Text>
+    </Button>
+  );
+}
+
+export function ListRow({
+  title,
+  subtitle,
+  leading,
+  trailing,
+  onPress,
+}: {
+  title: string;
+  subtitle?: string;
+  leading?: ReactNode;
+  trailing?: ReactNode;
+  onPress?: () => void;
+}) {
+  const content = (
+    <XStack flex={1} alignItems="center" gap="$3">
+      {leading}
+      <Stack flex={1} gap="$1">
+        <SectionTitle>{title}</SectionTitle>
+        {subtitle ? <Body fontSize={12}>{subtitle}</Body> : null}
+      </Stack>
+      {trailing}
+    </XStack>
+  );
+  return onPress ? (
+    <Button
+      minHeight={58}
+      paddingHorizontal="$3"
+      paddingVertical="$2"
+      borderRadius="$4"
+      backgroundColor="$surfaceVariant"
+      borderWidth={0}
+      onPress={onPress}
+      pressStyle={{ opacity: 0.78 }}
+      accessibilityRole="button"
+      accessibilityLabel={title}
+    >
+      {content}
+    </Button>
+  ) : (
+    <XStack minHeight={52} alignItems="center">
+      {content}
+    </XStack>
+  );
+}
 
 export const Heading = styled(Text, {
   color: "$color",

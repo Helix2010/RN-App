@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../app/runtime-context";
 import {
@@ -8,6 +9,8 @@ import {
   Body,
   Card,
   Content,
+  HairlineCard,
+  IconButton,
   InlineText,
   Label,
   Page,
@@ -20,12 +23,15 @@ import {
 } from "../../design-system";
 export function FoundationHomeScreen({
   onOpenAssets,
+  onOpenSettings,
 }: {
   onOpenAssets: () => void;
+  onOpenSettings: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const runtime = useFoundationRuntime();
   const { t } = runtime;
+  const [balanceVisible, setBalanceVisible] = useState(true);
 
   return (
     <Page>
@@ -41,6 +47,13 @@ export function FoundationHomeScreen({
             eyebrow={t("home.eyebrow")}
             title={t("home.title")}
             subtitle={t("home.description")}
+            action={
+              <IconButton
+                label={t("action.settings")}
+                symbol="⚙"
+                onPress={onOpenSettings}
+              />
+            }
           />
 
           <Card
@@ -48,12 +61,30 @@ export function FoundationHomeScreen({
             borderColor="$primary"
             accessibilityLabel={t("home.portfolio")}
           >
-            <Label color="$onPrimary">{t("home.portfolio")}</Label>
-            <AmountText color="$onPrimary">¥ 128,640.00</AmountText>
-            <InlineText color="$onPrimary" opacity={0.78} fontSize={12}>
-              {t("home.portfolioChange")}
-            </InlineText>
-            <Row gap="$2">
+            <Row justifyContent="space-between" alignItems="center">
+              <Label color="$onPrimary">{t("home.portfolio")}</Label>
+              <IconButton
+                label={
+                  balanceVisible ? t("home.hideBalance") : t("home.showBalance")
+                }
+                symbol={balanceVisible ? "◉" : "◎"}
+                backgroundColor="$onPrimary"
+                color="$primary"
+                onPress={() => setBalanceVisible((visible) => !visible)}
+              />
+            </Row>
+            <AmountText color="$onPrimary">
+              {balanceVisible ? "¥ 128,640.00" : "¥ ••••••"}
+            </AmountText>
+            <Row justifyContent="space-between" alignItems="center">
+              <InlineText color="$onPrimary" opacity={0.78} fontSize={12}>
+                {t("home.portfolioChange")}
+              </InlineText>
+              <InlineText color="$onPrimary" fontWeight="800">
+                +2.14%
+              </InlineText>
+            </Row>
+            <Row gap="$2" marginTop="$1">
               <PrimaryButton
                 flex={1}
                 backgroundColor="$onPrimary"
@@ -65,7 +96,7 @@ export function FoundationHomeScreen({
             </Row>
           </Card>
 
-          <Card accessibilityLabel={t("home.market")}>
+          <HairlineCard accessibilityLabel={t("home.market")}>
             <Row justifyContent="space-between" alignItems="flex-start">
               <Stack gap="$1">
                 <Label>{t("home.market")}</Label>
@@ -84,9 +115,9 @@ export function FoundationHomeScreen({
             <AddressText numberOfLines={1}>
               0x71C7…F8A2 · {t("home.contract")}
             </AddressText>
-          </Card>
+          </HairlineCard>
 
-          <Card>
+          <HairlineCard>
             <Label>{t("home.security")}</Label>
             <SectionTitle>{t("home.securityTitle")}</SectionTitle>
             <Body>{t("home.securityDescription")}</Body>
@@ -102,7 +133,7 @@ export function FoundationHomeScreen({
                 </InlineText>
               </Badge>
             </Row>
-          </Card>
+          </HairlineCard>
         </Content>
       </PageScroll>
     </Page>

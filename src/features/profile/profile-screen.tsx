@@ -7,10 +7,10 @@ import {
   Content,
   InlineText,
   Label,
+  ListRow,
   Page,
   PageScroll,
   Row,
-  SecondaryButton,
   SectionTitle,
   Stack,
 } from "../../design-system";
@@ -33,7 +33,7 @@ export function ProfileScreen({
             title={t("profile.title")}
             subtitle={t("profile.subtitle")}
           />
-          <Card>
+          <Card backgroundColor="$primary" shadowOpacity={0}>
             <Row alignItems="center" gap="$3">
               <Stack
                 width={58}
@@ -48,23 +48,38 @@ export function ProfileScreen({
                 </InlineText>
               </Stack>
               <Stack flex={1} gap="$1">
-                <SectionTitle>AnyFun User</SectionTitle>
-                <Body fontSize={12}>0x71C7…F8A2</Body>
+                <SectionTitle color="$onPrimary">AnyFun User</SectionTitle>
+                <Body color="$onPrimary" opacity={0.78} fontSize={12}>
+                  0x71C7…F8A2
+                </Body>
               </Stack>
+              <InlineText color="$onPrimary" fontSize={24}>
+                ›
+              </InlineText>
             </Row>
           </Card>
           <Card>
             <Label>{t("profile.preferences")}</Label>
-            <MenuRow
+            <ListRow
               title={t("settings.title")}
               subtitle={t("profile.settingsHint")}
               onPress={onOpenSettings}
+              trailing={
+                <InlineText color="$textMuted" fontSize={22}>
+                  ›
+                </InlineText>
+              }
             />
             {config.features.updateCenter ? (
-              <MenuRow
+              <ListRow
                 title={t("settings.updateCenter")}
                 subtitle={t("profile.updateHint")}
                 onPress={onOpenUpdates}
+                trailing={
+                  <InlineText color="$textMuted" fontSize={22}>
+                    ›
+                  </InlineText>
+                }
               />
             ) : null}
           </Card>
@@ -79,30 +94,6 @@ export function ProfileScreen({
         </Content>
       </PageScroll>
     </Page>
-  );
-}
-
-function MenuRow({
-  title,
-  subtitle,
-  onPress,
-}: {
-  title: string;
-  subtitle: string;
-  onPress: () => void;
-}) {
-  return (
-    <SecondaryButton height="auto" minHeight={64} onPress={onPress}>
-      <Row flex={1} justifyContent="space-between" alignItems="center">
-        <Stack alignItems="flex-start" gap="$1" flex={1}>
-          <SectionTitle>{title}</SectionTitle>
-          <Body fontSize={12}>{subtitle}</Body>
-        </Stack>
-        <InlineText color="$textMuted" fontSize={20}>
-          ›
-        </InlineText>
-      </Row>
-    </SecondaryButton>
   );
 }
 

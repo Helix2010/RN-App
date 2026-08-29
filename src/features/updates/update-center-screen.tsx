@@ -40,7 +40,11 @@ type Props = NativeStackScreenProps<RootStackParamList, "UpdateCenter"> & {
   locked?: boolean;
 };
 
-export function UpdateCenterScreen({ navigation, locked = false }: Props) {
+export function UpdateCenterScreen({
+  navigation,
+  route,
+  locked = false,
+}: Props) {
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
   const { config, notificationIntent, otaResult, refresh, t } =
@@ -59,7 +63,15 @@ export function UpdateCenterScreen({ navigation, locked = false }: Props) {
   const [apkError, setApkError] = useState<string | null>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [pendingFullUpdate, setPendingFullUpdate] =
-    useState<BootstrapConfig | null>(null);
+    useState<BootstrapConfig | null>(() =>
+      (locked || route.params?.autoPrompt) &&
+      config.update.full.actionUrl &&
+      config.app.platform === "android" &&
+      config.app.distribution === "direct" &&
+      config.features.directUpdateEnabled
+        ? config
+        : null,
+    );
   const [dismissedPushEventId, setDismissedPushEventId] = useState("");
   const currentUpdate = getCurrentUpdateMetadata();
   const nativeOta = useUpdateStatus();
@@ -117,6 +129,9 @@ export function UpdateCenterScreen({ navigation, locked = false }: Props) {
       const candidate = refreshed.config;
       const hasFullUpdate =
         candidate.update.decision !== "none" &&
+        candidate.app.platform === "android" &&
+        candidate.app.distribution === "direct" &&
+        candidate.features.directUpdateEnabled &&
         Boolean(candidate.update.full.actionUrl);
       if (hasFullUpdate && candidate.update.full.actionUrl) {
         setPendingFullUpdate(candidate);
@@ -152,6 +167,10 @@ export function UpdateCenterScreen({ navigation, locked = false }: Props) {
     dismissedSignalEventId: dismissedPushEventId,
     decision: config.update.decision,
     actionUrl: config.update.full.actionUrl,
+    directInstallEnabled:
+      config.app.platform === "android" &&
+      config.app.distribution === "direct" &&
+      config.features.directUpdateEnabled,
   });
   const promptConfig = pendingFullUpdate ?? config;
 
@@ -166,7 +185,13 @@ export function UpdateCenterScreen({ navigation, locked = false }: Props) {
 
   const downloadFullUpdate = async (): Promise<void> => {
     const candidate = pendingFullUpdate ?? config;
-    if (!candidate.update.full.actionUrl) return;
+    if (
+      !candidate.update.full.actionUrl ||
+      candidate.app.platform !== "android" ||
+      candidate.app.distribution !== "direct" ||
+      !candidate.features.directUpdateEnabled
+    )
+      return;
     setPendingFullUpdate(null);
     if (notificationIntent?.eventId)
       setDismissedPushEventId(notificationIntent.eventId);

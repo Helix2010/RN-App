@@ -32,6 +32,9 @@ export function AppShellScreen({ navigation }: Props) {
   const [dismissedUpdateKey, setDismissedUpdateKey] = useState("");
   const updateNoticeVisible =
     config.update.full.actionUrl !== null &&
+    config.app.platform === "android" &&
+    config.app.distribution === "direct" &&
+    config.features.directUpdateEnabled &&
     (config.update.decision === "optional" ||
       config.update.decision === "recommended") &&
     notificationIntent?.type !== "app_update_available" &&
@@ -63,7 +66,10 @@ export function AppShellScreen({ navigation }: Props) {
     <Page>
       <View style={{ flex: 1 }}>
         {tab === "home" ? (
-          <FoundationHomeScreen onOpenAssets={() => setTab("assets")} />
+          <FoundationHomeScreen
+            onOpenAssets={() => setTab("assets")}
+            onOpenSettings={() => navigation.navigate("Settings")}
+          />
         ) : tab === "assets" ? (
           <AssetsScreen />
         ) : (
@@ -126,7 +132,7 @@ export function AppShellScreen({ navigation }: Props) {
               <PrimaryButton
                 onPress={() => {
                   setDismissedUpdateKey(updateKey);
-                  navigation.navigate("UpdateCenter");
+                  navigation.navigate("UpdateCenter", { autoPrompt: true });
                 }}
               >
                 {t("update.viewNow")}

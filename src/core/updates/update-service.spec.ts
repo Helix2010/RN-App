@@ -1,16 +1,9 @@
-import * as Linking from "expo-linking";
 import * as Updates from "expo-updates";
 import { createFallbackConfig } from "../config/fallback-config";
 import {
   checkAndDownloadOta,
   getUpdateMetadataFromManifest,
-  openFullUpdate,
 } from "./update-service";
-
-jest.mock("expo-linking", () => ({
-  canOpenURL: jest.fn(),
-  openURL: jest.fn(),
-}));
 
 jest.mock("expo-updates", () => ({
   isEnabled: true,
@@ -45,17 +38,6 @@ describe("update service feature flags", () => {
         applyStrategy: "next_launch",
       },
     });
-  });
-
-  it("blocks Android direct installation when the feature is disabled", async () => {
-    const config = createFallbackConfig("zh-CN");
-    config.app.platform = "android";
-    config.app.distribution = "direct";
-    config.features.directUpdateEnabled = false;
-    config.update.full.actionUrl = "https://api.example.com/app.apk";
-
-    await expect(openFullUpdate(config)).resolves.toBe(false);
-    expect(Linking.canOpenURL).not.toHaveBeenCalled();
   });
 
   it("checks and downloads an available OTA", async () => {

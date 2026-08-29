@@ -1,5 +1,5 @@
 export type RootStackParamList = {
   AppShell: undefined;
-  UpdateCenter: undefined;
+  UpdateCenter: { autoPrompt?: boolean } | undefined;
   Settings: undefined;
 };

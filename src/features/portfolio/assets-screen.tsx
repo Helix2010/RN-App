@@ -4,11 +4,11 @@ import {
   AmountText,
   AppHeader,
   Badge,
-  Body,
   Card,
   Content,
   InlineText,
   Label,
+  ListRow,
   Page,
   PageScroll,
   PriceChange,
@@ -79,34 +79,31 @@ export function AssetsScreen() {
               </Badge>
             </Row>
             {assets.map((asset) => (
-              <Card key={asset.symbol} padding="$3.5">
-                <Row alignItems="center" gap="$3">
-                  <Stack
-                    width={44}
-                    height={44}
-                    borderRadius={999}
-                    alignItems="center"
-                    justifyContent="center"
-                    backgroundColor="$surfaceVariant"
-                  >
-                    <InlineText color="$primary" fontWeight="900">
-                      {asset.symbol.slice(0, 1)}
-                    </InlineText>
-                  </Stack>
-                  <Stack flex={1} gap="$1">
-                    <SectionTitle>{asset.symbol}</SectionTitle>
-                    <Body fontSize={12}>{asset.network}</Body>
-                  </Stack>
-                  <Stack alignItems="flex-end" gap="$1">
-                    <SectionTitle>{asset.value}</SectionTitle>
-                    <Row gap="$2" alignItems="center">
-                      <InlineText color="$textMuted" fontSize={11}>
-                        {asset.balance}
+              <Card key={asset.symbol} padding="$2" shadowOpacity={0}>
+                <ListRow
+                  title={asset.symbol}
+                  subtitle={`${asset.network} · ${asset.balance}`}
+                  leading={
+                    <Stack
+                      width={44}
+                      height={44}
+                      borderRadius={999}
+                      alignItems="center"
+                      justifyContent="center"
+                      backgroundColor="$surfaceVariant"
+                    >
+                      <InlineText color="$primary" fontWeight="900">
+                        {asset.symbol.slice(0, 1)}
                       </InlineText>
+                    </Stack>
+                  }
+                  trailing={
+                    <Stack alignItems="flex-end" gap="$1">
+                      <SectionTitle>{asset.value}</SectionTitle>
                       <PriceChange value={asset.change} />
-                    </Row>
-                  </Stack>
-                </Row>
+                    </Stack>
+                  }
+                />
               </Card>
             ))}
           </Stack>

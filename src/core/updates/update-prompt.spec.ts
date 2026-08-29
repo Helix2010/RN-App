@@ -7,6 +7,7 @@ const base = {
   dismissedSignalEventId: "",
   decision: "optional" as const,
   actionUrl: "https://example.com/app.apk",
+  directInstallEnabled: true,
 };
 
 describe("full update prompt", () => {
@@ -24,6 +25,9 @@ describe("full update prompt", () => {
     expect(shouldShowFullUpdatePrompt({ ...base, actionUrl: null })).toBe(
       false,
     );
+    expect(
+      shouldShowFullUpdatePrompt({ ...base, directInstallEnabled: false }),
+    ).toBe(false);
   });
 
   it("shows a manually discovered candidate without starting a download", () => {
