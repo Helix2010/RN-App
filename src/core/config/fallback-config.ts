@@ -191,6 +191,12 @@ const zhCN = {
   "update.noticeTitle": "发现新版本",
   "update.noticeDescription": "新版本已准备好，可查看更新内容后选择升级。",
   "update.viewNow": "查看更新",
+  "update.localizationTitle": "语言资源已更新",
+  "update.localizationDescription": "新的语言包已准备好，将在下次刷新后生效。",
+  "update.brandingTitle": "品牌配置已更新",
+  "update.brandingDescription": "新的品牌资源已准备好，将在下次启动时生效。",
+  "update.configTitle": "应用配置已更新",
+  "update.configDescription": "应用配置已更新，正在后台同步。",
 };
 
 const enUS: Record<keyof typeof zhCN, string> = {
@@ -353,6 +359,15 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "update.noticeDescription":
     "A new version is ready. Review the changes before updating.",
   "update.viewNow": "View update",
+  "update.localizationTitle": "Language resources updated",
+  "update.localizationDescription":
+    "New language resources are ready and will apply after the next refresh.",
+  "update.brandingTitle": "Branding updated",
+  "update.brandingDescription":
+    "New branding resources are ready and will apply on the next launch.",
+  "update.configTitle": "App configuration updated",
+  "update.configDescription":
+    "App configuration changed and is syncing in the background.",
 };
 
 export function createFallbackConfig(locale: SupportedLocale): BootstrapConfig {
