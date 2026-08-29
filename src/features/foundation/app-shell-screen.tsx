@@ -1,6 +1,12 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useEffect, useState } from "react";
-import { Modal } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import {
+  BackHandler,
+  Dimensions,
+  Modal,
+  PanResponder,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../app/runtime-context";
 import {
@@ -26,6 +32,31 @@ export function AppShellScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const { config, t, notificationIntent } = useFoundationRuntime();
   const [tab, setTab] = useState<AppTab>("home");
+  const tabGesture = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gesture) => {
+          const screenWidth = Dimensions.get("window").width;
+          const startedAtEdge =
+            gesture.x0 <= 28 || gesture.x0 >= screenWidth - 28;
+          return (
+            startedAtEdge &&
+            Math.abs(gesture.dx) > 16 &&
+            Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.25
+          );
+        },
+        onPanResponderRelease: (_, gesture) => {
+          if (Math.abs(gesture.dx) < 64) return;
+          setTab((current) => {
+            const order: AppTab[] = ["home", "assets", "profile"];
+            const index = order.indexOf(current);
+            const nextIndex = gesture.dx < 0 ? index + 1 : index - 1;
+            return order[nextIndex] ?? current;
+          });
+        },
+      }),
+    [],
+  );
   const updateKey = `${config.update.full.releaseId ?? "none"}:${config.update.latestVersion}`;
   const [dismissedUpdateKey, setDismissedUpdateKey] = useState("");
   const updateNoticeVisible =
@@ -41,25 +72,32 @@ export function AppShellScreen({ navigation }: Props) {
       navigation.navigate("UpdateCenter");
     }
   }, [navigation, notificationIntent]);
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => {
+        if (tab === "home") return false;
+        setTab("home");
+        return true;
+      },
+    );
+    return () => subscription.remove();
+  }, [tab]);
 
   return (
     <Page>
-      {tab === "home" ? (
-        <FoundationHomeScreen
-          onOpenAssets={() => setTab("assets")}
-          onOpenUpdates={() => navigation.navigate("UpdateCenter")}
-          onOpenProfile={() => setTab("profile")}
-        />
-      ) : tab === "assets" ? (
-        <AssetsScreen
-          onOpenUpdates={() => navigation.navigate("UpdateCenter")}
-        />
-      ) : (
-        <ProfileScreen
-          onOpenSettings={() => navigation.navigate("Settings")}
-          onOpenUpdates={() => navigation.navigate("UpdateCenter")}
-        />
-      )}
+      <View style={{ flex: 1 }} {...tabGesture.panHandlers}>
+        {tab === "home" ? (
+          <FoundationHomeScreen onOpenAssets={() => setTab("assets")} />
+        ) : tab === "assets" ? (
+          <AssetsScreen />
+        ) : (
+          <ProfileScreen
+            onOpenSettings={() => navigation.navigate("Settings")}
+            onOpenUpdates={() => navigation.navigate("UpdateCenter")}
+          />
+        )}
+      </View>
       <Row
         paddingTop="$2"
         paddingHorizontal="$3"

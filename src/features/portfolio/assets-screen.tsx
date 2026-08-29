@@ -12,7 +12,6 @@ import {
   Page,
   PageScroll,
   PriceChange,
-  PrimaryButton,
   Row,
   SectionTitle,
   Stack,
@@ -42,9 +41,9 @@ const assets = [
   },
 ];
 
-export function AssetsScreen({ onOpenUpdates }: { onOpenUpdates: () => void }) {
+export function AssetsScreen() {
   const insets = useSafeAreaInsets();
-  const { config, t } = useFoundationRuntime();
+  const { t } = useFoundationRuntime();
   return (
     <Page>
       <PageScroll>
@@ -111,20 +110,6 @@ export function AssetsScreen({ onOpenUpdates }: { onOpenUpdates: () => void }) {
               </Card>
             ))}
           </Stack>
-          {config.features.updateCenter ? (
-            <Card>
-              <Label>{t("home.update")}</Label>
-              <SectionTitle>
-                {t(`update.${config.update.decision}`)}
-              </SectionTitle>
-              <Body>
-                {config.app.version} → {config.update.latestVersion}
-              </Body>
-              <PrimaryButton onPress={onOpenUpdates}>
-                {t("action.checkupdate")}
-              </PrimaryButton>
-            </Card>
-          ) : null}
         </Content>
       </PageScroll>
     </Page>

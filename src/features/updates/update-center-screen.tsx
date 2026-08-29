@@ -26,6 +26,7 @@ import {
   PrimaryButton,
   Row,
   SecondaryButton,
+  ScreenHeader,
   SectionTitle,
   Stack,
 } from "../../design-system";
@@ -155,19 +156,13 @@ export function UpdateCenterScreen({ navigation, locked = false }: Props) {
     <Page>
       <PageScroll>
         <Content paddingTop={insets.top + 20}>
-          {!locked ? (
-            <SecondaryButton
-              alignSelf="flex-start"
-              onPress={() => navigation.goBack()}
-            >
-              {t("action.back")}
-            </SecondaryButton>
-          ) : null}
-          <Stack gap="$2" paddingVertical="$3">
-            <Label>{t("update.releaseControl")}</Label>
-            <Heading>{t("home.update")}</Heading>
-            <Body>{t(`update.${config.update.decision}`)}</Body>
-          </Stack>
+          <ScreenHeader
+            eyebrow={t("update.releaseControl")}
+            title={t("home.update")}
+            subtitle={t(`update.${config.update.decision}`)}
+            onBack={!locked ? () => navigation.goBack() : undefined}
+            backLabel={!locked ? t("action.back") : undefined}
+          />
 
           <Card>
             <Row justifyContent="space-between" alignItems="center">
@@ -245,19 +240,21 @@ export function UpdateCenterScreen({ navigation, locked = false }: Props) {
             {apkError ? <Body color="$danger">{apkError}</Body> : null}
           </Card>
 
-          <Card>
-            <Label>{t("update.diagnostics")}</Label>
-            <Body>
-              {t("update.requestId")} · {config.support.diagnosticId}
-            </Body>
-            <Body>
-              {t("update.release")} ·{" "}
-              {config.update.full.releaseId ?? t("update.notConfigured")}
-            </Body>
-            <Body>
-              {t("update.runtime")} · {config.app.runtimeVersion}
-            </Body>
-          </Card>
+          {config.features.diagnosticsEnabled ? (
+            <Card>
+              <Label>{t("update.diagnostics")}</Label>
+              <Body>
+                {t("update.requestId")} · {config.support.diagnosticId}
+              </Body>
+              <Body>
+                {t("update.release")} ·{" "}
+                {config.update.full.releaseId ?? t("update.notConfigured")}
+              </Body>
+              <Body>
+                {t("update.runtime")} · {config.app.runtimeVersion}
+              </Body>
+            </Card>
+          ) : null}
         </Content>
       </PageScroll>
       {apkDownloadState !== "idle" ? (

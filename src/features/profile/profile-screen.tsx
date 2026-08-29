@@ -2,7 +2,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../app/runtime-context";
 import {
   AppHeader,
-  Badge,
   Body,
   Card,
   Content,
@@ -10,7 +9,6 @@ import {
   Label,
   Page,
   PageScroll,
-  PrimaryButton,
   Row,
   SecondaryButton,
   SectionTitle,
@@ -25,9 +23,7 @@ export function ProfileScreen({
   onOpenUpdates: () => void;
 }) {
   const insets = useSafeAreaInsets();
-  const { config, snapshot, t } = useFoundationRuntime();
-  const serviceLabel =
-    snapshot.source === "remote" ? t("status.connected") : t("status.cached");
+  const { config, t } = useFoundationRuntime();
   return (
     <Page>
       <PageScroll>
@@ -55,11 +51,6 @@ export function ProfileScreen({
                 <SectionTitle>AnyFun User</SectionTitle>
                 <Body fontSize={12}>0x71C7…F8A2</Body>
               </Stack>
-              <Badge>
-                <InlineText color="$success" fontSize={11} fontWeight="800">
-                  {serviceLabel}
-                </InlineText>
-              </Badge>
             </Row>
           </Card>
           <Card>
@@ -69,11 +60,13 @@ export function ProfileScreen({
               subtitle={t("profile.settingsHint")}
               onPress={onOpenSettings}
             />
-            <MenuRow
-              title={t("settings.updateCenter")}
-              subtitle={`${config.app.version} · ${config.app.distribution}`}
-              onPress={onOpenUpdates}
-            />
+            {config.features.updateCenter ? (
+              <MenuRow
+                title={t("settings.updateCenter")}
+                subtitle={t("profile.updateHint")}
+                onPress={onOpenUpdates}
+              />
+            ) : null}
           </Card>
           <Card>
             <Label>{t("profile.security")}</Label>
@@ -82,18 +75,7 @@ export function ProfileScreen({
               label={t("settings.language")}
               value={config.localization.selectedLocale}
             />
-            <InfoRow
-              label={t("settings.runtime")}
-              value={config.app.runtimeVersion}
-            />
-            <InfoRow
-              label={t("settings.configVersion")}
-              value={config.configVersion}
-            />
           </Card>
-          <PrimaryButton onPress={onOpenSettings}>
-            {t("profile.manage")}
-          </PrimaryButton>
         </Content>
       </PageScroll>
     </Page>

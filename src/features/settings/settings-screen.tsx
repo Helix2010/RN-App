@@ -3,7 +3,6 @@ import { Linking } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../app/runtime-context";
 import {
-  AppHeader,
   Badge,
   Body,
   Card,
@@ -14,10 +13,11 @@ import {
   Page,
   PageScroll,
   PrimaryButton,
+  Row,
   SecondaryButton,
   SegmentedControl,
   SectionTitle,
-  Stack,
+  ScreenHeader,
 } from "../../design-system";
 import { getCurrentUpdateMetadata } from "../../core/updates/update-service";
 import type {
@@ -66,16 +66,12 @@ export function SettingsScreen({ navigation }: Props) {
     <Page>
       <PageScroll>
         <Content paddingTop={insets.top + 20}>
-          <SecondaryButton
-            alignSelf="flex-start"
-            onPress={() => navigation.goBack()}
-          >
-            {t("action.back")}
-          </SecondaryButton>
-          <AppHeader
+          <ScreenHeader
             eyebrow="SETTINGS"
             title={t("settings.title")}
             subtitle={t("settings.subtitle")}
+            onBack={() => navigation.goBack()}
+            backLabel={t("action.back")}
           />
           <Card>
             <Label>{t("settings.appearance")}</Label>
@@ -100,28 +96,13 @@ export function SettingsScreen({ navigation }: Props) {
           </Card>
           <Card>
             <Label>{t("settings.updates")}</Label>
-            <Stack gap="$2">
-              <RowItem
-                label={t("settings.updateCenter")}
-                value={
-                  config.features.updateCenter
-                    ? t("settings.enabled")
-                    : t("settings.disabled")
-                }
-              />
-              <RowItem
-                label={t("settings.ota")}
-                value={
-                  config.features.otaEnabled
-                    ? t("settings.enabled")
-                    : t("settings.disabled")
-                }
-              />
-              <RowItem
-                label={t("settings.distribution")}
-                value={config.app.distribution}
-              />
-            </Stack>
+            <SectionTitle>{t(`update.${config.update.decision}`)}</SectionTitle>
+            <Body>
+              {config.app.version}
+              {config.update.decision !== "none"
+                ? ` → ${config.update.latestVersion}`
+                : ""}
+            </Body>
             {config.features.updateCenter ? (
               <PrimaryButton
                 onPress={() => navigation.navigate("UpdateCenter")}
@@ -129,6 +110,8 @@ export function SettingsScreen({ navigation }: Props) {
                 {t("settings.openUpdateCenter")}
               </PrimaryButton>
             ) : null}
+            <Divider />
+            <SectionTitle>{t("settings.enableNotifications")}</SectionTitle>
             <SecondaryButton onPress={() => void enableUpdateNotifications()}>
               {notificationStatus === "registered"
                 ? t("settings.notificationsEnabled")
@@ -149,10 +132,6 @@ export function SettingsScreen({ navigation }: Props) {
               value={config.app.buildNumber}
             />
             <RowItem
-              label={t("settings.runtime")}
-              value={config.app.runtimeVersion}
-            />
-            <RowItem
               label={t("settings.updateSource")}
               value={
                 currentUpdate.isEmbedded
@@ -160,39 +139,45 @@ export function SettingsScreen({ navigation }: Props) {
                   : t("settings.otaBundle")
               }
             />
-            {!currentUpdate.isEmbedded ? (
-              <>
-                <RowItem
-                  label={t("settings.otaRevision")}
-                  value={currentOtaRevision ? String(currentOtaRevision) : "-"}
-                />
-                <RowItem
-                  label={t("settings.otaUpdateId")}
-                  value={currentUpdate.updateId ?? "-"}
-                />
-              </>
-            ) : null}
-            <RowItem
-              label={t("settings.configVersion")}
-              value={config.configVersion}
-            />
-            <RowItem
-              label={t("settings.languageVersion")}
-              value={config.localization.messagesVersion}
-            />
-            <RowItem
-              label={t("settings.service")}
-              value={
-                snapshot.source === "remote"
-                  ? t("status.connected")
-                  : t("status.cached")
-              }
-            />
           </Card>
           {config.features.diagnosticsEnabled ? (
             <Card>
               <Label>{t("settings.diagnostics")}</Label>
               <Body>{t("settings.diagnosticsHint")}</Body>
+              <RowItem
+                label={t("settings.service")}
+                value={
+                  snapshot.source === "remote"
+                    ? t("status.connected")
+                    : t("status.cached")
+                }
+              />
+              <RowItem
+                label={t("settings.runtime")}
+                value={config.app.runtimeVersion}
+              />
+              <RowItem
+                label={t("settings.configVersion")}
+                value={config.configVersion}
+              />
+              <RowItem
+                label={t("settings.languageVersion")}
+                value={config.localization.messagesVersion}
+              />
+              {!currentUpdate.isEmbedded ? (
+                <>
+                  <RowItem
+                    label={t("settings.otaRevision")}
+                    value={
+                      currentOtaRevision ? String(currentOtaRevision) : "-"
+                    }
+                  />
+                  <RowItem
+                    label={t("settings.otaUpdateId")}
+                    value={currentUpdate.updateId ?? "-"}
+                  />
+                </>
+              ) : null}
               <Badge>
                 <InlineText color="$textMuted" fontSize={12}>
                   {config.support.diagnosticId}
@@ -215,9 +200,16 @@ export function SettingsScreen({ navigation }: Props) {
 
 function RowItem({ label, value }: { label: string; value: string }) {
   return (
-    <Stack gap="$1">
+    <Row justifyContent="space-between" alignItems="center" gap="$3">
       <Body>{label}</Body>
-      <SectionTitle>{value}</SectionTitle>
-    </Stack>
+      <InlineText
+        color="$color"
+        fontWeight="700"
+        textAlign="right"
+        flexShrink={1}
+      >
+        {value}
+      </InlineText>
+    </Row>
   );
 }

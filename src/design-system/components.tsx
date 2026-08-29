@@ -101,6 +101,53 @@ export function AppHeader({
   );
 }
 
+export function ScreenHeader({
+  eyebrow,
+  title,
+  subtitle,
+  onBack,
+  backLabel,
+  action,
+}: {
+  eyebrow?: string;
+  title: string;
+  subtitle?: string;
+  onBack?: () => void;
+  backLabel?: string;
+  action?: ReactNode;
+}) {
+  return (
+    <XStack alignItems="center" gap="$3" paddingVertical="$2">
+      {onBack ? (
+        <Button
+          width={42}
+          height={42}
+          borderRadius={999}
+          padding={0}
+          backgroundColor="$surfaceVariant"
+          color="$color"
+          borderColor="$borderColor"
+          borderWidth={1}
+          onPress={onBack}
+          accessibilityRole="button"
+          accessibilityLabel={backLabel}
+          pressStyle={{ opacity: 0.76, scale: 0.96 }}
+        >
+          <Text fontSize={28} lineHeight={30} marginTop={-2}>
+            ‹
+          </Text>
+        </Button>
+      ) : null}
+      <Stack flex={1} gap="$1">
+        {eyebrow ? <Label>{eyebrow}</Label> : null}
+        <Heading fontSize={26}>{title}</Heading>
+        {subtitle ? <Body>{subtitle}</Body> : null}
+      </Stack>
+      {action}
+    </XStack>
+  );
+}
+
 export const Divider = styled(YStack, {
   height: 1,
   width: "100%",

@@ -36,7 +36,15 @@ export function FoundationNavigator() {
   if (config.update.decision === "required" && config.update.full.actionUrl) {
     return (
       <NavigationContainer theme={navigationTheme}>
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Navigator
+          screenOptions={{
+            headerShown: false,
+            gestureEnabled: true,
+            fullScreenGestureEnabled: true,
+            animation: "slide_from_right",
+            animationMatchesGesture: true,
+          }}
+        >
           <Stack.Screen name="UpdateCenter">
             {(props) => <UpdateCenterScreen {...props} locked />}
           </Stack.Screen>
@@ -47,7 +55,15 @@ export function FoundationNavigator() {
 
   return (
     <NavigationContainer theme={navigationTheme}>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Navigator
+        screenOptions={{
+          headerShown: false,
+          gestureEnabled: true,
+          fullScreenGestureEnabled: true,
+          animation: "slide_from_right",
+          animationMatchesGesture: true,
+        }}
+      >
         <Stack.Screen name="AppShell" component={AppShellScreen} />
         <Stack.Screen name="UpdateCenter" component={UpdateCenterScreen} />
         <Stack.Screen name="Settings" component={SettingsScreen} />

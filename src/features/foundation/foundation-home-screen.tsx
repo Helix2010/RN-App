@@ -15,28 +15,17 @@ import {
   PriceChange,
   PrimaryButton,
   Row,
-  SecondaryButton,
   SectionTitle,
   Stack,
 } from "../../design-system";
 export function FoundationHomeScreen({
   onOpenAssets,
-  onOpenUpdates,
-  onOpenProfile,
 }: {
   onOpenAssets: () => void;
-  onOpenUpdates: () => void;
-  onOpenProfile: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const runtime = useFoundationRuntime();
-  const { config, snapshot, t } = runtime;
-  const sourceLabel =
-    snapshot.source === "remote"
-      ? t("status.connected")
-      : snapshot.source === "cache"
-        ? t("status.cached")
-        : t("status.error");
+  const { t } = runtime;
 
   return (
     <Page>
@@ -52,35 +41,7 @@ export function FoundationHomeScreen({
             eyebrow={t("home.eyebrow")}
             title={t("home.title")}
             subtitle={t("home.description")}
-            action={
-              <SecondaryButton
-                size="$3"
-                paddingHorizontal="$3"
-                onPress={onOpenProfile}
-                accessibilityLabel={t("action.settings")}
-              >
-                {t("action.settings")}
-              </SecondaryButton>
-            }
           />
-
-          <Row gap="$2" flexWrap="wrap">
-            <Badge>
-              <InlineText
-                color={snapshot.source === "remote" ? "$success" : "$warning"}
-                fontSize={12}
-              >
-                {sourceLabel}
-              </InlineText>
-            </Badge>
-            <Badge>
-              <InlineText color="$textMuted" fontSize={12}>
-                {t("settings.configVersion")} {config.configVersion} ·{" "}
-                {config.localization.selectedLocale} ·{" "}
-                {config.theme.paletteVersion}
-              </InlineText>
-            </Badge>
-          </Row>
 
           <Card
             backgroundColor="$primary"
@@ -101,17 +62,6 @@ export function FoundationHomeScreen({
               >
                 {t("home.secondaryAction")}
               </PrimaryButton>
-              {config.features.updateCenter ? (
-                <SecondaryButton
-                  flex={1}
-                  backgroundColor="$primary"
-                  color="$onPrimary"
-                  borderColor="$onPrimary"
-                  onPress={onOpenUpdates}
-                >
-                  {t("home.primaryAction")}
-                </SecondaryButton>
-              ) : null}
             </Row>
           </Card>
 
@@ -134,31 +84,6 @@ export function FoundationHomeScreen({
             <AddressText numberOfLines={1}>
               0x71C7…F8A2 · {t("home.contract")}
             </AddressText>
-          </Card>
-
-          <Card>
-            <Row justifyContent="space-between" alignItems="center">
-              <Stack flex={1} gap="$1">
-                <Label>{t("home.update")}</Label>
-                <SectionTitle>
-                  {t(`update.${config.update.decision}`)}
-                </SectionTitle>
-              </Stack>
-              <Badge>
-                <InlineText color="$primary" fontWeight="700" fontSize={12}>
-                  {config.app.version} → {config.update.latestVersion}
-                </InlineText>
-              </Badge>
-            </Row>
-            <Body>
-              {config.app.platform} / {config.app.distribution} /{" "}
-              {config.app.runtimeVersion}
-            </Body>
-            {config.features.updateCenter ? (
-              <PrimaryButton onPress={onOpenUpdates}>
-                {t("action.checkupdate")}
-              </PrimaryButton>
-            ) : null}
           </Card>
 
           <Card>
