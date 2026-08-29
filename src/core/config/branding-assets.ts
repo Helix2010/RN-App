@@ -18,10 +18,29 @@ const cachedAssetsSchema = z.array(
 );
 const CACHE_DIRECTORY = `${FileSystem.documentDirectory}branding/${encodeURIComponent(appRuntime.apiBaseUrl)}-${appRuntime.applicationId}/`;
 
-function assetUrl(asset: BrandingAsset): string {
+export function brandingAssetUrl(asset: BrandingAsset): string {
   return /^https?:\/\//i.test(asset.fileUrl)
     ? asset.fileUrl
     : new URL(asset.fileUrl, `${appRuntime.apiBaseUrl}/`).toString();
+}
+
+export type BrandingVisual = {
+  backgroundColor: string;
+  logo?: BrandingAsset & { localFileUrl?: string };
+  backgroundImage?: BrandingAsset & { localFileUrl?: string };
+};
+
+export function resolveBrandingVisual(
+  visuals: { light: BrandingVisual; dark: BrandingVisual },
+  theme: "light" | "dark",
+): BrandingVisual {
+  const selected = visuals[theme];
+  const secondary = visuals[theme === "light" ? "dark" : "light"];
+  return {
+    ...selected,
+    logo: selected.logo ?? secondary.logo,
+    backgroundImage: selected.backgroundImage ?? secondary.backgroundImage,
+  };
 }
 
 async function readIndex(): Promise<CachedAsset[]> {
@@ -66,7 +85,7 @@ export async function cacheBrandingAsset(
   const temporary = `${CACHE_DIRECTORY}${asset.assetId}.part`;
   const target = `${CACHE_DIRECTORY}${asset.assetId}${extension}`;
   const task = FileSystem.createDownloadResumable(
-    assetUrl(asset),
+    brandingAssetUrl(asset),
     temporary,
     { headers: { Accept: asset.mimeType } },
     ({ totalBytesWritten, totalBytesExpectedToWrite }) => {
@@ -131,7 +150,8 @@ export async function warmBrandingAssets(
         result[asset.assetId] = cached;
       else result[asset.assetId] = await cacheBrandingAsset(asset);
     } catch {
-      // A branding asset is non-critical; embedded visuals remain the fallback.
+      // A branding asset is non-critical; the launch screen can still use its
+      // tenant URL while a verified local copy is unavailable.
     }
   }
   await pruneBrandingCache(

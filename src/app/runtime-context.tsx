@@ -46,6 +46,7 @@ import {
 import {
   collectBrandingAssets,
   hydrateCachedBranding,
+  resolveBrandingVisual,
   warmBrandingAssets,
 } from "../core/config/branding-assets";
 
@@ -114,7 +115,9 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
         ? "dark"
         : "light"
       : themePreference;
-  const launchVisual = launchBranding?.launch.visuals[launchTheme];
+  const launchVisual = launchBranding
+    ? resolveBrandingVisual(launchBranding.launch.visuals, launchTheme)
+    : undefined;
   const nativeUpdateStatus = useUpdateStatus();
   const t = useCallback(
     (key: string) => translateMessage(config.localization.messages, key),

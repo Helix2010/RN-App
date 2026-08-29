@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Animated, Image } from "react-native";
 import type { BrandingAsset } from "../core/config/bootstrap.schema";
+import { brandingAssetUrl } from "../core/config/branding-assets";
 import { BrandMark, Body, Page, Stack } from "../design-system";
 
 export function LaunchScreen({
@@ -53,9 +54,12 @@ export function LaunchScreen({
       justifyContent="center"
       backgroundColor={backgroundColor as never}
     >
-      {backgroundImage?.localFileUrl ? (
+      {backgroundImage ? (
         <Image
-          source={{ uri: backgroundImage.localFileUrl }}
+          source={{
+            uri:
+              backgroundImage.localFileUrl ?? brandingAssetUrl(backgroundImage),
+          }}
           resizeMode="cover"
           style={{
             position: "absolute",
@@ -69,9 +73,9 @@ export function LaunchScreen({
       ) : null}
       <Animated.View style={{ opacity, transform: [{ scale }] }}>
         <Stack alignItems="center" gap="$4">
-          {logo?.localFileUrl ? (
+          {logo ? (
             <Image
-              source={{ uri: logo.localFileUrl }}
+              source={{ uri: logo.localFileUrl ?? brandingAssetUrl(logo) }}
               style={{ width: 88, height: 88, borderRadius: 22 }}
               accessibilityLabel={title}
             />
