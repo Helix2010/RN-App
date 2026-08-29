@@ -1,4 +1,5 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { useIsFocused } from "@react-navigation/native";
 import { useEffect, useMemo, useState } from "react";
 import {
   BackHandler,
@@ -30,6 +31,7 @@ type AppTab = "home" | "assets" | "profile";
 
 export function AppShellScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
+  const isFocused = useIsFocused();
   const { config, t, notificationIntent } = useFoundationRuntime();
   const [tab, setTab] = useState<AppTab>("home");
   const tabGesture = useMemo(
@@ -76,13 +78,14 @@ export function AppShellScreen({ navigation }: Props) {
     const subscription = BackHandler.addEventListener(
       "hardwareBackPress",
       () => {
+        if (!isFocused) return false;
         if (tab === "home") return false;
         setTab("home");
         return true;
       },
     );
     return () => subscription.remove();
-  }, [tab]);
+  }, [isFocused, tab]);
 
   return (
     <Page>
