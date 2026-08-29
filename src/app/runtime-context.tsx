@@ -42,7 +42,6 @@ import { LaunchScreen } from "./launch-screen";
 import {
   registerPushTokenIfAuthorized,
   subscribeToUpdateSignals,
-  syncInstallationHeartbeat,
 } from "../core/device/installation-service";
 import {
   collectBrandingAssets,
@@ -200,9 +199,6 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   }, [config.localization.refreshIntervalSeconds, query, runSilentOtaCheck]);
   useEffect(() => {
     if (snapshot.stale) return;
-    void syncInstallationHeartbeat(config, themePreference).catch(
-      () => undefined,
-    );
     void registerPushTokenIfAuthorized(config, themePreference).then(
       setNotificationStatus,
     );

@@ -10,6 +10,7 @@ import type { ThemePreference } from "../preferences/preferences-store";
 import { apiClient, appRuntime } from "../network/api-client";
 
 const INSTALLATION_KEY = "foundation.installation-id.v1";
+const CREDENTIAL_KEY = "foundation.installation-credential.v1";
 const HEARTBEAT_KEY = "foundation.installation-heartbeat.v1";
 const HEARTBEAT_INTERVAL_MS = 30 * 60 * 1_000;
 
@@ -18,6 +19,10 @@ const heartbeatResponseSchema = z.object({
   deviceGrouping: z.enum(["available", "disabled"]),
   heartbeatIntervalSeconds: z.number(),
   receivedAt: z.string(),
+  credentialRotated: z.boolean().optional(),
+  installationCredential: z.string().optional(),
+  credentialVersion: z.number().optional(),
+  credentialExpiresAt: z.string().optional(),
 });
 const pushResponseSchema = z.object({
   registered: z.literal(true),
@@ -57,14 +62,47 @@ export async function syncInstallationHeartbeat(
   force = false,
 ): Promise<void> {
   const last = Number(await AsyncStorage.getItem(HEARTBEAT_KEY));
+  const storedCredential = await SecureStore.getItemAsync(CREDENTIAL_KEY);
   if (
     !force &&
+    storedCredential &&
     Number.isFinite(last) &&
     Date.now() - last < HEARTBEAT_INTERVAL_MS
   )
     return;
   const id = await installationId();
-  await apiClient.post(
+  let credential = storedCredential;
+  if (!credential) {
+    const registration = await apiClient.post(
+      "/v1/mobile/installations/register",
+      {
+        installationId: id,
+        deviceSourceHash: await deviceSourceHash(),
+        packageId: Application.applicationId ?? appRuntime.applicationId,
+        otaChannel: appRuntime.otaChannel,
+        otaRevision: config.update.ota.revision ?? null,
+        localizationVersion: config.localization.messagesVersion,
+        brandingVersion: config.branding?.version ?? null,
+        locale: config.localization.selectedLocale,
+        theme,
+        osVersion: String(Platform.Version),
+        deviceClass: Platform.OS === "android" ? "android-phone" : "ios-device",
+      },
+      z.object({
+        installationId: z.string(),
+        installationCredential: z.string(),
+        credentialVersion: z.number(),
+        credentialExpiresAt: z.string(),
+        heartbeatIntervalSeconds: z.number(),
+        receivedAt: z.string(),
+      }),
+    );
+    credential = registration.installationCredential;
+    await SecureStore.setItemAsync(CREDENTIAL_KEY, credential, {
+      keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
+    });
+  }
+  const response = await apiClient.post(
     "/v1/mobile/installations/heartbeat",
     {
       installationId: id,
@@ -73,13 +111,24 @@ export async function syncInstallationHeartbeat(
       otaChannel: appRuntime.otaChannel,
       otaRevision: config.update.ota.revision ?? null,
       localizationVersion: config.localization.messagesVersion,
+      brandingVersion: config.branding?.version ?? null,
       locale: config.localization.selectedLocale,
       theme,
       osVersion: String(Platform.Version),
       deviceClass: Platform.OS === "android" ? "android-phone" : "ios-device",
     },
     heartbeatResponseSchema,
+    { headers: { Authorization: `Installation ${credential}` } },
   );
+  if (response.credentialRotated && response.installationCredential) {
+    await SecureStore.setItemAsync(
+      CREDENTIAL_KEY,
+      response.installationCredential,
+      {
+        keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
+      },
+    );
+  }
   await AsyncStorage.setItem(HEARTBEAT_KEY, String(Date.now()));
 }
 
@@ -89,6 +138,7 @@ export async function registerPushTokenIfAuthorized(
   requestPermission = false,
 ): Promise<"registered" | "denied" | "unavailable"> {
   try {
+    await syncInstallationHeartbeat(config, theme);
     if (Platform.OS === "android") {
       await Notifications.setNotificationChannelAsync("updates", {
         name: "App updates",
@@ -99,7 +149,8 @@ export async function registerPushTokenIfAuthorized(
     if (!permission.granted && requestPermission)
       permission = await Notifications.requestPermissionsAsync();
     if (!permission.granted) return "denied";
-    await syncInstallationHeartbeat(config, theme, true);
+    const credential = await SecureStore.getItemAsync(CREDENTIAL_KEY);
+    if (!credential) return "unavailable";
     const token = await Notifications.getDevicePushTokenAsync();
     if (typeof token.data !== "string" || token.data === "")
       return "unavailable";
@@ -118,6 +169,7 @@ export async function registerPushTokenIfAuthorized(
         permissionStatus: permission.status,
       },
       pushResponseSchema,
+      { headers: { Authorization: `Installation ${credential}` } },
     );
     return "registered";
   } catch {
