@@ -19,4 +19,4 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
-      - run: pnpm dlx expo-doctor
+      - run: node scripts/check-expo-doctor.mjs
