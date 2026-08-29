@@ -36,4 +36,29 @@ describe("bootstrapSchema", () => {
     };
     expect(bootstrapSchema.safeParse(config).success).toBe(true);
   });
+
+  it("accepts a full update response when no OTA apply strategy is active", () => {
+    const config = createFallbackConfig("zh-CN");
+    config.app.version = "1.1.2";
+    config.app.buildNumber = "6";
+    config.app.distribution = "direct";
+    config.update.decision = "recommended";
+    config.update.latestVersion = "1.1.5";
+    config.update.full = {
+      channel: "direct",
+      actionUrl:
+        "https://api.anyfun.win/v1/public/releases/rel_latest/download",
+      releaseId: "rel_latest",
+      sha256: "a".repeat(64),
+      size: 96_565_418,
+    };
+    config.update.ota.applyStrategy = null;
+
+    const parsed = bootstrapSchema.safeParse(config);
+
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.update.latestVersion).toBe("1.1.5");
+    expect(parsed.data.update.full.releaseId).toBe("rel_latest");
+  });
 });

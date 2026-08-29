@@ -38,15 +38,11 @@ describe("loadBootstrap", () => {
     jest.clearAllMocks();
   });
 
-  it("falls back and removes a corrupted cache when the server is unavailable", async () => {
+  it("blocks startup and removes a corrupted cache when the server is unavailable", async () => {
     getBootstrap.mockRejectedValue(new Error("server unavailable"));
     storage.getItem.mockResolvedValue("{broken-json");
 
-    const snapshot = await loadBootstrap("zh-CN");
-
-    expect(snapshot.source).toBe("fallback");
-    expect(snapshot.stale).toBe(true);
-    expect(snapshot.config.localization.fallbackLocale).toBe("zh-CN");
+    await expect(loadBootstrap("zh-CN")).rejects.toThrow("server unavailable");
     expect(storage.removeItem).toHaveBeenCalledWith(
       "foundation.bootstrap.v3.https%3A%2F%2Ftenant-a.example.com.dex-mobile.zh-CN",
     );
@@ -106,5 +102,32 @@ describe("loadBootstrap", () => {
       "设置",
     );
     expect(snapshot.config.localization.messagesVersion).toBe("2");
+  });
+
+  it("keeps the server-reported newer APK update in the fresh snapshot", async () => {
+    const config = createFallbackConfig("zh-CN");
+    config.app.version = "1.1.2";
+    config.app.buildNumber = "6";
+    config.app.distribution = "direct";
+    config.update.decision = "recommended";
+    config.update.latestVersion = "1.1.5";
+    config.update.full = {
+      channel: "direct",
+      actionUrl:
+        "https://api.anyfun.win/v1/public/releases/rel_latest/download",
+      releaseId: "rel_latest",
+      sha256: "b".repeat(64),
+      size: 96_565_418,
+    };
+    config.update.ota.applyStrategy = null;
+    getBootstrap.mockResolvedValue(config);
+
+    const snapshot = await loadBootstrap("zh-CN");
+
+    expect(snapshot.source).toBe("remote");
+    expect(snapshot.stale).toBe(false);
+    expect(snapshot.config.update.decision).toBe("recommended");
+    expect(snapshot.config.update.latestVersion).toBe("1.1.5");
+    expect(snapshot.config.update.full.releaseId).toBe("rel_latest");
   });
 });

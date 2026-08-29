@@ -59,7 +59,7 @@ type RuntimeValue = {
   t: (key: string) => string;
   isInitialLoading: boolean;
   isRefreshing: boolean;
-  refresh: () => Promise<void>;
+  refresh: () => Promise<BootstrapSnapshot>;
   otaResult: OtaCheckResult | null;
   applyPendingOta: () => Promise<void>;
   notificationStatus: "idle" | "registered" | "denied" | "unavailable";
@@ -83,16 +83,19 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
     localePreference === "system" ? systemLocale() : localePreference;
   const query = useBootstrap(locale);
   const fallback = useMemo(() => createFallbackConfig(locale), [locale]);
-  const snapshot: BootstrapSnapshot = useMemo(
+  const snapshot = query.data;
+  // The embedded configuration is used only to render the startup gate. It is
+  // never exposed through RuntimeContext and cannot open business screens.
+  const config = snapshot?.config ?? fallback;
+  const runtimeSnapshot = useMemo<BootstrapSnapshot>(
     () =>
-      query.data ?? {
+      snapshot ?? {
         config: fallback,
         source: "fallback",
         stale: true,
       },
-    [fallback, query.data],
+    [fallback, snapshot],
   );
-  const config = snapshot.config;
   const otaLastCheckRef = useRef<{ key: string; at: number } | null>(null);
   const [otaResult, setOtaResult] = useState<OtaCheckResult | null>(null);
   const [launchMinimumElapsed, setLaunchMinimumElapsed] = useState(false);
@@ -117,9 +120,12 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
     (key: string) => translateMessage(config.localization.messages, key),
     [config.localization.messages],
   );
-  const refresh = useCallback(async () => {
-    await query.refetch();
-  }, [query]);
+  const refresh = useCallback(async (): Promise<BootstrapSnapshot> => {
+    const result = await query.refetch();
+    if (result.data) return result.data;
+    if (snapshot) return snapshot;
+    throw result.error ?? new Error("Remote Bootstrap is unavailable");
+  }, [query, snapshot]);
   useEffect(() => {
     const minimumMs = config.branding?.launch.minDisplayMs ?? 700;
     const maximumMs = config.branding?.launch.maxDisplayMs ?? 1_800;
@@ -182,8 +188,9 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
     }).then(setOtaResult);
   }, []);
   useEffect(() => {
-    if (!query.isPending && !snapshot.stale) runSilentOtaCheck(config);
-  }, [config, query.isPending, runSilentOtaCheck, snapshot.stale]);
+    if (snapshot && !query.isPending && !snapshot.stale)
+      runSilentOtaCheck(config);
+  }, [config, query.isPending, runSilentOtaCheck, snapshot]);
   useEffect(() => {
     const interval = 15 * 60 * 1_000;
     const refreshAndCheck = (): void => {
@@ -203,11 +210,11 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
     };
   }, [config.localization.refreshIntervalSeconds, query, runSilentOtaCheck]);
   useEffect(() => {
-    if (snapshot.stale) return;
+    if (!snapshot || snapshot.stale) return;
     void registerPushTokenIfAuthorized(config, themePreference).then(
       setNotificationStatus,
     );
-  }, [config, snapshot.stale, themePreference]);
+  }, [config, snapshot, themePreference]);
   useEffect(
     () =>
       subscribeToUpdateSignals((signal) => {
@@ -282,7 +289,7 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   const value = useMemo<RuntimeValue>(
     () => ({
       config,
-      snapshot,
+      snapshot: runtimeSnapshot,
       localePreference,
       themePreference,
       setLocale,
@@ -306,7 +313,7 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
       refresh,
       setLocale,
       setTheme,
-      snapshot,
+      runtimeSnapshot,
       t,
       themePreference,
       otaResult,
@@ -318,92 +325,164 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
 
   return (
     <FoundationThemeProvider config={config} preference={themePreference}>
-      <RuntimeContext.Provider value={value}>
-        {launchMinimumElapsed && (!query.isPending || launchTimeout) ? (
-          children
-        ) : (
+      {!snapshot ? (
+        query.isPending ? (
           <LaunchScreen
-            message={launchBranding?.launch.subtitle || t("status.loading")}
-            title={launchBranding?.launch.title || t("app.name")}
-            backgroundColor={launchVisual?.backgroundColor}
-            logo={launchVisual?.logo}
-            backgroundImage={launchVisual?.backgroundImage}
-            animationType={launchBranding?.launch.animation.type}
-            animationDurationMs={launchBranding?.launch.animation.durationMs}
+            message={
+              locale === "en-US"
+                ? "Connecting to configuration service"
+                : "正在连接配置服务"
+            }
           />
-        )}
-        <Modal
-          visible={immediateOtaVisible}
-          transparent
-          animationType="fade"
-          statusBarTranslucent
-          navigationBarTranslucent
-          presentationStyle="overFullScreen"
-          onRequestClose={() => undefined}
-        >
-          <FoundationThemeProvider config={config} preference={themePreference}>
-            <Stack
-              flex={1}
-              justifyContent="center"
-              padding="$4"
-              backgroundColor="$backdrop"
-              accessibilityRole="alert"
-              accessibilityViewIsModal
+        ) : (
+          <BootstrapUnavailableScreen
+            locale={locale}
+            retrying={query.isFetching}
+            onRetry={() => void query.refetch()}
+          />
+        )
+      ) : (
+        <RuntimeContext.Provider value={value}>
+          {launchMinimumElapsed && (!query.isPending || launchTimeout) ? (
+            children
+          ) : (
+            <LaunchScreen
+              message={launchBranding?.launch.subtitle || t("status.loading")}
+              title={launchBranding?.launch.title || t("app.name")}
+              backgroundColor={launchVisual?.backgroundColor}
+              logo={launchVisual?.logo}
+              backgroundImage={launchVisual?.backgroundImage}
+              animationType={launchBranding?.launch.animation.type}
+              animationDurationMs={launchBranding?.launch.animation.durationMs}
+            />
+          )}
+          <Modal
+            visible={immediateOtaVisible}
+            transparent
+            animationType="fade"
+            statusBarTranslucent
+            navigationBarTranslucent
+            presentationStyle="overFullScreen"
+            onRequestClose={() => undefined}
+          >
+            <FoundationThemeProvider
+              config={config}
+              preference={themePreference}
             >
-              {pendingOta ? (
-                <Card
-                  width="100%"
-                  maxWidth={460}
-                  alignSelf="center"
-                  borderColor="$warning"
-                  backgroundColor="$surface"
-                  padding="$5"
-                >
-                  <Stack gap="$3">
-                    <Label color="$warning">
-                      {t("update.otaImmediateRequiredLabel")}
-                    </Label>
-                    <SectionTitle>
-                      {t(
-                        pendingOta.status === "error"
-                          ? "update.otaImmediateRetryTitle"
-                          : "update.otaImmediateTitle",
-                      )}
-                    </SectionTitle>
-                    <Body>
-                      {t(
-                        pendingOta.status === "applying"
-                          ? "update.otaApplying"
-                          : pendingOta.status === "error"
-                            ? "update.otaImmediateRetry"
-                            : "update.otaImmediateRequired",
-                      )}
-                    </Body>
-                    <Stack
-                      padding="$3"
-                      borderRadius="$3"
-                      backgroundColor="$surfaceVariant"
-                    >
-                      <Body color="$textMuted" fontSize={13}>
-                        {t("update.otaImmediateHint")}
+              <Stack
+                flex={1}
+                justifyContent="center"
+                padding="$4"
+                backgroundColor="$backdrop"
+                accessibilityRole="alert"
+                accessibilityViewIsModal
+              >
+                {pendingOta ? (
+                  <Card
+                    width="100%"
+                    maxWidth={460}
+                    alignSelf="center"
+                    borderColor="$warning"
+                    backgroundColor="$surface"
+                    padding="$5"
+                  >
+                    <Stack gap="$3">
+                      <Label color="$warning">
+                        {t("update.otaImmediateRequiredLabel")}
+                      </Label>
+                      <SectionTitle>
+                        {t(
+                          pendingOta.status === "error"
+                            ? "update.otaImmediateRetryTitle"
+                            : "update.otaImmediateTitle",
+                        )}
+                      </SectionTitle>
+                      <Body>
+                        {t(
+                          pendingOta.status === "applying"
+                            ? "update.otaApplying"
+                            : pendingOta.status === "error"
+                              ? "update.otaImmediateRetry"
+                              : "update.otaImmediateRequired",
+                        )}
                       </Body>
+                      <Stack
+                        padding="$3"
+                        borderRadius="$3"
+                        backgroundColor="$surfaceVariant"
+                      >
+                        <Body color="$textMuted" fontSize={13}>
+                          {t("update.otaImmediateHint")}
+                        </Body>
+                      </Stack>
+                      <PrimaryButton
+                        disabled={pendingOta.status === "applying"}
+                        onPress={() => void applyPendingOta()}
+                      >
+                        {pendingOta.status === "applying"
+                          ? t("update.otaApplying")
+                          : t("update.applyImmediate")}
+                      </PrimaryButton>
                     </Stack>
-                    <PrimaryButton
-                      disabled={pendingOta.status === "applying"}
-                      onPress={() => void applyPendingOta()}
-                    >
-                      {pendingOta.status === "applying"
-                        ? t("update.otaApplying")
-                        : t("update.applyImmediate")}
-                    </PrimaryButton>
-                  </Stack>
-                </Card>
-              ) : null}
-            </Stack>
-          </FoundationThemeProvider>
-        </Modal>
-      </RuntimeContext.Provider>
+                  </Card>
+                ) : null}
+              </Stack>
+            </FoundationThemeProvider>
+          </Modal>
+        </RuntimeContext.Provider>
+      )}
     </FoundationThemeProvider>
+  );
+}
+
+function BootstrapUnavailableScreen({
+  locale,
+  retrying,
+  onRetry,
+}: {
+  locale: SupportedLocale;
+  retrying: boolean;
+  onRetry: () => void;
+}) {
+  const english = locale === "en-US";
+  return (
+    <Stack
+      flex={1}
+      justifyContent="center"
+      padding="$4"
+      backgroundColor="$background"
+      accessibilityRole="alert"
+    >
+      <Card width="100%" maxWidth={460} alignSelf="center" padding="$5">
+        <Stack gap="$3">
+          <Label color="$danger">
+            {english ? "CONFIGURATION UNAVAILABLE" : "配置连接失败"}
+          </Label>
+          <SectionTitle>
+            {english ? "Unable to start the app" : "暂时无法启动应用"}
+          </SectionTitle>
+          <Body>
+            {english
+              ? "No valid remote or cached configuration is available. Check your network and try again."
+              : "当前没有可用的远程配置或有效缓存。请检查网络后重新连接。"}
+          </Body>
+          <Body color="$textMuted" fontSize={13}>
+            {english
+              ? "Business pages remain locked until configuration validation succeeds."
+              : "配置校验成功前不会进入业务页面。"}
+          </Body>
+          <PrimaryButton disabled={retrying} onPress={onRetry}>
+            {retrying
+              ? english
+                ? "Connecting…"
+                : "正在连接…"
+              : english
+                ? "Try again"
+                : "重新连接"}
+          </PrimaryButton>
+        </Stack>
+      </Card>
+    </Stack>
   );
 }
 

@@ -37,7 +37,7 @@ type Props = NativeStackScreenProps<RootStackParamList, "UpdateCenter"> & {
 
 export function UpdateCenterScreen({ navigation, locked = false }: Props) {
   const insets = useSafeAreaInsets();
-  const { config, otaResult, t } = useFoundationRuntime();
+  const { config, otaResult, refresh, t } = useFoundationRuntime();
   const [ota, setOta] = useState<OtaCheckResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [fullMessage, setFullMessage] = useState<string | null>(null);
@@ -67,11 +67,11 @@ export function UpdateCenterScreen({ navigation, locked = false }: Props) {
         }
       : nativeOta);
 
-  const checkOta = async (): Promise<void> => {
+  const checkOta = async (candidate: typeof config = config): Promise<void> => {
     setBusy(true);
     try {
       setOta(
-        await checkAndDownloadOta(config, {
+        await checkAndDownloadOta(candidate, {
           onStateChange: (status) =>
             setOta((previous) => ({
               status,
@@ -97,32 +97,43 @@ export function UpdateCenterScreen({ navigation, locked = false }: Props) {
     setBusy(true);
     setFullMessage(null);
     setApkError(null);
-    const hasFullUpdate =
-      config.update.decision !== "none" &&
-      Boolean(config.update.full.actionUrl);
-    if (hasFullUpdate && config.update.full.actionUrl) {
-      setApkDownloadState("downloading");
-      setApkProgress({
-        written: 0,
-        total: config.update.full.size ?? 0,
-        percentage: 0,
-      });
-      try {
-        await downloadAndInstallApk(config, setApkProgress);
-        setFullMessage(t("update.apkInstallerOpened"));
-        setApkDownloadState("idle");
-      } catch (error) {
-        setApkDownloadState("error");
-        setApkError(
-          error instanceof Error ? error.message : t("update.apkDownloadError"),
-        );
-      } finally {
-        setBusy(false);
+    try {
+      const refreshed = await refresh();
+      if (refreshed.source !== "remote" || refreshed.stale) {
+        setFullMessage(t("status.error"));
+        return;
       }
-      return;
+      const candidate = refreshed.config;
+      const hasFullUpdate =
+        candidate.update.decision !== "none" &&
+        Boolean(candidate.update.full.actionUrl);
+      if (hasFullUpdate && candidate.update.full.actionUrl) {
+        setApkDownloadState("downloading");
+        setApkProgress({
+          written: 0,
+          total: candidate.update.full.size ?? 0,
+          percentage: 0,
+        });
+        try {
+          await downloadAndInstallApk(candidate, setApkProgress);
+          setFullMessage(t("update.apkInstallerOpened"));
+          setApkDownloadState("idle");
+        } catch (error) {
+          setApkDownloadState("error");
+          setApkError(
+            error instanceof Error
+              ? error.message
+              : t("update.apkDownloadError"),
+          );
+        }
+        return;
+      }
+      await checkOta(candidate);
+    } catch {
+      setFullMessage(t("status.error"));
+    } finally {
+      setBusy(false);
     }
-    await checkOta();
-    setBusy(false);
   };
 
   const applyOta = async (): Promise<void> => {

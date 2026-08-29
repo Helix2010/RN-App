@@ -205,11 +205,6 @@ export async function loadBootstrap(
     if (cached) {
       return { config: cached, source: "cache", stale: true, lastError };
     }
-    return {
-      config: createFallbackConfig(locale),
-      source: "fallback",
-      stale: true,
-      lastError,
-    };
+    throw lastError;
   }
 }
