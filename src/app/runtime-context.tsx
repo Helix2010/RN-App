@@ -40,6 +40,11 @@ import {
 } from "../design-system";
 import { LaunchScreen } from "./launch-screen";
 import {
+  registerPushTokenIfAuthorized,
+  subscribeToUpdateSignals,
+  syncInstallationHeartbeat,
+} from "../core/device/installation-service";
+import {
   collectBrandingAssets,
   hydrateCachedBranding,
   warmBrandingAssets,
@@ -58,6 +63,8 @@ type RuntimeValue = {
   refresh: () => Promise<void>;
   otaResult: OtaCheckResult | null;
   applyPendingOta: () => Promise<void>;
+  notificationStatus: "idle" | "registered" | "denied" | "unavailable";
+  enableUpdateNotifications: () => Promise<void>;
 };
 
 const RuntimeContext = createContext<RuntimeValue | null>(null);
@@ -91,6 +98,9 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   const [launchMinimumElapsed, setLaunchMinimumElapsed] = useState(false);
   const [launchTimeout, setLaunchTimeout] = useState(false);
   const [launchBranding, setLaunchBranding] = useState(config.branding);
+  const [notificationStatus, setNotificationStatus] = useState<
+    "idle" | "registered" | "denied" | "unavailable"
+  >("idle");
   const launchTheme =
     themePreference === "system"
       ? systemTheme === "dark"
@@ -188,6 +198,30 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
       subscription.remove();
     };
   }, [config.localization.refreshIntervalSeconds, query, runSilentOtaCheck]);
+  useEffect(() => {
+    if (snapshot.stale) return;
+    void syncInstallationHeartbeat(config, themePreference).catch(
+      () => undefined,
+    );
+    void registerPushTokenIfAuthorized(config, themePreference).then(
+      setNotificationStatus,
+    );
+  }, [config, snapshot.stale, themePreference]);
+  useEffect(
+    () =>
+      subscribeToUpdateSignals(() => {
+        void query.refetch().then((result) => {
+          if (result.data && !result.data.stale)
+            runSilentOtaCheck(result.data.config);
+        });
+      }),
+    [query, runSilentOtaCheck],
+  );
+  const enableUpdateNotifications = useCallback(async () => {
+    setNotificationStatus(
+      await registerPushTokenIfAuthorized(config, themePreference, true),
+    );
+  }, [config, themePreference]);
   const pendingOta = useMemo(
     () =>
       otaResult &&
@@ -252,6 +286,8 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
       refresh,
       otaResult,
       applyPendingOta,
+      notificationStatus,
+      enableUpdateNotifications,
     }),
     [
       config,
@@ -266,6 +302,8 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
       t,
       themePreference,
       otaResult,
+      notificationStatus,
+      enableUpdateNotifications,
     ],
   );
 

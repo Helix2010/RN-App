@@ -55,7 +55,12 @@ export const appRuntime = {
 class ApiClient {
   private async response(
     path: string,
-    options?: { signal?: AbortSignal; headers?: Record<string, string> },
+    options?: {
+      signal?: AbortSignal;
+      headers?: Record<string, string>;
+      method?: "GET" | "POST";
+      body?: string;
+    },
   ): Promise<Response> {
     const controller = new AbortController();
     const timeout = setTimeout(
@@ -66,7 +71,8 @@ class ApiClient {
     options?.signal?.addEventListener("abort", abortFromCaller, { once: true });
     try {
       const response = await globalThis.fetch(`${baseUrl()}${path}`, {
-        method: "GET",
+        method: options?.method ?? "GET",
+        body: options?.body,
         signal: controller.signal,
         headers: {
           Accept: "application/json",
@@ -151,6 +157,42 @@ class ApiClient {
   ): Promise<{ text: string; headers: Headers }> {
     const response = await this.response(path, options);
     return { text: await response.text(), headers: response.headers };
+  }
+
+  async post<T>(
+    path: string,
+    body: unknown,
+    schema: z.ZodType<T>,
+    options?: { signal?: AbortSignal; headers?: Record<string, string> },
+  ): Promise<T> {
+    const response = await this.response(path, {
+      ...options,
+      headers: { "content-type": "application/json", ...options?.headers },
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    const requestId = response.headers.get("x-request-id") ?? undefined;
+    try {
+      const parsed = schema.safeParse(await response.json());
+      if (!parsed.success)
+        throw new AppError(
+          "incompatible_response",
+          "The server response does not match the mobile contract",
+          false,
+          requestId,
+          { cause: parsed.error },
+        );
+      return parsed.data;
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      throw new AppError(
+        "incompatible_response",
+        "The server response is not valid JSON",
+        false,
+        requestId,
+        { cause: error },
+      );
+    }
   }
 }
 

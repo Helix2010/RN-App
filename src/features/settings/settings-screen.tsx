@@ -38,6 +38,8 @@ export function SettingsScreen({ navigation }: Props) {
     themePreference,
     setLocale,
     setTheme,
+    notificationStatus,
+    enableUpdateNotifications,
   } = useFoundationRuntime();
   const currentUpdate = getCurrentUpdateMetadata();
   const currentOtaRevision =
@@ -127,6 +129,14 @@ export function SettingsScreen({ navigation }: Props) {
                 {t("settings.openUpdateCenter")}
               </PrimaryButton>
             ) : null}
+            <SecondaryButton onPress={() => void enableUpdateNotifications()}>
+              {notificationStatus === "registered"
+                ? t("settings.notificationsEnabled")
+                : t("settings.enableNotifications")}
+            </SecondaryButton>
+            {notificationStatus === "denied" ? (
+              <Body>{t("settings.notificationsDenied")}</Body>
+            ) : null}
           </Card>
           <Card>
             <Label>{t("settings.about")}</Label>
@@ -165,6 +175,10 @@ export function SettingsScreen({ navigation }: Props) {
             <RowItem
               label={t("settings.configVersion")}
               value={config.configVersion}
+            />
+            <RowItem
+              label={t("settings.languageVersion")}
+              value={config.localization.messagesVersion}
             />
             <RowItem
               label={t("settings.service")}

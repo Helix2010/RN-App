@@ -5,7 +5,7 @@ import {
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { useTheme } from "tamagui";
 import { useFoundationRuntime } from "../app/runtime-context";
-import { FoundationHomeScreen } from "../features/foundation/foundation-home-screen";
+import { AppShellScreen } from "../features/foundation/app-shell-screen";
 import { UpdateCenterScreen } from "../features/updates/update-center-screen";
 import { SettingsScreen } from "../features/settings/settings-screen";
 import type { RootStackParamList } from "./types";
@@ -48,7 +48,7 @@ export function FoundationNavigator() {
   return (
     <NavigationContainer theme={navigationTheme}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="FoundationHome" component={FoundationHomeScreen} />
+        <Stack.Screen name="AppShell" component={AppShellScreen} />
         <Stack.Screen name="UpdateCenter" component={UpdateCenterScreen} />
         <Stack.Screen name="Settings" component={SettingsScreen} />
       </Stack.Navigator>

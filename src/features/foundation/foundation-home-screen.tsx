@@ -1,4 +1,3 @@
-import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../app/runtime-context";
 import {
@@ -20,11 +19,15 @@ import {
   SectionTitle,
   Stack,
 } from "../../design-system";
-import type { RootStackParamList } from "../../navigation/types";
-
-type Props = NativeStackScreenProps<RootStackParamList, "FoundationHome">;
-
-export function FoundationHomeScreen({ navigation }: Props) {
+export function FoundationHomeScreen({
+  onOpenAssets,
+  onOpenUpdates,
+  onOpenProfile,
+}: {
+  onOpenAssets: () => void;
+  onOpenUpdates: () => void;
+  onOpenProfile: () => void;
+}) {
   const insets = useSafeAreaInsets();
   const runtime = useFoundationRuntime();
   const { config, snapshot, t } = runtime;
@@ -53,7 +56,7 @@ export function FoundationHomeScreen({ navigation }: Props) {
               <SecondaryButton
                 size="$3"
                 paddingHorizontal="$3"
-                onPress={() => navigation.navigate("Settings")}
+                onPress={onOpenProfile}
                 accessibilityLabel={t("action.settings")}
               >
                 {t("action.settings")}
@@ -94,7 +97,7 @@ export function FoundationHomeScreen({ navigation }: Props) {
                 flex={1}
                 backgroundColor="$onPrimary"
                 color="$primary"
-                onPress={() => navigation.navigate("Settings")}
+                onPress={onOpenAssets}
               >
                 {t("home.secondaryAction")}
               </PrimaryButton>
@@ -104,7 +107,7 @@ export function FoundationHomeScreen({ navigation }: Props) {
                   backgroundColor="$primary"
                   color="$onPrimary"
                   borderColor="$onPrimary"
-                  onPress={() => navigation.navigate("UpdateCenter")}
+                  onPress={onOpenUpdates}
                 >
                   {t("home.primaryAction")}
                 </SecondaryButton>
@@ -152,9 +155,7 @@ export function FoundationHomeScreen({ navigation }: Props) {
               {config.app.runtimeVersion}
             </Body>
             {config.features.updateCenter ? (
-              <PrimaryButton
-                onPress={() => navigation.navigate("UpdateCenter")}
-              >
+              <PrimaryButton onPress={onOpenUpdates}>
                 {t("action.checkupdate")}
               </PrimaryButton>
             ) : null}

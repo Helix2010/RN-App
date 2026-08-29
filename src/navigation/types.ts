@@ -1,5 +1,5 @@
 export type RootStackParamList = {
-  FoundationHome: undefined;
+  AppShell: undefined;
   UpdateCenter: undefined;
   Settings: undefined;
 };
