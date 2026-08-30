@@ -103,6 +103,9 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   const [launchMinimumElapsed, setLaunchMinimumElapsed] = useState(false);
   const [launchTimeout, setLaunchTimeout] = useState(false);
   const [launchBranding, setLaunchBranding] = useState(config.branding);
+  const [launchBrandingVersion, setLaunchBrandingVersion] = useState<
+    number | null
+  >(null);
   const [notificationStatus, setNotificationStatus] = useState<
     "idle" | "registered" | "denied" | "unavailable"
   >("idle");
@@ -116,9 +119,15 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
         ? "dark"
         : "light"
       : themePreference;
-  const launchVisual = launchBranding
-    ? resolveBrandingVisual(launchBranding.launch.visuals, launchTheme)
+  const activeBranding =
+    config.branding && launchBrandingVersion === config.branding.version
+      ? launchBranding
+      : config.branding;
+  const launchVisual = activeBranding
+    ? resolveBrandingVisual(activeBranding.launch.visuals, launchTheme)
     : undefined;
+  const brandingReady =
+    !config.branding || launchBrandingVersion === config.branding.version;
   const nativeUpdateStatus = useUpdateStatus();
   const t = useCallback(
     (key: string) => translateMessage(config.localization.messages, key),
@@ -152,7 +161,10 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
     if (!remoteBranding) return () => undefined;
     void hydrateCachedBranding({ ...config, branding: remoteBranding }).then(
       (cached) => {
-        if (active) setLaunchBranding(cached.branding);
+        if (active && cached.branding) {
+          setLaunchBranding(cached.branding);
+          setLaunchBrandingVersion(cached.branding.version);
+        }
       },
     );
     void warmBrandingAssets(
@@ -162,7 +174,10 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
       if (!active) return;
       void hydrateCachedBranding({ ...config, branding: remoteBranding }).then(
         (cached) => {
-          if (active) setLaunchBranding(cached.branding);
+          if (active && cached.branding) {
+            setLaunchBranding(cached.branding);
+            setLaunchBrandingVersion(cached.branding.version);
+          }
         },
       );
     });
@@ -354,17 +369,19 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
         )
       ) : (
         <RuntimeContext.Provider value={value}>
-          {launchMinimumElapsed && (!query.isPending || launchTimeout) ? (
+          {launchMinimumElapsed &&
+          (!query.isPending || launchTimeout) &&
+          (brandingReady || launchTimeout) ? (
             children
           ) : (
             <LaunchScreen
-              message={launchBranding?.launch.subtitle || t("status.loading")}
-              title={launchBranding?.launch.title || t("app.name")}
+              message={activeBranding?.launch.subtitle || t("status.loading")}
+              title={activeBranding?.launch.title || t("app.name")}
               backgroundColor={launchVisual?.backgroundColor}
               logo={launchVisual?.logo}
               backgroundImage={launchVisual?.backgroundImage}
-              animationType={launchBranding?.launch.animation.type}
-              animationDurationMs={launchBranding?.launch.animation.durationMs}
+              animationType={activeBranding?.launch.animation.type}
+              animationDurationMs={activeBranding?.launch.animation.durationMs}
             />
           )}
           <Modal

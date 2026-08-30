@@ -27,6 +27,10 @@ export function LaunchScreen({
   const [scale] = useState(
     () => new Animated.Value(animationType === "fade_scale" ? 0.86 : 1),
   );
+  const [logoFailedId, setLogoFailedId] = useState<string | null>(null);
+  const [backgroundFailedId, setBackgroundFailedId] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     if (animationType === "none") return;
@@ -54,7 +58,7 @@ export function LaunchScreen({
       justifyContent="center"
       backgroundColor={backgroundColor as never}
     >
-      {backgroundImage ? (
+      {backgroundImage && backgroundFailedId !== backgroundImage.assetId ? (
         <Image
           source={{
             uri:
@@ -66,17 +70,19 @@ export function LaunchScreen({
             inset: 0,
             width: "100%",
             height: "100%",
-            opacity: 0.22,
           }}
+          onError={() => setBackgroundFailedId(backgroundImage.assetId)}
           accessibilityIgnoresInvertColors
         />
       ) : null}
       <Animated.View style={{ opacity, transform: [{ scale }] }}>
         <Stack alignItems="center" gap="$4">
-          {logo ? (
+          {logo && logoFailedId !== logo.assetId ? (
             <Image
               source={{ uri: logo.localFileUrl ?? brandingAssetUrl(logo) }}
-              style={{ width: 88, height: 88, borderRadius: 22 }}
+              resizeMode="contain"
+              style={{ width: 104, height: 104 }}
+              onError={() => setLogoFailedId(logo.assetId)}
               accessibilityLabel={title}
             />
           ) : (
