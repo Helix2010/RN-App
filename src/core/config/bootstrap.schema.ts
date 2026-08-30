@@ -118,6 +118,15 @@ export const bootstrapSchema = z.object({
     light: semanticPaletteSchema,
     dark: semanticPaletteSchema,
   }),
+  modules: z
+    .object({
+      predict: z.boolean(),
+      dex: z.boolean(),
+    })
+    .default({ predict: true, dex: true })
+    .refine((value) => value.predict || value.dex, {
+      message: "At least one business module must be enabled",
+    }),
   features: z.object({
     updateCenter: z.boolean(),
     otaEnabled: z.boolean(),

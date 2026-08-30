@@ -11,6 +11,7 @@ import { useFoundationRuntime } from "../app/runtime-context";
 import { AppShellScreen } from "../features/foundation/app-shell-screen";
 import { UpdateCenterScreen } from "../features/updates/update-center-screen";
 import { SettingsScreen } from "../features/settings/settings-screen";
+import { ProfileScreen } from "../features/profile/profile-screen";
 import type { RootStackParamList } from "./types";
 import { resolveSystemBack } from "./system-back";
 
@@ -90,6 +91,14 @@ export function FoundationNavigator() {
         }}
       >
         <Stack.Screen name="AppShell" component={AppShellScreen} />
+        <Stack.Screen name="Profile">
+          {(props) => (
+            <ProfileScreen
+              onOpenSettings={() => props.navigation.navigate("Settings")}
+              onOpenUpdates={() => props.navigation.navigate("UpdateCenter")}
+            />
+          )}
+        </Stack.Screen>
         <Stack.Screen name="UpdateCenter" component={UpdateCenterScreen} />
         <Stack.Screen name="Settings" component={SettingsScreen} />
       </Stack.Navigator>

@@ -5,7 +5,7 @@ describe("app shell back behavior", () => {
     expect(resolveAppShellBack("home")).toBe("consume");
   });
 
-  it.each(["assets", "profile"] as const)(
+  it.each(["predict", "positions", "dex", "market", "swap", "assets"] as const)(
     "returns to home from the %s tab",
     (tab) => {
       expect(resolveAppShellBack(tab)).toBe("home");

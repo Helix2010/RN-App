@@ -1,6 +1,6 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useIsFocused } from "@react-navigation/native";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BackHandler, Modal, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../app/runtime-context";
@@ -17,9 +17,10 @@ import {
 } from "../../design-system";
 import type { RootStackParamList } from "../../navigation/types";
 import { AssetsScreen } from "../portfolio/assets-screen";
-import { ProfileScreen } from "../profile/profile-screen";
 import { FoundationHomeScreen } from "./foundation-home-screen";
 import { resolveAppShellBack, type AppTab } from "./app-shell-back";
+import { buildAppTabs } from "./app-tabs";
+import { ModuleOverviewScreen } from "./module-overview-screen";
 
 type Props = NativeStackScreenProps<RootStackParamList, "AppShell">;
 
@@ -28,6 +29,15 @@ export function AppShellScreen({ navigation }: Props) {
   const isFocused = useIsFocused();
   const { config, t, notificationIntent } = useFoundationRuntime();
   const [tab, setTab] = useState<AppTab>("home");
+  const tabs = useMemo(
+    () =>
+      buildAppTabs(config.modules).map((item) => ({
+        ...item,
+        label: t(item.labelKey),
+      })),
+    [config.modules, t],
+  );
+  const effectiveTab = tabs.some((item) => item.key === tab) ? tab : "home";
   const updateKey = `${config.update.full.releaseId ?? "none"}:${config.update.latestVersion}`;
   const [dismissedUpdateKey, setDismissedUpdateKey] = useState("");
   const updateNoticeVisible =
@@ -53,31 +63,33 @@ export function AppShellScreen({ navigation }: Props) {
       "hardwareBackPress",
       () => {
         if (!isFocused) return false;
-        const action = resolveAppShellBack(tab);
+        const action = resolveAppShellBack(effectiveTab);
         if (action === "consume") return true;
         setTab(action);
         return true;
       },
     );
     return () => subscription.remove();
-  }, [isFocused, tab]);
+  }, [effectiveTab, isFocused]);
 
   return (
     <Page>
       <View style={{ flex: 1 }}>
-        {tab === "home" ? (
+        {effectiveTab === "home" ? (
           <FoundationHomeScreen
             onOpenAssets={() => setTab("assets")}
             onOpenSettings={() => navigation.navigate("Settings")}
+            onOpenProfile={() => navigation.navigate("Profile")}
           />
-        ) : tab === "assets" ? (
+        ) : effectiveTab === "assets" ? (
           <AssetsScreen />
-        ) : (
-          <ProfileScreen
-            onOpenSettings={() => navigation.navigate("Settings")}
-            onOpenUpdates={() => navigation.navigate("UpdateCenter")}
-          />
-        )}
+        ) : effectiveTab === "predict" ||
+          effectiveTab === "positions" ||
+          effectiveTab === "dex" ||
+          effectiveTab === "market" ||
+          effectiveTab === "swap" ? (
+          <ModuleOverviewScreen kind={effectiveTab} />
+        ) : null}
       </View>
       <Row
         paddingTop="$2"
@@ -88,24 +100,15 @@ export function AppShellScreen({ navigation }: Props) {
         borderColor="$borderColor"
         backgroundColor="$surface"
       >
-        <TabButton
-          selected={tab === "home"}
-          label={t("nav.home")}
-          symbol="⌂"
-          onPress={() => setTab("home")}
-        />
-        <TabButton
-          selected={tab === "assets"}
-          label={t("nav.assets")}
-          symbol="◫"
-          onPress={() => setTab("assets")}
-        />
-        <TabButton
-          selected={tab === "profile"}
-          label={t("nav.profile")}
-          symbol="○"
-          onPress={() => setTab("profile")}
-        />
+        {tabs.map((item) => (
+          <TabButton
+            key={item.key}
+            selected={effectiveTab === item.key}
+            label={item.label}
+            symbol={item.symbol}
+            onPress={() => setTab(item.key)}
+          />
+        ))}
       </Row>
       <Modal
         visible={updateNoticeVisible}

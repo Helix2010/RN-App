@@ -37,6 +37,12 @@ describe("bootstrapSchema", () => {
     expect(bootstrapSchema.safeParse(config).success).toBe(true);
   });
 
+  it("requires at least one tenant business module", () => {
+    const config = createFallbackConfig("zh-CN");
+    config.modules = { predict: false, dex: false };
+    expect(bootstrapSchema.safeParse(config).success).toBe(false);
+  });
+
   it("accepts a full update response when no OTA apply strategy is active", () => {
     const config = createFallbackConfig("zh-CN");
     config.app.version = "1.1.2";

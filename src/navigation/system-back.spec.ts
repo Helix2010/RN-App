@@ -3,6 +3,7 @@ import { resolveSystemBack } from "./system-back";
 describe("system back routing", () => {
   it("navigates out of secondary screens", () => {
     expect(resolveSystemBack("Settings", true, false)).toBe("navigate");
+    expect(resolveSystemBack("Profile", true, false)).toBe("navigate");
     expect(resolveSystemBack("UpdateCenter", true, false)).toBe("navigate");
   });
 

@@ -24,6 +24,8 @@ Expo Go 可预览 UI 和服务端配置；Logo、原生图标、版本号和真�
 
 Feature Flags 的实际作用：`updateCenter` 控制升级入口是否展示，`otaEnabled` 控制 OTA 检查与下载，`directUpdateEnabled` 控制 Android 非商店直装入口，`diagnosticsEnabled` 控制设置页诊断信息。主题的 `allowUserOverride=false` 时，App 只允许跟随系统主题。
 
+业务模块由租户 Bootstrap 的 `modules.predict` / `modules.dex` 控制。双开时底栏为“首页 / 预测 / DEX / 资产”；仅 Predict 时将“持仓”提升为一级入口；仅 DEX 时将“行情 / 兑换”提升为一级入口。个人中心从首页品牌入口进入，不占用底栏。两个模块不能同时关闭。
+
 OTA 检查在 Bootstrap 成功后后台静默执行，并在 App 从后台回到前台时按 15 分钟节流窗口再次检查。服务端策略为 `immediate` 时，资源下载完成后显示确认层，用户确认后才重启；`next_launch` 则延迟到下次启动应用。
 
 OTA 包中的 API、租户渠道、应用身份、版本和 Build 仅用于导出提示；正式发布时由 RN-Server 按请求域名和基线 APK 重写 Manifest。客户端通过 `manifest.extra.expoClient` 读取这组运行配置，避免 OTA 后丢失租户地址或错误回退到开发默认值。

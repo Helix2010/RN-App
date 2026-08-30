@@ -24,13 +24,15 @@ import {
 export function FoundationHomeScreen({
   onOpenAssets,
   onOpenSettings,
+  onOpenProfile,
 }: {
   onOpenAssets: () => void;
   onOpenSettings: () => void;
+  onOpenProfile: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const runtime = useFoundationRuntime();
-  const { t } = runtime;
+  const { config, t } = runtime;
   const [balanceVisible, setBalanceVisible] = useState(true);
 
   return (
@@ -47,6 +49,8 @@ export function FoundationHomeScreen({
             eyebrow={t("home.eyebrow")}
             title={t("home.title")}
             subtitle={t("home.description")}
+            onBrandPress={onOpenProfile}
+            brandLabel={t("profile.title")}
             action={
               <IconButton
                 label={t("action.settings")}
@@ -96,26 +100,55 @@ export function FoundationHomeScreen({
             </Row>
           </Card>
 
-          <HairlineCard accessibilityLabel={t("home.market")}>
-            <Row justifyContent="space-between" alignItems="flex-start">
-              <Stack gap="$1">
-                <Label>{t("home.market")}</Label>
-                <SectionTitle>ETH / USDC</SectionTitle>
-              </Stack>
-              <Badge>
-                <InlineText color="$info" fontWeight="700" fontSize={12}>
-                  {t("home.network")}
-                </InlineText>
-              </Badge>
-            </Row>
-            <Row alignItems="baseline" gap="$3">
-              <AmountText>$4,312.84</AmountText>
-              <PriceChange value={2.14} />
-            </Row>
-            <AddressText numberOfLines={1}>
-              0x71C7…F8A2 · {t("home.contract")}
-            </AddressText>
-          </HairlineCard>
+          {config.modules.predict ? (
+            <HairlineCard accessibilityLabel={t("home.predict")}>
+              <Row justifyContent="space-between" alignItems="flex-start">
+                <Stack gap="$1">
+                  <Label>{t("home.predict")}</Label>
+                  <SectionTitle>{t("home.predictQuestion")}</SectionTitle>
+                </Stack>
+                <Badge>
+                  <InlineText color="$warning" fontWeight="700" fontSize={12}>
+                    {t("home.predictClosing")}
+                  </InlineText>
+                </Badge>
+              </Row>
+              <Row gap="$2">
+                <Badge flex={1} justifyContent="center" borderWidth={0}>
+                  <InlineText color="$success" fontWeight="800">
+                    {t("home.predictYes")}
+                  </InlineText>
+                </Badge>
+                <Badge flex={1} justifyContent="center" borderWidth={0}>
+                  <InlineText color="$danger" fontWeight="800">
+                    {t("home.predictNo")}
+                  </InlineText>
+                </Badge>
+              </Row>
+            </HairlineCard>
+          ) : null}
+          {config.modules.dex ? (
+            <HairlineCard accessibilityLabel={t("home.market")}>
+              <Row justifyContent="space-between" alignItems="flex-start">
+                <Stack gap="$1">
+                  <Label>{t("home.market")}</Label>
+                  <SectionTitle>ETH / USDC</SectionTitle>
+                </Stack>
+                <Badge>
+                  <InlineText color="$info" fontWeight="700" fontSize={12}>
+                    {t("home.network")}
+                  </InlineText>
+                </Badge>
+              </Row>
+              <Row alignItems="baseline" gap="$3">
+                <AmountText>$4,312.84</AmountText>
+                <PriceChange value={2.14} />
+              </Row>
+              <AddressText numberOfLines={1}>
+                0x71C7…F8A2 · {t("home.contract")}
+              </AddressText>
+            </HairlineCard>
+          ) : null}
 
           <HairlineCard>
             <Label>{t("home.security")}</Label>

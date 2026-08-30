@@ -80,16 +80,36 @@ export function AppHeader({
   title,
   subtitle,
   action,
+  onBrandPress,
+  brandLabel = "App profile",
 }: {
   eyebrow?: string;
   title: string;
   subtitle?: string;
   action?: ReactNode;
+  onBrandPress?: () => void;
+  brandLabel?: string;
 }) {
   return (
     <XStack justifyContent="space-between" alignItems="center" gap="$3">
       <XStack alignItems="center" gap="$3" flex={1}>
-        <BrandMark size={40} />
+        {onBrandPress ? (
+          <Button
+            width={40}
+            height={40}
+            padding={0}
+            borderRadius={12}
+            backgroundColor="transparent"
+            borderWidth={0}
+            onPress={onBrandPress}
+            accessibilityRole="button"
+            accessibilityLabel={brandLabel}
+          >
+            <BrandMark size={40} />
+          </Button>
+        ) : (
+          <BrandMark size={40} />
+        )}
         <Stack gap="$1" flex={1}>
           {eyebrow ? <Label fontSize={11}>{eyebrow}</Label> : null}
           <Heading fontSize={24} lineHeight={29}>
