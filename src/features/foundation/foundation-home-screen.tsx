@@ -4,7 +4,6 @@ import { useFoundationRuntime } from "../../app/runtime-context";
 import {
   AddressText,
   AmountText,
-  AppHeader,
   Badge,
   Body,
   Card,
@@ -45,20 +44,32 @@ export function FoundationHomeScreen({
         }}
       >
         <Content paddingTop={insets.top + 24}>
-          <AppHeader
-            eyebrow={t("home.eyebrow")}
-            title={t("home.title")}
-            subtitle={t("home.description")}
-            onBrandPress={onOpenProfile}
-            brandLabel={t("profile.title")}
-            action={
-              <IconButton
-                label={t("action.settings")}
-                symbol="⚙"
-                onPress={onOpenSettings}
-              />
-            }
-          />
+          <Row alignItems="center" gap="$2">
+            <IconButton
+              label={t("profile.title")}
+              symbol="K"
+              onPress={onOpenProfile}
+            />
+            <Stack
+              flex={1}
+              height={42}
+              borderRadius="$4"
+              backgroundColor="$surfaceVariant"
+              justifyContent="center"
+              paddingHorizontal="$3"
+            >
+              <InlineText color="$textMuted" fontSize={13}>
+                ⌕ {t("home.search")}
+              </InlineText>
+            </Stack>
+            <IconButton label={t("home.scan")} symbol="⌗" />
+            <IconButton label={t("home.notifications")} symbol="♧" />
+            <IconButton
+              label={t("action.settings")}
+              symbol="⚙"
+              onPress={onOpenSettings}
+            />
+          </Row>
 
           <Card
             backgroundColor="$primary"
@@ -99,6 +110,41 @@ export function FoundationHomeScreen({
               </PrimaryButton>
             </Row>
           </Card>
+
+          <Row flexWrap="wrap" gap="$3" paddingVertical="$2">
+            <QuickAction
+              label={t("home.quick.predict")}
+              symbol="◒"
+              enabled={config.modules.predict}
+            />
+            <QuickAction
+              label={t("home.quick.swap")}
+              symbol="⇄"
+              enabled={config.modules.dex}
+            />
+            <QuickAction
+              label={t("home.quick.rank")}
+              symbol="♛"
+              enabled={config.modules.predict}
+            />
+            <QuickAction label={t("home.quick.invite")} symbol="✦" enabled />
+            <QuickAction label={t("home.quick.help")} symbol="?" enabled />
+            <QuickAction label={t("home.quick.more")} symbol="▦" enabled />
+          </Row>
+
+          <HairlineCard paddingVertical="$2" paddingHorizontal="$3">
+            <Row alignItems="center" gap="$2">
+              <InlineText color="$primary" fontSize={16}>
+                ◖
+              </InlineText>
+              <Body flex={1} numberOfLines={1}>
+                {t("home.notice")}
+              </Body>
+              <InlineText color="$textMuted" fontSize={20}>
+                ›
+              </InlineText>
+            </Row>
+          </HairlineCard>
 
           {config.modules.predict ? (
             <HairlineCard accessibilityLabel={t("home.predict")}>
@@ -170,5 +216,36 @@ export function FoundationHomeScreen({
         </Content>
       </PageScroll>
     </Page>
+  );
+}
+
+function QuickAction({
+  label,
+  symbol,
+  enabled,
+}: {
+  label: string;
+  symbol: string;
+  enabled: boolean;
+}) {
+  if (!enabled) return null;
+  return (
+    <Stack width="29%" alignItems="center" gap="$1">
+      <Stack
+        width={44}
+        height={44}
+        borderRadius="$4"
+        backgroundColor="$surfaceVariant"
+        alignItems="center"
+        justifyContent="center"
+      >
+        <InlineText color="$primary" fontSize={20}>
+          {symbol}
+        </InlineText>
+      </Stack>
+      <InlineText color="$textMuted" fontSize={12} numberOfLines={1}>
+        {label}
+      </InlineText>
+    </Stack>
   );
 }

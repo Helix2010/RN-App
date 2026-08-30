@@ -43,7 +43,7 @@ const assets = [
 
 export function AssetsScreen() {
   const insets = useSafeAreaInsets();
-  const { t } = useFoundationRuntime();
+  const { config, t } = useFoundationRuntime();
   return (
     <Page>
       <PageScroll>
@@ -69,6 +69,31 @@ export function AssetsScreen() {
             <MetricCard label={t("assets.available")} value="$18,806.27" />
             <MetricCard label={t("assets.networks")} value="3" />
           </Row>
+          <Stack gap="$2">
+            <SectionTitle>{t("assets.accounts")}</SectionTitle>
+            <AccountCard
+              symbol="▣"
+              title={t("assets.fundingAccount")}
+              value="8,120.00 USDT"
+              subtitle={t("assets.fundingHint")}
+            />
+            {config.modules.predict ? (
+              <AccountCard
+                symbol="◒"
+                title={t("assets.predictAccount")}
+                value="3,580.62 USDT"
+                subtitle={t("assets.predictHint")}
+              />
+            ) : null}
+            {config.modules.dex ? (
+              <AccountCard
+                symbol="◇"
+                title={t("assets.dexWallet")}
+                value="780.24 USDT"
+                subtitle="0x3f4a…9a2c · 4 条链"
+              />
+            ) : null}
+          </Stack>
           <Stack gap="$3">
             <Row justifyContent="space-between" alignItems="center">
               <SectionTitle>{t("assets.holdings")}</SectionTitle>
@@ -118,6 +143,49 @@ function MetricCard({ label, value }: { label: string; value: string }) {
     <Card flex={1} padding="$3.5">
       <Label>{label}</Label>
       <SectionTitle>{value}</SectionTitle>
+    </Card>
+  );
+}
+
+function AccountCard({
+  symbol,
+  title,
+  value,
+  subtitle,
+}: {
+  symbol: string;
+  title: string;
+  value: string;
+  subtitle: string;
+}) {
+  return (
+    <Card padding="$3" shadowOpacity={0}>
+      <Row alignItems="center" gap="$3">
+        <Stack
+          width={42}
+          height={42}
+          borderRadius="$4"
+          backgroundColor="$surfaceVariant"
+          alignItems="center"
+          justifyContent="center"
+        >
+          <InlineText color="$primary" fontSize={20}>
+            {symbol}
+          </InlineText>
+        </Stack>
+        <Stack flex={1}>
+          <SectionTitle>{title}</SectionTitle>
+          <InlineText color="$textMuted" fontSize={12}>
+            {subtitle}
+          </InlineText>
+        </Stack>
+        <Stack alignItems="flex-end">
+          <SectionTitle>{value}</SectionTitle>
+          <InlineText color="$textMuted" fontSize={18}>
+            ›
+          </InlineText>
+        </Stack>
+      </Row>
     </Card>
   );
 }

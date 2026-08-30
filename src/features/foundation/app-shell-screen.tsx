@@ -7,6 +7,7 @@ import { useFoundationRuntime } from "../../app/runtime-context";
 import {
   Body,
   Card,
+  InlineText,
   Label,
   Page,
   PrimaryButton,
@@ -165,11 +166,11 @@ function TabButton({
   return (
     <SecondaryButton
       flex={1}
-      height={54}
-      borderRadius="$5"
+      height={58}
+      borderRadius={0}
       borderWidth={0}
-      backgroundColor={selected ? "$surfaceVariant" : "$surface"}
-      color={selected ? "$primary" : "$textMuted"}
+      backgroundColor="$surface"
+      color={selected ? "$color" : "$textMuted"}
       fontWeight={selected ? "800" : "600"}
       onPress={onPress}
       accessibilityRole="tab"
@@ -177,7 +178,14 @@ function TabButton({
       accessibilityLabel={label}
       pressStyle={{ opacity: 0.78 }}
     >
-      {symbol} {label}
+      <Stack alignItems="center" gap="$1">
+        <InlineText color={selected ? "$color" : "$textMuted"} fontSize={21}>
+          {symbol}
+        </InlineText>
+        <InlineText color={selected ? "$color" : "$textMuted"} fontSize={11}>
+          {label}
+        </InlineText>
+      </Stack>
     </SecondaryButton>
   );
 }
