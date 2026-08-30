@@ -84,7 +84,14 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ],
     ...(googleServicesFile ? { googleServicesFile } : {}),
   },
-  plugins: ["expo-localization", "expo-secure-store", "expo-notifications"],
+  plugins: [
+    "expo-localization",
+    "expo-secure-store",
+    "expo-notifications",
+    ...(distributionChannel === "development"
+      ? []
+      : ["./plugins/with-production-android-optimizations.js"]),
+  ],
   runtimeVersion: { policy: "fingerprint" },
   updates: resolvedUpdatesUrl
     ? {

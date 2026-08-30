@@ -20,9 +20,16 @@ export function LanguageSettingsScreen({
 }: NativeStackScreenProps<RootStackParamList, "LanguageSettings">) {
   const insets = useSafeAreaInsets();
   const { config, localePreference, setLocale, t } = useFoundationRuntime();
+  const languageCatalog =
+    config.localization.localeCatalog ??
+    config.localization.supportedLocales.map((code) => ({
+      code,
+      label: code,
+      nativeName: code,
+    }));
   const items: LocalePreference[] = [
     "system",
-    ...config.localization.supportedLocales,
+    ...languageCatalog.map((item) => item.code),
   ];
   return (
     <Page>
@@ -34,35 +41,53 @@ export function LanguageSettingsScreen({
             backLabel={t("action.back")}
           />
           <Card padding={0} gap={0} shadowOpacity={0}>
-            {items.map((item, index) => (
-              <Row
-                key={item}
-                minHeight={58}
-                paddingHorizontal="$4"
-                alignItems="center"
-                borderBottomWidth={index === items.length - 1 ? 0 : 1}
-                borderColor="$borderColor"
-                onPress={() => setLocale(item)}
-                accessibilityRole="radio"
-                accessibilityState={{ selected: localePreference === item }}
-              >
-                <SectionTitle flex={1} fontSize={15}>
-                  {item === "system" ? t("theme.system") : item}
-                </SectionTitle>
-                <Body>
-                  {item === "system"
-                    ? t("settings.followSystemLanguage")
-                    : item}
-                </Body>
-                <InlineText
-                  color={localePreference === item ? "$primary" : "$textMuted"}
-                  fontSize={20}
-                  marginLeft="$3"
+            {items.map((item, index) => {
+              const language =
+                item === "system"
+                  ? undefined
+                  : languageCatalog.find(
+                      (candidate) => candidate.code === item,
+                    );
+              const label = language?.label ?? item;
+              const secondary =
+                language?.nativeName && language.nativeName !== label
+                  ? language.nativeName
+                  : undefined;
+              return (
+                <Row
+                  key={item}
+                  minHeight={58}
+                  paddingHorizontal="$4"
+                  alignItems="center"
+                  borderBottomWidth={index === items.length - 1 ? 0 : 1}
+                  borderColor="$borderColor"
+                  onPress={() => setLocale(item)}
+                  accessibilityRole="radio"
+                  accessibilityLabel={
+                    item === "system" ? t("theme.system") : label
+                  }
+                  accessibilityState={{ selected: localePreference === item }}
                 >
-                  {localePreference === item ? "◉" : "○"}
-                </InlineText>
-              </Row>
-            ))}
+                  <SectionTitle flex={1} fontSize={15}>
+                    {item === "system" ? t("theme.system") : label}
+                  </SectionTitle>
+                  {item === "system" ? (
+                    <Body>{t("settings.followSystemLanguage")}</Body>
+                  ) : secondary ? (
+                    <Body>{secondary}</Body>
+                  ) : null}
+                  <InlineText
+                    color={
+                      localePreference === item ? "$primary" : "$textMuted"
+                    }
+                    fontSize={20}
+                    marginLeft="$3"
+                  >
+                    {localePreference === item ? "◉" : "○"}
+                  </InlineText>
+                </Row>
+              );
+            })}
           </Card>
         </Content>
       </PageScroll>

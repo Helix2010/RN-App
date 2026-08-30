@@ -22,6 +22,8 @@ Expo Go 可预览 UI 和服务端配置；Logo、原生图标、版本号和真�
 
 执行 `pnpm check` 可运行格式、Lint、类型、测试和 API 契约检查。
 
+Android 生产包默认不应携带 Expo Dev Client。`app.config.ts` 会在非 development 配置中将 `expo-dev-client`、`expo-dev-launcher`、`expo-dev-menu` 和 `expo-dev-menu-interface` 从原生自动链接中排除；本地 Development Build 保持完整调试能力。生产直装包还应按目标 ABI 构建（优先 `arm64-v8a`），商店发布优先使用 AAB 让商店按设备拆分 ABI，避免把四套原生库放入同一个 APK。
+
 Feature Flags 的实际作用：`updateCenter` 控制升级入口是否展示，`otaEnabled` 控制 OTA 检查与下载，`directUpdateEnabled` 控制 Android 非商店直装入口，`diagnosticsEnabled` 控制设置页诊断信息。主题的 `allowUserOverride=false` 时，App 只允许跟随系统主题。
 
 业务模块由租户 Bootstrap 的 `modules.predict` / `modules.dex` 控制。双开时底栏为“首页 / 预测 / DEX / 资产”；仅 Predict 时将“持仓”提升为一级入口；仅 DEX 时将“行情 / 兑换”提升为一级入口。个人中心从首页品牌入口进入，不占用底栏。两个模块不能同时关闭。

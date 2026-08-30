@@ -15,6 +15,7 @@ import {
   SectionTitle,
   Stack,
 } from "../../design-system";
+import { mockProfile, mockText } from "../demo-data";
 
 export function ProfileScreen({
   onOpenSettings,
@@ -25,6 +26,7 @@ export function ProfileScreen({
 }) {
   const insets = useSafeAreaInsets();
   const { config, t } = useFoundationRuntime();
+  const locale = config.localization.selectedLocale;
   return (
     <Page>
       <PageScroll>
@@ -52,13 +54,15 @@ export function ProfileScreen({
                 backgroundColor="$primary"
               >
                 <InlineText color="$onPrimary" fontSize={22} fontWeight="900">
-                  A
+                  {mockProfile.displayName.slice(0, 1)}
                 </InlineText>
               </Stack>
               <Stack flex={1} gap="$1">
-                <SectionTitle color="$onPrimary">AnyFun User</SectionTitle>
+                <SectionTitle color="$onPrimary">
+                  {mockProfile.displayName}
+                </SectionTitle>
                 <Body color="$onPrimary" opacity={0.78} fontSize={12}>
-                  0x71C7…F8A2
+                  {mockProfile.walletAddress}
                 </Body>
               </Stack>
               <InlineText color="$onPrimary" fontSize={24}>
@@ -93,7 +97,10 @@ export function ProfileScreen({
           </Card>
           <Card>
             <Label>{t("profile.security")}</Label>
-            <InfoRow label={t("profile.network")} value={t("home.network")} />
+            <InfoRow
+              label={t("profile.network")}
+              value={mockText(mockProfile.network, locale)}
+            />
             <InfoRow
               label={t("settings.language")}
               value={config.localization.selectedLocale}

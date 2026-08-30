@@ -4,7 +4,15 @@ export type RootRouteName =
   | "UpdateCenter"
   | "Settings"
   | "LanguageSettings"
-  | "AppearanceSettings";
+  | "AppearanceSettings"
+  | "PredictEvent"
+  | "DexToken"
+  | "SwapHistory"
+  | "Transfer"
+  | "AccountDetail"
+  | "NotificationSettings"
+  | "About"
+  | "SecurityCenter";
 
 export function resolveSystemBack(
   routeName: RootRouteName | undefined,
@@ -12,14 +20,6 @@ export function resolveSystemBack(
   updateLocked: boolean,
 ): "navigate" | "consume" | "bubble" {
   if (routeName === "UpdateCenter" && updateLocked) return "consume";
-  if (
-    (routeName === "Profile" ||
-      routeName === "Settings" ||
-      routeName === "LanguageSettings" ||
-      routeName === "AppearanceSettings" ||
-      routeName === "UpdateCenter") &&
-    canGoBack
-  )
-    return "navigate";
+  if (routeName && routeName !== "AppShell" && canGoBack) return "navigate";
   return "bubble";
 }

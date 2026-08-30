@@ -6,9 +6,11 @@ describe("bootstrapSchema", () => {
     const config = createFallbackConfig("zh-CN");
     const parsed = bootstrapSchema.safeParse(config);
     expect(parsed.success).toBe(true);
-    expect(config.localization.messages["home.portfoliochange"]).toBe(
-      "过去 24 小时 · 数据仅用于展示",
-    );
+    expect(config.localization.localeCatalog?.[0]).toEqual({
+      code: "zh-CN",
+      label: "简体中文",
+      nativeName: "中文",
+    });
   });
 
   it("rejects arbitrary remote theme values", () => {
@@ -35,6 +37,26 @@ describe("bootstrapSchema", () => {
       height: 512,
     };
     expect(bootstrapSchema.safeParse(config).success).toBe(true);
+  });
+
+  it("accepts a dynamic locale catalog with display labels", () => {
+    const config = createFallbackConfig("zh-CN");
+    config.localization.supportedLocales.push("ja-JP");
+    config.localization.localeCatalog?.push({
+      code: "ja-JP",
+      label: "日语",
+      nativeName: "日本語",
+    });
+
+    const parsed = bootstrapSchema.safeParse(config);
+
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.localization.localeCatalog?.at(-1)).toEqual({
+      code: "ja-JP",
+      label: "日语",
+      nativeName: "日本語",
+    });
   });
 
   it("requires at least one tenant business module", () => {

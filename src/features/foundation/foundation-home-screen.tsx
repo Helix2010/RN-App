@@ -21,6 +21,7 @@ import {
   SectionTitle,
   Stack,
 } from "../../design-system";
+import { mockHomeData, mockText } from "../demo-data";
 export function FoundationHomeScreen({
   onOpenAssets,
   onOpenProfile,
@@ -31,6 +32,7 @@ export function FoundationHomeScreen({
   const insets = useSafeAreaInsets();
   const runtime = useFoundationRuntime();
   const { config, t } = runtime;
+  const locale = config.localization.selectedLocale;
   const [balanceVisible, setBalanceVisible] = useState(true);
 
   return (
@@ -87,17 +89,17 @@ export function FoundationHomeScreen({
                   {balanceVisible ? "◉" : "◎"}
                 </InlineText>
               </Row>
-              <Body fontSize={12}>USDT⌄</Body>
+              <Body fontSize={12}>{mockHomeData.portfolio.quoteCurrency}⌄</Body>
             </Row>
             <AmountText fontSize={30} lineHeight={36}>
-              {balanceVisible ? "12,480.36" : "••••••"}
+              {balanceVisible ? mockHomeData.portfolio.balance : "••••••"}
             </AmountText>
             <Row alignItems="center" gap="$2">
               <InlineText color="$textMuted" fontSize={12}>
-                {t("home.portfolioApprox")}
+                {mockText(mockHomeData.portfolio.approx, locale)}
               </InlineText>
               <InlineText color="$pricePositive" fontWeight="800">
-                {t("home.portfolioToday")}
+                {mockText(mockHomeData.portfolio.today, locale)}
               </InlineText>
             </Row>
             <Row gap="$2" marginTop="$1">
@@ -145,7 +147,7 @@ export function FoundationHomeScreen({
                 ◖
               </InlineText>
               <Body flex={1} numberOfLines={1}>
-                {t("home.notice")}
+                {mockText(mockHomeData.notice, locale)}
               </Body>
               <InlineText color="$textMuted" fontSize={20}>
                 ›
@@ -162,14 +164,19 @@ export function FoundationHomeScreen({
                 </InlineText>
               </Row>
               <HorizontalScroll>
-                <PredictionHomeCard
-                  title={t("home.predictQuestion")}
-                  closing={t("home.predictClosing")}
-                />
-                <PredictionHomeCard
-                  title={t("home.predictFedQuestion")}
-                  closing={t("home.predictFedClosing")}
-                />
+                {mockHomeData.predictions.map((prediction) => (
+                  <PredictionHomeCard
+                    key={prediction.title["en-US"]}
+                    category={mockText(prediction.category, locale)}
+                    title={mockText(prediction.title, locale)}
+                    closing={mockText(prediction.closing, locale)}
+                    volume={mockText(prediction.volume, locale)}
+                    yesLabel={prediction.yesLabel}
+                    noLabel={prediction.noLabel}
+                    yesPrice={prediction.yesPrice}
+                    noPrice={prediction.noPrice}
+                  />
+                ))}
               </HorizontalScroll>
             </Stack>
           ) : null}
@@ -181,24 +188,9 @@ export function FoundationHomeScreen({
                   {t("home.market")} ›
                 </InlineText>
               </Row>
-              <TokenHomeRow
-                symbol="PEPE"
-                chain="BSC"
-                price="$0.00001234"
-                change={12.4}
-              />
-              <TokenHomeRow
-                symbol="WIF"
-                chain="Solana"
-                price="$1.842"
-                change={-3.8}
-              />
-              <TokenHomeRow
-                symbol="AERO"
-                chain="Base"
-                price="$0.912"
-                change={5.1}
-              />
+              {mockHomeData.dexTokens.map((token) => (
+                <TokenHomeRow key={token.symbol} {...token} />
+              ))}
             </Stack>
           ) : null}
 
@@ -257,33 +249,45 @@ function QuickAction({
 }
 
 function PredictionHomeCard({
+  category,
   title,
   closing,
+  volume,
+  yesLabel,
+  noLabel,
+  yesPrice,
+  noPrice,
 }: {
+  category: string;
   title: string;
   closing: string;
+  volume: string;
+  yesLabel: string;
+  noLabel: string;
+  yesPrice: string;
+  noPrice: string;
 }) {
   return (
     <Card width={236} padding="$3" shadowOpacity={0}>
       <Row justifyContent="space-between">
         <Badge>
           <InlineText color="$textMuted" fontSize={11}>
-            加密
+            {category}
           </InlineText>
         </Badge>
-        <Body fontSize={11}>成交 $1.2M</Body>
+        <Body fontSize={11}>{volume}</Body>
       </Row>
       <SectionTitle numberOfLines={2}>{title}</SectionTitle>
       <Body fontSize={12}>{closing}</Body>
       <Row gap="$2">
         <Badge flex={1} justifyContent="center" borderWidth={0}>
           <InlineText color="$success" fontWeight="800">
-            Yes 62¢
+            {yesLabel} {yesPrice}
           </InlineText>
         </Badge>
         <Badge flex={1} justifyContent="center" borderWidth={0}>
           <InlineText color="$danger" fontWeight="800">
-            No 38¢
+            {noLabel} {noPrice}
           </InlineText>
         </Badge>
       </Row>
@@ -296,12 +300,15 @@ function TokenHomeRow({
   chain,
   price,
   change,
+  liquidity,
 }: {
   symbol: string;
   chain: string;
   price: string;
   change: number;
+  liquidity: string;
 }) {
+  const { t } = useFoundationRuntime();
   return (
     <Row
       alignItems="center"
@@ -324,7 +331,9 @@ function TokenHomeRow({
       </Stack>
       <Stack flex={1}>
         <SectionTitle>{symbol}</SectionTitle>
-        <Body fontSize={12}>{chain} · 流动性 $4.2M</Body>
+        <Body fontSize={12}>
+          {chain} · {t("module.dex.liquidity")} {liquidity}
+        </Body>
       </Stack>
       <Stack alignItems="flex-end">
         <InlineText color="$color" fontWeight="700">

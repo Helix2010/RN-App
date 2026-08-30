@@ -54,6 +54,12 @@ const brandingVisualSchema = z.object({
   backgroundImage: brandingAssetSchema.optional(),
 });
 
+const localeCatalogItemSchema = z.object({
+  code: languageCodeSchema,
+  label: z.string().min(1),
+  nativeName: z.string().min(1),
+});
+
 export const brandingSchema = z.object({
   schemaVersion: z.literal(1),
   version: z.number().int().positive(),
@@ -96,6 +102,7 @@ export const bootstrapSchema = z.object({
     selectedLocale: languageCodeSchema,
     fallbackLocale: languageCodeSchema,
     supportedLocales: z.array(languageCodeSchema).min(1),
+    localeCatalog: z.array(localeCatalogItemSchema).min(1).optional(),
     messagesVersion: z.string().min(1),
     refreshIntervalSeconds: z.number().int().min(300).max(86400).optional(),
     messages: z.record(z.string(), z.string()),

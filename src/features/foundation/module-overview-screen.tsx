@@ -1,3 +1,5 @@
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../app/runtime-context";
 import {
@@ -18,16 +20,18 @@ import {
   SectionTitle,
   Stack,
 } from "../../design-system";
+import type { RootStackParamList } from "../../navigation/types";
+import {
+  mockDexTokens,
+  mockDexFilterChains,
+  mockPredictMarkets,
+  mockPredictPositions,
+  mockSwapQuote,
+  mockText,
+} from "../demo-data";
 
 export type ModuleOverviewKind =
   "predict" | "positions" | "dex" | "market" | "swap";
-
-const tokens = [
-  { symbol: "PEPE", chain: "BSC", price: "$0.00001234", change: 12.4 },
-  { symbol: "WIF", chain: "Solana", price: "$1.842", change: -3.8 },
-  { symbol: "AERO", chain: "Base", price: "$0.912", change: 5.1 },
-  { symbol: "BONK", chain: "Solana", price: "$0.00002611", change: 9.7 },
-];
 
 export function ModuleOverviewScreen({ kind }: { kind: ModuleOverviewKind }) {
   if (kind === "predict") return <PredictMarkets />;
@@ -38,39 +42,42 @@ export function ModuleOverviewScreen({ kind }: { kind: ModuleOverviewKind }) {
 
 function PredictMarkets() {
   const insets = useSafeAreaInsets();
-  const { t } = useFoundationRuntime();
+  const { config, t } = useFoundationRuntime();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const locale = config.localization.selectedLocale;
+  const filters = ["hot", "breaking", "new", "crypto", "sports"] as const;
+
   return (
     <Page>
       <PageScroll>
         <Content paddingTop={insets.top + 24} gap="$3">
           <AppHeader title={t("module.predict.title")} />
           <Row gap="$2" flexWrap="wrap">
-            {["热门", "突发", "新上线", "加密", "体育"].map((item, index) => (
+            {filters.map((filter, index) => (
               <Badge
-                key={item}
+                key={filter}
                 backgroundColor={index === 0 ? "$color" : "$surfaceVariant"}
               >
                 <InlineText color={index === 0 ? "$background" : "$textMuted"}>
-                  {item}
+                  {t(`module.predict.filter.${filter}`)}
                 </InlineText>
               </Badge>
             ))}
           </Row>
-          <PredictionCard
-            category="专场 · 世界杯"
-            title="2026 世界杯冠军"
-            meta="32 个结果 · 成交 $3.4M"
-          />
-          <PredictionCard
-            category="加密 · 1 天后截止"
-            title="BTC 8 月 31 日收盘价高于 $120,000？"
-            meta="成交 $1.2M · 1,284 人持仓"
-          />
-          <PredictionCard
-            category="财经 · 9 月 18 日截止"
-            title="美联储 9 月 FOMC 降息幅度？"
-            meta="成交 $860K"
-          />
+          {mockPredictMarkets.map((market) => (
+            <PredictionCard
+              key={market.title["en-US"]}
+              category={mockText(market.category, locale)}
+              title={mockText(market.title, locale)}
+              meta={mockText(market.meta, locale)}
+              yesPrice={market.yesPrice}
+              noPrice={market.noPrice}
+              yesLabel={market.yesLabel}
+              noLabel={market.noLabel}
+              onPress={() => navigation.navigate("PredictEvent")}
+            />
+          ))}
         </Content>
       </PageScroll>
     </Page>
@@ -81,13 +88,24 @@ function PredictionCard({
   category,
   title,
   meta,
+  yesPrice,
+  noPrice,
+  yesLabel,
+  noLabel,
+  onPress,
 }: {
   category: string;
   title: string;
   meta: string;
+  yesPrice: string;
+  noPrice: string;
+  yesLabel: string;
+  noLabel: string;
+  onPress: () => void;
 }) {
+  const { t } = useFoundationRuntime();
   return (
-    <Card shadowOpacity={0}>
+    <Card shadowOpacity={0} onPress={onPress} accessibilityRole="button">
       <Row justifyContent="space-between">
         <Label>{category}</Label>
         <Body fontSize={12}>{meta}</Body>
@@ -96,12 +114,12 @@ function PredictionCard({
       <Row gap="$2">
         <Badge flex={1} justifyContent="center" borderWidth={0}>
           <InlineText color="$success" fontWeight="800">
-            买 Yes · 62¢
+            {t("module.predict.buy")} {yesLabel} · {yesPrice}
           </InlineText>
         </Badge>
         <Badge flex={1} justifyContent="center" borderWidth={0}>
           <InlineText color="$danger" fontWeight="800">
-            买 No · 38¢
+            {t("module.predict.buy")} {noLabel} · {noPrice}
           </InlineText>
         </Badge>
       </Row>
@@ -111,38 +129,45 @@ function PredictionCard({
 
 function PredictPositions() {
   const insets = useSafeAreaInsets();
-  const { t } = useFoundationRuntime();
+  const { config, t } = useFoundationRuntime();
+  const locale = config.localization.selectedLocale;
   return (
     <Page>
       <PageScroll>
-        <Content paddingTop={insets.top + 24}>
+        <Content paddingTop={insets.top + 24} gap="$3">
           <AppHeader
             title={t("module.positions.title")}
             subtitle={t("module.positions.description")}
           />
-          {["可领取", "争议中", "交易中"].map((status, index) => (
-            <HairlineCard key={status}>
+          {mockPredictPositions.map((position) => (
+            <HairlineCard key={position.question["en-US"]}>
               <Row justifyContent="space-between">
                 <Badge>
                   <InlineText
                     color={
-                      index === 0
+                      position.status === "claimable"
                         ? "$success"
-                        : index === 1
+                        : position.status === "disputed"
                           ? "$warning"
                           : "$info"
                     }
                   >
-                    {status}
+                    {t(`module.positions.status.${position.status}`)}
                   </InlineText>
                 </Badge>
-                <Body>$2,340.12</Body>
+                <Body>{position.value}</Body>
               </Row>
-              <SectionTitle>BTC 本周收盘高于 $120,000？</SectionTitle>
+              <SectionTitle>{mockText(position.question, locale)}</SectionTitle>
               <Row justifyContent="space-between">
-                <Body>Yes · 161.3 份</Body>
-                <InlineText color="$success" fontWeight="800">
-                  +$61.30
+                <Body>
+                  {position.side} · {position.shares}{" "}
+                  {t("module.positions.shares")}
+                </Body>
+                <InlineText
+                  color={position.pnl.startsWith("+") ? "$success" : "$danger"}
+                  fontWeight="800"
+                >
+                  {position.pnl}
                 </InlineText>
               </Row>
             </HairlineCard>
@@ -163,22 +188,23 @@ function DexMarkets({ kind }: { kind: "dex" | "market" }) {
           <AppHeader title={t(`module.${kind}.title`)} />
           <Row gap="$2">
             <Badge backgroundColor="$color">
-              <InlineText color="$background">全部链</InlineText>
+              <InlineText color="$background">
+                {t("module.dex.filter.allChains")}
+              </InlineText>
             </Badge>
-            <Badge>
-              <InlineText>BSC</InlineText>
-            </Badge>
-            <Badge>
-              <InlineText>Ethereum</InlineText>
-            </Badge>
+            {mockDexFilterChains.map((chain) => (
+              <Badge key={chain}>
+                <InlineText>{chain}</InlineText>
+              </Badge>
+            ))}
           </Row>
           <Row gap="$4" paddingVertical="$2">
-            <SectionTitle>热门</SectionTitle>
-            <Body>涨幅榜</Body>
-            <Body>新币</Body>
-            <Body>自选</Body>
+            <SectionTitle>{t("module.dex.tab.hot")}</SectionTitle>
+            <Body>{t("module.dex.tab.gainers")}</Body>
+            <Body>{t("module.dex.tab.new")}</Body>
+            <Body>{t("module.dex.tab.watchlist")}</Body>
           </Row>
-          {tokens.map((token) => (
+          {mockDexTokens.map((token) => (
             <Row
               key={token.symbol}
               paddingVertical="$3"
@@ -201,7 +227,9 @@ function DexMarkets({ kind }: { kind: "dex" | "market" }) {
               </Stack>
               <Stack flex={1}>
                 <SectionTitle>{token.symbol}</SectionTitle>
-                <Body fontSize={12}>{token.chain} · 流动性 $4.2M</Body>
+                <Body fontSize={12}>
+                  {token.chain} · {t("module.dex.liquidity")} {token.liquidity}
+                </Body>
               </Stack>
               <Stack alignItems="flex-end">
                 <SectionTitle>{token.price}</SectionTitle>
@@ -221,72 +249,75 @@ function SwapScreen() {
   return (
     <Page>
       <PageScroll>
-        <Content paddingTop={insets.top + 24}>
+        <Content paddingTop={insets.top + 24} gap="$3">
           <AppHeader title={t("module.swap.title")} />
           <Card padding="$3" shadowOpacity={0}>
-            <Stack
-              backgroundColor="$surfaceVariant"
-              borderRadius="$5"
-              padding="$4"
-              gap="$2"
-            >
-              <Row justifyContent="space-between">
-                <Body>支付</Body>
-                <Body>余额 0.842 BNB</Body>
-              </Row>
-              <Row justifyContent="space-between" alignItems="center">
-                <AmountText>0.5</AmountText>
-                <Badge>
-                  <SectionTitle>BNB</SectionTitle>
-                </Badge>
-              </Row>
-              <Body>≈ $312.40</Body>
-            </Stack>
+            <SwapTokenPanel
+              label={t("module.swap.pay")}
+              {...mockSwapQuote.pay}
+            />
             <InlineText textAlign="center" fontSize={24}>
               ↓
             </InlineText>
-            <Stack
-              backgroundColor="$surfaceVariant"
-              borderRadius="$5"
-              padding="$4"
-              gap="$2"
-            >
-              <Row justifyContent="space-between">
-                <Body>获得（预估）</Body>
-                <Body>余额 0 PEPE</Body>
-              </Row>
-              <Row justifyContent="space-between" alignItems="center">
-                <AmountText>8,120,340</AmountText>
-                <Badge>
-                  <SectionTitle>PEPE</SectionTitle>
-                </Badge>
-              </Row>
-              <Body>≈ $311.06</Body>
-            </Stack>
+            <SwapTokenPanel
+              label={t("module.swap.receiveEstimated")}
+              {...mockSwapQuote.receive}
+            />
           </Card>
           <HairlineCard>
-            {[
-              ["汇率", "1 BNB = 16,240,680 PEPE"],
-              ["价格影响", "0.12%"],
-              ["最少获得", "8,079,738 PEPE"],
-              ["滑点", "0.5% · 自动"],
-              ["网络费", "0.00012 BNB ≈ $0.08"],
-              ["服务费", "0.10% · 已含"],
-            ].map(([key, value]) => (
-              <Row key={key} justifyContent="space-between">
-                <Body>{key}</Body>
+            {mockSwapQuote.details.map((detail) => (
+              <Row key={detail.key} justifyContent="space-between">
+                <Body>{t(`module.swap.detail.${detail.key}`)}</Body>
                 <InlineText
-                  color={key === "价格影响" ? "$success" : "$color"}
+                  color={detail.positive === true ? "$success" : "$color"}
                   fontWeight="700"
                 >
-                  {value}
+                  {detail.value}
                 </InlineText>
               </Row>
             ))}
           </HairlineCard>
-          <PrimaryButton>{t("module.swap.title")}</PrimaryButton>
+          <PrimaryButton>{t("module.swap.submit")}</PrimaryButton>
         </Content>
       </PageScroll>
     </Page>
+  );
+}
+
+function SwapTokenPanel({
+  label,
+  balance,
+  amount,
+  token,
+  value,
+}: {
+  label: string;
+  balance: string;
+  amount: string;
+  token: string;
+  value: string;
+}) {
+  const { t } = useFoundationRuntime();
+  return (
+    <Stack
+      backgroundColor="$surfaceVariant"
+      borderRadius="$5"
+      padding="$4"
+      gap="$2"
+    >
+      <Row justifyContent="space-between">
+        <Body>{label}</Body>
+        <Body>
+          {t("module.swap.balancePrefix")} {balance}
+        </Body>
+      </Row>
+      <Row justifyContent="space-between" alignItems="center">
+        <AmountText>{amount}</AmountText>
+        <Badge>
+          <SectionTitle>{token}</SectionTitle>
+        </Badge>
+      </Row>
+      <Body>{value}</Body>
+    </Stack>
   );
 }

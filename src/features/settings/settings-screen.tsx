@@ -16,6 +16,7 @@ import {
   Stack,
 } from "../../design-system";
 import type { RootStackParamList } from "../../navigation/types";
+import { mockSecurity, mockSettings, mockText } from "../demo-data";
 
 export function SettingsScreen({
   navigation,
@@ -23,6 +24,7 @@ export function SettingsScreen({
   const insets = useSafeAreaInsets();
   const { config, localePreference, themePreference, notificationStatus, t } =
     useFoundationRuntime();
+  const locale = config.localization.selectedLocale;
   return (
     <Page>
       <PageScroll>
@@ -49,11 +51,11 @@ export function SettingsScreen({
             />
             <SettingsRow
               title={t("settings.colorScheme")}
-              value={t("settings.greenUp")}
+              value={mockText(mockSettings.colorScheme, locale)}
             />
             <SettingsRow
               title={t("settings.quoteCurrency")}
-              value="USDT"
+              value={mockSettings.quoteCurrency}
               last
             />
           </SettingsGroup>
@@ -78,7 +80,7 @@ export function SettingsScreen({
                   />
                   <SettingsRow
                     title={t("settings.predictOrderType")}
-                    value={t("settings.marketOrder")}
+                    value={mockText(mockSettings.predictOrderType, locale)}
                   />
                 </>
               ) : null}
@@ -86,7 +88,7 @@ export function SettingsScreen({
                 <>
                   <SettingsRow
                     title={t("settings.dexSlippage")}
-                    value="0.5% · Auto"
+                    value={mockText(mockSettings.dexSlippage, locale)}
                   />
                   <SettingsRow
                     title={t("settings.dexRiskWarning")}
@@ -100,7 +102,7 @@ export function SettingsScreen({
           <SettingsGroup title={t("settings.section.security")}>
             <SettingsRow
               title={t("settings.securityCenter")}
-              value={t("settings.securityHigh")}
+              value={t(`security.level.${mockSecurity.level}`)}
               last
             />
           </SettingsGroup>
@@ -120,7 +122,7 @@ export function SettingsScreen({
             <SettingsRow title={t("settings.privacy")} />
             <SettingsRow
               title={t("settings.clearCache")}
-              value="28.4 MB"
+              value={mockSettings.cacheSize}
               last
             />
           </SettingsGroup>

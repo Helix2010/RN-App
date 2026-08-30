@@ -13,6 +13,16 @@ import { UpdateCenterScreen } from "../features/updates/update-center-screen";
 import { SettingsScreen } from "../features/settings/settings-screen";
 import { LanguageSettingsScreen } from "../features/settings/language-settings-screen";
 import { AppearanceSettingsScreen } from "../features/settings/appearance-settings-screen";
+import {
+  AboutScreen,
+  AccountDetailScreen,
+  DexTokenScreen,
+  NotificationSettingsScreen,
+  PredictEventScreen,
+  SecurityCenterScreen,
+  SwapHistoryScreen,
+  TransferScreen,
+} from "../features/foundation/mock-detail-screens";
 import { ProfileScreen } from "../features/profile/profile-screen";
 import type { RootStackParamList } from "./types";
 import { resolveSystemBack } from "./system-back";
@@ -111,6 +121,17 @@ export function FoundationNavigator() {
           name="AppearanceSettings"
           component={AppearanceSettingsScreen}
         />
+        <Stack.Screen name="PredictEvent" component={PredictEventScreen} />
+        <Stack.Screen name="DexToken" component={DexTokenScreen} />
+        <Stack.Screen name="SwapHistory" component={SwapHistoryScreen} />
+        <Stack.Screen name="Transfer" component={TransferScreen} />
+        <Stack.Screen name="AccountDetail" component={AccountDetailScreen} />
+        <Stack.Screen
+          name="NotificationSettings"
+          component={NotificationSettingsScreen}
+        />
+        <Stack.Screen name="About" component={AboutScreen} />
+        <Stack.Screen name="SecurityCenter" component={SecurityCenterScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

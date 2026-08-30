@@ -16,34 +16,12 @@ import {
   SectionTitle,
   Stack,
 } from "../../design-system";
-
-const assets = [
-  {
-    symbol: "ETH",
-    network: "Ethereum",
-    balance: "2.48 ETH",
-    value: "$10,694.31",
-    change: 3.2,
-  },
-  {
-    symbol: "USDC",
-    network: "Ethereum",
-    balance: "8,420.00 USDC",
-    value: "$8,420.00",
-    change: 0.01,
-  },
-  {
-    symbol: "BTC",
-    network: "Bitcoin",
-    balance: "0.072 BTC",
-    value: "$7,914.20",
-    change: -1.14,
-  },
-];
+import { mockAssetData, mockText } from "../demo-data";
 
 export function AssetsScreen() {
   const insets = useSafeAreaInsets();
   const { config, t } = useFoundationRuntime();
+  const locale = config.localization.selectedLocale;
   return (
     <Page>
       <PageScroll>
@@ -55,42 +33,54 @@ export function AssetsScreen() {
           />
           <Card backgroundColor="$primary" borderColor="$primary">
             <Label color="$onPrimary">{t("assets.total")}</Label>
-            <AmountText color="$onPrimary">$27,028.51</AmountText>
+            <AmountText color="$onPrimary">{mockAssetData.total}</AmountText>
             <Row justifyContent="space-between" alignItems="center">
               <InlineText color="$onPrimary" opacity={0.78} fontSize={12}>
                 {t("assets.today")}
               </InlineText>
               <InlineText color="$onPrimary" fontWeight="800">
-                +$428.36 · +1.61%
+                {mockAssetData.today}
               </InlineText>
             </Row>
           </Card>
           <Row gap="$3">
-            <MetricCard label={t("assets.available")} value="$18,806.27" />
-            <MetricCard label={t("assets.networks")} value="3" />
+            <MetricCard
+              label={t("assets.available")}
+              value={mockAssetData.available}
+            />
+            <MetricCard
+              label={t("assets.networks")}
+              value={mockAssetData.networks}
+            />
           </Row>
           <Stack gap="$2">
             <SectionTitle>{t("assets.accounts")}</SectionTitle>
             <AccountCard
-              symbol="▣"
+              symbol={mockAssetData.accounts.funding.symbol}
               title={t("assets.fundingAccount")}
-              value="8,120.00 USDT"
-              subtitle={t("assets.fundingHint")}
+              value={mockAssetData.accounts.funding.value}
+              subtitle={mockText(
+                mockAssetData.accounts.funding.subtitle,
+                locale,
+              )}
             />
             {config.modules.predict ? (
               <AccountCard
-                symbol="◒"
+                symbol={mockAssetData.accounts.predict.symbol}
                 title={t("assets.predictAccount")}
-                value="3,580.62 USDT"
-                subtitle={t("assets.predictHint")}
+                value={mockAssetData.accounts.predict.value}
+                subtitle={mockText(
+                  mockAssetData.accounts.predict.subtitle,
+                  locale,
+                )}
               />
             ) : null}
             {config.modules.dex ? (
               <AccountCard
-                symbol="◇"
+                symbol={mockAssetData.accounts.dex.symbol}
                 title={t("assets.dexWallet")}
-                value="780.24 USDT"
-                subtitle="0x3f4a…9a2c · 4 条链"
+                value={mockAssetData.accounts.dex.value}
+                subtitle={mockText(mockAssetData.accounts.dex.subtitle, locale)}
               />
             ) : null}
           </Stack>
@@ -103,7 +93,7 @@ export function AssetsScreen() {
                 </InlineText>
               </Badge>
             </Row>
-            {assets.map((asset) => (
+            {mockAssetData.holdings.map((asset) => (
               <Card key={asset.symbol} padding="$2" shadowOpacity={0}>
                 <ListRow
                   title={asset.symbol}

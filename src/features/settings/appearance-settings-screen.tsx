@@ -14,12 +14,14 @@ import {
 } from "../../design-system";
 import type { ThemePreference } from "../../core/preferences/preferences-store";
 import type { RootStackParamList } from "../../navigation/types";
+import { mockSettings, mockText } from "../demo-data";
 
 export function AppearanceSettingsScreen({
   navigation,
 }: NativeStackScreenProps<RootStackParamList, "AppearanceSettings">) {
   const insets = useSafeAreaInsets();
   const { config, themePreference, setTheme, t } = useFoundationRuntime();
+  const locale = config.localization.selectedLocale;
   const options: { value: ThemePreference; label: string }[] = config.theme
     .allowUserOverride
     ? [
@@ -51,7 +53,7 @@ export function AppearanceSettingsScreen({
           <Stack gap="$2">
             <Label>{t("settings.colorScheme")}</Label>
             <Card shadowOpacity={0}>
-              <Body>{t("settings.greenUp")}</Body>
+              <Body>{mockText(mockSettings.colorScheme, locale)}</Body>
               <Body fontSize={12}>{t("settings.colorSchemeHint")}</Body>
             </Card>
           </Stack>
