@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../app/runtime-context";
 import { pickTranslation } from "../../core/i18n/localized-text";
@@ -32,7 +32,9 @@ import {
   Row,
   SecondaryButton,
   SectionTitle,
+  type SheetHandle,
   SkeletonBlock,
+  Sparkline,
   Stack,
 } from "../../design-system";
 import { useAssetsOverview } from "../assets/hooks/use-assets";
@@ -40,11 +42,9 @@ import { useDexTokens } from "../dex/hooks/use-dex";
 import type { TokenSummary } from "../dex/model/dex";
 import { usePredictEvents } from "../predict/hooks/use-predict";
 import type { PredictEvent } from "../predict/model/predict";
-import {
-  tenantDomain,
-  useSession,
-  useSignIn,
-} from "../session/hooks/use-session";
+import { useSession } from "../session/hooks/use-session";
+import { requestAuth } from "../session/model/auth-sheet-store";
+import { AccountSheet } from "../session/ui/account-sheet";
 
 export function FoundationHomeScreen({
   onOpenAssets,
@@ -68,7 +68,7 @@ export function FoundationHomeScreen({
   const [balanceVisible, setBalanceVisible] = useState(true);
 
   const session = useSession();
-  const signIn = useSignIn(tenantDomain());
+  const accountSheet = useRef<SheetHandle>(null);
   const address = session.data?.address;
   const overview = useAssetsOverview(address, config.modules.predict);
   const events = usePredictEvents({ tagId: "hot", sort: "volume", limit: 4 });
@@ -120,11 +120,13 @@ export function FoundationHomeScreen({
             </Stack>
             <IconButton label={t("home.scan")} icon="line-scan" size={32} />
             <IconButton label={t("home.support")} icon="headset" size={32} />
-            <IconButton
-              label={t("home.notifications")}
-              icon="bell-outline"
-              size={32}
-            />
+            {address ? (
+              <IconButton
+                label={t("home.notifications")}
+                icon="bell-outline"
+                size={32}
+              />
+            ) : null}
           </Row>
 
           <Card
@@ -154,7 +156,14 @@ export function FoundationHomeScreen({
                       />
                     </Stack>
                   </Row>
-                  <Row alignItems="center" gap="$1">
+                  <Row
+                    alignItems="center"
+                    gap="$1"
+                    onPress={() => accountSheet.current?.present()}
+                    accessibilityRole="button"
+                    accessibilityLabel={t("account.title")}
+                    testID="home-account"
+                  >
                     <Body fontSize={12}>
                       {session.data?.ens ?? shortenAddress(address)}
                     </Body>
@@ -179,11 +188,7 @@ export function FoundationHomeScreen({
                           ? formatUsd(overview.data.wallet.usd, locale)
                           : "••••"}
                         {overview.data.predict
-                          ? ` · ${t("home.predictAccount")} ${
-                              balanceVisible
-                                ? formatUsd(overview.data.predict.usd, locale)
-                                : "••••"
-                            }`
+                          ? ` · ${t("home.predictAccount")} ${balanceVisible ? formatUsd(overview.data.predict.usd, locale) : "••••"}`
                           : ""}
                       </InlineText>
                     </Row>
@@ -249,24 +254,28 @@ export function FoundationHomeScreen({
               </>
             ) : (
               <>
-                <Label>{t("home.portfolio")}</Label>
-                <SectionTitle>{t("home.connectWallet")}</SectionTitle>
-                <Body>{t("home.connectHint")}</Body>
-                {signIn.isError ? (
-                  <InlineText color="$danger" fontSize={12}>
-                    {t("session.rejected")}
-                  </InlineText>
-                ) : null}
-                <PrimaryButton
-                  height={40}
-                  marginTop="$1"
-                  disabled={signIn.isPending || session.isLoading}
-                  onPress={() => signIn.mutate("metamask")}
-                >
-                  {signIn.isPending
-                    ? t("session.signing")
-                    : t("session.signIn")}
-                </PrimaryButton>
+                <Label>{t("login.welcome")}</Label>
+                <SectionTitle>{t("login.welcomeTitle")}</SectionTitle>
+                <Body>{t("login.welcomeHint")}</Body>
+                <Row gap="$2" marginTop="$1">
+                  <PrimaryButton
+                    height={40}
+                    flex={1}
+                    disabled={session.isLoading}
+                    onPress={() => requestAuth()}
+                    testID="guest-connect"
+                  >
+                    {t("home.connectWallet")}
+                  </PrimaryButton>
+                  <SecondaryButton
+                    height={40}
+                    flex={1}
+                    onPress={() => requestAuth()}
+                    testID="guest-create"
+                  >
+                    {t("login.createWallet")}
+                  </SecondaryButton>
+                </Row>
               </>
             )}
           </Card>
@@ -412,6 +421,7 @@ export function FoundationHomeScreen({
           </HairlineCard>
         </Content>
       </PageScroll>
+      <AccountSheet ref={accountSheet} />
     </Page>
   );
 }
@@ -579,9 +589,9 @@ function TokenHomeRow({
         width={36}
         height={36}
         borderRadius={999}
-        style={{ backgroundColor: summary.token.logoColor }}
         alignItems="center"
         justifyContent="center"
+        style={{ backgroundColor: summary.token.logoColor }}
       >
         <InlineText color="white" fontWeight="900">
           {summary.token.symbol[0]}
@@ -594,7 +604,11 @@ function TokenHomeRow({
           {formatCompactNumber(summary.liquidityUsd, locale)}
         </Body>
       </Stack>
-      <Stack alignItems="flex-end">
+      <Sparkline
+        values={summary.sparkline}
+        tone={summary.change24hPct >= 0 ? "positive" : "negative"}
+      />
+      <Stack alignItems="flex-end" minWidth={92}>
         <InlineText color="$color" fontWeight="700">
           {formatTokenPrice(summary.priceUsd, locale)}
         </InlineText>

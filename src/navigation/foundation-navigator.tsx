@@ -27,6 +27,7 @@ import {
   TransferScreen,
 } from "../features/foundation/mock-detail-screens";
 import { ProfileScreen } from "../features/profile/profile-screen";
+import { ConnectWalletSheet } from "../features/session/ui/connect-wallet-sheet";
 import type { RootStackParamList } from "./types";
 import { resolveSystemBack } from "./system-back";
 
@@ -147,6 +148,7 @@ export function FoundationNavigator() {
         <Stack.Screen name="About" component={AboutScreen} />
         <Stack.Screen name="SecurityCenter" component={SecurityCenterScreen} />
       </Stack.Navigator>
+      <ConnectWalletSheet />
     </NavigationContainer>
   );
 }

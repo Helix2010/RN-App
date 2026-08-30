@@ -2,7 +2,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { appRuntime } from "../../../core/network/api-client";
 import { useCallback, useState } from "react";
 import { useGateways } from "../../../core/gateways/gateway-context";
+import type { SignInChallenge } from "../api/gateway";
 import type { AuthIntent, Session, WalletConnectorId } from "../model/session";
+import type { WalletAccount } from "../../wallet/model/wallet";
 
 export const sessionQueryKey = ["session"] as const;
 
@@ -109,4 +111,96 @@ export function tenantDomain(): string {
   } catch {
     return "localhost";
   }
+}
+
+export type LoginStep =
+  | { step: "pick" }
+  | { step: "connecting"; connector: WalletConnectorId }
+  | {
+      step: "confirm";
+      account: WalletAccount;
+      challenge: SignInChallenge;
+      connector: WalletConnectorId;
+    }
+  | {
+      step: "signing";
+      account: WalletAccount;
+      challenge: SignInChallenge;
+      connector: WalletConnectorId;
+    }
+  | {
+      step: "error";
+      reason: "rejected" | "timeout" | "failed";
+      account?: WalletAccount;
+      challenge?: SignInChallenge;
+      connector: WalletConnectorId;
+    };
+
+/**
+ * 分步登录（L-02 → L-03）：connect 后停在确认层展示人话版 SIWE，sign 才发起签名。
+ */
+export function useWalletLogin(domain: string) {
+  const { session, wallet } = useGateways();
+  const queryClient = useQueryClient();
+  const [state, setState] = useState<LoginStep>({ step: "pick" });
+
+  const connect = useCallback(
+    async (connector: WalletConnectorId) => {
+      setState({ step: "connecting", connector });
+      try {
+        const account = await wallet.connect(connector);
+        const challenge = await session.challenge({
+          address: account.address,
+          connector,
+          chains: account.chains,
+          domain,
+        });
+        setState({ step: "confirm", account, challenge, connector });
+      } catch {
+        setState({ step: "error", reason: "failed", connector });
+      }
+    },
+    [domain, session, wallet],
+  );
+
+  const sign = useCallback(async (): Promise<Session | null> => {
+    if (state.step !== "confirm" && state.step !== "error") return null;
+    const { account, challenge, connector } = state;
+    if (!account || !challenge) return null;
+    setState({ step: "signing", account, challenge, connector });
+    try {
+      const signature = await wallet.signMessage(
+        account.address,
+        challenge.message,
+      );
+      const next = await session.verify(
+        { address: account.address, connector, chains: account.chains, domain },
+        challenge,
+        signature,
+      );
+      queryClient.setQueryData(sessionQueryKey, next);
+      void queryClient.invalidateQueries({
+        predicate: (query) => query.queryKey[0] !== "session",
+      });
+      setState({ step: "pick" });
+      return next;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      setState({
+        step: "error",
+        reason: /reject/i.test(message)
+          ? "rejected"
+          : /timeout/i.test(message)
+            ? "timeout"
+            : "failed",
+        account,
+        challenge,
+        connector,
+      });
+      return null;
+    }
+  }, [domain, queryClient, session, state, wallet]);
+
+  const reset = useCallback(() => setState({ step: "pick" }), []);
+  return { state, connect, sign, reset };
 }

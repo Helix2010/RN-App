@@ -55,3 +55,20 @@ export function useWalletTransfers(address: string | undefined) {
     refetchInterval: 2_000,
   });
 }
+
+export function useSwitchAccount() {
+  const { wallet, session } = useGateways();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (address: string) => {
+      const account = await wallet.switchAccount(address);
+      return account;
+    },
+    onSuccess: async () => {
+      // 切换地址 = 需要重新签名登录；先登出，交给登录 sheet
+      await session.signOut();
+      queryClient.setQueryData(["session"], null);
+      void queryClient.invalidateQueries();
+    },
+  });
+}
