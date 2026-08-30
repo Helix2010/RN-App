@@ -73,6 +73,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   android: {
     package: "com.anyfun.foundation",
     versionCode: androidVersionCode,
+    allowBackup: false,
     predictiveBackGestureEnabled: true,
     adaptiveIcon: {
       backgroundColor: "#E9F0FF",
