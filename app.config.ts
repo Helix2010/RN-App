@@ -16,6 +16,8 @@ const googleServicesFile = process.env.GOOGLE_SERVICES_JSON;
 const appVersion = "1.1.8";
 const androidVersionCode = 12;
 const iosBuildNumber = "4";
+const buildNumber =
+  process.env.EXPO_OS === "ios" ? iosBuildNumber : String(androidVersionCode);
 const apiBaseUrl =
   process.env.EXPO_PUBLIC_API_BASE_URL ??
   (distributionChannel === "development" ? "http://localhost:3000" : "");
@@ -104,6 +106,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         requestHeaders: {
           "expo-channel-name": otaChannel,
           "x-application-id": applicationId,
+          "x-app-version": appVersion,
+          "x-build-number": buildNumber,
         },
         ...(codeSigningCertificate && distributionChannel !== "development"
           ? {
@@ -123,9 +127,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     applicationId,
     nativePushConfigured: Boolean(googleServicesFile),
     appVersion,
-    buildNumber:
-      process.env.EXPO_OS === "ios"
-        ? iosBuildNumber
-        : String(androidVersionCode),
+    buildNumber,
   },
 });

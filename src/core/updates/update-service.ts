@@ -124,6 +124,12 @@ async function performCheckAndDownloadOta(
       emitUpdateTelemetry({ stage: "current" });
       return result(status, "update.otaCurrent");
     }
+    if (!isManifestCompatibleWithApp(check.manifest, config)) {
+      const status = Updates.isEmbeddedLaunch ? "embedded" : "current";
+      transition(status);
+      emitUpdateTelemetry({ stage: "current", updateId: check.manifest?.id });
+      return result(status, "update.otaIncompatible");
+    }
     transition("available");
     emitUpdateTelemetry({ stage: "available", updateId: check.manifest?.id });
     transition("downloading");
@@ -135,6 +141,14 @@ async function performCheckAndDownloadOta(
       return { ...resultValue("rollback", "update.otaRollback") };
     }
     if (fetched.isNew) {
+      if (!isManifestCompatibleWithApp(fetched.manifest, config)) {
+        transition("error");
+        emitUpdateTelemetry({
+          stage: "error",
+          updateId: fetched.manifest?.id,
+        });
+        return resultValue("error", "update.otaIncompatible");
+      }
       const manifestMetadata = getUpdateMetadataFromManifest(fetched.manifest);
       const manifestApplyStrategy = getApplyStrategyFromManifest(
         fetched.manifest,
@@ -171,6 +185,56 @@ async function performCheckAndDownloadOta(
     emitUpdateTelemetry({ stage: "error", error });
     return resultValue("error", "update.otaError");
   }
+}
+
+export function isManifestCompatibleWithApp(
+  manifest: unknown,
+  config: BootstrapConfig,
+): boolean {
+  const identity = getManifestAppIdentity(manifest);
+  return (
+    identity.version === config.app.version &&
+    identity.buildNumber === config.app.buildNumber
+  );
+}
+
+export function getManifestAppIdentity(manifest: unknown): {
+  version: string;
+  buildNumber: string;
+} {
+  const record = objectValue(manifest);
+  const extra = objectValue(record.extra);
+  const expoClient = objectValue(extra.expoClient);
+  const clientExtra = objectValue(expoClient.extra);
+  const android = objectValue(expoClient.android);
+  const ios = objectValue(expoClient.ios);
+  const version = firstText(
+    extra.appVersion,
+    clientExtra.appVersion,
+    expoClient.version,
+  );
+  const buildNumber = firstText(
+    extra.buildNumber,
+    clientExtra.buildNumber,
+    android.versionCode,
+    ios.buildNumber,
+  );
+  return { version, buildNumber };
+}
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function firstText(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim() !== "") return value.trim();
+    if (typeof value === "number" && Number.isFinite(value))
+      return String(value);
+  }
+  return "";
 }
 
 function resultValue(

@@ -2,7 +2,9 @@ import * as Updates from "expo-updates";
 import { createFallbackConfig } from "../config/fallback-config";
 import {
   checkAndDownloadOta,
+  getManifestAppIdentity,
   getUpdateMetadataFromManifest,
+  isManifestCompatibleWithApp,
 } from "./update-service";
 
 jest.mock("expo-updates", () => ({
@@ -47,17 +49,23 @@ describe("update service feature flags", () => {
     config.update.ota.channel = "development";
     config.update.ota.runtimeVersion = "test";
     config.update.ota.applyStrategy = "immediate";
+    const manifest = {
+      id: "update-1",
+      runtimeVersion: "test",
+      createdAt: "2026-08-28T00:00:00.000Z",
+      metadata: { applyStrategy: "next_launch" },
+      extra: {
+        appVersion: config.app.version,
+        buildNumber: config.app.buildNumber,
+      },
+    };
     (Updates.checkForUpdateAsync as jest.Mock).mockResolvedValue({
       isAvailable: true,
+      manifest,
     });
     (Updates.fetchUpdateAsync as jest.Mock).mockResolvedValue({
       isNew: true,
-      manifest: {
-        id: "update-1",
-        runtimeVersion: "test",
-        createdAt: "2026-08-28T00:00:00.000Z",
-        metadata: { applyStrategy: "next_launch" },
-      },
+      manifest,
     });
 
     const transitions: string[] = [];
@@ -100,16 +108,22 @@ describe("update service feature flags", () => {
     config.update.ota.channel = "development";
     config.update.ota.runtimeVersion = "test";
     config.update.ota.applyStrategy = "immediate";
+    const manifest = {
+      id: "update-bootstrap-policy",
+      runtimeVersion: "test",
+      createdAt: "2026-08-28T00:00:00.000Z",
+      extra: {
+        appVersion: config.app.version,
+        buildNumber: config.app.buildNumber,
+      },
+    };
     (Updates.checkForUpdateAsync as jest.Mock).mockResolvedValue({
       isAvailable: true,
+      manifest,
     });
     (Updates.fetchUpdateAsync as jest.Mock).mockResolvedValue({
       isNew: true,
-      manifest: {
-        id: "update-bootstrap-policy",
-        runtimeVersion: "test",
-        createdAt: "2026-08-28T00:00:00.000Z",
-      },
+      manifest,
     });
 
     await expect(checkAndDownloadOta(config)).resolves.toEqual(
@@ -136,6 +150,49 @@ describe("update service feature flags", () => {
       }),
     );
     expect(Updates.checkForUpdateAsync).not.toHaveBeenCalled();
+  });
+
+  it("rejects an OTA built for another APK version before download", async () => {
+    const config = createFallbackConfig("zh-CN");
+    config.features.otaEnabled = true;
+    config.update.ota.enabled = true;
+    config.update.ota.channel = "development";
+    config.update.ota.runtimeVersion = "test";
+    (Updates.checkForUpdateAsync as jest.Mock).mockResolvedValue({
+      isAvailable: true,
+      manifest: {
+        id: "old-apk-ota",
+        runtimeVersion: "test",
+        extra: { appVersion: "1.1.7", buildNumber: "11" },
+      },
+    });
+
+    await expect(checkAndDownloadOta(config)).resolves.toEqual(
+      expect.objectContaining({
+        status: "embedded",
+        messageKey: "update.otaIncompatible",
+      }),
+    );
+    expect(Updates.fetchUpdateAsync).not.toHaveBeenCalled();
+  });
+
+  it("matches nested Expo client identity for the current APK", () => {
+    const config = createFallbackConfig("zh-CN");
+    config.app.buildNumber = "42";
+
+    const manifest = {
+      extra: {
+        expoClient: {
+          version: config.app.version,
+          android: { versionCode: Number(config.app.buildNumber) },
+        },
+      },
+    };
+    expect(getManifestAppIdentity(manifest)).toEqual({
+      version: config.app.version,
+      buildNumber: config.app.buildNumber,
+    });
+    expect(isManifestCompatibleWithApp(manifest, config)).toBe(true);
   });
 
   it("surfaces a rollback directive without blocking the app", async () => {
