@@ -30,7 +30,7 @@ Feature Flags 的实际作用：`updateCenter` 控制升级入口是否展示，
 
 OTA 检查在 Bootstrap 成功后后台静默执行，并在 App 从后台回到前台时按 15 分钟节流窗口再次检查。服务端策略为 `immediate` 时，资源下载完成后显示确认层，用户确认后才重启；`next_launch` 则延迟到下次启动应用。
 
-OTA 包中的 API、租户渠道、应用身份、版本和 Build 仅用于导出提示；正式发布时由 RN-Server 按请求域名和基线 APK 重写 Manifest。客户端通过 `manifest.extra.expoClient` 读取这组运行配置，避免 OTA 后丢失租户地址或错误回退到开发默认值。
+OTA 包中的 API、租户渠道、应用身份、版本和 Build 仅用于导出提示；正式发布时由 RN-Server 按请求域名和基线 APK 重写 Manifest。客户端通过 `manifest.extra.expoClient` 读取这组运行配置，避免 OTA 后丢失租户地址或错误回退到开发默认值。`runtimeVersion` 显式等于 APK 的 App Version；服务端和客户端再校验 Build，禁止不同 APK 基线共享或覆盖 OTA。
 
 ## 设计入口
 

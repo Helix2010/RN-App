@@ -13,9 +13,9 @@ const codeSigningCertificate =
 const codeSigningKeyId = process.env.EXPO_UPDATES_CODE_SIGNING_KEY_ID ?? "main";
 const applicationId = process.env.EXPO_PUBLIC_APPLICATION_ID ?? "dex-mobile";
 const googleServicesFile = process.env.GOOGLE_SERVICES_JSON;
-const appVersion = "1.1.8";
-const androidVersionCode = 12;
-const iosBuildNumber = "4";
+const appVersion = "1.1.9";
+const androidVersionCode = 13;
+const iosBuildNumber = "5";
 const buildNumber =
   process.env.EXPO_OS === "ios" ? iosBuildNumber : String(androidVersionCode);
 const apiBaseUrl =
@@ -95,7 +95,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       ? []
       : ["./plugins/with-production-android-optimizations.js"]),
   ],
-  runtimeVersion: { policy: "fingerprint" },
+  // OTA records are explicitly bound to an APK version. Server and client
+  // additionally verify buildNumber so two native builds cannot share an OTA.
+  runtimeVersion: appVersion,
   updates: resolvedUpdatesUrl
     ? {
         enabled: true,

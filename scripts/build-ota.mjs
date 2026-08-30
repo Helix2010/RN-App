@@ -60,6 +60,10 @@ const resolvedExpoConfig = JSON.parse(
     },
   ),
 );
+const configuredRuntimeVersion =
+  typeof resolvedExpoConfig.runtimeVersion === "string"
+    ? resolvedExpoConfig.runtimeVersion
+    : undefined;
 
 if (!platform || !["android", "ios"].includes(platform)) {
   fail(
@@ -160,6 +164,7 @@ try {
     createdAt: new Date().toISOString(),
     runtimeVersion:
       runtimeVersionOverride ??
+      configuredRuntimeVersion ??
       runtimeVersion(
         platform,
         apiBaseUrl,
