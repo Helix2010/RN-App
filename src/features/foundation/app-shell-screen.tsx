@@ -6,6 +6,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../app/runtime-context";
 import {
   Body,
+  AppIcon,
+  type AppIconName,
   Card,
   InlineText,
   Label,
@@ -20,8 +22,13 @@ import type { RootStackParamList } from "../../navigation/types";
 import { AssetsScreen } from "../portfolio/assets-screen";
 import { FoundationHomeScreen } from "./foundation-home-screen";
 import { resolveAppShellBack, type AppTab } from "./app-shell-back";
-import { buildAppTabs } from "./app-tabs";
+import {
+  buildAppTabs,
+  isAppContentAvailable,
+  resolveBottomTab,
+} from "./app-tabs";
 import { ModuleOverviewScreen } from "./module-overview-screen";
+import { useEdgeBackGesture } from "../../navigation/edge-back-gesture";
 
 type Props = NativeStackScreenProps<RootStackParamList, "AppShell">;
 
@@ -38,7 +45,10 @@ export function AppShellScreen({ navigation }: Props) {
       })),
     [config.modules, t],
   );
-  const effectiveTab = tabs.some((item) => item.key === tab) ? tab : "home";
+  const effectiveTab = isAppContentAvailable(tab, config.modules)
+    ? tab
+    : "home";
+  const selectedBottomTab = resolveBottomTab(effectiveTab, config.modules);
   const updateKey = `${config.update.full.releaseId ?? "none"}:${config.update.latestVersion}`;
   const [dismissedUpdateKey, setDismissedUpdateKey] = useState("");
   const updateNoticeVisible =
@@ -72,14 +82,22 @@ export function AppShellScreen({ navigation }: Props) {
     );
     return () => subscription.remove();
   }, [effectiveTab, isFocused]);
+  const edgeBack = useEdgeBackGesture(() => {
+    const action = resolveAppShellBack(effectiveTab);
+    if (action === "home") setTab("home");
+  });
 
   return (
-    <Page>
+    <Page {...edgeBack}>
       <View style={{ flex: 1 }}>
         {effectiveTab === "home" ? (
           <FoundationHomeScreen
             onOpenAssets={() => setTab("assets")}
             onOpenProfile={() => navigation.navigate("Profile")}
+            onOpenPredict={() => setTab("predict")}
+            onOpenPredictPositions={() => setTab("positions")}
+            onOpenDex={() => setTab(config.modules.predict ? "dex" : "market")}
+            onOpenSwap={() => setTab("swap")}
           />
         ) : effectiveTab === "assets" ? (
           <AssetsScreen />
@@ -103,9 +121,9 @@ export function AppShellScreen({ navigation }: Props) {
         {tabs.map((item) => (
           <TabButton
             key={item.key}
-            selected={effectiveTab === item.key}
+            selected={selectedBottomTab === item.key}
             label={item.label}
-            symbol={item.symbol}
+            icon={item.icon}
             onPress={() => setTab(item.key)}
           />
         ))}
@@ -154,12 +172,12 @@ export function AppShellScreen({ navigation }: Props) {
 function TabButton({
   selected,
   label,
-  symbol,
+  icon,
   onPress,
 }: {
   selected: boolean;
   label: string;
-  symbol: string;
+  icon: AppIconName;
   onPress: () => void;
 }) {
   return (
@@ -178,9 +196,11 @@ function TabButton({
       pressStyle={{ opacity: 0.78 }}
     >
       <Stack alignItems="center" gap="$1">
-        <InlineText color={selected ? "$color" : "$textMuted"} fontSize={21}>
-          {symbol}
-        </InlineText>
+        <AppIcon
+          name={icon}
+          size={23}
+          colorToken={selected ? "color" : "textMuted"}
+        />
         <InlineText color={selected ? "$color" : "$textMuted"} fontSize={11}>
           {label}
         </InlineText>

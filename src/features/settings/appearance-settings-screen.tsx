@@ -15,6 +15,7 @@ import {
 import type { ThemePreference } from "../../core/preferences/preferences-store";
 import type { RootStackParamList } from "../../navigation/types";
 import { mockSettings, mockText } from "../demo-data";
+import { useEdgeBackGesture } from "../../navigation/edge-back-gesture";
 
 export function AppearanceSettingsScreen({
   navigation,
@@ -22,6 +23,7 @@ export function AppearanceSettingsScreen({
   const insets = useSafeAreaInsets();
   const { config, themePreference, setTheme, t } = useFoundationRuntime();
   const locale = config.localization.selectedLocale;
+  const edgeBack = useEdgeBackGesture(navigation.goBack);
   const options: { value: ThemePreference; label: string }[] = config.theme
     .allowUserOverride
     ? [
@@ -31,7 +33,7 @@ export function AppearanceSettingsScreen({
       ]
     : [{ value: "system", label: t("theme.system") }];
   return (
-    <Page>
+    <Page {...edgeBack}>
       <PageScroll>
         <Content paddingTop={insets.top + 16}>
           <ScreenHeader

@@ -3,6 +3,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../app/runtime-context";
 import {
   AmountText,
+  AppIcon,
+  type AppIconName,
   Badge,
   Body,
   Card,
@@ -25,9 +27,17 @@ import { mockHomeData, mockText } from "../demo-data";
 export function FoundationHomeScreen({
   onOpenAssets,
   onOpenProfile,
+  onOpenPredict,
+  onOpenPredictPositions,
+  onOpenDex,
+  onOpenSwap,
 }: {
   onOpenAssets: () => void;
   onOpenProfile: () => void;
+  onOpenPredict: () => void;
+  onOpenPredictPositions: () => void;
+  onOpenDex: () => void;
+  onOpenSwap: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const runtime = useFoundationRuntime();
@@ -48,7 +58,7 @@ export function FoundationHomeScreen({
           <Row alignItems="center" gap="$2">
             <IconButton
               label={t("profile.title")}
-              symbol="K"
+              icon="account-circle-outline"
               size={32}
               onPress={onOpenProfile}
             />
@@ -60,13 +70,20 @@ export function FoundationHomeScreen({
               justifyContent="center"
               paddingHorizontal="$3"
             >
-              <InlineText color="$textMuted" fontSize={13}>
-                ⌕ {t("home.search")}
-              </InlineText>
+              <Row alignItems="center" gap="$2">
+                <AppIcon name="magnify" size={17} colorToken="textMuted" />
+                <InlineText color="$textMuted" fontSize={13}>
+                  {t("home.search")}
+                </InlineText>
+              </Row>
             </Stack>
-            <IconButton label={t("home.scan")} symbol="⌗" size={32} />
-            <IconButton label={t("home.support")} symbol="♧" size={32} />
-            <IconButton label={t("home.notifications")} symbol="♢" size={32} />
+            <IconButton label={t("home.scan")} icon="line-scan" size={32} />
+            <IconButton label={t("home.support")} icon="headset" size={32} />
+            <IconButton
+              label={t("home.notifications")}
+              icon="bell-outline"
+              size={32}
+            />
           </Row>
 
           <Card
@@ -76,8 +93,7 @@ export function FoundationHomeScreen({
             <Row justifyContent="space-between" alignItems="center">
               <Row alignItems="center" gap="$2">
                 <Label>{t("home.portfolio")}</Label>
-                <InlineText
-                  color="$textMuted"
+                <Stack
                   onPress={() => setBalanceVisible((visible) => !visible)}
                   accessibilityRole="button"
                   accessibilityLabel={
@@ -86,10 +102,19 @@ export function FoundationHomeScreen({
                       : t("home.showBalance")
                   }
                 >
-                  {balanceVisible ? "◉" : "◎"}
-                </InlineText>
+                  <AppIcon
+                    name={balanceVisible ? "eye-outline" : "eye-off-outline"}
+                    size={18}
+                    colorToken="textMuted"
+                  />
+                </Stack>
               </Row>
-              <Body fontSize={12}>{mockHomeData.portfolio.quoteCurrency}⌄</Body>
+              <Row alignItems="center" gap="$1">
+                <Body fontSize={12}>
+                  {mockHomeData.portfolio.quoteCurrency}
+                </Body>
+                <AppIcon name="chevron-down" size={15} colorToken="textMuted" />
+              </Row>
             </Row>
             <AmountText fontSize={30} lineHeight={36}>
               {balanceVisible ? mockHomeData.portfolio.balance : "••••••"}
@@ -118,22 +143,37 @@ export function FoundationHomeScreen({
           <Row flexWrap="wrap" gap="$3" paddingVertical="$2">
             <QuickAction
               label={t("home.quick.predict")}
-              symbol="◒"
+              icon="chart-timeline-variant"
               enabled={config.modules.predict}
+              onPress={onOpenPredict}
             />
             <QuickAction
               label={t("home.quick.swap")}
-              symbol="⇄"
+              icon="swap-horizontal"
               enabled={config.modules.dex}
+              onPress={onOpenSwap}
             />
             <QuickAction
               label={t("home.quick.rank")}
-              symbol="♛"
+              icon="trophy-outline"
               enabled={config.modules.predict}
+              onPress={onOpenPredictPositions}
             />
-            <QuickAction label={t("home.quick.invite")} symbol="✦" enabled />
-            <QuickAction label={t("home.quick.help")} symbol="?" enabled />
-            <QuickAction label={t("home.quick.more")} symbol="▦" enabled />
+            <QuickAction
+              label={t("home.quick.invite")}
+              icon="gift-outline"
+              enabled
+            />
+            <QuickAction
+              label={t("home.quick.help")}
+              icon="help-circle-outline"
+              enabled
+            />
+            <QuickAction
+              label={t("home.quick.more")}
+              icon="dots-grid"
+              enabled
+            />
           </Row>
 
           <Card
@@ -143,21 +183,21 @@ export function FoundationHomeScreen({
             shadowOpacity={0}
           >
             <Row alignItems="center" gap="$2">
-              <InlineText color="$primary" fontSize={16}>
-                ◖
-              </InlineText>
+              <AppIcon name="bullhorn-outline" size={17} />
               <Body flex={1} numberOfLines={1}>
                 {mockText(mockHomeData.notice, locale)}
               </Body>
-              <InlineText color="$textMuted" fontSize={20}>
-                ›
-              </InlineText>
+              <AppIcon name="chevron-right" size={20} colorToken="textMuted" />
             </Row>
           </Card>
 
           {config.modules.predict ? (
             <Stack gap="$2">
-              <Row justifyContent="space-between" alignItems="center">
+              <Row
+                justifyContent="space-between"
+                alignItems="center"
+                onPress={onOpenPredict}
+              >
                 <SectionTitle>{t("home.predict")}</SectionTitle>
                 <InlineText color="$textMuted" fontSize={13}>
                   {t("home.viewAll")} ›
@@ -182,7 +222,11 @@ export function FoundationHomeScreen({
           ) : null}
           {config.modules.dex ? (
             <Stack gap="$2">
-              <Row justifyContent="space-between" alignItems="center">
+              <Row
+                justifyContent="space-between"
+                alignItems="center"
+                onPress={onOpenDex}
+              >
                 <SectionTitle>{t("home.dexHotTokens")}</SectionTitle>
                 <InlineText color="$textMuted" fontSize={13}>
                   {t("home.market")} ›
@@ -219,16 +263,25 @@ export function FoundationHomeScreen({
 
 function QuickAction({
   label,
-  symbol,
+  icon,
   enabled,
+  onPress,
 }: {
   label: string;
-  symbol: string;
+  icon: AppIconName;
   enabled: boolean;
+  onPress?: () => void;
 }) {
   if (!enabled) return null;
   return (
-    <Stack width="22%" alignItems="center" gap="$1">
+    <Stack
+      width="22%"
+      alignItems="center"
+      gap="$1"
+      onPress={onPress}
+      accessibilityRole={onPress ? "button" : undefined}
+      accessibilityLabel={label}
+    >
       <Stack
         width={44}
         height={44}
@@ -237,9 +290,7 @@ function QuickAction({
         alignItems="center"
         justifyContent="center"
       >
-        <InlineText color="$primary" fontSize={20}>
-          {symbol}
-        </InlineText>
+        <AppIcon name={icon} size={22} />
       </Stack>
       <InlineText color="$textMuted" fontSize={12} numberOfLines={1}>
         {label}

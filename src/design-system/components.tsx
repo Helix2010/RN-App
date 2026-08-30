@@ -1,4 +1,4 @@
-import type { PropsWithChildren, ReactNode } from "react";
+import type { ComponentProps, PropsWithChildren, ReactNode } from "react";
 import type { RefreshControlProps } from "react-native";
 import { RefreshControl } from "react-native";
 import {
@@ -11,6 +11,7 @@ import {
   styled,
   useTheme,
 } from "tamagui";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 
 export const Page = styled(YStack, {
   flex: 1,
@@ -24,6 +25,43 @@ export const Row = styled(XStack, {
 });
 
 export const InlineText = styled(Text, {});
+
+export type AppIconName = ComponentProps<typeof MaterialCommunityIcons>["name"];
+
+export function AppIcon({
+  name,
+  size = 20,
+  colorToken = "primary",
+}: {
+  name: AppIconName;
+  size?: number;
+  colorToken?:
+    | "primary"
+    | "color"
+    | "textMuted"
+    | "success"
+    | "warning"
+    | "danger"
+    | "info";
+}) {
+  const theme = useTheme();
+  const colors = {
+    primary: theme.primary.val,
+    color: theme.color.val,
+    textMuted: theme.textMuted.val,
+    success: theme.success.val,
+    warning: theme.warning.val,
+    danger: theme.danger.val,
+    info: theme.info.val,
+  };
+  return (
+    <MaterialCommunityIcons
+      name={name}
+      size={size}
+      color={colors[colorToken]}
+    />
+  );
+}
 
 export function BrandMark({ size = 48 }: { size?: number }) {
   return (
@@ -159,9 +197,7 @@ export function ScreenHeader({
           accessibilityLabel={backLabel}
           pressStyle={{ opacity: 0.76, scale: 0.96 }}
         >
-          <Text fontSize={28} lineHeight={30} marginTop={-2}>
-            ‹
-          </Text>
+          <AppIcon name="chevron-left" size={28} colorToken="color" />
         </Button>
       ) : null}
       <Stack flex={1} gap="$1">
@@ -217,13 +253,15 @@ export const SkeletonBlock = styled(YStack, {
 export function IconButton({
   label,
   symbol,
+  icon,
   onPress,
   backgroundColor = "$surfaceVariant",
   color = "$color",
   size = 42,
 }: {
   label: string;
-  symbol: string;
+  symbol?: string;
+  icon?: AppIconName;
   onPress?: () => void;
   backgroundColor?: "$surfaceVariant" | "$onPrimary";
   color?: "$color" | "$primary";
@@ -243,7 +281,15 @@ export function IconButton({
       accessibilityLabel={label}
       pressStyle={{ opacity: 0.76, scale: 0.95 }}
     >
-      <Text fontSize={18}>{symbol}</Text>
+      {icon ? (
+        <AppIcon
+          name={icon}
+          size={18}
+          colorToken={color === "$primary" ? "primary" : "color"}
+        />
+      ) : (
+        <Text fontSize={18}>{symbol}</Text>
+      )}
     </Button>
   );
 }

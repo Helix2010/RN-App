@@ -217,7 +217,7 @@ export const mockAssetData = {
   networks: "3",
   accounts: {
     funding: {
-      symbol: "▣",
+      symbol: "wallet-outline",
       value: "8,120.00 USDT",
       subtitle: {
         "zh-CN": "充值、提现与划转中转",
@@ -225,7 +225,7 @@ export const mockAssetData = {
       },
     },
     predict: {
-      symbol: "◒",
+      symbol: "chart-timeline-variant",
       value: "3,580.62 USDT",
       subtitle: {
         "zh-CN": "可用 1,240.50 USDC · 持仓 $2,340.12",
@@ -233,7 +233,7 @@ export const mockAssetData = {
       },
     },
     dex: {
-      symbol: "◇",
+      symbol: "swap-horizontal",
       value: "780.24 USDT",
       subtitle: {
         "zh-CN": "0x3f4a…9a2c · 4 条链",

@@ -1,25 +1,34 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../app/runtime-context";
 import {
   Body,
+  AppIcon,
   Card,
   Content,
-  InlineText,
   Page,
   PageScroll,
   Row,
   ScreenHeader,
   SectionTitle,
+  Stack,
 } from "../../design-system";
 import type { LocalePreference } from "../../core/preferences/preferences-store";
 import type { RootStackParamList } from "../../navigation/types";
+import { useEdgeBackGesture } from "../../navigation/edge-back-gesture";
 
 export function LanguageSettingsScreen({
   navigation,
 }: NativeStackScreenProps<RootStackParamList, "LanguageSettings">) {
   const insets = useSafeAreaInsets();
   const { config, localePreference, setLocale, t } = useFoundationRuntime();
+  const [pendingLocale, setPendingLocale] = useState<LocalePreference | null>(
+    null,
+  );
+  const [switchError, setSwitchError] = useState(false);
+  const switching = pendingLocale !== null;
+  const edgeBack = useEdgeBackGesture(navigation.goBack);
   const languageCatalog =
     config.localization.localeCatalog ??
     config.localization.supportedLocales.map((code) => ({
@@ -32,7 +41,7 @@ export function LanguageSettingsScreen({
     ...languageCatalog.map((item) => item.code),
   ];
   return (
-    <Page>
+    <Page {...edgeBack}>
       <PageScroll>
         <Content paddingTop={insets.top + 16}>
           <ScreenHeader
@@ -40,6 +49,20 @@ export function LanguageSettingsScreen({
             onBack={() => navigation.goBack()}
             backLabel={t("action.back")}
           />
+          {switchError ? (
+            <Card
+              padding="$3"
+              borderWidth={1}
+              borderColor="$danger"
+              backgroundColor="$surfaceVariant"
+              accessibilityRole="alert"
+            >
+              <Body color="$danger">{t("status.error")}</Body>
+              <Body color="$textMuted" fontSize={13}>
+                {t("settings.languageSwitchRetry")}
+              </Body>
+            </Card>
+          ) : null}
           <Card padding={0} gap={0} shadowOpacity={0}>
             {items.map((item, index) => {
               const language =
@@ -61,7 +84,15 @@ export function LanguageSettingsScreen({
                   alignItems="center"
                   borderBottomWidth={index === items.length - 1 ? 0 : 1}
                   borderColor="$borderColor"
-                  onPress={() => setLocale(item)}
+                  disabled={switching}
+                  opacity={switching && pendingLocale !== item ? 0.58 : 1}
+                  onPress={() => {
+                    setSwitchError(false);
+                    setPendingLocale(item);
+                    void setLocale(item)
+                      .catch(() => setSwitchError(true))
+                      .finally(() => setPendingLocale(null));
+                  }}
                   accessibilityRole="radio"
                   accessibilityLabel={
                     item === "system" ? t("theme.system") : label
@@ -76,15 +107,24 @@ export function LanguageSettingsScreen({
                   ) : secondary ? (
                     <Body>{secondary}</Body>
                   ) : null}
-                  <InlineText
-                    color={
-                      localePreference === item ? "$primary" : "$textMuted"
-                    }
-                    fontSize={20}
-                    marginLeft="$3"
-                  >
-                    {localePreference === item ? "◉" : "○"}
-                  </InlineText>
+                  {pendingLocale === item ? (
+                    <Body color="$textMuted" fontSize={12}>
+                      …
+                    </Body>
+                  ) : null}
+                  <Stack marginLeft="$3">
+                    <AppIcon
+                      name={
+                        localePreference === item
+                          ? "radiobox-marked"
+                          : "radiobox-blank"
+                      }
+                      size={20}
+                      colorToken={
+                        localePreference === item ? "primary" : "textMuted"
+                      }
+                    />
+                  </Stack>
                 </Row>
               );
             })}

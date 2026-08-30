@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../app/runtime-context";
 import {
   AmountText,
+  AppIcon,
   AppHeader,
   Badge,
   Body,
@@ -181,6 +182,8 @@ function PredictPositions() {
 function DexMarkets({ kind }: { kind: "dex" | "market" }) {
   const insets = useSafeAreaInsets();
   const { t } = useFoundationRuntime();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   return (
     <Page>
       <PageScroll>
@@ -207,6 +210,7 @@ function DexMarkets({ kind }: { kind: "dex" | "market" }) {
           {mockDexTokens.map((token) => (
             <Row
               key={token.symbol}
+              onPress={() => navigation.navigate("DexToken")}
               paddingVertical="$3"
               borderBottomWidth={1}
               borderColor="$borderColor"
@@ -256,9 +260,9 @@ function SwapScreen() {
               label={t("module.swap.pay")}
               {...mockSwapQuote.pay}
             />
-            <InlineText textAlign="center" fontSize={24}>
-              ↓
-            </InlineText>
+            <Stack alignItems="center">
+              <AppIcon name="swap-vertical" size={24} colorToken="textMuted" />
+            </Stack>
             <SwapTokenPanel
               label={t("module.swap.receiveEstimated")}
               {...mockSwapQuote.receive}

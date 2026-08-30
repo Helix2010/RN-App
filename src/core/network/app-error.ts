@@ -4,6 +4,7 @@ export type AppErrorKind =
   | "cancelled"
   | "server"
   | "incompatible_response"
+  | "configuration"
   | "unknown";
 
 export class AppError extends Error {

@@ -10,6 +10,7 @@ import {
   type PropsWithChildren,
 } from "react";
 import { AppState, BackHandler, Modal, useColorScheme } from "react-native";
+import { useQueryClient } from "@tanstack/react-query";
 import type { BootstrapSnapshot } from "../core/config/bootstrap-repository";
 import type {
   BootstrapConfig,
@@ -18,6 +19,8 @@ import type {
 import { createFallbackConfig } from "../core/config/fallback-config";
 import { translateMessage } from "../core/config/localization";
 import { useBootstrap } from "../core/config/use-bootstrap";
+import { loadBootstrap } from "../core/config/bootstrap-repository";
+import { changeLocalePreference } from "../core/config/locale-change";
 import {
   usePreferencesStore,
   type LocalePreference,
@@ -56,7 +59,7 @@ type RuntimeValue = {
   snapshot: BootstrapSnapshot;
   localePreference: LocalePreference;
   themePreference: ThemePreference;
-  setLocale: (locale: LocalePreference) => void;
+  setLocale: (locale: LocalePreference) => Promise<void>;
   setTheme: (theme: ThemePreference) => void;
   t: (key: string) => string;
   isInitialLoading: boolean;
@@ -79,7 +82,8 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   const localePreference = usePreferencesStore((state) => state.locale);
   const themePreference = usePreferencesStore((state) => state.theme);
   const systemTheme = useColorScheme();
-  const setLocale = usePreferencesStore((state) => state.setLocale);
+  const persistLocale = usePreferencesStore((state) => state.setLocale);
+  const queryClient = useQueryClient();
   const setTheme = usePreferencesStore((state) => state.setTheme);
   const locale =
     localePreference === "system" ? systemLocale() : localePreference;
@@ -132,6 +136,26 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   const t = useCallback(
     (key: string) => translateMessage(config.localization.messages, key),
     [config.localization.messages],
+  );
+  const setLocale = useCallback(
+    async (nextPreference: LocalePreference): Promise<void> => {
+      await changeLocalePreference({
+        preference: nextPreference,
+        currentPreference: localePreference,
+        systemLocale: systemLocale(),
+        stage: async (targetLocale) => {
+          await queryClient.fetchQuery({
+            queryKey: ["mobile-bootstrap", targetLocale],
+            queryFn: ({ signal }) => loadBootstrap(targetLocale, signal),
+            staleTime: 5 * 60 * 1_000,
+            gcTime: 24 * 60 * 60 * 1_000,
+            retry: false,
+          });
+        },
+        commit: persistLocale,
+      });
+    },
+    [localePreference, persistLocale, queryClient],
   );
   const refresh = useCallback(async (): Promise<BootstrapSnapshot> => {
     const result = await query.refetch();

@@ -4,14 +4,15 @@ import * as Updates from "expo-updates";
 import { Platform } from "react-native";
 import type { z } from "zod";
 import { AppError } from "./app-error";
+import { resolveApiBaseUrl, resolveRuntimeVersion } from "./runtime-config";
 
 const DEFAULT_TIMEOUT_MS = 8_000;
+const configuredApiBaseUrl = resolveApiBaseUrl(
+  Constants.expoConfig?.extra?.apiBaseUrl,
+);
 
-function baseUrl(): string {
-  const configured = Constants.expoConfig?.extra?.apiBaseUrl;
-  return typeof configured === "string"
-    ? configured.replace(/\/$/, "")
-    : "http://localhost:3000";
+function baseUrl(): string | null {
+  return configuredApiBaseUrl;
 }
 
 function distributionChannel(): string {
@@ -47,8 +48,8 @@ export const appRuntime = {
   platform: Platform.OS === "ios" ? "ios" : "android",
   distributionChannel: distributionChannel(),
   otaChannel: publicExtra("otaChannel", distributionChannel()),
-  runtimeVersion: Updates.runtimeVersion ?? "embedded",
-  apiBaseUrl: baseUrl(),
+  runtimeVersion: resolveRuntimeVersion(Updates.runtimeVersion),
+  apiBaseUrl: baseUrl() ?? "",
   applicationId: publicExtra("applicationId", "dex-mobile"),
 } as const;
 
@@ -62,6 +63,14 @@ class ApiClient {
       body?: string;
     },
   ): Promise<Response> {
+    const apiBaseUrl = baseUrl();
+    if (!apiBaseUrl) {
+      throw new AppError(
+        "configuration",
+        "The packaged app is missing its tenant API base URL",
+        false,
+      );
+    }
     const controller = new AbortController();
     const timeout = setTimeout(
       () => controller.abort("timeout"),
@@ -70,7 +79,7 @@ class ApiClient {
     const abortFromCaller = (): void => controller.abort("cancelled");
     options?.signal?.addEventListener("abort", abortFromCaller, { once: true });
     try {
-      const response = await globalThis.fetch(`${baseUrl()}${path}`, {
+      const response = await globalThis.fetch(`${apiBaseUrl}${path}`, {
         method: options?.method ?? "GET",
         body: options?.body,
         signal: controller.signal,

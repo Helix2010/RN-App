@@ -17,6 +17,9 @@ import {
   AboutScreen,
   AccountDetailScreen,
   DexTokenScreen,
+  PredictOrderScreen,
+  PredictSettlementScreen,
+  SwapDetailScreen,
   NotificationSettingsScreen,
   PredictEventScreen,
   SecurityCenterScreen,
@@ -106,8 +109,13 @@ export function FoundationNavigator() {
         <Stack.Screen name="Profile">
           {(props) => (
             <ProfileScreen
+              onBack={() => props.navigation.goBack()}
               onOpenSettings={() => props.navigation.navigate("Settings")}
               onOpenUpdates={() => props.navigation.navigate("UpdateCenter")}
+              onOpenSecurity={() => props.navigation.navigate("SecurityCenter")}
+              onOpenNotifications={() =>
+                props.navigation.navigate("NotificationSettings")
+              }
             />
           )}
         </Stack.Screen>
@@ -122,7 +130,13 @@ export function FoundationNavigator() {
           component={AppearanceSettingsScreen}
         />
         <Stack.Screen name="PredictEvent" component={PredictEventScreen} />
+        <Stack.Screen name="PredictOrder" component={PredictOrderScreen} />
+        <Stack.Screen
+          name="PredictSettlement"
+          component={PredictSettlementScreen}
+        />
         <Stack.Screen name="DexToken" component={DexTokenScreen} />
+        <Stack.Screen name="Swap" component={SwapDetailScreen} />
         <Stack.Screen name="SwapHistory" component={SwapHistoryScreen} />
         <Stack.Screen name="Transfer" component={TransferScreen} />
         <Stack.Screen name="AccountDetail" component={AccountDetailScreen} />

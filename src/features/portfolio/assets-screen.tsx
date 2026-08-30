@@ -3,6 +3,8 @@ import { useFoundationRuntime } from "../../app/runtime-context";
 import {
   AmountText,
   AppHeader,
+  AppIcon,
+  type AppIconName,
   Badge,
   Card,
   Content,
@@ -143,7 +145,7 @@ function AccountCard({
   value,
   subtitle,
 }: {
-  symbol: string;
+  symbol: AppIconName;
   title: string;
   value: string;
   subtitle: string;
@@ -159,9 +161,7 @@ function AccountCard({
           alignItems="center"
           justifyContent="center"
         >
-          <InlineText color="$primary" fontSize={20}>
-            {symbol}
-          </InlineText>
+          <AppIcon name={symbol} size={20} />
         </Stack>
         <Stack flex={1}>
           <SectionTitle>{title}</SectionTitle>

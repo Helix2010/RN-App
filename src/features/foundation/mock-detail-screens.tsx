@@ -1,5 +1,6 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useState } from "react";
 import { useFoundationRuntime } from "../../app/runtime-context";
 import {
   AmountText,
@@ -18,6 +19,7 @@ import {
   Stack,
 } from "../../design-system";
 import type { RootStackParamList } from "../../navigation/types";
+import { useEdgeBackGesture } from "../../navigation/edge-back-gesture";
 import {
   mockAccount,
   mockDexToken,
@@ -32,7 +34,10 @@ import {
 
 type DetailRoute =
   | "PredictEvent"
+  | "PredictOrder"
+  | "PredictSettlement"
   | "DexToken"
+  | "Swap"
   | "SwapHistory"
   | "Transfer"
   | "AccountDetail"
@@ -55,8 +60,9 @@ function DetailPage({
 }) {
   const insets = useSafeAreaInsets();
   const { t } = useFoundationRuntime();
+  const edgeBack = useEdgeBackGesture(navigation.goBack);
   return (
-    <Page>
+    <Page {...edgeBack}>
       <PageScroll>
         <Content paddingTop={insets.top + 16}>
           <ScreenHeader
@@ -130,13 +136,101 @@ export function PredictEventScreen({ navigation }: Props<"PredictEvent">) {
         <Body>{mockText(mockPredictEvent.rules, locale)}</Body>
       </Card>
       <Row gap="$2">
-        <PrimaryButton flex={1} backgroundColor="$success">
+        <PrimaryButton
+          flex={1}
+          backgroundColor="$success"
+          onPress={() => navigation.navigate("PredictOrder", { side: "yes" })}
+        >
           {t("predict.buyYes")}
         </PrimaryButton>
-        <PrimaryButton flex={1} backgroundColor="$danger">
+        <PrimaryButton
+          flex={1}
+          backgroundColor="$danger"
+          onPress={() => navigation.navigate("PredictOrder", { side: "no" })}
+        >
           {t("predict.buyNo")}
         </PrimaryButton>
       </Row>
+    </DetailPage>
+  );
+}
+
+export function PredictOrderScreen({
+  navigation,
+  route,
+}: Props<"PredictOrder">) {
+  const { config, t } = useFoundationRuntime();
+  const [amount, setAmount] = useState("50 USDT");
+  const side = route.params.side;
+  return (
+    <DetailPage title={t("predict.order.title")} navigation={navigation}>
+      <Card shadowOpacity={0}>
+        <Label>{t("predict.order.market")}</Label>
+        <SectionTitle>
+          {mockText(
+            mockPredictEvent.question,
+            config.localization.selectedLocale,
+          )}
+        </SectionTitle>
+        <Badge>
+          <InlineText color={side === "yes" ? "$success" : "$danger"}>
+            {side === "yes" ? t("predict.buyYes") : t("predict.buyNo")}
+          </InlineText>
+        </Badge>
+      </Card>
+      <Card shadowOpacity={0}>
+        <Label>{t("predict.order.amount")}</Label>
+        <Row gap="$2">
+          {["10 USDT", "50 USDT", "100 USDT"].map((preset) => (
+            <PrimaryButton
+              key={preset}
+              flex={1}
+              height={42}
+              backgroundColor={
+                amount === preset ? "$primary" : "$surfaceVariant"
+              }
+              color={amount === preset ? "$onPrimary" : "$color"}
+              onPress={() => setAmount(preset)}
+            >
+              {preset}
+            </PrimaryButton>
+          ))}
+        </Row>
+        <DataRow label={t("predict.order.estimated")} value={amount} />
+      </Card>
+      <PrimaryButton onPress={() => navigation.navigate("PredictSettlement")}>
+        {t("predict.order.confirm")}
+      </PrimaryButton>
+    </DetailPage>
+  );
+}
+
+export function PredictSettlementScreen({
+  navigation,
+}: Props<"PredictSettlement">) {
+  const { t } = useFoundationRuntime();
+  return (
+    <DetailPage title={t("predict.settlement.title")} navigation={navigation}>
+      <Card backgroundColor="$surfaceVariant" shadowOpacity={0}>
+        <Badge>
+          <InlineText color="$success">
+            {t("predict.settlement.settled")}
+          </InlineText>
+        </Badge>
+        <SectionTitle>{t("predict.settlement.description")}</SectionTitle>
+        <AmountText color="$success">+58.40 USDT</AmountText>
+      </Card>
+      <Card shadowOpacity={0}>
+        <DataRow
+          label={t("predict.settlement.result")}
+          value={t("predict.settlement.won")}
+          color="$success"
+        />
+        <DataRow label={t("predict.settlement.payout")} value="58.40 USDT" />
+      </Card>
+      <PrimaryButton onPress={() => navigation.goBack()}>
+        {t("predict.settlement.done")}
+      </PrimaryButton>
     </DetailPage>
   );
 }
@@ -183,7 +277,34 @@ export function DexTokenScreen({ navigation }: Props<"DexToken">) {
         </Row>
         <Body>{mockText(mockDexToken.securitySummary, locale)}</Body>
       </Card>
-      <PrimaryButton>{t("dex.token.swap")}</PrimaryButton>
+      <PrimaryButton onPress={() => navigation.navigate("Swap")}>
+        {t("dex.token.swap")}
+      </PrimaryButton>
+    </DetailPage>
+  );
+}
+
+export function SwapDetailScreen({ navigation }: Props<"Swap">) {
+  const { t } = useFoundationRuntime();
+  return (
+    <DetailPage title={t("module.swap.title")} navigation={navigation}>
+      <Card shadowOpacity={0}>
+        <Label>{t("module.swap.pay")}</Label>
+        <AmountText>250.00 USDC</AmountText>
+        <Body>{t("module.swap.balancePrefix")} 1,560.50 USDC</Body>
+      </Card>
+      <Card shadowOpacity={0}>
+        <Label>{t("module.swap.receiveEstimated")}</Label>
+        <AmountText>0.095 ETH</AmountText>
+        <DataRow
+          label={t("module.swap.detail.rate")}
+          value="1 USDC = 0.00038 ETH"
+        />
+        <DataRow label={t("module.swap.detail.networkFee")} value="0.42 USDC" />
+      </Card>
+      <PrimaryButton onPress={() => navigation.goBack()}>
+        {t("module.swap.submit")}
+      </PrimaryButton>
     </DetailPage>
   );
 }

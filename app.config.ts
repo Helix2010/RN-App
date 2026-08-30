@@ -74,7 +74,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     package: "com.anyfun.foundation",
     versionCode: androidVersionCode,
     allowBackup: false,
-    predictiveBackGestureEnabled: true,
+    // Keep Android system back dispatch on the legacy bridge so the app-level
+    // navigation state can consume root back gestures instead of backgrounding
+    // the activity. Native builds must be regenerated after this change.
+    predictiveBackGestureEnabled: false,
     adaptiveIcon: {
       backgroundColor: "#E9F0FF",
       foregroundImage: "./assets/android-icon-foreground.png",

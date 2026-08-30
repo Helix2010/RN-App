@@ -35,6 +35,7 @@ import {
   Stack,
 } from "../../design-system";
 import type { RootStackParamList } from "../../navigation/types";
+import { useEdgeBackGesture } from "../../navigation/edge-back-gesture";
 
 type Props = NativeStackScreenProps<RootStackParamList, "UpdateCenter"> & {
   locked?: boolean;
@@ -173,6 +174,7 @@ export function UpdateCenterScreen({
       config.features.directUpdateEnabled,
   });
   const promptConfig = pendingFullUpdate ?? config;
+  const edgeBack = useEdgeBackGesture(navigation.goBack);
 
   useEffect(() => {
     if (!isFocused || (!locked && apkDownloadState !== "downloading")) return;
@@ -214,7 +216,7 @@ export function UpdateCenterScreen({
   };
 
   return (
-    <Page>
+    <Page {...edgeBack}>
       <PageScroll>
         <Content paddingTop={insets.top + 20}>
           <ScreenHeader
