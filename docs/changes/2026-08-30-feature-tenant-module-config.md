@@ -40,6 +40,7 @@
 
 - RN-App：`pnpm check` 通过，37 项测试；新增模块组合测试和 Schema 校验。
 - RN-App：`BootstrapSkeleton` 使用设计系统主题令牌，作为后续业务 Query 页的基础 loading 模式。
+- RN-App：S-02 设置页按设计稿拆分通用、通知、交易偏好、安全、关于分组；S-03 语言与 S-04 外观作为独立二级页面。
 - RN-Admin：`pnpm check` 通过，34 项测试。
 - RN-Server：`gofmt`、`go vet`、`go test -race ./...`、`go build ./cmd/server` 通过。
 - Android Debug 原生构建未完成：在线构建在依赖解析阶段长时间无输出；离线构建明确缺少 Install Referrer、Firebase Messaging、AndroidX Lifecycle、Biometric 等 Maven 依赖。未将旧 APK 作为本次构建证据；模拟器视觉验收需依赖下载恢复后执行。
