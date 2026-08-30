@@ -28,7 +28,7 @@
 | predict only  | 首页 / 预测 / 持仓 / 资产 |
 | dex only      | 首页 / 行情 / 兑换 / 资产 |
 
-个人中心从首页品牌入口进入 Stack，不占用底栏。模块参考页先提供真实配置驱动的页面骨架，业务接口接入后替换内容区，不改变导航合同。
+个人中心从首页品牌入口进入 Stack，不占用底栏。模块参考页先提供真实配置驱动的页面骨架，业务接口接入后替换内容区，不改变导航合同。启动阶段增加与首页结构一致的 `BootstrapSkeleton`，等待远程配置时不展示虚假业务数据，最终失败仍进入配置不可用状态。
 
 ## 安全和发布影响
 
@@ -39,6 +39,7 @@
 ## 验证
 
 - RN-App：`pnpm check` 通过，37 项测试；新增模块组合测试和 Schema 校验。
+- RN-App：`BootstrapSkeleton` 使用设计系统主题令牌，作为后续业务 Query 页的基础 loading 模式。
 - RN-Admin：`pnpm check` 通过，34 项测试。
 - RN-Server：`gofmt`、`go vet`、`go test -race ./...`、`go build ./cmd/server` 通过。
-- Android Debug 原生构建在本机 Gradle/依赖阶段长时间无输出，未将旧 APK 作为本次构建证据；真机视觉验收需在线依赖可用后执行。
+- Android Debug 原生构建未完成：在线构建在依赖解析阶段长时间无输出；离线构建明确缺少 Install Referrer、Firebase Messaging、AndroidX Lifecycle、Biometric 等 Maven 依赖。未将旧 APK 作为本次构建证据；模拟器视觉验收需依赖下载恢复后执行。

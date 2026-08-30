@@ -208,6 +208,12 @@ export const HairlineCard = styled(Card, {
   shadowOpacity: 0,
 });
 
+export const SkeletonBlock = styled(YStack, {
+  backgroundColor: "$surfaceVariant",
+  borderRadius: "$4",
+  opacity: 0.72,
+});
+
 export function IconButton({
   label,
   symbol,

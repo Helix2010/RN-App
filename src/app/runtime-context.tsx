@@ -39,6 +39,7 @@ import {
   Stack,
 } from "../design-system";
 import { LaunchScreen } from "./launch-screen";
+import { BootstrapSkeleton } from "./bootstrap-skeleton";
 import {
   registerPushTokenIfAuthorized,
   subscribeToUpdateSignals,
@@ -333,13 +334,17 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
     <FoundationThemeProvider config={config} preference={themePreference}>
       {!snapshot ? (
         query.isPending ? (
-          <LaunchScreen
-            message={
-              locale === "en-US"
-                ? "Connecting to configuration service"
-                : "正在连接配置服务"
-            }
-          />
+          launchMinimumElapsed ? (
+            <BootstrapSkeleton />
+          ) : (
+            <LaunchScreen
+              message={
+                locale === "en-US"
+                  ? "Connecting to configuration service"
+                  : "正在连接配置服务"
+              }
+            />
+          )
         ) : (
           <BootstrapUnavailableScreen
             locale={locale}
