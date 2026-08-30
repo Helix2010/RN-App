@@ -11,6 +11,8 @@ import { useFoundationRuntime } from "../app/runtime-context";
 import { AppShellScreen } from "../features/foundation/app-shell-screen";
 import { UpdateCenterScreen } from "../features/updates/update-center-screen";
 import { SettingsScreen } from "../features/settings/settings-screen";
+import { LanguageSettingsScreen } from "../features/settings/language-settings-screen";
+import { AppearanceSettingsScreen } from "../features/settings/appearance-settings-screen";
 import { ProfileScreen } from "../features/profile/profile-screen";
 import type { RootStackParamList } from "./types";
 import { resolveSystemBack } from "./system-back";
@@ -101,6 +103,14 @@ export function FoundationNavigator() {
         </Stack.Screen>
         <Stack.Screen name="UpdateCenter" component={UpdateCenterScreen} />
         <Stack.Screen name="Settings" component={SettingsScreen} />
+        <Stack.Screen
+          name="LanguageSettings"
+          component={LanguageSettingsScreen}
+        />
+        <Stack.Screen
+          name="AppearanceSettings"
+          component={AppearanceSettingsScreen}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );

@@ -1,5 +1,10 @@
 export type RootRouteName =
-  "AppShell" | "Profile" | "UpdateCenter" | "Settings";
+  | "AppShell"
+  | "Profile"
+  | "UpdateCenter"
+  | "Settings"
+  | "LanguageSettings"
+  | "AppearanceSettings";
 
 export function resolveSystemBack(
   routeName: RootRouteName | undefined,
@@ -10,6 +15,8 @@ export function resolveSystemBack(
   if (
     (routeName === "Profile" ||
       routeName === "Settings" ||
+      routeName === "LanguageSettings" ||
+      routeName === "AppearanceSettings" ||
       routeName === "UpdateCenter") &&
     canGoBack
   )
