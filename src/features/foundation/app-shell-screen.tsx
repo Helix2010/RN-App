@@ -79,7 +79,6 @@ export function AppShellScreen({ navigation }: Props) {
         {effectiveTab === "home" ? (
           <FoundationHomeScreen
             onOpenAssets={() => setTab("assets")}
-            onOpenSettings={() => navigation.navigate("Settings")}
             onOpenProfile={() => navigation.navigate("Profile")}
           />
         ) : effectiveTab === "assets" ? (

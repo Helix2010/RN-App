@@ -220,17 +220,19 @@ export function IconButton({
   onPress,
   backgroundColor = "$surfaceVariant",
   color = "$color",
+  size = 42,
 }: {
   label: string;
   symbol: string;
   onPress?: () => void;
   backgroundColor?: "$surfaceVariant" | "$onPrimary";
   color?: "$color" | "$primary";
+  size?: number;
 }) {
   return (
     <Button
-      width={42}
-      height={42}
+      width={size}
+      height={size}
       borderRadius={999}
       padding={0}
       backgroundColor={backgroundColor}
@@ -243,6 +245,18 @@ export function IconButton({
     >
       <Text fontSize={18}>{symbol}</Text>
     </Button>
+  );
+}
+
+export function HorizontalScroll({ children }: PropsWithChildren) {
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={{ gap: 12 }}
+    >
+      {children}
+    </ScrollView>
   );
 }
 

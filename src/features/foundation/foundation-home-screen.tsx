@@ -2,13 +2,13 @@ import { useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../app/runtime-context";
 import {
-  AddressText,
   AmountText,
   Badge,
   Body,
   Card,
   Content,
   HairlineCard,
+  HorizontalScroll,
   IconButton,
   InlineText,
   Label,
@@ -17,16 +17,15 @@ import {
   PriceChange,
   PrimaryButton,
   Row,
+  SecondaryButton,
   SectionTitle,
   Stack,
 } from "../../design-system";
 export function FoundationHomeScreen({
   onOpenAssets,
-  onOpenSettings,
   onOpenProfile,
 }: {
   onOpenAssets: () => void;
-  onOpenSettings: () => void;
   onOpenProfile: () => void;
 }) {
   const insets = useSafeAreaInsets();
@@ -48,6 +47,7 @@ export function FoundationHomeScreen({
             <IconButton
               label={t("profile.title")}
               symbol="K"
+              size={32}
               onPress={onOpenProfile}
             />
             <Stack
@@ -62,52 +62,44 @@ export function FoundationHomeScreen({
                 ⌕ {t("home.search")}
               </InlineText>
             </Stack>
-            <IconButton label={t("home.scan")} symbol="⌗" />
-            <IconButton label={t("home.notifications")} symbol="♧" />
-            <IconButton
-              label={t("action.settings")}
-              symbol="⚙"
-              onPress={onOpenSettings}
-            />
+            <IconButton label={t("home.scan")} symbol="⌗" size={32} />
+            <IconButton label={t("home.support")} symbol="♧" size={32} />
+            <IconButton label={t("home.notifications")} symbol="♢" size={32} />
           </Row>
 
           <Card
-            backgroundColor="$primary"
-            borderColor="$primary"
+            backgroundColor="$surface"
             accessibilityLabel={t("home.portfolio")}
           >
             <Row justifyContent="space-between" alignItems="center">
-              <Label color="$onPrimary">{t("home.portfolio")}</Label>
+              <Label>{t("home.portfolio")}</Label>
               <IconButton
                 label={
                   balanceVisible ? t("home.hideBalance") : t("home.showBalance")
                 }
                 symbol={balanceVisible ? "◉" : "◎"}
-                backgroundColor="$onPrimary"
-                color="$primary"
+                backgroundColor="$surfaceVariant"
+                color="$color"
                 onPress={() => setBalanceVisible((visible) => !visible)}
               />
             </Row>
-            <AmountText color="$onPrimary">
+            <AmountText fontSize={30} lineHeight={36}>
               {balanceVisible ? "¥ 128,640.00" : "¥ ••••••"}
             </AmountText>
             <Row justifyContent="space-between" alignItems="center">
-              <InlineText color="$onPrimary" opacity={0.78} fontSize={12}>
+              <InlineText color="$textMuted" fontSize={12}>
                 {t("home.portfolioChange")}
               </InlineText>
-              <InlineText color="$onPrimary" fontWeight="800">
+              <InlineText color="$pricePositive" fontWeight="800">
                 +2.14%
               </InlineText>
             </Row>
             <Row gap="$2" marginTop="$1">
-              <PrimaryButton
-                flex={1}
-                backgroundColor="$onPrimary"
-                color="$primary"
-                onPress={onOpenAssets}
-              >
-                {t("home.secondaryAction")}
+              <PrimaryButton flex={1} onPress={onOpenAssets}>
+                {t("home.deposit")}
               </PrimaryButton>
+              <SecondaryButton flex={1}>{t("home.withdraw")}</SecondaryButton>
+              <SecondaryButton flex={1}>{t("home.transfer")}</SecondaryButton>
             </Row>
           </Card>
 
@@ -132,7 +124,12 @@ export function FoundationHomeScreen({
             <QuickAction label={t("home.quick.more")} symbol="▦" enabled />
           </Row>
 
-          <HairlineCard paddingVertical="$2" paddingHorizontal="$3">
+          <Card
+            backgroundColor="$surfaceVariant"
+            paddingVertical="$2"
+            paddingHorizontal="$3"
+            shadowOpacity={0}
+          >
             <Row alignItems="center" gap="$2">
               <InlineText color="$primary" fontSize={16}>
                 ◖
@@ -144,56 +141,55 @@ export function FoundationHomeScreen({
                 ›
               </InlineText>
             </Row>
-          </HairlineCard>
+          </Card>
 
           {config.modules.predict ? (
-            <HairlineCard accessibilityLabel={t("home.predict")}>
-              <Row justifyContent="space-between" alignItems="flex-start">
-                <Stack gap="$1">
-                  <Label>{t("home.predict")}</Label>
-                  <SectionTitle>{t("home.predictQuestion")}</SectionTitle>
-                </Stack>
-                <Badge>
-                  <InlineText color="$warning" fontWeight="700" fontSize={12}>
-                    {t("home.predictClosing")}
-                  </InlineText>
-                </Badge>
+            <Stack gap="$2">
+              <Row justifyContent="space-between" alignItems="center">
+                <SectionTitle>{t("home.predict")}</SectionTitle>
+                <InlineText color="$textMuted" fontSize={13}>
+                  {t("home.viewAll")} ›
+                </InlineText>
               </Row>
-              <Row gap="$2">
-                <Badge flex={1} justifyContent="center" borderWidth={0}>
-                  <InlineText color="$success" fontWeight="800">
-                    {t("home.predictYes")}
-                  </InlineText>
-                </Badge>
-                <Badge flex={1} justifyContent="center" borderWidth={0}>
-                  <InlineText color="$danger" fontWeight="800">
-                    {t("home.predictNo")}
-                  </InlineText>
-                </Badge>
-              </Row>
-            </HairlineCard>
+              <HorizontalScroll>
+                <PredictionHomeCard
+                  title={t("home.predictQuestion")}
+                  closing={t("home.predictClosing")}
+                />
+                <PredictionHomeCard
+                  title={t("home.predictFedQuestion")}
+                  closing={t("home.predictFedClosing")}
+                />
+              </HorizontalScroll>
+            </Stack>
           ) : null}
           {config.modules.dex ? (
-            <HairlineCard accessibilityLabel={t("home.market")}>
-              <Row justifyContent="space-between" alignItems="flex-start">
-                <Stack gap="$1">
-                  <Label>{t("home.market")}</Label>
-                  <SectionTitle>ETH / USDC</SectionTitle>
-                </Stack>
-                <Badge>
-                  <InlineText color="$info" fontWeight="700" fontSize={12}>
-                    {t("home.network")}
-                  </InlineText>
-                </Badge>
+            <Stack gap="$2">
+              <Row justifyContent="space-between" alignItems="center">
+                <SectionTitle>{t("home.dexHotTokens")}</SectionTitle>
+                <InlineText color="$textMuted" fontSize={13}>
+                  {t("home.market")} ›
+                </InlineText>
               </Row>
-              <Row alignItems="baseline" gap="$3">
-                <AmountText>$4,312.84</AmountText>
-                <PriceChange value={2.14} />
-              </Row>
-              <AddressText numberOfLines={1}>
-                0x71C7…F8A2 · {t("home.contract")}
-              </AddressText>
-            </HairlineCard>
+              <TokenHomeRow
+                symbol="PEPE"
+                chain="BSC"
+                price="$0.00001234"
+                change={12.4}
+              />
+              <TokenHomeRow
+                symbol="WIF"
+                chain="Solana"
+                price="$1.842"
+                change={-3.8}
+              />
+              <TokenHomeRow
+                symbol="AERO"
+                chain="Base"
+                price="$0.912"
+                change={5.1}
+              />
+            </Stack>
           ) : null}
 
           <HairlineCard>
@@ -247,5 +243,85 @@ function QuickAction({
         {label}
       </InlineText>
     </Stack>
+  );
+}
+
+function PredictionHomeCard({
+  title,
+  closing,
+}: {
+  title: string;
+  closing: string;
+}) {
+  return (
+    <Card width={236} padding="$3" shadowOpacity={0}>
+      <Row justifyContent="space-between">
+        <Badge>
+          <InlineText color="$textMuted" fontSize={11}>
+            加密
+          </InlineText>
+        </Badge>
+        <Body fontSize={11}>成交 $1.2M</Body>
+      </Row>
+      <SectionTitle numberOfLines={2}>{title}</SectionTitle>
+      <Body fontSize={12}>{closing}</Body>
+      <Row gap="$2">
+        <Badge flex={1} justifyContent="center" borderWidth={0}>
+          <InlineText color="$success" fontWeight="800">
+            Yes 62¢
+          </InlineText>
+        </Badge>
+        <Badge flex={1} justifyContent="center" borderWidth={0}>
+          <InlineText color="$danger" fontWeight="800">
+            No 38¢
+          </InlineText>
+        </Badge>
+      </Row>
+    </Card>
+  );
+}
+
+function TokenHomeRow({
+  symbol,
+  chain,
+  price,
+  change,
+}: {
+  symbol: string;
+  chain: string;
+  price: string;
+  change: number;
+}) {
+  return (
+    <Row
+      alignItems="center"
+      gap="$3"
+      paddingVertical="$2"
+      borderBottomWidth={1}
+      borderColor="$borderColor"
+    >
+      <Stack
+        width={36}
+        height={36}
+        borderRadius={999}
+        backgroundColor="$surfaceVariant"
+        alignItems="center"
+        justifyContent="center"
+      >
+        <InlineText color="$primary" fontWeight="900">
+          {symbol[0]}
+        </InlineText>
+      </Stack>
+      <Stack flex={1}>
+        <SectionTitle>{symbol}</SectionTitle>
+        <Body fontSize={12}>{chain} · 流动性 $4.2M</Body>
+      </Stack>
+      <Stack alignItems="flex-end">
+        <InlineText color="$color" fontWeight="700">
+          {price}
+        </InlineText>
+        <PriceChange value={change} />
+      </Stack>
+    </Row>
   );
 }

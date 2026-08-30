@@ -6,6 +6,7 @@ import {
   Card,
   Content,
   InlineText,
+  IconButton,
   Label,
   ListRow,
   Page,
@@ -32,6 +33,13 @@ export function ProfileScreen({
             eyebrow={t("profile.eyebrow")}
             title={t("profile.title")}
             subtitle={t("profile.subtitle")}
+            action={
+              <IconButton
+                label={t("action.settings")}
+                symbol="⚙"
+                onPress={onOpenSettings}
+              />
+            }
           />
           <Card backgroundColor="$primary" shadowOpacity={0}>
             <Row alignItems="center" gap="$3">
