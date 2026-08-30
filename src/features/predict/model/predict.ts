@@ -153,6 +153,8 @@ export type Position = {
   redeemable: boolean;
   /** 已结算时每份兑付（1 或 0 USDC） */
   settledPayoutCents?: number;
+  /** 已领取（或已归零结算）的历史仓位 */
+  closed?: boolean;
 };
 
 export type Adjudication = {

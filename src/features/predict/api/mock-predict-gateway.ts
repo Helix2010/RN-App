@@ -837,6 +837,7 @@ export class MockPredictGateway implements PredictGateway {
           !stored.redeemed &&
           settledPayoutCents === 100,
         settledPayoutCents,
+        closed: stored.redeemed,
       };
     });
   }
@@ -851,16 +852,7 @@ export class MockPredictGateway implements PredictGateway {
       await this.save();
       const filtered = options?.includeClosed
         ? positions
-        : positions.filter(
-            (p) =>
-              p.shares > 0 &&
-              !(
-                p.status === "settled" &&
-                !p.redeemable &&
-                p.settledPayoutCents === 0 &&
-                false
-              ),
-          );
+        : positions.filter((p) => p.shares > 0 && !p.closed);
       const rank = (p: Position) =>
         p.redeemable
           ? 0

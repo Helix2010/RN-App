@@ -95,7 +95,12 @@ export function AppShellScreen({ navigation }: Props) {
             onOpenAssets={() => setTab("assets")}
             onOpenProfile={() => navigation.navigate("Profile")}
             onOpenPredict={() => setTab("predict")}
-            onOpenPredictPositions={() => setTab("positions")}
+            onOpenPredictPositions={() =>
+              config.modules.dex
+                ? navigation.navigate("Positions")
+                : setTab("positions")
+            }
+            onOpenLeaderboard={() => navigation.navigate("Leaderboard")}
             onOpenDex={() => setTab(config.modules.predict ? "dex" : "market")}
             onOpenSwap={() => setTab("swap")}
           />

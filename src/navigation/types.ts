@@ -5,9 +5,10 @@ export type RootStackParamList = {
   Settings: undefined;
   LanguageSettings: undefined;
   AppearanceSettings: undefined;
-  PredictEvent: undefined;
-  PredictOrder: { side: "yes" | "no" };
-  PredictSettlement: undefined;
+  PredictEvent: { eventId: string; marketId?: string; outcome?: "yes" | "no" };
+  PredictSettlement: { marketId: string };
+  Leaderboard: undefined;
+  Positions: undefined;
   DexToken: undefined;
   Swap: undefined;
   SwapHistory: undefined;

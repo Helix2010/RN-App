@@ -130,6 +130,9 @@ function useInvalidateAccount() {
       void queryClient.invalidateQueries({ queryKey: [key, address] });
     void queryClient.invalidateQueries({ queryKey: ["assets"] });
     void queryClient.invalidateQueries({ queryKey: ["predict-events"] });
+    void queryClient.invalidateQueries({ queryKey: ["predict-event"] });
+    void queryClient.invalidateQueries({ queryKey: ["predict-book"] });
+    void queryClient.invalidateQueries({ queryKey: ["predict-adjudication"] });
   };
 }
 

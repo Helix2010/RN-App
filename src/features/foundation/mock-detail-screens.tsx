@@ -1,6 +1,5 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useState } from "react";
 import { useFoundationRuntime } from "../../app/runtime-context";
 import {
   AmountText,
@@ -21,26 +20,18 @@ import {
 import type { RootStackParamList } from "../../navigation/types";
 import { useEdgeBackGesture } from "../../navigation/edge-back-gesture";
 import {
-  mockAccount,
   mockDexToken,
-  mockPredictEvent,
   mockSecurity,
   mockSwapHistory,
   mockText,
-  mockTransfer,
   mockNotificationSettings,
   mockProfile,
 } from "../demo-data";
 
 type DetailRoute =
-  | "PredictEvent"
-  | "PredictOrder"
-  | "PredictSettlement"
   | "DexToken"
   | "Swap"
   | "SwapHistory"
-  | "Transfer"
-  | "AccountDetail"
   | "NotificationSettings"
   | "About"
   | "SecurityCenter";
@@ -97,141 +88,6 @@ function DataRow({
         {value}
       </InlineText>
     </Row>
-  );
-}
-
-export function PredictEventScreen({ navigation }: Props<"PredictEvent">) {
-  const { config, t } = useFoundationRuntime();
-  const locale = config.localization.selectedLocale;
-  return (
-    <DetailPage title={t("predict.event.title")} navigation={navigation}>
-      <Card shadowOpacity={0}>
-        <Badge>
-          <InlineText color="$success">
-            {t(`predict.event.${mockPredictEvent.status}`)}
-          </InlineText>
-        </Badge>
-        <SectionTitle>
-          {mockText(mockPredictEvent.question, locale)}
-        </SectionTitle>
-        <Body>{mockText(mockPredictEvent.meta, locale)}</Body>
-        <AmountText color="$success">{mockPredictEvent.probability}</AmountText>
-        <Body>{t("predict.event.probability")}</Body>
-      </Card>
-      <Card shadowOpacity={0}>
-        <Label>{t("predict.event.orderbook")}</Label>
-        <DataRow
-          label={`${mockPredictEvent.yesLabel} ${mockPredictEvent.yesPrice}`}
-          value={mockPredictEvent.yesDepth}
-          color="$success"
-        />
-        <DataRow
-          label={`${mockPredictEvent.noLabel} ${mockPredictEvent.noPrice}`}
-          value={mockPredictEvent.noDepth}
-          color="$danger"
-        />
-      </Card>
-      <Card shadowOpacity={0}>
-        <Label>{t("predict.event.rules")}</Label>
-        <Body>{mockText(mockPredictEvent.rules, locale)}</Body>
-      </Card>
-      <Row gap="$2">
-        <PrimaryButton
-          flex={1}
-          backgroundColor="$success"
-          onPress={() => navigation.navigate("PredictOrder", { side: "yes" })}
-        >
-          {t("predict.buyYes")}
-        </PrimaryButton>
-        <PrimaryButton
-          flex={1}
-          backgroundColor="$danger"
-          onPress={() => navigation.navigate("PredictOrder", { side: "no" })}
-        >
-          {t("predict.buyNo")}
-        </PrimaryButton>
-      </Row>
-    </DetailPage>
-  );
-}
-
-export function PredictOrderScreen({
-  navigation,
-  route,
-}: Props<"PredictOrder">) {
-  const { config, t } = useFoundationRuntime();
-  const [amount, setAmount] = useState("50 USDT");
-  const side = route.params.side;
-  return (
-    <DetailPage title={t("predict.order.title")} navigation={navigation}>
-      <Card shadowOpacity={0}>
-        <Label>{t("predict.order.market")}</Label>
-        <SectionTitle>
-          {mockText(
-            mockPredictEvent.question,
-            config.localization.selectedLocale,
-          )}
-        </SectionTitle>
-        <Badge>
-          <InlineText color={side === "yes" ? "$success" : "$danger"}>
-            {side === "yes" ? t("predict.buyYes") : t("predict.buyNo")}
-          </InlineText>
-        </Badge>
-      </Card>
-      <Card shadowOpacity={0}>
-        <Label>{t("predict.order.amount")}</Label>
-        <Row gap="$2">
-          {["10 USDT", "50 USDT", "100 USDT"].map((preset) => (
-            <PrimaryButton
-              key={preset}
-              flex={1}
-              height={42}
-              backgroundColor={
-                amount === preset ? "$primary" : "$surfaceVariant"
-              }
-              color={amount === preset ? "$onPrimary" : "$color"}
-              onPress={() => setAmount(preset)}
-            >
-              {preset}
-            </PrimaryButton>
-          ))}
-        </Row>
-        <DataRow label={t("predict.order.estimated")} value={amount} />
-      </Card>
-      <PrimaryButton onPress={() => navigation.navigate("PredictSettlement")}>
-        {t("predict.order.confirm")}
-      </PrimaryButton>
-    </DetailPage>
-  );
-}
-
-export function PredictSettlementScreen({
-  navigation,
-}: Props<"PredictSettlement">) {
-  const { t } = useFoundationRuntime();
-  return (
-    <DetailPage title={t("predict.settlement.title")} navigation={navigation}>
-      <Card backgroundColor="$surfaceVariant" shadowOpacity={0}>
-        <Badge>
-          <InlineText color="$success">
-            {t("predict.settlement.settled")}
-          </InlineText>
-        </Badge>
-        <SectionTitle>{t("predict.settlement.description")}</SectionTitle>
-        <AmountText color="$success">+58.40 USDT</AmountText>
-      </Card>
-      <Card shadowOpacity={0}>
-        <DataRow
-          label={t("predict.settlement.result")}
-          value={t("predict.settlement.won")}
-          color="$success"
-        />
-        <DataRow label={t("predict.settlement.payout")} value="58.40 USDT" />
-      </Card>
-      <PrimaryButton onPress={() => navigation.goBack()}>
-        {t("predict.settlement.done")}
-      </PrimaryButton>
-    </DetailPage>
   );
 }
 
@@ -336,57 +192,6 @@ export function SwapHistoryScreen({ navigation }: Props<"SwapHistory">) {
           <Body>{mockText(item.timestamp, locale)}</Body>
         </Card>
       ))}
-    </DetailPage>
-  );
-}
-
-export function TransferScreen({ navigation }: Props<"Transfer">) {
-  const { config, t } = useFoundationRuntime();
-  const locale = config.localization.selectedLocale;
-  return (
-    <DetailPage title={t("assets.transfer")} navigation={navigation}>
-      <Card shadowOpacity={0}>
-        <DataRow
-          label={t("assets.transfer.from")}
-          value={mockText(mockTransfer.from, locale)}
-        />
-        <DataRow
-          label={t("assets.transfer.to")}
-          value={mockText(mockTransfer.to, locale)}
-        />
-      </Card>
-      <Card shadowOpacity={0}>
-        <Label>{t("assets.transfer.amount")}</Label>
-        <AmountText>{mockTransfer.amount}</AmountText>
-        <Body>
-          {mockTransfer.currency} · {t("assets.transfer.available")}{" "}
-          {mockTransfer.available}
-        </Body>
-      </Card>
-      <PrimaryButton>{t("assets.transfer.confirm")}</PrimaryButton>
-    </DetailPage>
-  );
-}
-
-export function AccountDetailScreen({ navigation }: Props<"AccountDetail">) {
-  const { config, t } = useFoundationRuntime();
-  const locale = config.localization.selectedLocale;
-  return (
-    <DetailPage title={t("assets.accountDetail")} navigation={navigation}>
-      <Card backgroundColor="$primary" shadowOpacity={0}>
-        <Label color="$onPrimary">{mockText(mockAccount.title, locale)}</Label>
-        <AmountText color="$onPrimary">{mockAccount.balance}</AmountText>
-        <Body color="$onPrimary">{mockText(mockAccount.subtitle, locale)}</Body>
-      </Card>
-      <Card shadowOpacity={0}>
-        {mockAccount.assets.map((asset) => (
-          <DataRow
-            key={asset.labelKey ?? asset.label}
-            label={asset.labelKey ? t(asset.labelKey) : (asset.label ?? "")}
-            value={asset.value}
-          />
-        ))}
-      </Card>
     </DetailPage>
   );
 }

@@ -16,11 +16,8 @@ import { AppearanceSettingsScreen } from "../features/settings/appearance-settin
 import {
   AboutScreen,
   DexTokenScreen,
-  PredictOrderScreen,
-  PredictSettlementScreen,
   SwapDetailScreen,
   NotificationSettingsScreen,
-  PredictEventScreen,
   SecurityCenterScreen,
   SwapHistoryScreen,
 } from "../features/foundation/mock-detail-screens";
@@ -29,6 +26,10 @@ import { ConnectWalletSheet } from "../features/session/ui/connect-wallet-sheet"
 import { AccountDetailScreen } from "../features/assets/ui/account-detail-screen";
 import { SendScreen } from "../features/assets/ui/send-screen";
 import { TransferScreen } from "../features/assets/ui/transfer-screen";
+import { EventDetailScreen } from "../features/predict/ui/event-detail-screen";
+import { SettlementScreen } from "../features/predict/ui/settlement-screen";
+import { LeaderboardScreen } from "../features/predict/ui/leaderboard-screen";
+import { PositionsScreen } from "../features/predict/ui/positions-screen";
 import type { RootStackParamList } from "./types";
 import { resolveSystemBack } from "./system-back";
 
@@ -131,12 +132,55 @@ export function FoundationNavigator() {
           name="AppearanceSettings"
           component={AppearanceSettingsScreen}
         />
-        <Stack.Screen name="PredictEvent" component={PredictEventScreen} />
-        <Stack.Screen name="PredictOrder" component={PredictOrderScreen} />
-        <Stack.Screen
-          name="PredictSettlement"
-          component={PredictSettlementScreen}
-        />
+        <Stack.Screen name="PredictEvent">
+          {(props) => (
+            <EventDetailScreen
+              eventId={props.route.params.eventId}
+              marketId={props.route.params.marketId}
+              initialOutcome={props.route.params.outcome}
+              onBack={() => props.navigation.goBack()}
+              onOpenSettlement={(marketId) =>
+                props.navigation.navigate("PredictSettlement", { marketId })
+              }
+              onOpenTransfer={(amount) =>
+                props.navigation.navigate("Transfer", {
+                  direction: "deposit",
+                  amount,
+                })
+              }
+            />
+          )}
+        </Stack.Screen>
+        <Stack.Screen name="Leaderboard">
+          {(props) => (
+            <LeaderboardScreen
+              onBack={() => props.navigation.goBack()}
+              onOpenPositions={() => props.navigation.navigate("Positions")}
+            />
+          )}
+        </Stack.Screen>
+        <Stack.Screen name="Positions">
+          {(props) => (
+            <PositionsScreen
+              onBack={() => props.navigation.goBack()}
+              onOpenEvent={(eventId, marketId) =>
+                props.navigation.navigate("PredictEvent", { eventId, marketId })
+              }
+              onOpenSettlement={(marketId) =>
+                props.navigation.navigate("PredictSettlement", { marketId })
+              }
+              onOpenTransfer={() => props.navigation.navigate("Transfer")}
+            />
+          )}
+        </Stack.Screen>
+        <Stack.Screen name="PredictSettlement">
+          {(props) => (
+            <SettlementScreen
+              marketId={props.route.params.marketId}
+              onBack={() => props.navigation.goBack()}
+            />
+          )}
+        </Stack.Screen>
         <Stack.Screen name="DexToken" component={DexTokenScreen} />
         <Stack.Screen name="Swap" component={SwapDetailScreen} />
         <Stack.Screen name="SwapHistory" component={SwapHistoryScreen} />

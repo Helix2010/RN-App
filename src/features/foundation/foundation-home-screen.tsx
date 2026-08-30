@@ -51,6 +51,7 @@ export function FoundationHomeScreen({
   onOpenProfile,
   onOpenPredict,
   onOpenPredictPositions,
+  onOpenLeaderboard,
   onOpenDex,
   onOpenSwap,
 }: {
@@ -58,6 +59,7 @@ export function FoundationHomeScreen({
   onOpenProfile: () => void;
   onOpenPredict: () => void;
   onOpenPredictPositions: () => void;
+  onOpenLeaderboard: () => void;
   onOpenDex: () => void;
   onOpenSwap: () => void;
 }) {
@@ -297,7 +299,7 @@ export function FoundationHomeScreen({
               label={t("home.quick.rank")}
               icon="trophy-outline"
               enabled={config.modules.predict}
-              onPress={onOpenPredictPositions}
+              onPress={onOpenLeaderboard}
             />
             <QuickAction
               label={t("home.quick.invite")}

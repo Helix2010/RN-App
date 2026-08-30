@@ -12,7 +12,6 @@ import {
   Content,
   HairlineCard,
   InlineText,
-  Label,
   Page,
   PageScroll,
   PriceChange,
@@ -22,161 +21,22 @@ import {
   Stack,
 } from "../../design-system";
 import type { RootStackParamList } from "../../navigation/types";
+import { MarketListScreen } from "../predict/ui/market-list-screen";
+import { PositionsScreen } from "../predict/ui/positions-screen";
 import {
   mockDexTokens,
   mockDexFilterChains,
-  mockPredictMarkets,
-  mockPredictPositions,
   mockSwapQuote,
-  mockText,
 } from "../demo-data";
 
 export type ModuleOverviewKind =
   "predict" | "positions" | "dex" | "market" | "swap";
 
 export function ModuleOverviewScreen({ kind }: { kind: ModuleOverviewKind }) {
-  if (kind === "predict") return <PredictMarkets />;
-  if (kind === "positions") return <PredictPositions />;
+  if (kind === "predict") return <PredictMarketsTab />;
+  if (kind === "positions") return <PredictPositionsTab />;
   if (kind === "swap") return <SwapScreen />;
   return <DexMarkets kind={kind} />;
-}
-
-function PredictMarkets() {
-  const insets = useSafeAreaInsets();
-  const { config, t } = useFoundationRuntime();
-  const navigation =
-    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const locale = config.localization.selectedLocale;
-  const filters = ["hot", "breaking", "new", "crypto", "sports"] as const;
-
-  return (
-    <Page>
-      <PageScroll>
-        <Content paddingTop={insets.top + 24} gap="$3">
-          <AppHeader title={t("module.predict.title")} />
-          <Row gap="$2" flexWrap="wrap">
-            {filters.map((filter, index) => (
-              <Badge
-                key={filter}
-                backgroundColor={index === 0 ? "$color" : "$surfaceVariant"}
-              >
-                <InlineText color={index === 0 ? "$background" : "$textMuted"}>
-                  {t(`module.predict.filter.${filter}`)}
-                </InlineText>
-              </Badge>
-            ))}
-          </Row>
-          {mockPredictMarkets.map((market) => (
-            <PredictionCard
-              key={market.title["en-US"]}
-              category={mockText(market.category, locale)}
-              title={mockText(market.title, locale)}
-              meta={mockText(market.meta, locale)}
-              yesPrice={market.yesPrice}
-              noPrice={market.noPrice}
-              yesLabel={market.yesLabel}
-              noLabel={market.noLabel}
-              onPress={() => navigation.navigate("PredictEvent")}
-            />
-          ))}
-        </Content>
-      </PageScroll>
-    </Page>
-  );
-}
-
-function PredictionCard({
-  category,
-  title,
-  meta,
-  yesPrice,
-  noPrice,
-  yesLabel,
-  noLabel,
-  onPress,
-}: {
-  category: string;
-  title: string;
-  meta: string;
-  yesPrice: string;
-  noPrice: string;
-  yesLabel: string;
-  noLabel: string;
-  onPress: () => void;
-}) {
-  const { t } = useFoundationRuntime();
-  return (
-    <Card shadowOpacity={0} onPress={onPress} accessibilityRole="button">
-      <Row justifyContent="space-between">
-        <Label>{category}</Label>
-        <Body fontSize={12}>{meta}</Body>
-      </Row>
-      <SectionTitle>{title}</SectionTitle>
-      <Row gap="$2">
-        <Badge flex={1} justifyContent="center" borderWidth={0}>
-          <InlineText color="$success" fontWeight="800">
-            {t("module.predict.buy")} {yesLabel} · {yesPrice}
-          </InlineText>
-        </Badge>
-        <Badge flex={1} justifyContent="center" borderWidth={0}>
-          <InlineText color="$danger" fontWeight="800">
-            {t("module.predict.buy")} {noLabel} · {noPrice}
-          </InlineText>
-        </Badge>
-      </Row>
-    </Card>
-  );
-}
-
-function PredictPositions() {
-  const insets = useSafeAreaInsets();
-  const { config, t } = useFoundationRuntime();
-  const locale = config.localization.selectedLocale;
-  return (
-    <Page>
-      <PageScroll>
-        <Content paddingTop={insets.top + 24} gap="$3">
-          <AppHeader
-            title={t("module.positions.title")}
-            subtitle={t("module.positions.description")}
-          />
-          {mockPredictPositions.map((position) => (
-            <HairlineCard key={position.question["en-US"]}>
-              <Row justifyContent="space-between">
-                <Badge>
-                  <InlineText
-                    color={
-                      position.status === "claimable"
-                        ? "$success"
-                        : position.status === "disputed"
-                          ? "$warning"
-                          : "$info"
-                    }
-                  >
-                    {t(`module.positions.status.${position.status}`)}
-                  </InlineText>
-                </Badge>
-                <Body>{position.value}</Body>
-              </Row>
-              <SectionTitle>{mockText(position.question, locale)}</SectionTitle>
-              <Row justifyContent="space-between">
-                <Body>
-                  {position.side} · {position.shares}{" "}
-                  {t("module.positions.shares")}
-                </Body>
-                <InlineText
-                  color={position.pnl.startsWith("+") ? "$success" : "$danger"}
-                  fontWeight="800"
-                >
-                  {position.pnl}
-                </InlineText>
-              </Row>
-            </HairlineCard>
-          ))}
-        </Content>
-      </PageScroll>
-    </Page>
-  );
 }
 
 function DexMarkets({ kind }: { kind: "dex" | "market" }) {
@@ -323,5 +183,48 @@ function SwapTokenPanel({
       </Row>
       <Body>{value}</Body>
     </Stack>
+  );
+}
+
+function PredictMarketsTab() {
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { config } = useFoundationRuntime();
+  return (
+    <MarketListScreen
+      showPositionsEntry={config.modules.dex}
+      onOpenEvent={(event, market) =>
+        navigation.navigate("PredictEvent", {
+          eventId: event.id,
+          marketId: market?.id,
+        })
+      }
+      onOrder={(market, outcome) =>
+        navigation.navigate("PredictEvent", {
+          eventId: market.eventId,
+          marketId: market.id,
+          outcome,
+        })
+      }
+      onOpenTransfer={() => navigation.navigate("Transfer")}
+      onOpenPositions={() => navigation.navigate("Positions")}
+      onOpenLeaderboard={() => navigation.navigate("Leaderboard")}
+    />
+  );
+}
+
+function PredictPositionsTab() {
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  return (
+    <PositionsScreen
+      onOpenEvent={(eventId, marketId) =>
+        navigation.navigate("PredictEvent", { eventId, marketId })
+      }
+      onOpenSettlement={(marketId) =>
+        navigation.navigate("PredictSettlement", { marketId })
+      }
+      onOpenTransfer={() => navigation.navigate("Transfer")}
+    />
   );
 }
