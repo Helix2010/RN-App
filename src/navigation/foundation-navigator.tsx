@@ -15,11 +15,8 @@ import { LanguageSettingsScreen } from "../features/settings/language-settings-s
 import { AppearanceSettingsScreen } from "../features/settings/appearance-settings-screen";
 import {
   AboutScreen,
-  DexTokenScreen,
-  SwapDetailScreen,
   NotificationSettingsScreen,
   SecurityCenterScreen,
-  SwapHistoryScreen,
 } from "../features/foundation/mock-detail-screens";
 import { ProfileScreen } from "../features/profile/profile-screen";
 import { ConnectWalletSheet } from "../features/session/ui/connect-wallet-sheet";
@@ -30,6 +27,12 @@ import { EventDetailScreen } from "../features/predict/ui/event-detail-screen";
 import { SettlementScreen } from "../features/predict/ui/settlement-screen";
 import { LeaderboardScreen } from "../features/predict/ui/leaderboard-screen";
 import { PositionsScreen } from "../features/predict/ui/positions-screen";
+import { TokenDetailScreen } from "../features/dex/ui/token-detail-screen";
+import { SwapScreen } from "../features/dex/ui/swap-screen";
+import { SwapHistoryScreen } from "../features/dex/ui/swap-history-screen";
+import { ApprovalsScreen } from "../features/dex/ui/approvals-screen";
+import { TOKENS } from "../features/wallet/fixtures/wallet";
+import type { TokenRef } from "../core/gateways/types";
 import type { RootStackParamList } from "./types";
 import { resolveSystemBack } from "./system-back";
 
@@ -181,9 +184,65 @@ export function FoundationNavigator() {
             />
           )}
         </Stack.Screen>
-        <Stack.Screen name="DexToken" component={DexTokenScreen} />
-        <Stack.Screen name="Swap" component={SwapDetailScreen} />
-        <Stack.Screen name="SwapHistory" component={SwapHistoryScreen} />
+        <Stack.Screen name="DexToken">
+          {(props) => (
+            <TokenDetailScreen
+              chain={props.route.params.chain}
+              address={props.route.params.address}
+              onBack={() => props.navigation.goBack()}
+              onSwap={(side) =>
+                props.navigation.navigate(
+                  "Swap",
+                  side === "buy"
+                    ? {
+                        chain: props.route.params.chain,
+                        buyAddress: props.route.params.address,
+                      }
+                    : {
+                        chain: props.route.params.chain,
+                        sellAddress: props.route.params.address,
+                      },
+                )
+              }
+            />
+          )}
+        </Stack.Screen>
+        <Stack.Screen name="Swap">
+          {(props) => {
+            const find = (address?: string): TokenRef | undefined =>
+              address
+                ? Object.values(TOKENS as Record<string, TokenRef>).find(
+                    (token) =>
+                      token.address.toLowerCase() === address.toLowerCase() &&
+                      token.chain ===
+                        (props.route.params?.chain ?? token.chain),
+                  )
+                : undefined;
+            return (
+              <SwapScreen
+                onBack={() => props.navigation.goBack()}
+                onOpenHistory={() => props.navigation.navigate("SwapHistory")}
+                onOpenTransfer={() => props.navigation.navigate("Transfer")}
+                initialChain={props.route.params?.chain}
+                initialSell={find(props.route.params?.sellAddress)}
+                initialBuy={find(props.route.params?.buyAddress)}
+              />
+            );
+          }}
+        </Stack.Screen>
+        <Stack.Screen name="Approvals">
+          {(props) => (
+            <ApprovalsScreen onBack={() => props.navigation.goBack()} />
+          )}
+        </Stack.Screen>
+        <Stack.Screen name="SwapHistory">
+          {(props) => (
+            <SwapHistoryScreen
+              onBack={() => props.navigation.goBack()}
+              onOpenApprovals={() => props.navigation.navigate("Approvals")}
+            />
+          )}
+        </Stack.Screen>
         <Stack.Screen name="Transfer">
           {(props) => (
             <TransferScreen

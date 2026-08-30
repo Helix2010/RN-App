@@ -3,7 +3,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../app/runtime-context";
 import {
   AmountText,
-  Badge,
   Body,
   Card,
   Content,
@@ -20,21 +19,12 @@ import {
 import type { RootStackParamList } from "../../navigation/types";
 import { useEdgeBackGesture } from "../../navigation/edge-back-gesture";
 import {
-  mockDexToken,
   mockSecurity,
-  mockSwapHistory,
-  mockText,
   mockNotificationSettings,
   mockProfile,
 } from "../demo-data";
 
-type DetailRoute =
-  | "DexToken"
-  | "Swap"
-  | "SwapHistory"
-  | "NotificationSettings"
-  | "About"
-  | "SecurityCenter";
+type DetailRoute = "NotificationSettings" | "About" | "SecurityCenter";
 type Props<R extends DetailRoute> = NativeStackScreenProps<
   RootStackParamList,
   R
@@ -88,111 +78,6 @@ function DataRow({
         {value}
       </InlineText>
     </Row>
-  );
-}
-
-export function DexTokenScreen({ navigation }: Props<"DexToken">) {
-  const { config, t } = useFoundationRuntime();
-  const locale = config.localization.selectedLocale;
-  return (
-    <DetailPage title={mockDexToken.symbol} navigation={navigation}>
-      <Card shadowOpacity={0}>
-        <Row justifyContent="space-between">
-          <Stack>
-            <Label>{mockDexToken.pair}</Label>
-            <AmountText>{mockDexToken.price}</AmountText>
-          </Stack>
-          <Badge>
-            <InlineText color="$success">{mockDexToken.change}</InlineText>
-          </Badge>
-        </Row>
-        <Body>
-          {t("dex.token.chain")}: {mockDexToken.chain} · {mockDexToken.address}
-        </Body>
-      </Card>
-      <Card shadowOpacity={0}>
-        <Label>{t("dex.token.stats")}</Label>
-        <DataRow
-          label={t("dex.token.marketCap")}
-          value={mockDexToken.marketCap}
-        />
-        <DataRow
-          label={t("dex.token.liquidity")}
-          value={mockDexToken.liquidity}
-        />
-        <DataRow label={t("dex.token.volume")} value={mockDexToken.volume} />
-      </Card>
-      <Card shadowOpacity={0}>
-        <Row justifyContent="space-between">
-          <SectionTitle>{t("dex.token.security")}</SectionTitle>
-          <Badge>
-            <InlineText color="$success">
-              {mockDexToken.securityScore}
-            </InlineText>
-          </Badge>
-        </Row>
-        <Body>{mockText(mockDexToken.securitySummary, locale)}</Body>
-      </Card>
-      <PrimaryButton onPress={() => navigation.navigate("Swap")}>
-        {t("dex.token.swap")}
-      </PrimaryButton>
-    </DetailPage>
-  );
-}
-
-export function SwapDetailScreen({ navigation }: Props<"Swap">) {
-  const { t } = useFoundationRuntime();
-  return (
-    <DetailPage title={t("module.swap.title")} navigation={navigation}>
-      <Card shadowOpacity={0}>
-        <Label>{t("module.swap.pay")}</Label>
-        <AmountText>250.00 USDC</AmountText>
-        <Body>{t("module.swap.balancePrefix")} 1,560.50 USDC</Body>
-      </Card>
-      <Card shadowOpacity={0}>
-        <Label>{t("module.swap.receiveEstimated")}</Label>
-        <AmountText>0.095 ETH</AmountText>
-        <DataRow
-          label={t("module.swap.detail.rate")}
-          value="1 USDC = 0.00038 ETH"
-        />
-        <DataRow label={t("module.swap.detail.networkFee")} value="0.42 USDC" />
-      </Card>
-      <PrimaryButton onPress={() => navigation.goBack()}>
-        {t("module.swap.submit")}
-      </PrimaryButton>
-    </DetailPage>
-  );
-}
-
-export function SwapHistoryScreen({ navigation }: Props<"SwapHistory">) {
-  const { config, t } = useFoundationRuntime();
-  const locale = config.localization.selectedLocale;
-  return (
-    <DetailPage title={t("swap.history.title")} navigation={navigation}>
-      {mockSwapHistory.map((item) => (
-        <Card key={item.pair} shadowOpacity={0}>
-          <Row justifyContent="space-between">
-            <SectionTitle>{item.pair}</SectionTitle>
-            <Badge>
-              <InlineText
-                color={
-                  item.status === "success"
-                    ? "$success"
-                    : item.status === "failed"
-                      ? "$danger"
-                      : "$info"
-                }
-              >
-                {t(`swap.status.${item.status}`)}
-              </InlineText>
-            </Badge>
-          </Row>
-          <Body>{item.amount}</Body>
-          <Body>{mockText(item.timestamp, locale)}</Body>
-        </Card>
-      ))}
-    </DetailPage>
   );
 }
 

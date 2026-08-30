@@ -87,6 +87,8 @@ export type Quote = {
   rate: string;
   route: string[];
   routerName: string;
+  /** 需要授权的 spender（路由合约）地址 */
+  spender: string;
   networkFee: Money;
   networkFeeUsd: number;
   serviceFeeBps: number;

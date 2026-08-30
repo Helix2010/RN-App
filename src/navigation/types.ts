@@ -9,9 +9,16 @@ export type RootStackParamList = {
   PredictSettlement: { marketId: string };
   Leaderboard: undefined;
   Positions: undefined;
-  DexToken: undefined;
-  Swap: undefined;
+  DexToken: { chain: "bsc" | "eth" | "base"; address: string };
+  Swap:
+    | {
+        chain?: "bsc" | "eth" | "base";
+        sellAddress?: string;
+        buyAddress?: string;
+      }
+    | undefined;
   SwapHistory: undefined;
+  Approvals: undefined;
   Transfer: { direction?: "deposit" | "withdraw"; amount?: string } | undefined;
   AccountDetail: { kind: "predict" | "wallet" };
   Send: { chain?: "bsc" | "eth" | "base" } | undefined;

@@ -420,6 +420,7 @@ export class MockDexGateway implements DexGateway {
         rate: (sellUsd / buyUsd).toPrecision(8).replace(/\.?0+$/, ""),
         route,
         routerName: router.name,
+        spender: router.address,
         networkFee: fromDecimal(feeNative.toString(), 18, nativeSymbol),
         networkFeeUsd: Math.round(feeNative * nativePrice * 100) / 100,
         serviceFeeBps,
