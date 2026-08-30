@@ -1,11 +1,10 @@
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../app/runtime-context";
 import {
-  AppHeader,
   AppIcon,
   type AppIconName,
+  Badge,
   Body,
-  Card,
   Content,
   HairlineCard,
   InlineText,
@@ -18,111 +17,95 @@ import {
   SectionTitle,
   Stack,
 } from "../../design-system";
-import { mockProfile, mockText } from "../demo-data";
+import { mockProfile, mockSecurity, mockText } from "../demo-data";
 import { useEdgeBackGesture } from "../../navigation/edge-back-gesture";
 
 export function ProfileScreen({
   onBack,
   onOpenSettings,
-  onOpenUpdates,
   onOpenSecurity,
   onOpenNotifications,
+  onOpenAbout,
+  onOpenAccount,
+  onOpenHistory,
 }: {
   onBack: () => void;
   onOpenSettings: () => void;
-  onOpenUpdates: () => void;
   onOpenSecurity: () => void;
   onOpenNotifications: () => void;
+  onOpenAbout: () => void;
+  onOpenAccount: () => void;
+  onOpenHistory: () => void;
 }) {
   const insets = useSafeAreaInsets();
-  const { config, snapshot, t } = useFoundationRuntime();
+  const { config, t } = useFoundationRuntime();
   const locale = config.localization.selectedLocale;
-  const serviceState =
-    snapshot.source === "remote" && !snapshot.stale
-      ? t("profile.connected")
-      : t("profile.cached");
   const edgeBack = useEdgeBackGesture(onBack);
   return (
     <Page {...edgeBack}>
       <PageScroll>
         <Content paddingTop={insets.top + 20} gap="$4">
-          <AppHeader
-            eyebrow={t("profile.eyebrow")}
-            title={t("profile.title")}
-            subtitle={t("profile.subtitle")}
-            action={
+          <Row justifyContent="space-between" alignItems="center">
+            <IconButton
+              label={t("action.back")}
+              icon="chevron-left"
+              onPress={onBack}
+            />
+            <Row gap="$2">
+              <IconButton
+                label={t("settings.notifications")}
+                icon="bell-outline"
+                onPress={onOpenNotifications}
+              />
               <IconButton
                 label={t("action.settings")}
                 icon="cog-outline"
                 onPress={onOpenSettings}
               />
-            }
-          />
-          <Card
-            backgroundColor="$surfaceVariant"
-            shadowOpacity={0}
-            padding="$4"
+            </Row>
+          </Row>
+          <Row
+            alignItems="center"
+            gap="$3"
+            paddingVertical="$2"
+            onPress={onOpenAccount}
+            accessibilityRole="button"
+            accessibilityLabel={t("profile.account")}
           >
-            <Row alignItems="center" gap="$3">
-              <Stack
-                width={64}
-                height={64}
-                borderRadius={999}
-                alignItems="center"
-                justifyContent="center"
-                backgroundColor="$primary"
-              >
-                <InlineText color="$onPrimary" fontSize={25} fontWeight="900">
-                  {mockProfile.displayName.slice(0, 1)}
-                </InlineText>
-              </Stack>
-              <Stack flex={1} gap="$1">
-                <SectionTitle>{mockProfile.displayName}</SectionTitle>
-                <Body fontSize={12}>{mockProfile.walletAddress}</Body>
-                <Row alignItems="center" gap="$2" marginTop="$1">
-                  <Stack
-                    width={7}
-                    height={7}
-                    borderRadius={999}
-                    backgroundColor="$success"
-                  />
-                  <Body color="$success" fontSize={12} fontWeight="700">
-                    {serviceState}
-                  </Body>
-                </Row>
-              </Stack>
-              <InlineText color="$textMuted" fontSize={24}>
-                ›
-              </InlineText>
-            </Row>
-            <Row
-              borderTopWidth={1}
-              borderColor="$borderColor"
-              paddingTop="$3"
-              marginTop="$3"
-              gap="$3"
+            <Stack
+              width={64}
+              height={64}
+              borderRadius={999}
+              alignItems="center"
+              justifyContent="center"
+              backgroundColor="$primary"
             >
-              <ProfileMetric
-                label={t("profile.network")}
-                value={mockText(mockProfile.network, locale)}
-              />
-              <ProfileMetric
-                label={t("settings.language")}
-                value={config.localization.selectedLocale}
-              />
-              <ProfileMetric
-                label={t("settings.version")}
-                value={config.app.version}
-              />
-            </Row>
-          </Card>
-          <Stack gap="$2">
-            <Label>{t("profile.quickActions")}</Label>
+              <InlineText color="$onPrimary" fontSize={25} fontWeight="900">
+                {mockProfile.displayName.slice(0, 1)}
+              </InlineText>
+            </Stack>
+            <Stack flex={1} gap="$1">
+              <Row alignItems="center" gap="$2">
+                <SectionTitle>{mockProfile.displayName}</SectionTitle>
+                <Badge>
+                  <InlineText color="$success" fontSize={11} fontWeight="700">
+                    {t("profile.verified")}
+                  </InlineText>
+                </Badge>
+              </Row>
+              <Body fontSize={12}>
+                UID 38291047 · {mockProfile.walletAddress}
+              </Body>
+              <Body fontSize={12}>{mockText(mockProfile.network, locale)}</Body>
+            </Stack>
+            <Chevron />
+          </Row>
+          <Stack gap="$2" paddingVertical="$2">
             <Row gap="$2">
               <QuickAction
-                label={t("settings.title")}
-                icon="cog-outline"
-                onPress={onOpenSettings}
+                label={t("profile.identity")}
+                icon="check-decagram-outline"
+                onPress={onOpenAccount}
               />
               <QuickAction
                 label={t("profile.securityCenter")}
@@ -130,82 +113,94 @@ export function ProfileScreen({
                 onPress={onOpenSecurity}
               />
               <QuickAction
-                label={t("settings.notifications")}
-                icon="bell-outline"
-                onPress={onOpenNotifications}
+                label={t("profile.invite")}
+                icon="gift-outline"
+                onPress={onOpenSettings}
               />
-              {config.features.updateCenter ? (
-                <QuickAction
-                  label={t("settings.updateCenter")}
-                  icon="update"
-                  onPress={onOpenUpdates}
-                />
-              ) : null}
+              <QuickAction
+                label={t("profile.help")}
+                icon="headset"
+                onPress={onOpenSettings}
+              />
             </Row>
           </Stack>
           <HairlineCard gap="$2">
-            <Label>{t("profile.preferences")}</Label>
+            <Label>{t("profile.account")}</Label>
             <ListRow
-              title={t("settings.title")}
-              subtitle={t("profile.settingsHint")}
-              onPress={onOpenSettings}
-              leading={<LeadingIcon icon="cog-outline" />}
+              title={t("profile.identity")}
+              subtitle={t("profile.verified")}
+              onPress={onOpenAccount}
+              leading={<LeadingIcon icon="check-decagram-outline" />}
               trailing={<Chevron />}
             />
-            {config.features.updateCenter ? (
-              <ListRow
-                title={t("settings.updateCenter")}
-                subtitle={t("profile.updateHint")}
-                onPress={onOpenUpdates}
-                leading={<LeadingIcon icon="update" />}
-                trailing={<Chevron />}
-              />
-            ) : null}
-          </HairlineCard>
-          <HairlineCard gap="$2">
-            <Label>{t("profile.security")}</Label>
             <ListRow
               title={t("profile.securityCenter")}
-              subtitle={t("profile.securityHint")}
+              subtitle={t("security.level.high")}
               onPress={onOpenSecurity}
               leading={<LeadingIcon icon="shield-check-outline" />}
               trailing={<Chevron />}
             />
             <ListRow
-              title={t("settings.notifications")}
-              subtitle={
-                snapshot.source === "remote"
-                  ? t("settings.notificationsEnabled")
-                  : t("settings.notificationsOff")
-              }
-              onPress={onOpenNotifications}
-              leading={<LeadingIcon icon="bell-outline" />}
+              title={t("security.addressBook")}
+              subtitle={mockSecurity.addresses}
+              onPress={onOpenSecurity}
+              leading={<LeadingIcon icon="wallet-outline" />}
               trailing={<Chevron />}
             />
           </HairlineCard>
-          <Stack alignItems="center" paddingVertical="$2" gap="$1">
-            <Body fontSize={12}>
-              {config.app.version} ({config.app.buildNumber}) ·{" "}
-              {config.app.platform}
-            </Body>
-            <Body color="$textMuted" fontSize={11}>
-              {t("profile.runtime")} {config.app.runtimeVersion}
-            </Body>
-          </Stack>
+          <HairlineCard gap="$2">
+            <Label>{t("profile.mine")}</Label>
+            {config.modules.predict ? (
+              <ListRow
+                title={t("assets.predictAccount")}
+                subtitle="$2,340.12"
+                onPress={onOpenAccount}
+                leading={<LeadingIcon icon="chart-timeline-variant" />}
+                trailing={<Chevron />}
+              />
+            ) : null}
+            {config.modules.dex ? (
+              <ListRow
+                title={t("assets.dexWallet")}
+                subtitle={mockProfile.walletAddress}
+                onPress={onOpenAccount}
+                leading={<LeadingIcon icon="cube-outline" />}
+                trailing={<Chevron />}
+              />
+            ) : null}
+            <ListRow
+              title={t("profile.transactionHistory")}
+              onPress={onOpenHistory}
+              leading={<LeadingIcon icon="history" />}
+              trailing={<Chevron />}
+            />
+          </HairlineCard>
+          <HairlineCard gap="$2">
+            <Label>{t("profile.more")}</Label>
+            <ListRow
+              title={t("profile.invite")}
+              subtitle={t("profile.invitedCount")}
+              onPress={onOpenSettings}
+              leading={<LeadingIcon icon="gift-outline" />}
+              trailing={<Chevron />}
+            />
+            <ListRow
+              title={t("profile.help")}
+              onPress={onOpenSettings}
+              leading={<LeadingIcon icon="headset" />}
+              trailing={<Chevron />}
+            />
+            <ListRow
+              title={t("about.title")}
+              subtitle={`${t("settings.version")} ${config.app.version}`}
+              onPress={onOpenAbout}
+              leading={<LeadingIcon icon="information-outline" />}
+              trailing={<Chevron />}
+            />
+          </HairlineCard>
         </Content>
       </PageScroll>
     </Page>
-  );
-}
-
-function ProfileMetric({ label, value }: { label: string; value: string }) {
-  return (
-    <Stack flex={1} gap="$1">
-      <Body fontSize={11}>{label}</Body>
-      <InlineText fontSize={12} fontWeight="700" numberOfLines={1}>
-        {value}
-      </InlineText>
-    </Stack>
   );
 }
 

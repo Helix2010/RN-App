@@ -1,10 +1,15 @@
-import type { ComponentProps, PropsWithChildren, ReactNode } from "react";
+import {
+  Children,
+  type ComponentProps,
+  type PropsWithChildren,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import type { RefreshControlProps } from "react-native";
-import { RefreshControl } from "react-native";
+import { RefreshControl, useWindowDimensions } from "react-native";
 import {
   Button,
   ScrollView,
-  Spinner,
   Text,
   XStack,
   YStack,
@@ -13,6 +18,13 @@ import {
 } from "tamagui";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { useFonts } from "expo-font";
+import Animated, {
+  Extrapolation,
+  interpolate,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
+} from "react-native-reanimated";
 
 export const Page = styled(YStack, {
   flex: 1,
@@ -215,12 +227,6 @@ export function ScreenHeader({
   );
 }
 
-export const Divider = styled(YStack, {
-  height: 1,
-  width: "100%",
-  backgroundColor: "$borderColor",
-});
-
 export const Content = styled(YStack, {
   width: "100%",
   maxWidth: 720,
@@ -257,7 +263,6 @@ export const SkeletonBlock = styled(YStack, {
 
 export function IconButton({
   label,
-  symbol,
   icon,
   onPress,
   backgroundColor = "$surfaceVariant",
@@ -265,8 +270,7 @@ export function IconButton({
   size = 42,
 }: {
   label: string;
-  symbol?: string;
-  icon?: AppIconName;
+  icon: AppIconName;
   onPress?: () => void;
   backgroundColor?: "$surfaceVariant" | "$onPrimary";
   color?: "$color" | "$primary";
@@ -286,28 +290,86 @@ export function IconButton({
       accessibilityLabel={label}
       pressStyle={{ opacity: 0.76, scale: 0.95 }}
     >
-      {icon ? (
-        <AppIcon
-          name={icon}
-          size={18}
-          colorToken={color === "$primary" ? "primary" : "color"}
-        />
-      ) : (
-        <Text fontSize={18}>{symbol}</Text>
-      )}
+      <AppIcon
+        name={icon}
+        size={18}
+        colorToken={color === "$primary" ? "primary" : "color"}
+      />
     </Button>
   );
 }
 
-export function HorizontalScroll({ children }: PropsWithChildren) {
+export function SnapCarousel({
+  children,
+  itemWidth = 236,
+  gap = 12,
+}: PropsWithChildren<{ itemWidth?: number; gap?: number }>) {
+  const { width } = useWindowDimensions();
+  const scrollX = useSharedValue(0);
+  const onScroll = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      scrollX.value = event.contentOffset.x;
+    },
+  });
+  const items = Children.toArray(children);
   return (
-    <ScrollView
+    <Animated.ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
-      contentContainerStyle={{ gap: 12 }}
+      onScroll={onScroll}
+      scrollEventThrottle={16}
+      snapToInterval={itemWidth + gap}
+      snapToAlignment="start"
+      decelerationRate="fast"
+      disableIntervalMomentum
+      contentContainerStyle={{
+        gap,
+        paddingRight: Math.max(0, width - itemWidth - 32),
+      }}
+      accessibilityRole="adjustable"
+      accessibilityHint="左右滑动浏览并自动吸附到卡片"
     >
+      {items.map((child, index) => (
+        <SnapCarouselItem
+          key={(child as ReactElement).key ?? index}
+          index={index}
+          itemWidth={itemWidth}
+          gap={gap}
+          scrollX={scrollX}
+        >
+          {child}
+        </SnapCarouselItem>
+      ))}
+    </Animated.ScrollView>
+  );
+}
+
+function SnapCarouselItem({
+  children,
+  index,
+  itemWidth,
+  gap,
+  scrollX,
+}: PropsWithChildren<{
+  index: number;
+  itemWidth: number;
+  gap: number;
+  scrollX: { value: number };
+}>) {
+  const animatedStyle = useAnimatedStyle(() => {
+    const center = index * (itemWidth + gap);
+    const scale = interpolate(
+      scrollX.value,
+      [center - itemWidth - gap, center, center + itemWidth + gap],
+      [0.92, 1, 0.92],
+      Extrapolation.CLAMP,
+    );
+    return { transform: [{ scale }] };
+  }, [gap, index, itemWidth]);
+  return (
+    <Animated.View style={[{ width: itemWidth }, animatedStyle]}>
       {children}
-    </ScrollView>
+    </Animated.View>
   );
 }
 
@@ -392,13 +454,6 @@ export const AmountText = styled(Text, {
   lineHeight: 30,
   fontWeight: "700",
   fontVariant: ["tabular-nums"],
-});
-
-export const AddressText = styled(Text, {
-  color: "$textMuted",
-  fontSize: 13,
-  lineHeight: 18,
-  letterSpacing: 0.2,
 });
 
 export const PrimaryButton = styled(Button, {
@@ -513,32 +568,5 @@ export function PageScroll({
     >
       {children}
     </ScrollView>
-  );
-}
-
-export function PageState({
-  title,
-  description,
-  loading,
-  action,
-}: {
-  title: string;
-  description?: string;
-  loading?: boolean;
-  action?: ReactNode;
-}) {
-  return (
-    <YStack
-      flex={1}
-      alignItems="center"
-      justifyContent="center"
-      padding="$6"
-      gap="$3"
-    >
-      {loading ? <Spinner size="large" color="$primary" /> : null}
-      <SectionTitle textAlign="center">{title}</SectionTitle>
-      {description ? <Body textAlign="center">{description}</Body> : null}
-      {action}
-    </YStack>
   );
 }

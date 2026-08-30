@@ -111,11 +111,13 @@ export function FoundationNavigator() {
             <ProfileScreen
               onBack={() => props.navigation.goBack()}
               onOpenSettings={() => props.navigation.navigate("Settings")}
-              onOpenUpdates={() => props.navigation.navigate("UpdateCenter")}
               onOpenSecurity={() => props.navigation.navigate("SecurityCenter")}
               onOpenNotifications={() =>
                 props.navigation.navigate("NotificationSettings")
               }
+              onOpenAbout={() => props.navigation.navigate("About")}
+              onOpenAccount={() => props.navigation.navigate("AccountDetail")}
+              onOpenHistory={() => props.navigation.navigate("SwapHistory")}
             />
           )}
         </Stack.Screen>

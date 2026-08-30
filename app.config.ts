@@ -13,9 +13,9 @@ const codeSigningCertificate =
 const codeSigningKeyId = process.env.EXPO_UPDATES_CODE_SIGNING_KEY_ID ?? "main";
 const applicationId = process.env.EXPO_PUBLIC_APPLICATION_ID ?? "dex-mobile";
 const googleServicesFile = process.env.GOOGLE_SERVICES_JSON;
-const appVersion = "1.1.9";
-const androidVersionCode = 13;
-const iosBuildNumber = "5";
+const appVersion = "1.2.0";
+const androidVersionCode = 14;
+const iosBuildNumber = "6";
 const buildNumber =
   process.env.EXPO_OS === "ios" ? iosBuildNumber : String(androidVersionCode);
 const apiBaseUrl =

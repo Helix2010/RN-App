@@ -434,13 +434,44 @@ export function AboutScreen({ navigation }: Props<"About">) {
         </Body>
       </Stack>
       <Card shadowOpacity={0}>
-        <SectionTitle>
-          {config.update.decision === "none"
-            ? t("about.upToDate")
-            : t("update.noticeTitle")}
-        </SectionTitle>
-        <Body>{config.update.releaseNotes.join("\n")}</Body>
-        <PrimaryButton>{t("settings.checkUpdate")}</PrimaryButton>
+        <Row justifyContent="space-between" alignItems="center">
+          <SectionTitle>{t("about.versionDetails")}</SectionTitle>
+          <Badge>
+            <InlineText color="$success">
+              {config.update.decision === "none"
+                ? t("about.upToDate")
+                : t("update.noticeTitle")}
+            </InlineText>
+          </Badge>
+        </Row>
+        <DataRow label={t("settings.version")} value={config.app.version} />
+        <DataRow label={t("settings.build")} value={config.app.buildNumber} />
+        <DataRow
+          label={t("settings.runtime")}
+          value={config.app.runtimeVersion}
+        />
+        <DataRow
+          label={t("settings.ota")}
+          value={
+            config.update.ota.revision
+              ? `v${config.update.ota.revision}`
+              : t("update.embedded")
+          }
+        />
+        <DataRow
+          label={t("settings.configversion")}
+          value={config.configVersion}
+        />
+        <DataRow
+          label={t("update.channel")}
+          value={config.update.ota.channel}
+        />
+        {config.update.releaseNotes.length > 0 ? (
+          <Body>{config.update.releaseNotes.join("\n")}</Body>
+        ) : null}
+        <PrimaryButton onPress={() => navigation.navigate("UpdateCenter")}>
+          {t("settings.checkUpdate")}
+        </PrimaryButton>
       </Card>
     </DetailPage>
   );

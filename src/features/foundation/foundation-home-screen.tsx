@@ -9,8 +9,7 @@ import {
   Body,
   Card,
   Content,
-  HairlineCard,
-  HorizontalScroll,
+  SnapCarousel,
   IconButton,
   InlineText,
   Label,
@@ -203,7 +202,7 @@ export function FoundationHomeScreen({
                   {t("home.viewAll")} ›
                 </InlineText>
               </Row>
-              <HorizontalScroll>
+              <SnapCarousel itemWidth={236} gap={12}>
                 {mockHomeData.predictions.map((prediction) => (
                   <PredictionHomeCard
                     key={prediction.title["en-US"]}
@@ -217,7 +216,7 @@ export function FoundationHomeScreen({
                     noPrice={prediction.noPrice}
                   />
                 ))}
-              </HorizontalScroll>
+              </SnapCarousel>
             </Stack>
           ) : null}
           {config.modules.dex ? (
@@ -237,24 +236,6 @@ export function FoundationHomeScreen({
               ))}
             </Stack>
           ) : null}
-
-          <HairlineCard>
-            <Label>{t("home.security")}</Label>
-            <SectionTitle>{t("home.securityTitle")}</SectionTitle>
-            <Body>{t("home.securityDescription")}</Body>
-            <Row gap="$2" flexWrap="wrap">
-              <Badge>
-                <InlineText color="$success" fontSize={12} fontWeight="700">
-                  {t("home.secureStorage")}
-                </InlineText>
-              </Badge>
-              <Badge>
-                <InlineText color="$info" fontSize={12} fontWeight="700">
-                  {t("home.signedUpdates")}
-                </InlineText>
-              </Badge>
-            </Row>
-          </HairlineCard>
         </Content>
       </PageScroll>
     </Page>

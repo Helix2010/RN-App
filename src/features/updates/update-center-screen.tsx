@@ -20,6 +20,7 @@ import { useUpdateStatus } from "../../core/updates/use-update-status";
 import {
   Badge,
   Body,
+  AppIcon,
   Card,
   Content,
   Heading,
@@ -62,7 +63,7 @@ export function UpdateCenterScreen({
     percentage: 0,
   });
   const [apkError, setApkError] = useState<string | null>(null);
-  const [showDetails, setShowDetails] = useState(false);
+  const [infoTarget, setInfoTarget] = useState<"ota" | "full" | null>(null);
   const [pendingFullUpdate, setPendingFullUpdate] =
     useState<BootstrapConfig | null>(() =>
       (locked || route.params?.autoPrompt) &&
@@ -175,6 +176,14 @@ export function UpdateCenterScreen({
   });
   const promptConfig = pendingFullUpdate ?? config;
   const edgeBack = useEdgeBackGesture(navigation.goBack);
+  const otaVersion = config.update.ota.revision
+    ? `v${config.update.ota.revision}`
+    : currentUpdate.isEmbedded
+      ? t("update.embedded")
+      : (currentUpdate.updateId ?? t("update.notConfigured"));
+  const fullVersion = config.update.latestVersion;
+  const hasOtaUpdate =
+    displayedOta.status !== "current" && displayedOta.status !== "embedded";
 
   useEffect(() => {
     if (!isFocused || (!locked && apkDownloadState !== "downloading")) return;
@@ -227,9 +236,14 @@ export function UpdateCenterScreen({
             backLabel={!locked ? t("action.back") : undefined}
           />
 
-          <Card>
+          <Card backgroundColor="$surfaceVariant" shadowOpacity={0}>
             <Row justifyContent="space-between" alignItems="center">
-              <SectionTitle>{t("update.policy")}</SectionTitle>
+              <Stack gap="$1">
+                <Label>{t("update.currentVersion")}</Label>
+                <Heading fontSize={28}>
+                  {config.app.version} ({config.app.buildNumber})
+                </Heading>
+              </Stack>
               <Badge>
                 <InlineText
                   color={
@@ -238,107 +252,60 @@ export function UpdateCenterScreen({
                       : "$primary"
                   }
                 >
-                  {config.update.decision.toUpperCase()}
+                  {config.update.decision === "none"
+                    ? t("update.none")
+                    : t(`update.${config.update.decision}`)}
                 </InlineText>
               </Badge>
             </Row>
-            <Body>
-              {t("update.currentVersion")}：{config.app.version} (
-              {config.app.buildNumber})
-            </Body>
-            <Body>
-              {t("update.minimumVersion")}：{config.update.minSupportedVersion}
-            </Body>
-            <Body>
-              {t("update.latestVersion")}：{config.update.latestVersion}
-            </Body>
+            <Body>{t("update.currentVersionHint")}</Body>
+            {config.update.decision !== "none" ? (
+              <Body color="$warning">
+                {config.update.latestVersion} · {t("update.recommended")}
+              </Body>
+            ) : null}
             <PrimaryButton disabled={busy} onPress={() => void checkUpdates()}>
               {busy ? t("update.checking") : t("action.checkupdate")}
             </PrimaryButton>
           </Card>
 
           <Card>
-            <Label>OTA / {config.update.ota.channel}</Label>
-            <SectionTitle>{t("update.otaTitle")}</SectionTitle>
-            <Body
-              color={displayedOta.status === "error" ? "$danger" : "$textMuted"}
-            >
-              {t(displayedOta.messageKey)}
-            </Body>
+            <Label>{t("update.release")}</Label>
+            <UpdateVersionRow
+              label={t("update.otaTitle")}
+              version={otaVersion}
+              status={
+                hasOtaUpdate
+                  ? t(displayedOta.messageKey)
+                  : t("update.otaCurrent")
+              }
+              onPress={() => void checkOta()}
+              onInfo={() => setInfoTarget("ota")}
+              busy={busy}
+              t={t}
+            />
+            <UpdateVersionRow
+              label={t("update.fullTitle")}
+              version={fullVersion}
+              status={
+                config.update.decision === "none"
+                  ? t("update.none")
+                  : t(`update.${config.update.decision}`)
+              }
+              onPress={() => void checkUpdates()}
+              onInfo={() => setInfoTarget("full")}
+              busy={busy || apkDownloadState === "downloading"}
+              t={t}
+            />
             {displayedOta.status === "ready" &&
             displayedOta.metadata.applyStrategy === "immediate" ? (
-              <Body color="$warning">{t("update.otaImmediateRequired")}</Body>
-            ) : null}
-            {(displayedOta.status === "ready" &&
-              displayedOta.metadata.applyStrategy === "immediate") ||
-            displayedOta.status === "rollback" ? (
               <SecondaryButton disabled={busy} onPress={() => void applyOta()}>
-                {displayedOta.status === "rollback"
-                  ? t("update.rollbackApply")
-                  : t("update.applyImmediate")}
+                {t("update.applyImmediate")}
               </SecondaryButton>
-            ) : null}
-          </Card>
-
-          <Card>
-            <Row justifyContent="space-between" alignItems="center">
-              <Stack flex={1} gap="$1">
-                <Label>{config.update.full.channel.toUpperCase()}</Label>
-                <SectionTitle>{t("update.fullTitle")}</SectionTitle>
-              </Stack>
-              <Badge>
-                <InlineText color="$primary">
-                  {config.update.decision === "none"
-                    ? t("update.none")
-                    : config.update.latestVersion}
-                </InlineText>
-              </Badge>
-            </Row>
-            {config.update.decision !== "none" ? (
-              <Body>{t("update.fullDescription")}</Body>
             ) : null}
             {fullMessage ? <Body color="$warning">{fullMessage}</Body> : null}
             {apkError ? <Body color="$danger">{apkError}</Body> : null}
           </Card>
-
-          <SecondaryButton
-            onPress={() => setShowDetails((current) => !current)}
-          >
-            {showDetails ? t("action.collapse") : t("action.details")}
-          </SecondaryButton>
-          {showDetails ? (
-            <Card>
-              <Label>{t("update.details")}</Label>
-              <Body>
-                {t("update.minimumVersion")} ·{" "}
-                {config.update.minSupportedVersion}
-              </Body>
-              <Body>
-                {t("update.channel")} · {config.update.full.channel}
-              </Body>
-              <Body>
-                {t("update.requestId")} · {config.support.diagnosticId}
-              </Body>
-              <Body>
-                {t("update.release")} ·{" "}
-                {config.update.full.releaseId ?? t("update.notConfigured")}
-              </Body>
-              <Body>
-                {t("update.runtime")} · {config.app.runtimeVersion}
-              </Body>
-              <Body>
-                {t("update.otaTitle")} ·{" "}
-                {currentUpdate.isEmbedded
-                  ? t("update.embedded")
-                  : (currentUpdate.updateId ?? t("update.notConfigured"))}
-              </Body>
-              {config.features.diagnosticsEnabled ? (
-                <Body color="$textMuted">
-                  {t("update.diagnostics")} · {config.support.diagnosticId}
-                </Body>
-              ) : null}
-            </Card>
-          ) : null}
         </Content>
       </PageScroll>
       {apkDownloadState !== "idle" ? (
@@ -446,7 +413,128 @@ export function UpdateCenterScreen({
           </Card>
         </Stack>
       </Modal>
+      <Modal
+        visible={infoTarget !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setInfoTarget(null)}
+      >
+        <Stack
+          flex={1}
+          justifyContent="flex-end"
+          padding="$4"
+          backgroundColor="$backdrop"
+        >
+          <Card padding="$5">
+            <Row justifyContent="space-between" alignItems="center">
+              <SectionTitle>{t("update.versionDetails")}</SectionTitle>
+              <InlineText
+                color="$textMuted"
+                fontSize={26}
+                onPress={() => setInfoTarget(null)}
+                accessibilityRole="button"
+                accessibilityLabel={t("action.close")}
+              >
+                ×
+              </InlineText>
+            </Row>
+            {infoTarget === "ota" ? (
+              <>
+                <Body>
+                  {t("update.otaTitle")} · {otaVersion}
+                </Body>
+                <Body>
+                  {t("update.channel")} · {config.update.ota.channel}
+                </Body>
+                <Body>
+                  {t("update.runtime")} · {config.update.ota.runtimeVersion}
+                </Body>
+                <Body>
+                  {t("update.release")} ·{" "}
+                  {config.update.ota.baseReleaseId ?? t("update.notConfigured")}
+                </Body>
+              </>
+            ) : (
+              <>
+                <Body>
+                  {t("update.fullTitle")} · {fullVersion}
+                </Body>
+                <Body>
+                  {t("update.channel")} · {config.update.full.channel}
+                </Body>
+                <Body>
+                  {t("settings.build")} · {config.app.buildNumber}
+                </Body>
+                <Body>
+                  {t("update.runtime")} · {config.app.runtimeVersion}
+                </Body>
+                <Body>
+                  {t("update.minimumVersion")} ·{" "}
+                  {config.update.minSupportedVersion}
+                </Body>
+                <Body>
+                  {t("update.release")} ·{" "}
+                  {config.update.full.releaseId ?? t("update.notConfigured")}
+                </Body>
+              </>
+            )}
+          </Card>
+        </Stack>
+      </Modal>
     </Page>
+  );
+}
+
+function UpdateVersionRow({
+  label,
+  version,
+  status,
+  onPress,
+  onInfo,
+  busy,
+  t,
+}: {
+  label: string;
+  version: string;
+  status: string;
+  onPress: () => void;
+  onInfo: () => void;
+  busy: boolean;
+  t: (key: string) => string;
+}) {
+  return (
+    <Row
+      minHeight={78}
+      paddingVertical="$3"
+      borderBottomWidth={1}
+      borderColor="$borderColor"
+      alignItems="center"
+      gap="$3"
+    >
+      <Stack flex={1} gap="$1" onPress={onPress}>
+        <Label>{label}</Label>
+        <SectionTitle>{version}</SectionTitle>
+        <Body fontSize={12}>{status}</Body>
+      </Stack>
+      <InlineText
+        color="$primary"
+        fontSize={23}
+        onPress={onInfo}
+        accessibilityRole="button"
+        accessibilityLabel={`${label}${t("update.info")}`}
+      >
+        <AppIcon name="information-outline" size={22} />
+      </InlineText>
+      <InlineText
+        color={busy ? "$textMuted" : "$primary"}
+        fontSize={22}
+        onPress={busy ? undefined : onPress}
+        accessibilityRole="button"
+        accessibilityLabel={`${label}${t("action.checkupdate")}`}
+      >
+        <AppIcon name="chevron-right" size={21} colorToken="textMuted" />
+      </InlineText>
+    </Row>
   );
 }
 
