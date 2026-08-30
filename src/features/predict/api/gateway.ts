@@ -67,6 +67,8 @@ export interface PredictGateway {
     marketId: string,
     reason: string,
   ): Promise<PredictTx>;
+  /** 存入 / 取回 / 领取 / 拆合 / 争议 交易状态（轮询） */
+  getTx(id: string): Promise<PredictTx | null>;
   getLeaderboard(
     period: LeaderboardPeriod,
     sort: "pnl" | "volume",

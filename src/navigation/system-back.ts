@@ -13,6 +13,7 @@ export type RootRouteName =
   | "SwapHistory"
   | "Transfer"
   | "AccountDetail"
+  | "Send"
   | "NotificationSettings"
   | "About"
   | "SecurityCenter";

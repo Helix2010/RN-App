@@ -38,6 +38,7 @@ export function AppIcon({
   size?: number;
   colorToken?:
     | "primary"
+    | "onPrimary"
     | "color"
     | "textMuted"
     | "success"
@@ -49,6 +50,7 @@ export function AppIcon({
   const [fontLoaded] = useFonts(MaterialCommunityIcons.font);
   const colors = {
     primary: theme.primary.val,
+    onPrimary: theme.onPrimary.val,
     color: theme.color.val,
     textMuted: theme.textMuted.val,
     success: theme.success.val,
@@ -409,6 +411,7 @@ export const PrimaryButton = styled(Button, {
   fontWeight: "700",
   pressStyle: { opacity: 0.86, scale: 0.99 },
   focusStyle: { outlineColor: "$focus", outlineWidth: 2 },
+  disabledStyle: { opacity: 0.45 },
 });
 
 export const SecondaryButton = styled(Button, {
@@ -420,6 +423,7 @@ export const SecondaryButton = styled(Button, {
   borderWidth: 1,
   fontWeight: "700",
   pressStyle: { opacity: 0.82 },
+  disabledStyle: { opacity: 0.45 },
 });
 
 export const Badge = styled(XStack, {

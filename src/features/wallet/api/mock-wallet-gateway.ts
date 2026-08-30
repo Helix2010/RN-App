@@ -272,7 +272,8 @@ export class MockWalletGateway implements WalletGateway {
 
   async getTransaction(id: string): Promise<Tx | null> {
     const state = await this.load();
-    return state.transfers.find((item) => item.id === id) ?? null;
+    const tx = state.transfers.find((item) => item.id === id);
+    return tx ? { ...tx } : null;
   }
 
   async listTransfers(address: string): Promise<WalletTransfer[]> {

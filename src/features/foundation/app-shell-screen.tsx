@@ -19,7 +19,7 @@ import {
   Stack,
 } from "../../design-system";
 import type { RootStackParamList } from "../../navigation/types";
-import { AssetsScreen } from "../portfolio/assets-screen";
+import { AssetsScreen } from "../assets/ui/assets-screen";
 import { FoundationHomeScreen } from "./foundation-home-screen";
 import { resolveAppShellBack, type AppTab } from "./app-shell-back";
 import {
@@ -100,7 +100,13 @@ export function AppShellScreen({ navigation }: Props) {
             onOpenSwap={() => setTab("swap")}
           />
         ) : effectiveTab === "assets" ? (
-          <AssetsScreen />
+          <AssetsScreen
+            onOpenAccount={(kind) =>
+              navigation.navigate("AccountDetail", { kind })
+            }
+            onOpenSend={() => navigation.navigate("Send")}
+            onOpenSwap={() => setTab("swap")}
+          />
         ) : effectiveTab === "predict" ||
           effectiveTab === "positions" ||
           effectiveTab === "dex" ||

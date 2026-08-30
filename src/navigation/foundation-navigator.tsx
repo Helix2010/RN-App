@@ -15,7 +15,6 @@ import { LanguageSettingsScreen } from "../features/settings/language-settings-s
 import { AppearanceSettingsScreen } from "../features/settings/appearance-settings-screen";
 import {
   AboutScreen,
-  AccountDetailScreen,
   DexTokenScreen,
   PredictOrderScreen,
   PredictSettlementScreen,
@@ -24,10 +23,12 @@ import {
   PredictEventScreen,
   SecurityCenterScreen,
   SwapHistoryScreen,
-  TransferScreen,
 } from "../features/foundation/mock-detail-screens";
 import { ProfileScreen } from "../features/profile/profile-screen";
 import { ConnectWalletSheet } from "../features/session/ui/connect-wallet-sheet";
+import { AccountDetailScreen } from "../features/assets/ui/account-detail-screen";
+import { SendScreen } from "../features/assets/ui/send-screen";
+import { TransferScreen } from "../features/assets/ui/transfer-screen";
 import type { RootStackParamList } from "./types";
 import { resolveSystemBack } from "./system-back";
 
@@ -139,8 +140,33 @@ export function FoundationNavigator() {
         <Stack.Screen name="DexToken" component={DexTokenScreen} />
         <Stack.Screen name="Swap" component={SwapDetailScreen} />
         <Stack.Screen name="SwapHistory" component={SwapHistoryScreen} />
-        <Stack.Screen name="Transfer" component={TransferScreen} />
-        <Stack.Screen name="AccountDetail" component={AccountDetailScreen} />
+        <Stack.Screen name="Transfer">
+          {(props) => (
+            <TransferScreen
+              direction={props.route.params?.direction}
+              amount={props.route.params?.amount}
+              onBack={() => props.navigation.goBack()}
+            />
+          )}
+        </Stack.Screen>
+        <Stack.Screen name="Send">
+          {(props) => (
+            <SendScreen
+              initialChain={props.route.params?.chain}
+              onBack={() => props.navigation.goBack()}
+            />
+          )}
+        </Stack.Screen>
+        <Stack.Screen name="AccountDetail">
+          {(props) => (
+            <AccountDetailScreen
+              kind={props.route.params.kind}
+              onBack={() => props.navigation.goBack()}
+              onOpenSend={() => props.navigation.navigate("Send")}
+              onOpenSwap={() => props.navigation.navigate("Swap")}
+            />
+          )}
+        </Stack.Screen>
         <Stack.Screen
           name="NotificationSettings"
           component={NotificationSettingsScreen}

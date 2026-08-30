@@ -8,11 +8,14 @@ import {
 import {
   forwardRef,
   useCallback,
+  useEffect,
   useImperativeHandle,
   useRef,
+  useState,
   type PropsWithChildren,
   type ReactNode,
 } from "react";
+import { BackHandler } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text, XStack, YStack, useTheme } from "tamagui";
 import { IconButton } from "./components";
@@ -52,6 +55,20 @@ export const Sheet = forwardRef<
   const modal = useRef<BottomSheetModal>(null);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const [isOpen, setIsOpen] = useState(false);
+
+  // Android 返回键：sheet 打开时先关 sheet；锁定时吞掉返回
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const subscription = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => {
+        if (!locked) modal.current?.dismiss();
+        return true;
+      },
+    );
+    return () => subscription.remove();
+  }, [isOpen, locked]);
 
   useImperativeHandle(ref, () => ({
     present: () => modal.current?.present(),
@@ -81,7 +98,11 @@ export const Sheet = forwardRef<
       enablePanDownToClose={!locked}
       enableDismissOnClose
       backdropComponent={renderBackdrop}
-      onDismiss={onDismiss}
+      onDismiss={() => {
+        setIsOpen(false);
+        onDismiss?.();
+      }}
+      onChange={(index) => setIsOpen(index >= 0)}
       keyboardBehavior="interactive"
       keyboardBlurBehavior="restore"
       android_keyboardInputMode="adjustResize"

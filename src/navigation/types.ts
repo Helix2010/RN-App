@@ -11,8 +11,9 @@ export type RootStackParamList = {
   DexToken: undefined;
   Swap: undefined;
   SwapHistory: undefined;
-  Transfer: undefined;
-  AccountDetail: undefined;
+  Transfer: { direction?: "deposit" | "withdraw"; amount?: string } | undefined;
+  AccountDetail: { kind: "predict" | "wallet" };
+  Send: { chain?: "bsc" | "eth" | "base" } | undefined;
   NotificationSettings: undefined;
   About: undefined;
   SecurityCenter: undefined;

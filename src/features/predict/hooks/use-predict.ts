@@ -1,7 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useGateways } from "../../../core/gateways/gateway-context";
-import type { Money } from "../../../core/money/money";
+import {
+  fromDecimal,
+  toDecimalString,
+  type Money,
+} from "../../../core/money/money";
 import type {
   EventQuery,
   LeaderboardPeriod,
@@ -228,11 +232,14 @@ export function usePredictDeposit(address: string | undefined) {
       amount: Money;
       walletToken: Parameters<typeof wallet.adjustBalance>[1];
     }) => {
+      const walletAmount = fromDecimal(
+        toDecimalString(input.amount),
+        input.walletToken.decimals,
+        input.walletToken.symbol,
+      );
       await wallet.adjustBalance(address as string, input.walletToken, {
-        ...input.amount,
-        raw: (-BigInt(input.amount.raw)).toString(),
-        decimals: input.walletToken.decimals,
-        symbol: input.walletToken.symbol,
+        ...walletAmount,
+        raw: (-BigInt(walletAmount.raw)).toString(),
       });
       return predict.deposit(address as string, input.amount);
     },
@@ -253,11 +260,15 @@ export function usePredictWithdraw(address: string | undefined) {
       walletToken: Parameters<typeof wallet.adjustBalance>[1];
     }) => {
       const tx = await predict.withdraw(address as string, input.amount);
-      await wallet.adjustBalance(address as string, input.walletToken, {
-        ...input.amount,
-        decimals: input.walletToken.decimals,
-        symbol: input.walletToken.symbol,
-      });
+      await wallet.adjustBalance(
+        address as string,
+        input.walletToken,
+        fromDecimal(
+          toDecimalString(input.amount),
+          input.walletToken.decimals,
+          input.walletToken.symbol,
+        ),
+      );
       return tx;
     },
     onSuccess: () => {
@@ -292,5 +303,21 @@ export function useLeaderboard(
     queryKey: ["predict-leaderboard", period, sort],
     queryFn: () => predict.getLeaderboard(period, sort),
     staleTime: 60_000,
+  });
+}
+
+/** 轮询一笔预测账户交易直到终态。 */
+export function usePredictTx(id: string | undefined) {
+  const { predict } = useGateways();
+  return useQuery({
+    queryKey: ["predict-tx", id],
+    queryFn: () => predict.getTx(id as string),
+    enabled: Boolean(id),
+    refetchInterval: (query) =>
+      query.state.data &&
+      (query.state.data.status === "confirmed" ||
+        query.state.data.status === "failed")
+        ? false
+        : 800,
   });
 }

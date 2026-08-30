@@ -1141,6 +1141,12 @@ export class MockPredictGateway implements PredictGateway {
     });
   }
 
+  async getTx(id: string): Promise<PredictTx | null> {
+    const state = await this.load();
+    const tx = state.txs.find((item) => item.id === id);
+    return tx ? { ...tx } : null;
+  }
+
   async getLeaderboard(
     period: LeaderboardPeriod,
     sort: "pnl" | "volume",

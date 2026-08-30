@@ -615,7 +615,8 @@ export class MockDexGateway implements DexGateway {
 
   async getSwap(id: string): Promise<SwapRecord | null> {
     const state = await this.load();
-    return state.swaps.find((item) => item.id === id) ?? null;
+    const swap = state.swaps.find((item) => item.id === id);
+    return swap ? { ...swap } : null;
   }
 
   async listSwaps(

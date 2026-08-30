@@ -72,3 +72,19 @@ export function useSwitchAccount() {
     },
   });
 }
+
+/** 轮询一笔钱包转账直到终态。 */
+export function useWalletTransfer(id: string | undefined) {
+  const { wallet } = useGateways();
+  return useQuery({
+    queryKey: ["wallet-transfer", id],
+    queryFn: () => wallet.getTransaction(id as string),
+    enabled: Boolean(id),
+    refetchInterval: (query) =>
+      query.state.data &&
+      (query.state.data.status === "confirmed" ||
+        query.state.data.status === "failed")
+        ? false
+        : 800,
+  });
+}
