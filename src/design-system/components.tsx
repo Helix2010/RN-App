@@ -12,6 +12,7 @@ import {
   useTheme,
 } from "tamagui";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import { useFonts } from "expo-font";
 
 export const Page = styled(YStack, {
   flex: 1,
@@ -45,6 +46,7 @@ export function AppIcon({
     | "info";
 }) {
   const theme = useTheme();
+  const [fontLoaded] = useFonts(MaterialCommunityIcons.font);
   const colors = {
     primary: theme.primary.val,
     color: theme.color.val,
@@ -54,6 +56,9 @@ export function AppIcon({
     danger: theme.danger.val,
     info: theme.info.val,
   };
+  if (!fontLoaded) {
+    return <YStack width={size} height={size} />;
+  }
   return (
     <MaterialCommunityIcons
       name={name}
