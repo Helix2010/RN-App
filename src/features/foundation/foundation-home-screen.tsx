@@ -1,6 +1,17 @@
 import { useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../app/runtime-context";
+import { pickTranslation } from "../../core/i18n/localized-text";
+import {
+  formatCents,
+  formatCompactNumber,
+  formatMoney,
+  formatTimeUntil,
+  formatTokenPrice,
+  formatUsd,
+  shortenAddress,
+} from "../../core/i18n/format";
+import { mockNow } from "../../core/mock/mock-runtime";
 import {
   AmountText,
   AppIcon,
@@ -21,9 +32,20 @@ import {
   Row,
   SecondaryButton,
   SectionTitle,
+  SkeletonBlock,
   Stack,
 } from "../../design-system";
-import { mockHomeData, mockText } from "../demo-data";
+import { useAssetsOverview } from "../assets/hooks/use-assets";
+import { useDexTokens } from "../dex/hooks/use-dex";
+import type { TokenSummary } from "../dex/model/dex";
+import { usePredictEvents } from "../predict/hooks/use-predict";
+import type { PredictEvent } from "../predict/model/predict";
+import {
+  tenantDomain,
+  useSession,
+  useSignIn,
+} from "../session/hooks/use-session";
+
 export function FoundationHomeScreen({
   onOpenAssets,
   onOpenProfile,
@@ -45,12 +67,31 @@ export function FoundationHomeScreen({
   const locale = config.localization.selectedLocale;
   const [balanceVisible, setBalanceVisible] = useState(true);
 
+  const session = useSession();
+  const signIn = useSignIn(tenantDomain());
+  const address = session.data?.address;
+  const overview = useAssetsOverview(address, config.modules.predict);
+  const events = usePredictEvents({ tagId: "hot", sort: "volume", limit: 4 });
+  const tokens = useDexTokens({ sort: "hot", limit: 3 });
+
+  const refreshing =
+    runtime.isRefreshing ||
+    overview.isRefetching ||
+    events.isRefetching ||
+    tokens.isRefetching;
+  const refresh = () => {
+    void runtime.refresh();
+    void overview.refetch();
+    void events.refetch();
+    void tokens.refetch();
+  };
+
   return (
     <Page>
       <PageScroll
         refresh={{
-          refreshing: runtime.isRefreshing,
-          onRefresh: () => void runtime.refresh(),
+          refreshing,
+          onRefresh: refresh,
           accessibilityLabel: t("action.refresh"),
         }}
       >
@@ -90,54 +131,144 @@ export function FoundationHomeScreen({
             backgroundColor="$surface"
             accessibilityLabel={t("home.portfolio")}
           >
-            <Row justifyContent="space-between" alignItems="center">
-              <Row alignItems="center" gap="$2">
-                <Label>{t("home.portfolio")}</Label>
-                <Stack
-                  onPress={() => setBalanceVisible((visible) => !visible)}
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    balanceVisible
-                      ? t("home.hideBalance")
-                      : t("home.showBalance")
-                  }
-                >
-                  <AppIcon
-                    name={balanceVisible ? "eye-outline" : "eye-off-outline"}
-                    size={18}
-                    colorToken="textMuted"
+            {address ? (
+              <>
+                <Row justifyContent="space-between" alignItems="center">
+                  <Row alignItems="center" gap="$2">
+                    <Label>{t("home.portfolio")}</Label>
+                    <Stack
+                      onPress={() => setBalanceVisible((visible) => !visible)}
+                      accessibilityRole="button"
+                      accessibilityLabel={
+                        balanceVisible
+                          ? t("home.hideBalance")
+                          : t("home.showBalance")
+                      }
+                    >
+                      <AppIcon
+                        name={
+                          balanceVisible ? "eye-outline" : "eye-off-outline"
+                        }
+                        size={18}
+                        colorToken="textMuted"
+                      />
+                    </Stack>
+                  </Row>
+                  <Row alignItems="center" gap="$1">
+                    <Body fontSize={12}>
+                      {session.data?.ens ?? shortenAddress(address)}
+                    </Body>
+                    <AppIcon
+                      name="chevron-down"
+                      size={15}
+                      colorToken="textMuted"
+                    />
+                  </Row>
+                </Row>
+                {overview.data ? (
+                  <>
+                    <AmountText fontSize={30} lineHeight={36}>
+                      {balanceVisible
+                        ? formatUsd(overview.data.totalUsd, locale)
+                        : "••••••"}
+                    </AmountText>
+                    <Row alignItems="center" gap="$2">
+                      <InlineText color="$textMuted" fontSize={12}>
+                        {t("home.walletAccount")}{" "}
+                        {balanceVisible
+                          ? formatUsd(overview.data.wallet.usd, locale)
+                          : "••••"}
+                        {overview.data.predict
+                          ? ` · ${t("home.predictAccount")} ${
+                              balanceVisible
+                                ? formatUsd(overview.data.predict.usd, locale)
+                                : "••••"
+                            }`
+                          : ""}
+                      </InlineText>
+                    </Row>
+                    <Row alignItems="center" gap="$2">
+                      <InlineText
+                        color={
+                          overview.data.change24hUsd >= 0
+                            ? "$pricePositive"
+                            : "$priceNegative"
+                        }
+                        fontWeight="800"
+                      >
+                        {balanceVisible
+                          ? `${formatUsd(overview.data.change24hUsd, locale, { sign: true })} (${overview.data.change24hPct >= 0 ? "+" : ""}${overview.data.change24hPct.toFixed(2)}%)`
+                          : "••••"}
+                      </InlineText>
+                      {overview.data.predict &&
+                      BigInt(overview.data.predict.claimable.raw) > 0n ? (
+                        <Badge
+                          borderWidth={0}
+                          backgroundColor="$surfaceVariant"
+                          onPress={onOpenPredictPositions}
+                        >
+                          <InlineText
+                            color="$success"
+                            fontSize={11}
+                            fontWeight="700"
+                          >
+                            {t("home.claimable")}{" "}
+                            {formatMoney(
+                              overview.data.predict.claimable,
+                              locale,
+                              { withSymbol: true },
+                            )}
+                          </InlineText>
+                        </Badge>
+                      ) : null}
+                    </Row>
+                  </>
+                ) : overview.isError ? (
+                  <InlineErrorRow
+                    message={t("state.error")}
+                    onRetry={() => void overview.refetch()}
+                    retryLabel={t("action.retryNow")}
                   />
-                </Stack>
-              </Row>
-              <Row alignItems="center" gap="$1">
-                <Body fontSize={12}>
-                  {mockHomeData.portfolio.quoteCurrency}
-                </Body>
-                <AppIcon name="chevron-down" size={15} colorToken="textMuted" />
-              </Row>
-            </Row>
-            <AmountText fontSize={30} lineHeight={36}>
-              {balanceVisible ? mockHomeData.portfolio.balance : "••••••"}
-            </AmountText>
-            <Row alignItems="center" gap="$2">
-              <InlineText color="$textMuted" fontSize={12}>
-                {mockText(mockHomeData.portfolio.approx, locale)}
-              </InlineText>
-              <InlineText color="$pricePositive" fontWeight="800">
-                {mockText(mockHomeData.portfolio.today, locale)}
-              </InlineText>
-            </Row>
-            <Row gap="$2" marginTop="$1">
-              <PrimaryButton height={36} flex={1} onPress={onOpenAssets}>
-                {t("home.deposit")}
-              </PrimaryButton>
-              <SecondaryButton height={36} flex={1}>
-                {t("home.withdraw")}
-              </SecondaryButton>
-              <SecondaryButton height={36} flex={1}>
-                {t("home.transfer")}
-              </SecondaryButton>
-            </Row>
+                ) : (
+                  <Stack gap="$2">
+                    <SkeletonBlock height={36} width={180} />
+                    <SkeletonBlock height={14} width={240} />
+                  </Stack>
+                )}
+                <Row gap="$2" marginTop="$1">
+                  <PrimaryButton height={36} flex={1} onPress={onOpenAssets}>
+                    {t("home.deposit")}
+                  </PrimaryButton>
+                  <SecondaryButton height={36} flex={1} onPress={onOpenAssets}>
+                    {t("home.withdraw")}
+                  </SecondaryButton>
+                  <SecondaryButton height={36} flex={1} onPress={onOpenAssets}>
+                    {t("home.transfer")}
+                  </SecondaryButton>
+                </Row>
+              </>
+            ) : (
+              <>
+                <Label>{t("home.portfolio")}</Label>
+                <SectionTitle>{t("home.connectWallet")}</SectionTitle>
+                <Body>{t("home.connectHint")}</Body>
+                {signIn.isError ? (
+                  <InlineText color="$danger" fontSize={12}>
+                    {t("session.rejected")}
+                  </InlineText>
+                ) : null}
+                <PrimaryButton
+                  height={40}
+                  marginTop="$1"
+                  disabled={signIn.isPending || session.isLoading}
+                  onPress={() => signIn.mutate("metamask")}
+                >
+                  {signIn.isPending
+                    ? t("session.signing")
+                    : t("session.signIn")}
+                </PrimaryButton>
+              </>
+            )}
           </Card>
 
           <Row flexWrap="wrap" gap="$3" paddingVertical="$2">
@@ -176,21 +307,6 @@ export function FoundationHomeScreen({
             />
           </Row>
 
-          <Card
-            backgroundColor="$surfaceVariant"
-            paddingVertical="$2"
-            paddingHorizontal="$3"
-            shadowOpacity={0}
-          >
-            <Row alignItems="center" gap="$2">
-              <AppIcon name="bullhorn-outline" size={17} />
-              <Body flex={1} numberOfLines={1}>
-                {mockText(mockHomeData.notice, locale)}
-              </Body>
-              <AppIcon name="chevron-right" size={20} colorToken="textMuted" />
-            </Row>
-          </Card>
-
           {config.modules.predict ? (
             <Stack gap="$2">
               <Row
@@ -203,23 +319,39 @@ export function FoundationHomeScreen({
                   {t("home.viewAll")} ›
                 </InlineText>
               </Row>
-              <HorizontalScroll>
-                {mockHomeData.predictions.map((prediction) => (
-                  <PredictionHomeCard
-                    key={prediction.title["en-US"]}
-                    category={mockText(prediction.category, locale)}
-                    title={mockText(prediction.title, locale)}
-                    closing={mockText(prediction.closing, locale)}
-                    volume={mockText(prediction.volume, locale)}
-                    yesLabel={prediction.yesLabel}
-                    noLabel={prediction.noLabel}
-                    yesPrice={prediction.yesPrice}
-                    noPrice={prediction.noPrice}
-                  />
-                ))}
-              </HorizontalScroll>
+              {events.data ? (
+                events.data.items.length === 0 ? (
+                  <Body>{t("state.empty")}</Body>
+                ) : (
+                  <HorizontalScroll>
+                    {events.data.items.map((event) => (
+                      <PredictionHomeCard
+                        key={event.id}
+                        event={event}
+                        locale={locale}
+                        volumeLabel={t("home.volume")}
+                        closesLabel={t("home.closesIn")}
+                        outcomesLabel={t("home.outcomes")}
+                        onPress={onOpenPredict}
+                      />
+                    ))}
+                  </HorizontalScroll>
+                )
+              ) : events.isError ? (
+                <InlineErrorRow
+                  message={t("state.error")}
+                  onRetry={() => void events.refetch()}
+                  retryLabel={t("action.retryNow")}
+                />
+              ) : (
+                <HorizontalScroll>
+                  <SkeletonBlock width={236} height={132} borderRadius="$4" />
+                  <SkeletonBlock width={236} height={132} borderRadius="$4" />
+                </HorizontalScroll>
+              )}
             </Stack>
           ) : null}
+
           {config.modules.dex ? (
             <Stack gap="$2">
               <Row
@@ -232,9 +364,32 @@ export function FoundationHomeScreen({
                   {t("home.market")} ›
                 </InlineText>
               </Row>
-              {mockHomeData.dexTokens.map((token) => (
-                <TokenHomeRow key={token.symbol} {...token} />
-              ))}
+              {tokens.data ? (
+                tokens.data.items.length === 0 ? (
+                  <Body>{t("state.empty")}</Body>
+                ) : (
+                  tokens.data.items.map((token) => (
+                    <TokenHomeRow
+                      key={`${token.token.chain}:${token.token.address}`}
+                      summary={token}
+                      locale={locale}
+                      onPress={onOpenDex}
+                    />
+                  ))
+                )
+              ) : tokens.isError ? (
+                <InlineErrorRow
+                  message={t("state.error")}
+                  onRetry={() => void tokens.refetch()}
+                  retryLabel={t("action.retryNow")}
+                />
+              ) : (
+                <Stack gap="$2">
+                  <SkeletonBlock height={52} />
+                  <SkeletonBlock height={52} />
+                  <SkeletonBlock height={52} />
+                </Stack>
+              )}
             </Stack>
           ) : null}
 
@@ -258,6 +413,32 @@ export function FoundationHomeScreen({
         </Content>
       </PageScroll>
     </Page>
+  );
+}
+
+function InlineErrorRow({
+  message,
+  retryLabel,
+  onRetry,
+}: {
+  message: string;
+  retryLabel: string;
+  onRetry: () => void;
+}) {
+  return (
+    <Row
+      alignItems="center"
+      justifyContent="space-between"
+      gap="$2"
+      paddingVertical="$2"
+    >
+      <Body color="$danger" flex={1}>
+        {message}
+      </Body>
+      <SecondaryButton height={32} paddingHorizontal="$3" onPress={onRetry}>
+        {retryLabel}
+      </SecondaryButton>
+    </Row>
   );
 }
 
@@ -300,64 +481,88 @@ function QuickAction({
 }
 
 function PredictionHomeCard({
-  category,
-  title,
-  closing,
-  volume,
-  yesLabel,
-  noLabel,
-  yesPrice,
-  noPrice,
+  event,
+  locale,
+  volumeLabel,
+  closesLabel,
+  outcomesLabel,
+  onPress,
 }: {
-  category: string;
-  title: string;
-  closing: string;
-  volume: string;
-  yesLabel: string;
-  noLabel: string;
-  yesPrice: string;
-  noPrice: string;
+  event: PredictEvent;
+  locale: string;
+  volumeLabel: string;
+  closesLabel: string;
+  outcomesLabel: string;
+  onPress: () => void;
 }) {
+  const primary = event.markets[0];
+  const yes = primary?.yesPriceCents ?? 50;
+  const multi = event.markets.length > 1;
   return (
-    <Card width={236} padding="$3" shadowOpacity={0}>
+    <Card
+      width={236}
+      padding="$3"
+      shadowOpacity={0}
+      onPress={onPress}
+      accessibilityRole="button"
+    >
       <Row justifyContent="space-between">
         <Badge>
           <InlineText color="$textMuted" fontSize={11}>
-            {category}
+            {multi
+              ? outcomesLabel.replace("{n}", String(event.markets.length))
+              : event.categoryTagId.toUpperCase()}
           </InlineText>
         </Badge>
-        <Body fontSize={11}>{volume}</Body>
+        <Body fontSize={11}>
+          {volumeLabel} {formatUsd(event.volumeUsd, locale, { compact: true })}
+        </Body>
       </Row>
-      <SectionTitle numberOfLines={2}>{title}</SectionTitle>
-      <Body fontSize={12}>{closing}</Body>
-      <Row gap="$2">
-        <Badge flex={1} justifyContent="center" borderWidth={0}>
-          <InlineText color="$success" fontWeight="800">
-            {yesLabel} {yesPrice}
-          </InlineText>
-        </Badge>
-        <Badge flex={1} justifyContent="center" borderWidth={0}>
-          <InlineText color="$danger" fontWeight="800">
-            {noLabel} {noPrice}
-          </InlineText>
-        </Badge>
-      </Row>
+      <SectionTitle numberOfLines={2}>
+        {pickTranslation(event.title, locale)}
+      </SectionTitle>
+      <Body fontSize={12}>
+        {closesLabel} {formatTimeUntil(event.endsAt, mockNow(), locale)}
+      </Body>
+      {multi ? (
+        <Stack gap="$1">
+          {event.markets.slice(0, 2).map((market) => (
+            <Row key={market.id} justifyContent="space-between">
+              <Body fontSize={12} numberOfLines={1} flex={1}>
+                {pickTranslation(market.outcomeLabel, locale)}
+              </Body>
+              <InlineText color="$color" fontWeight="800" fontSize={12}>
+                {market.yesPriceCents}%
+              </InlineText>
+            </Row>
+          ))}
+        </Stack>
+      ) : (
+        <Row gap="$2">
+          <Badge flex={1} justifyContent="center" borderWidth={0}>
+            <InlineText color="$success" fontWeight="800">
+              Yes {formatCents(yes)}
+            </InlineText>
+          </Badge>
+          <Badge flex={1} justifyContent="center" borderWidth={0}>
+            <InlineText color="$danger" fontWeight="800">
+              No {formatCents(100 - yes)}
+            </InlineText>
+          </Badge>
+        </Row>
+      )}
     </Card>
   );
 }
 
 function TokenHomeRow({
-  symbol,
-  chain,
-  price,
-  change,
-  liquidity,
+  summary,
+  locale,
+  onPress,
 }: {
-  symbol: string;
-  chain: string;
-  price: string;
-  change: number;
-  liquidity: string;
+  summary: TokenSummary;
+  locale: string;
+  onPress: () => void;
 }) {
   const { t } = useFoundationRuntime();
   return (
@@ -367,30 +572,33 @@ function TokenHomeRow({
       paddingVertical="$2"
       borderBottomWidth={1}
       borderColor="$borderColor"
+      onPress={onPress}
+      accessibilityRole="button"
     >
       <Stack
         width={36}
         height={36}
         borderRadius={999}
-        backgroundColor="$surfaceVariant"
+        style={{ backgroundColor: summary.token.logoColor }}
         alignItems="center"
         justifyContent="center"
       >
-        <InlineText color="$primary" fontWeight="900">
-          {symbol[0]}
+        <InlineText color="white" fontWeight="900">
+          {summary.token.symbol[0]}
         </InlineText>
       </Stack>
       <Stack flex={1}>
-        <SectionTitle>{symbol}</SectionTitle>
+        <SectionTitle>{summary.token.symbol}</SectionTitle>
         <Body fontSize={12}>
-          {chain} · {t("module.dex.liquidity")} {liquidity}
+          {summary.token.chain.toUpperCase()} · {t("module.dex.liquidity")}{" "}
+          {formatCompactNumber(summary.liquidityUsd, locale)}
         </Body>
       </Stack>
       <Stack alignItems="flex-end">
         <InlineText color="$color" fontWeight="700">
-          {price}
+          {formatTokenPrice(summary.priceUsd, locale)}
         </InlineText>
-        <PriceChange value={change} />
+        <PriceChange value={summary.change24hPct} />
       </Stack>
     </Row>
   );

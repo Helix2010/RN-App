@@ -3,6 +3,7 @@ import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { FoundationRuntimeProvider } from "./src/app/runtime-context";
+import { GatewayProvider } from "./src/core/gateways/gateway-context";
 import { FoundationNavigator } from "./src/navigation/foundation-navigator";
 
 const queryClient = new QueryClient({
@@ -17,8 +18,10 @@ export default function App() {
       <SafeAreaProvider>
         <QueryClientProvider client={queryClient}>
           <FoundationRuntimeProvider>
-            <StatusBar style="auto" />
-            <FoundationNavigator />
+            <GatewayProvider>
+              <StatusBar style="auto" />
+              <FoundationNavigator />
+            </GatewayProvider>
           </FoundationRuntimeProvider>
         </QueryClientProvider>
       </SafeAreaProvider>
