@@ -72,34 +72,44 @@ export function FoundationHomeScreen({
             accessibilityLabel={t("home.portfolio")}
           >
             <Row justifyContent="space-between" alignItems="center">
-              <Label>{t("home.portfolio")}</Label>
-              <IconButton
-                label={
-                  balanceVisible ? t("home.hideBalance") : t("home.showBalance")
-                }
-                symbol={balanceVisible ? "◉" : "◎"}
-                backgroundColor="$surfaceVariant"
-                color="$color"
-                onPress={() => setBalanceVisible((visible) => !visible)}
-              />
+              <Row alignItems="center" gap="$2">
+                <Label>{t("home.portfolio")}</Label>
+                <InlineText
+                  color="$textMuted"
+                  onPress={() => setBalanceVisible((visible) => !visible)}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    balanceVisible
+                      ? t("home.hideBalance")
+                      : t("home.showBalance")
+                  }
+                >
+                  {balanceVisible ? "◉" : "◎"}
+                </InlineText>
+              </Row>
+              <Body fontSize={12}>USDT⌄</Body>
             </Row>
             <AmountText fontSize={30} lineHeight={36}>
-              {balanceVisible ? "¥ 128,640.00" : "¥ ••••••"}
+              {balanceVisible ? "12,480.36" : "••••••"}
             </AmountText>
-            <Row justifyContent="space-between" alignItems="center">
+            <Row alignItems="center" gap="$2">
               <InlineText color="$textMuted" fontSize={12}>
-                {t("home.portfolioChange")}
+                {t("home.portfolioApprox")}
               </InlineText>
               <InlineText color="$pricePositive" fontWeight="800">
-                +2.14%
+                {t("home.portfolioToday")}
               </InlineText>
             </Row>
             <Row gap="$2" marginTop="$1">
-              <PrimaryButton flex={1} onPress={onOpenAssets}>
+              <PrimaryButton height={36} flex={1} onPress={onOpenAssets}>
                 {t("home.deposit")}
               </PrimaryButton>
-              <SecondaryButton flex={1}>{t("home.withdraw")}</SecondaryButton>
-              <SecondaryButton flex={1}>{t("home.transfer")}</SecondaryButton>
+              <SecondaryButton height={36} flex={1}>
+                {t("home.withdraw")}
+              </SecondaryButton>
+              <SecondaryButton height={36} flex={1}>
+                {t("home.transfer")}
+              </SecondaryButton>
             </Row>
           </Card>
 
@@ -226,7 +236,7 @@ function QuickAction({
 }) {
   if (!enabled) return null;
   return (
-    <Stack width="29%" alignItems="center" gap="$1">
+    <Stack width="22%" alignItems="center" gap="$1">
       <Stack
         width={44}
         height={44}
