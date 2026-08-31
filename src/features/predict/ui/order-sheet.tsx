@@ -1,4 +1,10 @@
-import { forwardRef, useImperativeHandle, useRef, useState } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import { formatCents, formatMoney } from "../../../core/i18n/format";
 import { pickTranslation } from "../../../core/i18n/localized-text";
@@ -111,20 +117,22 @@ export const OrderSheet = forwardRef<
     dismiss: () => sheet.current?.dismiss(),
   }));
 
-  // 登录成功后回放意图
+  // 登录成功后回放意图（在 effect 中消费，避免渲染期间更新其他组件）
   const fulfilled = useAuthSheet((state) => state.fulfilled);
-  if (fulfilled?.type === "open_order" && address && event) {
+  useEffect(() => {
+    if (fulfilled?.type !== "open_order" || !address || !event) return;
     const target = event.markets.find((item) => item.id === fulfilled.marketId);
+    if (!target) return;
     const intent = consumeIntent();
-    if (target && intent) {
-      setTimeout(() => {
-        setMarket(target);
-        setOutcome(fulfilled.outcome);
-        setSide("buy");
-        sheet.current?.present();
-      }, 350);
-    }
-  }
+    if (!intent) return;
+    const timer = setTimeout(() => {
+      setMarket(target);
+      setOutcome(fulfilled.outcome);
+      setSide("buy");
+      sheet.current?.present();
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [address, consumeIntent, event, fulfilled]);
 
   const yes = market?.yesPriceCents ?? 50;
   const marketPrice = outcome === "yes" ? yes : 100 - yes;

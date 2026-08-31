@@ -168,7 +168,7 @@ export const EVENTS: PredictEvent[] = [
         ["法国夺得 2026 世界杯冠军？", "France wins the 2026 World Cup?"],
         24,
         1_400_000,
-        "2026-07-19T22:00:00Z",
+        "2027-07-19T22:00:00Z",
         ["法国", "France"],
       ),
       market(
@@ -177,7 +177,7 @@ export const EVENTS: PredictEvent[] = [
         ["西班牙夺得 2026 世界杯冠军？", "Spain wins the 2026 World Cup?"],
         18,
         900_000,
-        "2026-07-19T22:00:00Z",
+        "2027-07-19T22:00:00Z",
         ["西班牙", "Spain"],
       ),
       market(
@@ -186,7 +186,7 @@ export const EVENTS: PredictEvent[] = [
         ["英格兰夺得 2026 世界杯冠军？", "England wins the 2026 World Cup?"],
         15,
         700_000,
-        "2026-07-19T22:00:00Z",
+        "2027-07-19T22:00:00Z",
         ["英格兰", "England"],
       ),
       market(
@@ -195,7 +195,7 @@ export const EVENTS: PredictEvent[] = [
         ["巴西夺得 2026 世界杯冠军？", "Brazil wins the 2026 World Cup?"],
         12,
         400_000,
-        "2026-07-19T22:00:00Z",
+        "2027-07-19T22:00:00Z",
         ["巴西", "Brazil"],
       ),
     ],

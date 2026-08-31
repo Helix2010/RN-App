@@ -266,7 +266,10 @@ export class MockPredictGateway implements PredictGateway {
   /** 结算状态机：截止 → 商户提交 → 争议期 → 自动结算；可被争议打断。 */
   private adjudicationOf(state: State, marketId: string): Adjudication {
     const { event, market } = this.market(marketId);
-    const stored = (state.adjudication[marketId] ??= {});
+    // 用户动作（争议）持久化在 state.adjudication；截止 → 提案 → 自动结算 按当前时钟即时推导，不落盘，
+    // 避免设备时钟异常把"已结算"写进存储。
+    const persisted = state.adjudication[marketId] ?? {};
+    const stored: StoredAdjudication = { ...persisted };
     const now = mockNow();
     const endsAtMs = new Date(market.endsAt).getTime();
     if (!stored.proposedAt && now >= endsAtMs + PROPOSE_DELAY_MS) {
@@ -1110,9 +1113,14 @@ export class MockPredictGateway implements PredictGateway {
       if (isNegative(available))
         throw new Error("insufficient balance for bond");
       balance.available = available.raw;
-      const stored = state.adjudication[marketId] as StoredAdjudication;
-      stored.disputedAt = mockNowIso();
-      stored.disputedBy = address;
+      const stored: StoredAdjudication = {
+        ...(state.adjudication[marketId] ?? {}),
+        proposedOutcome: adjudication.proposedOutcome,
+        proposedAt: adjudication.proposedAt,
+        disputedAt: mockNowIso(),
+        disputedBy: address,
+      };
+      state.adjudication[marketId] = stored;
       const { event } = this.market(marketId);
       (state.activity[address] as Activity[]).unshift({
         id: nextId("act"),
