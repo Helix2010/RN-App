@@ -120,7 +120,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     // Keep Android system back dispatch on the legacy bridge so the app-level
     // navigation state can consume root back gestures instead of backgrounding
     // the activity. Native builds must be regenerated after this change.
-    predictiveBackGestureEnabled: true,
+    predictiveBackGestureEnabled: false,
     adaptiveIcon: {
       backgroundColor: tenant?.iconBackgroundColor ?? "#E9F0FF",
       foregroundImage: tenantAsset(

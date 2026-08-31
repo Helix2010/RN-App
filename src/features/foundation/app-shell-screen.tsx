@@ -24,6 +24,7 @@ import {
 } from "./app-tabs";
 import { ModuleOverviewScreen } from "./module-overview-screen";
 import { UpdateModal } from "../updates/update-modal";
+import { useEdgeBackGesture } from "../../navigation/edge-back-gesture";
 
 type Props = NativeStackScreenProps<RootStackParamList, "AppShell">;
 
@@ -44,6 +45,10 @@ export function AppShellScreen({ navigation }: Props) {
     ? tab
     : "home";
   const selectedBottomTab = resolveBottomTab(effectiveTab, config.modules);
+  const edgeBack = useEdgeBackGesture(() => {
+    const action = resolveAppShellBack(effectiveTab);
+    if (action === "home") setTab("home");
+  });
   useEffect(() => {
     if (
       notificationIntent?.type === "app_update_available" ||
@@ -68,7 +73,7 @@ export function AppShellScreen({ navigation }: Props) {
   }, [effectiveTab, isFocused]);
 
   return (
-    <Page>
+    <Page {...edgeBack}>
       <View style={{ flex: 1 }}>
         {effectiveTab === "home" ? (
           <FoundationHomeScreen

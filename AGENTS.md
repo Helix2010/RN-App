@@ -27,6 +27,7 @@
 - `app.config.ts`、`eas.json`、CI 参数和本地命令 MUST NOT 再硬编码或复制租户 API、applicationId、包名、版本和 Build；环境变量只允许传递租户 slug 或密钥类配置。
 - Release 构建 MUST 在产物复制前读取 APK 内嵌 `app.config`，校验租户域名、渠道、应用身份、版本、Build、OTA 和 runtimeVersion；任一不一致必须失败。
 - 新租户 MUST 新建独立 `tenant.json` 与品牌资产，禁止复用其他租户包名、签名、域名或缓存命名空间。
+- 完整打包命令、EAS 用法、发布检查和回滚要求 MUST 以 `docs/SAAS_TENANT_BUILD_RUNBOOK.md` 为准；Claude 规则见根目录 `CLAUDE.md`。
 
 ## 安全与隐私
 
