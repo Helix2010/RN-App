@@ -14,6 +14,7 @@ export type RootRouteName =
   | "SwapHistory"
   | "Approvals"
   | "Wallets"
+  | "WalletBackup"
   | "Transfer"
   | "AccountDetail"
   | "Send"

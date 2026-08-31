@@ -198,7 +198,7 @@ export function SecurityCenterScreen({
                 })}
                 pill={embedded.backedUp ? undefined : t("security.notBackedUp")}
                 value={embedded.backedUp ? t("security.backedUp") : undefined}
-                onPress={() => toast(t("state.empty"), "info")}
+                onPress={() => navigation.navigate("WalletBackup")}
                 testID="sec-backup"
               />
             ) : null}

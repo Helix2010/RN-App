@@ -39,4 +39,5 @@
   - S-09：当前使用 kenneth.eth（单选高亮）、操作组四行、提示文案、底部添加钱包。✅ `wallets.png`
   - 修复：设置页曾用 `<Stack>{locale}</Stack>` 触发 "Text strings must be rendered within a <Text>" 报错，已移除。
   - 未在设备验证：语言切换后英文界面全量走查、系统通知权限关闭态横条（模拟器已授权）、断开连接 / 断开所有会话 / 切换钱包的回游客态流程（Mock 只有一个钱包）、清除缓存实际清理（仅 toast）、iOS。
+- L-04 备份助记词（`wallet/ui/backup-screen.tsx`，路由 `WalletBackup`，入口 S-08 备份助记词行 / S-09 未备份 pill）：钱包管理 → 添加钱包 → 创建新钱包 → 签名 → 当前使用切到"主钱包 · 内置钱包"并带未备份 pill → 备份页 12 词（复制 60s 后清剪贴板、禁截图提示）→ "我已抄写，开始验证" → 第 10 / 11 / 12 个单词各 4 选 1 → 确认 → 备份完成 → `markBackedUp`。✅ `backup-flow.png`（2026-08-31 02:28）。未做：FLAG_SECURE 真禁截图（需 expo-screen-capture 原生模块）。
 - 回滚：回退本分支提交；本地存储键 `foundation.account-preferences.v1` 可清理。

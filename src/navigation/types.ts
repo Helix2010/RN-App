@@ -20,6 +20,7 @@ export type RootStackParamList = {
   SwapHistory: undefined;
   Approvals: undefined;
   Wallets: undefined;
+  WalletBackup: undefined;
   Transfer: { direction?: "deposit" | "withdraw"; amount?: string } | undefined;
   AccountDetail: { kind: "predict" | "wallet" };
   Send: { chain?: "bsc" | "eth" | "base" } | undefined;

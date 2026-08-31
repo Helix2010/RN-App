@@ -121,6 +121,7 @@ export function WalletsScreen({
                     ? t("wallets.notBackedUp")
                     : undefined
                 }
+                onBackup={() => navigation.navigate("WalletBackup")}
                 testID={`wallets-item-${current.connector}`}
               />
             ) : null}
@@ -263,6 +264,7 @@ function WalletRow({
   selected,
   notBackedUp,
   onPress,
+  onBackup,
   testID,
 }: {
   label: string;
@@ -272,6 +274,7 @@ function WalletRow({
   selected?: boolean;
   notBackedUp?: string;
   onPress?: () => void;
+  onBackup?: () => void;
   testID: string;
 }) {
   return (
@@ -307,7 +310,12 @@ function WalletRow({
             {label}
           </InlineText>
           {notBackedUp ? (
-            <Badge paddingVertical={2}>
+            <Badge
+              paddingVertical={2}
+              onPress={onBackup}
+              accessibilityRole="button"
+              testID="wallets-backup-pill"
+            >
               <InlineText fontSize={10} fontWeight="800" color="$warning">
                 {notBackedUp}
               </InlineText>
