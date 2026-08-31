@@ -22,6 +22,8 @@ export interface WalletGateway {
   connect(connector: WalletConnectorId): Promise<WalletAccount>;
   disconnect(address: string): Promise<void>;
   switchAccount(address: string): Promise<WalletAccount>;
+  /** 本地显示名 */
+  rename(address: string, label: string): Promise<void>;
   markBackedUp(address: string): Promise<void>;
   getBalances(address: string, chain?: ChainId): Promise<TokenBalance[]>;
   /** 供 Predict 存入 / DEX 兑换扣减或增加钱包余额（Mock 内部账本）。 */

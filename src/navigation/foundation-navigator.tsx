@@ -13,11 +13,10 @@ import { UpdateCenterScreen } from "../features/updates/update-center-screen";
 import { SettingsScreen } from "../features/settings/settings-screen";
 import { LanguageSettingsScreen } from "../features/settings/language-settings-screen";
 import { AppearanceSettingsScreen } from "../features/settings/appearance-settings-screen";
-import {
-  AboutScreen,
-  NotificationSettingsScreen,
-  SecurityCenterScreen,
-} from "../features/foundation/mock-detail-screens";
+import { NotificationSettingsScreen } from "../features/settings/notification-settings-screen";
+import { SecurityCenterScreen } from "../features/settings/security-center-screen";
+import { AboutScreen } from "../features/settings/about-screen";
+import { WalletsScreen } from "../features/wallet/ui/wallets-screen";
 import { ProfileScreen } from "../features/profile/profile-screen";
 import { ConnectWalletSheet } from "../features/session/ui/connect-wallet-sheet";
 import { AccountDetailScreen } from "../features/assets/ui/account-detail-screen";
@@ -112,20 +111,9 @@ export function FoundationNavigator() {
         }}
       >
         <Stack.Screen name="AppShell" component={AppShellScreen} />
-        <Stack.Screen name="Profile">
-          {(props) => (
-            <ProfileScreen
-              onBack={() => props.navigation.goBack()}
-              onOpenSettings={() => props.navigation.navigate("Settings")}
-              onOpenUpdates={() => props.navigation.navigate("UpdateCenter")}
-              onOpenSecurity={() => props.navigation.navigate("SecurityCenter")}
-              onOpenNotifications={() =>
-                props.navigation.navigate("NotificationSettings")
-              }
-            />
-          )}
-        </Stack.Screen>
+        <Stack.Screen name="Profile" component={ProfileScreen} />
         <Stack.Screen name="UpdateCenter" component={UpdateCenterScreen} />
+        <Stack.Screen name="Wallets" component={WalletsScreen} />
         <Stack.Screen name="Settings" component={SettingsScreen} />
         <Stack.Screen
           name="LanguageSettings"

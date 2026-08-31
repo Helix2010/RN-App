@@ -265,6 +265,7 @@ export function IconButton({
   backgroundColor = "$surfaceVariant",
   color = "$color",
   size = 42,
+  testID,
 }: {
   label: string;
   symbol?: string;
@@ -273,6 +274,7 @@ export function IconButton({
   backgroundColor?: "$surfaceVariant" | "$onPrimary";
   color?: "$color" | "$primary";
   size?: number;
+  testID?: string;
 }) {
   return (
     <Button
@@ -286,6 +288,7 @@ export function IconButton({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
+      testID={testID}
       pressStyle={{ opacity: 0.76, scale: 0.95 }}
     >
       {icon ? (

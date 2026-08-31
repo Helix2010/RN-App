@@ -13,6 +13,7 @@ export type RootRouteName =
   | "Swap"
   | "SwapHistory"
   | "Approvals"
+  | "Wallets"
   | "Transfer"
   | "AccountDetail"
   | "Send"

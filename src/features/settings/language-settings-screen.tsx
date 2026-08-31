@@ -16,6 +16,7 @@ import {
 } from "../../design-system";
 import type { LocalePreference } from "../../core/preferences/preferences-store";
 import type { RootStackParamList } from "../../navigation/types";
+import { LANGUAGE_NAMES } from "./language-names";
 import { useEdgeBackGesture } from "../../navigation/edge-back-gesture";
 
 export function LanguageSettingsScreen({
@@ -23,6 +24,7 @@ export function LanguageSettingsScreen({
 }: NativeStackScreenProps<RootStackParamList, "LanguageSettings">) {
   const insets = useSafeAreaInsets();
   const { config, localePreference, setLocale, t } = useFoundationRuntime();
+  const locale = config.localization.selectedLocale;
   const [pendingLocale, setPendingLocale] = useState<LocalePreference | null>(
     null,
   );
@@ -33,8 +35,11 @@ export function LanguageSettingsScreen({
     config.localization.localeCatalog ??
     config.localization.supportedLocales.map((code) => ({
       code,
-      label: code,
-      nativeName: code,
+      label: LANGUAGE_NAMES[code]?.native ?? code,
+      nativeName:
+        (locale === "zh-CN"
+          ? LANGUAGE_NAMES[code]?.zh
+          : LANGUAGE_NAMES[code]?.en) ?? code,
     }));
   const items: LocalePreference[] = [
     "system",

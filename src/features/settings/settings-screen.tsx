@@ -1,261 +1,327 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { Linking } from "react-native";
+import * as Clipboard from "expo-clipboard";
+import { useRef } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../app/runtime-context";
 import {
+  useAccountPrefs,
+  useAccountPreferences,
+} from "../../core/preferences/account-preferences-store";
+import { usePreferencesStore } from "../../core/preferences/preferences-store";
+import {
   Body,
-  AppIcon,
-  type AppIconName,
-  Card,
   Content,
-  HairlineCard,
   InlineText,
-  Label,
   Page,
   PageScroll,
+  PrimaryButton,
   Row,
   ScreenHeader,
-  SectionTitle,
-  Stack,
+  SecondaryButton,
+  Sheet,
+  type SheetHandle,
+  Switch,
+  toast,
 } from "../../design-system";
 import type { RootStackParamList } from "../../navigation/types";
-import { mockSecurity, mockSettings, mockText } from "../demo-data";
-import { useEdgeBackGesture } from "../../navigation/edge-back-gesture";
+import { Group, SRow } from "../profile/profile-screen";
+import { useSession } from "../session/hooks/use-session";
+import { LANGUAGE_NAMES } from "./language-names";
 
+function fill(
+  template: string,
+  values: Record<string, string | number>,
+): string {
+  return Object.entries(values).reduce(
+    (text, [key, value]) => text.replace(`{${key}}`, String(value)),
+    template,
+  );
+}
+
+/** S-02 设置：通用 / 通知 / 交易偏好 / 安全 / 关于 五组，值列直接显示当前设置。 */
 export function SettingsScreen({
   navigation,
 }: NativeStackScreenProps<RootStackParamList, "Settings">) {
   const insets = useSafeAreaInsets();
-  const {
-    config,
-    snapshot,
-    localePreference,
-    themePreference,
-    notificationStatus,
-    t,
-  } = useFoundationRuntime();
-  const locale = config.localization.selectedLocale;
-  const serviceState =
-    snapshot.source === "remote" && !snapshot.stale
-      ? t("status.connected")
-      : t("status.cached");
-  const edgeBack = useEdgeBackGesture(navigation.goBack);
+  const { config, localePreference, themePreference, t } =
+    useFoundationRuntime();
+  const session = useSession();
+  const address = session.data?.address;
+  const prefs = usePreferencesStore();
+  const account = useAccountPrefs(address);
+  const patchAccount = useAccountPreferences((state) => state.patch);
+  const clearCache = useRef<SheetHandle>(null);
+  const notificationsOn = Object.entries(account.notifications).filter(
+    ([key, value]) => key !== "security" && value,
+  ).length;
+  const hasUpdate = config.update.decision !== "none";
+  const showTrading =
+    Boolean(address) && (config.modules.predict || config.modules.dex);
+  const languageLabel =
+    localePreference === "system"
+      ? t("settings.followSystemLanguage")
+      : (LANGUAGE_NAMES[localePreference]?.native ?? localePreference);
+  const themeLabel = t(`theme.${themePreference}`);
+
   return (
-    <Page {...edgeBack}>
+    <Page>
+      <Content paddingTop={insets.top + 8} paddingBottom={0}>
+        <ScreenHeader
+          title={t("settings.title")}
+          onBack={() => navigation.goBack()}
+          backLabel={t("action.back")}
+        />
+      </Content>
       <PageScroll>
-        <Content paddingTop={insets.top + 16} gap="$3">
-          <ScreenHeader
-            title={t("settings.title")}
-            subtitle={t("settings.subtitle")}
-            onBack={() => navigation.goBack()}
-            backLabel={t("action.back")}
-          />
-          <Card backgroundColor="$surfaceVariant" shadowOpacity={0}>
-            <Row justifyContent="space-between" alignItems="center">
-              <Stack gap="$1">
-                <Label>{t("settings.about")}</Label>
-                <SectionTitle>{config.app.version}</SectionTitle>
-                <Body fontSize={12}>
-                  {t("settings.build")} {config.app.buildNumber} ·{" "}
-                  {serviceState}
-                </Body>
-              </Stack>
-              <Stack alignItems="flex-end" gap="$1">
-                <Body fontSize={11}>{t("settings.configversion")}</Body>
-                <InlineText fontWeight="700">{config.configVersion}</InlineText>
-              </Stack>
-            </Row>
-          </Card>
-          <SettingsGroup title={t("settings.section.general")}>
-            <SettingsRow
-              icon="translate"
+        <Content paddingTop="$1" gap="$4" paddingBottom={40}>
+          <Group title={t("settings.section.general")}>
+            <SRow
               title={t("settings.language")}
-              value={
-                localePreference === "system"
-                  ? t("theme.system")
-                  : localePreference
-              }
+              value={languageLabel}
               onPress={() => navigation.navigate("LanguageSettings")}
+              testID="settings-language"
             />
-            <SettingsRow
-              icon="theme-light-dark"
+            <SRow
               title={t("settings.theme")}
-              value={t(`theme.${themePreference}`)}
+              value={themeLabel}
               onPress={() => navigation.navigate("AppearanceSettings")}
+              testID="settings-theme"
             />
-            <SettingsRow
-              icon="format-color-fill"
+            <SRow
               title={t("settings.colorScheme")}
-              value={mockText(mockSettings.colorScheme, locale)}
-            />
-            <SettingsRow
-              icon="cash-multiple"
-              title={t("settings.quoteCurrency")}
-              value={mockSettings.quoteCurrency}
-              last
-            />
-          </SettingsGroup>
-          <SettingsGroup title={t("settings.section.notifications")}>
-            <SettingsRow
-              icon="bell-outline"
-              title={t("settings.notifications")}
-              value={
-                notificationStatus === "registered"
-                  ? t("settings.notificationsEnabled")
-                  : t("settings.notificationsOff")
+              trailing={
+                <Row gap="$1" alignItems="center">
+                  <InlineText fontWeight="800" color="$pricePositive">
+                    {t("settings.up")}
+                  </InlineText>
+                  <InlineText fontWeight="800" color="$priceNegative">
+                    {t("settings.down")}
+                  </InlineText>
+                </Row>
               }
-              last
+              onPress={() => navigation.navigate("AppearanceSettings")}
+              testID="settings-color-scheme"
             />
-          </SettingsGroup>
-          {config.modules.predict || config.modules.dex ? (
-            <SettingsGroup title={t("settings.section.trading")}>
+            <SRow
+              title={t("settings.quoteCurrency")}
+              value={account.quoteCurrency}
+              onPress={() =>
+                address &&
+                patchAccount(address, {
+                  quoteCurrency:
+                    account.quoteCurrency === "USDT" ? "USD" : "USDT",
+                })
+              }
+              testID="settings-quote-currency"
+            />
+          </Group>
+
+          <Group title={t("settings.section.notifications")}>
+            <SRow
+              title={t("settings.notifications")}
+              value={fill(t("settings.notificationsOn"), {
+                n: notificationsOn,
+              })}
+              onPress={() => navigation.navigate("NotificationSettings")}
+              testID="settings-notifications"
+            />
+          </Group>
+
+          {showTrading ? (
+            <Group title={t("settings.section.trading")}>
               {config.modules.predict ? (
                 <>
-                  <SettingsRow
-                    icon="shield-check-outline"
+                  <SRow
                     title={t("settings.predictConfirm")}
-                    value={t("settings.enabled")}
+                    subtitle={t("settings.predictConfirm.hint")}
+                    trailing={
+                      <Switch
+                        value={account.predict.confirmBeforeOrder}
+                        onValueChange={(next) =>
+                          address &&
+                          patchAccount(address, {
+                            predict: {
+                              ...account.predict,
+                              confirmBeforeOrder: next,
+                            },
+                          })
+                        }
+                        accessibilityLabel={t("settings.predictConfirm")}
+                        testID="settings-predict-confirm"
+                      />
+                    }
                   />
-                  <SettingsRow
-                    icon="chart-timeline-variant"
+                  <SRow
                     title={t("settings.predictOrderType")}
-                    value={mockText(mockSettings.predictOrderType, locale)}
+                    value={t(
+                      `settings.orderType.${account.predict.defaultOrderType}`,
+                    )}
+                    onPress={() =>
+                      address &&
+                      patchAccount(address, {
+                        predict: {
+                          ...account.predict,
+                          defaultOrderType:
+                            account.predict.defaultOrderType === "market"
+                              ? "limit"
+                              : "market",
+                        },
+                      })
+                    }
+                    testID="settings-predict-order-type"
                   />
                 </>
               ) : null}
               {config.modules.dex ? (
                 <>
-                  <SettingsRow
-                    icon="swap-horizontal"
+                  <SRow
                     title={t("settings.dexSlippage")}
-                    value={mockText(mockSettings.dexSlippage, locale)}
+                    value={
+                      account.dex.defaultSlippage === "auto"
+                        ? `0.5% · ${t("settings.slippage.auto")}`
+                        : `${account.dex.defaultSlippage}%`
+                    }
+                    onPress={() =>
+                      address &&
+                      patchAccount(address, {
+                        dex: {
+                          ...account.dex,
+                          defaultSlippage:
+                            account.dex.defaultSlippage === "auto" ? 1 : "auto",
+                        },
+                      })
+                    }
+                    testID="settings-dex-slippage"
                   />
-                  <SettingsRow
-                    icon="alert-outline"
+                  <SRow
                     title={t("settings.dexRiskWarning")}
-                    value={t("settings.enabled")}
-                    last
+                    subtitle={t("settings.dexRiskWarning.hint")}
+                    trailing={
+                      <Switch
+                        value={account.dex.riskWarning}
+                        onValueChange={(next) =>
+                          address &&
+                          patchAccount(address, {
+                            dex: { ...account.dex, riskWarning: next },
+                          })
+                        }
+                        accessibilityLabel={t("settings.dexRiskWarning")}
+                        testID="settings-dex-risk-warning"
+                      />
+                    }
                   />
                 </>
               ) : null}
-            </SettingsGroup>
+            </Group>
           ) : null}
-          <SettingsGroup title={t("settings.section.security")}>
-            <SettingsRow
-              icon="shield-lock-outline"
+
+          <Group title={t("settings.section.security")}>
+            <SRow
+              title={t("settings.appLock")}
+              subtitle={fill(t("settings.appLock.hint"), {
+                minutes: prefs.autoLockMinutes,
+              })}
+              trailing={
+                <Switch
+                  value={prefs.appLockEnabled}
+                  onValueChange={(next) =>
+                    prefs.update({ appLockEnabled: next })
+                  }
+                  accessibilityLabel={t("settings.appLock")}
+                  testID="settings-app-lock"
+                />
+              }
+            />
+            <SRow
+              title={t("settings.txConfirm")}
+              subtitle={t("settings.txConfirm.hint")}
+              trailing={
+                <Switch
+                  value={prefs.txConfirm}
+                  onValueChange={(next) => prefs.update({ txConfirm: next })}
+                  accessibilityLabel={t("settings.txConfirm")}
+                  testID="settings-tx-confirm"
+                />
+              }
+            />
+            <SRow
               title={t("settings.securityCenter")}
-              value={t(`security.level.${mockSecurity.level}`)}
-              last
+              onPress={() => navigation.navigate("SecurityCenter")}
+              testID="settings-security-center"
             />
-          </SettingsGroup>
-          <SettingsGroup title={t("settings.section.about")}>
-            {config.features.updateCenter ? (
-              <SettingsRow
-                icon="update"
-                title={t("settings.checkUpdate")}
-                value={
-                  config.update.decision === "none"
-                    ? t("update.none")
-                    : config.update.latestVersion
-                }
-                onPress={() => navigation.navigate("UpdateCenter")}
-              />
-            ) : null}
-            <SettingsRow
-              icon="file-document-outline"
+          </Group>
+
+          <Group title={t("settings.section.about")}>
+            <SRow
+              title={t("settings.checkUpdate")}
+              value={
+                hasUpdate
+                  ? fill(t("settings.newVersion"), {
+                      version: config.update.latestVersion,
+                    })
+                  : t("settings.upToDate")
+              }
+              dot={hasUpdate}
+              onPress={() => navigation.navigate("UpdateCenter")}
+              testID="settings-check-update"
+            />
+            <SRow
               title={t("settings.terms")}
+              onPress={() => toast(t("state.empty"), "info")}
+              testID="settings-terms"
             />
-            <SettingsRow
-              icon="shield-account-outline"
+            <SRow
               title={t("settings.privacy")}
+              onPress={() => toast(t("state.empty"), "info")}
+              testID="settings-privacy"
             />
-            <SettingsRow
-              icon="delete-outline"
+            <SRow
               title={t("settings.clearCache")}
-              value={mockSettings.cacheSize}
-              last
+              value="28.4 MB"
+              onPress={() => clearCache.current?.present()}
+              testID="settings-clear-cache"
             />
-          </SettingsGroup>
-          <Stack alignItems="center" paddingVertical="$4" gap="$1">
-            <Body fontSize={12}>
-              {config.app.version} ({config.app.buildNumber}) ·{" "}
-              {config.localization.selectedLocale}
-            </Body>
-            <InlineText
-              color="$textMuted"
-              fontSize={11}
-              onPress={() => void Linking.openURL(config.support.statusPageUrl)}
-            >
-              {config.support.diagnosticId}
-            </InlineText>
-          </Stack>
+          </Group>
+
+          <Body
+            fontSize={11}
+            textAlign="center"
+            onLongPress={() =>
+              void Clipboard.setStringAsync(config.support.diagnosticId).then(
+                () => toast(t("receive.copied"), "success"),
+              )
+            }
+          >
+            {fill(t("settings.footer"), {
+              version: config.app.version,
+              build: config.app.buildNumber,
+              deviceId:
+                config.support.diagnosticId.slice(0, 4).toUpperCase() +
+                "…" +
+                config.support.diagnosticId.slice(-4).toUpperCase(),
+            })}
+          </Body>
         </Content>
       </PageScroll>
-    </Page>
-  );
-}
-
-function SettingsGroup({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Stack gap="$2">
-      <Label paddingHorizontal="$2">{title}</Label>
-      <HairlineCard padding={0} gap={0} shadowOpacity={0}>
-        {children}
-      </HairlineCard>
-    </Stack>
-  );
-}
-
-function SettingsRow({
-  icon = "circle-outline",
-  title,
-  value,
-  onPress,
-  last = false,
-}: {
-  icon?: AppIconName;
-  title: string;
-  value?: string;
-  onPress?: () => void;
-  last?: boolean;
-}) {
-  return (
-    <Row
-      minHeight={54}
-      paddingHorizontal="$4"
-      alignItems="center"
-      borderBottomWidth={last ? 0 : 1}
-      borderColor="$borderColor"
-      onPress={onPress}
-      accessibilityRole={onPress ? "button" : undefined}
-      accessibilityLabel={title}
-    >
-      <Stack
-        width={32}
-        height={32}
-        borderRadius="$3"
-        alignItems="center"
-        justifyContent="center"
-        backgroundColor="$surfaceVariant"
-        marginRight="$3"
+      <Sheet
+        ref={clearCache}
+        title={t("settings.clearCache")}
+        closeLabel={t("common.close")}
       >
-        <AppIcon name={icon} size={15} />
-      </Stack>
-      <SectionTitle flex={1} fontSize={15} fontWeight="500">
-        {title}
-      </SectionTitle>
-      {value ? <Body fontSize={13}>{value}</Body> : null}
-      {onPress ? (
-        <Stack marginLeft="$2">
-          <AppIcon name="chevron-right" size={20} colorToken="textMuted" />
-        </Stack>
-      ) : null}
-    </Row>
+        <Body>{t("settings.clearCacheConfirm")}</Body>
+        <PrimaryButton
+          onPress={() => {
+            clearCache.current?.dismiss();
+            toast(t("settings.cacheCleared"), "success");
+          }}
+          testID="settings-clear-cache-confirm"
+        >
+          {t("common.confirm")}
+        </PrimaryButton>
+        <SecondaryButton onPress={() => clearCache.current?.dismiss()}>
+          {t("common.cancel")}
+        </SecondaryButton>
+      </Sheet>
+    </Page>
   );
 }

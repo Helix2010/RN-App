@@ -2,8 +2,14 @@ import type { PropsWithChildren } from "react";
 import { useMemo } from "react";
 import { useColorScheme } from "react-native";
 import { TamaguiProvider, Theme } from "tamagui";
-import type { BootstrapConfig } from "../core/config/bootstrap.schema";
-import type { ThemePreference } from "../core/preferences/preferences-store";
+import {
+  usePreferencesStore,
+  type ThemePreference,
+} from "../core/preferences/preferences-store";
+import type {
+  BootstrapConfig,
+  SemanticPalette,
+} from "../core/config/bootstrap.schema";
 import { createFoundationTamaguiConfig } from "./tamagui.config";
 
 type Props = PropsWithChildren<{
@@ -26,9 +32,23 @@ export function FoundationThemeProvider({
         ? "dark"
         : "light"
       : effectivePreference;
+  const colorScheme = usePreferencesStore((state) => state.colorScheme);
+  const swap = (palette: SemanticPalette): SemanticPalette =>
+    colorScheme === "red-up"
+      ? {
+          ...palette,
+          pricePositive: palette.priceNegative,
+          priceNegative: palette.pricePositive,
+        }
+      : palette;
   const tamaguiConfig = useMemo(
-    () => createFoundationTamaguiConfig(config.theme.light, config.theme.dark),
-    [config.theme.dark, config.theme.light],
+    () =>
+      createFoundationTamaguiConfig(
+        swap(config.theme.light),
+        swap(config.theme.dark),
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [config.theme.dark, config.theme.light, colorScheme],
   );
 
   return (

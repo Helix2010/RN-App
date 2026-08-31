@@ -8,15 +8,19 @@ import {
   toApproxNumber,
   toDecimalString,
 } from "../../../core/money/money";
+import { FIXTURE_NOW } from "../fixtures/events";
 import { MockPredictGateway } from "./mock-predict-gateway";
 
 const ADDRESS = "0x3f4a8c21b7d94e0a1f6c5d2e8b9a7c3d4e5f9a2c";
+const BASE_OFFSET = new Date(FIXTURE_NOW).getTime() - Date.now();
 
 describe("MockPredictGateway", () => {
   beforeEach(() => {
     jest.useFakeTimers();
     resetMockRandom();
     useMockRuntime.getState().reset();
+    // Mock 时钟锚定到夹具时间，避免真实时间流逝改变市场状态
+    useMockRuntime.getState().set({ clockOffsetMs: BASE_OFFSET });
   });
 
   afterEach(() => {
@@ -133,7 +137,9 @@ describe("MockPredictGateway", () => {
     expect((await gateway.getAdjudication("m-eth-4500")).status).toBe(
       "trading",
     );
-    useMockRuntime.getState().set({ clockOffsetMs: 2 * 24 * 3_600_000 });
+    useMockRuntime
+      .getState()
+      .set({ clockOffsetMs: BASE_OFFSET + 2 * 24 * 3_600_000 });
     const proposed = await gateway.getAdjudication("m-eth-4500");
     expect(proposed.status).toBe("settled");
     expect(proposed.settledOutcome).toBeDefined();
@@ -151,7 +157,9 @@ describe("MockPredictGateway", () => {
   it("locks a bond when disputing a proposed result", async () => {
     const gateway = new MockPredictGateway(memoryStorage());
     // 让 ETH 今日市场刚过截止 + 提交结果，但仍在争议期内
-    useMockRuntime.getState().set({ clockOffsetMs: 13 * 3_600_000 });
+    useMockRuntime
+      .getState()
+      .set({ clockOffsetMs: BASE_OFFSET + 13 * 3_600_000 });
     const proposed = await gateway.getAdjudication("m-eth-4500");
     expect(proposed.status).toBe("result_proposed");
     expect(proposed.canDispute).toBe(true);

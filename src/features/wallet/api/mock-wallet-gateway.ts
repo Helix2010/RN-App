@@ -163,6 +163,13 @@ export class MockWalletGateway implements WalletGateway {
     return target;
   }
 
+  async rename(address: string, label: string): Promise<void> {
+    const state = await this.load();
+    const account = state.accounts.find((item) => item.address === address);
+    if (account) account.label = label;
+    await this.save();
+  }
+
   async markBackedUp(address: string): Promise<void> {
     const state = await this.load();
     const target = state.accounts.find((item) => item.address === address);
