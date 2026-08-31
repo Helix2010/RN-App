@@ -36,5 +36,7 @@ DEX 模块 = 多链代币的"发现 → 看 → 换"，没有现货订单簿，�
   - D-05：今天（新成交 BNB → PEPE 成功）/ 昨天（USDT → PEPE、BNB → CAKE 成功，ETH → AERO 失败 + 原因）。✅ `swap-history.png`
   - D-06：USDT 无限额度 / USDC 无限额度（58 天未使用 warn）/ AERO 120；"撤销全部无限额度授权（2）" → toast「已撤销授权」，仅剩 AERO。✅ `approvals.png` / `approvals-revoked.png`
   - 修复：支付输入框未撑满、超大数量精度过长、报价最后 1 秒提交与过期竞争（改为 ≤ 1s 显示"重新报价"）。
-  - 未在设备验证：ERC-20 授权步骤 UI（USDT → PEPE 需两步；Mock 逻辑有单测）、代币选择器 sheet、链切换后默认对、失败态（`nextSwapOutcome` 仅单测）、差额 > 3% 的 warn 文案、iOS。
+  - 追加验证（2026-08-31 02:46，英文 / 浅色主题）：代币选择器 sheet（BNB / USDT / USDC / PEPE / CAKE 带余额）→ 选 USDT → 输入 100 → 报价 8,095,238.48 PEPE，按钮变 "Approve USDT" → 点按后授权（USDT 曾被"撤销全部无限额度授权"清掉，因此需要重新授权）。✅ `approve-step.png`
+  - 授权后：toast "USDT approved"，按钮切回 "Swap"，报价保留。✅ `approve-done.png`
+  - 未在设备验证：链切换后默认交易对、失败态（`nextSwapOutcome` 仅单测）、差额 > 3% 的 warn 文案、iOS。
 - 回滚：回退本分支提交；无数据迁移。

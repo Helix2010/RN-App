@@ -358,6 +358,7 @@ export function SwapScreen({
               </Stack>
               <TokenChip
                 token={sell}
+                testID="swap-sell-token"
                 onPress={() => {
                   setPicker("sell");
                   pickerSheet.current?.present();
@@ -414,6 +415,7 @@ export function SwapScreen({
               </Stack>
               <TokenChip
                 token={buy}
+                testID="swap-buy-token"
                 onPress={() => {
                   setPicker("buy");
                   pickerSheet.current?.present();
@@ -683,9 +685,11 @@ export function SwapScreen({
 function TokenChip({
   token,
   onPress,
+  testID,
 }: {
   token: TokenRef;
   onPress: () => void;
+  testID?: string;
 }) {
   return (
     <Row
@@ -701,6 +705,7 @@ function TokenChip({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={token.symbol}
+      testID={testID}
       pressStyle={{ opacity: 0.8 }}
     >
       <TokenAvatar token={token} size={24} />

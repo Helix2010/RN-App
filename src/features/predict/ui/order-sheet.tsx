@@ -39,6 +39,7 @@ import {
   usePlaceOrder,
   usePositions,
   usePredictBalance,
+  usePredictEvent,
 } from "../hooks/use-predict";
 import type {
   Market,
@@ -134,7 +135,13 @@ export const OrderSheet = forwardRef<
     return () => clearTimeout(timer);
   }, [address, consumeIntent, event, fulfilled]);
 
-  const yes = market?.yesPriceCents ?? 50;
+  // 从持仓等入口打开时 market 可能来自静态夹具，这里以实时事件价格为准
+  const liveEvent = usePredictEvent(market?.eventId);
+  const yes =
+    liveEvent.data?.markets.find((item) => item.id === market?.id)
+      ?.yesPriceCents ??
+    market?.yesPriceCents ??
+    50;
   const marketPrice = outcome === "yes" ? yes : 100 - yes;
   const limitPrice = Number(priceText) || marketPrice;
   const held =
