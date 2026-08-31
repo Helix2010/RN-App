@@ -41,6 +41,10 @@ import { useSession } from "../../session/hooks/use-session";
 import { useWalletBalances } from "../../wallet/hooks/use-wallet";
 import { HoldingRow } from "./assets-screen";
 import { TransferForm, type TransferDirection } from "./transfer-form";
+import {
+  SplitMergeSheet,
+  type SplitMergeHandle,
+} from "../../predict/ui/split-merge-sheet";
 
 const PREDICT_CONTRACT = "0x8a1c4e0b2d7f9a3c5e6b8d0f1a2c3e4d5f6a7f042";
 
@@ -98,6 +102,7 @@ function PredictAccount({ address }: { address: string }) {
   const activity = usePredictActivity(address || undefined);
   const [tab, setTab] = useState<"activity" | "claims">("activity");
   const transfer = useRef<SheetHandle>(null);
+  const splitSheet = useRef<SplitMergeHandle>(null);
   const [direction, setDirection] = useState<TransferDirection>("deposit");
   const openTransfer = (next: TransferDirection) => {
     setDirection(next);
@@ -188,7 +193,7 @@ function PredictAccount({ address }: { address: string }) {
             </SecondaryButton>
             <SecondaryButton
               flex={1}
-              onPress={() => toast(t("state.empty"), "info")}
+              onPress={() => splitSheet.current?.open("split")}
               testID="account-split"
             >
               {t("assets.splitMerge")}
@@ -246,6 +251,7 @@ function PredictAccount({ address }: { address: string }) {
           )}
         </Content>
       </PageScroll>
+      <SplitMergeSheet ref={splitSheet} address={address || undefined} />
       <Sheet
         ref={transfer}
         title={t("transfer.title")}

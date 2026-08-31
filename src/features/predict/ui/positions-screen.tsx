@@ -48,6 +48,7 @@ import type {
   PredictEvent,
 } from "../model/predict";
 import { OrderSheet, type OrderSheetHandle } from "./order-sheet";
+import { SplitMergeSheet, type SplitMergeHandle } from "./split-merge-sheet";
 import { StatusBadge, closesText, fill, outcomeLabel } from "./shared";
 
 function findMarket(
@@ -88,6 +89,7 @@ export function PositionsScreen({
   );
   const [hideZero, setHideZero] = useState(true);
   const orderSheet = useRef<OrderSheetHandle>(null);
+  const splitSheet = useRef<SplitMergeHandle>(null);
 
   const header = onBack ? (
     <ScreenHeader
@@ -256,7 +258,7 @@ export function PositionsScreen({
               <SecondaryButton
                 flex={1}
                 height={36}
-                onPress={() => toast(t("state.empty"), "info")}
+                onPress={() => splitSheet.current?.open("split")}
               >
                 {t("assets.splitMerge")}
               </SecondaryButton>
@@ -396,6 +398,7 @@ export function PositionsScreen({
           )}
         </Content>
       </PageScroll>
+      <SplitMergeSheet ref={splitSheet} address={address} />
       <OrderSheet
         ref={orderSheet}
         event={undefined}
