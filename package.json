@@ -25,7 +25,8 @@
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm api:check && pnpm config:check && pnpm i18n:check",
     "workflow:new": "node scripts/create-change.mjs",
     "i18n:seed": "node scripts/export-i18n-seed.mjs",
-    "i18n:check": "node scripts/export-i18n-seed.mjs --check"
+    "i18n:check": "node scripts/export-i18n-seed.mjs --check",
+    "tenant": "node scripts/tenant.mjs"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",

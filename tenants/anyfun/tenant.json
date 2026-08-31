@@ -1,0 +1,10 @@
+{
+  "slug": "anyfun",
+  "appName": "AnyFun",
+  "scheme": "anyfun",
+  "androidPackage": "com.anyfun.foundation",
+  "iosBundleId": "com.anyfun.foundation",
+  "apiBaseUrl": "https://api.anyfun.win",
+  "applicationId": "dex-mobile",
+  "iconBackgroundColor": "#E9F0FF"
+}

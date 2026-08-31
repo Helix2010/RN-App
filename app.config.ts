@@ -12,6 +12,26 @@ const codeSigningCertificate =
   process.env.EXPO_UPDATES_CODE_SIGNING_CERTIFICATE;
 const codeSigningKeyId = process.env.EXPO_UPDATES_CODE_SIGNING_KEY_ID ?? "main";
 const applicationId = process.env.EXPO_PUBLIC_APPLICATION_ID ?? "dex-mobile";
+/**
+ * 租户工厂：`node scripts/tenant.mjs <slug> --env-file --pull-branding` 写入 EXPO_PUBLIC_TENANT_* 与
+ * assets/tenants/<slug>/ 图标；这里只读 env，不碰文件系统（app.config 与 RN 共享 tsconfig）。
+ */
+const tenantSlug = process.env.EXPO_PUBLIC_TENANT;
+const tenant = tenantSlug
+  ? {
+      slug: tenantSlug,
+      appName: process.env.EXPO_PUBLIC_TENANT_NAME ?? "AnyFun",
+      scheme: process.env.EXPO_PUBLIC_TENANT_SCHEME ?? tenantSlug,
+      androidPackage:
+        process.env.EXPO_PUBLIC_TENANT_ANDROID_PACKAGE ??
+        `com.${tenantSlug}.app`,
+      iosBundleId:
+        process.env.EXPO_PUBLIC_TENANT_IOS_BUNDLE_ID ?? `com.${tenantSlug}.app`,
+      iconBackgroundColor: process.env.EXPO_PUBLIC_TENANT_ICON_BG,
+    }
+  : null;
+const tenantAsset = (name: string, fallback: string): string =>
+  tenant ? `./assets/tenants/${tenant.slug}/${name}` : fallback;
 const googleServicesFile = process.env.GOOGLE_SERVICES_JSON;
 const appVersion = "1.1.9";
 const androidVersionCode = 13;
@@ -58,20 +78,20 @@ if (resolvedUpdatesUrl) {
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
-  name: "AnyFun",
-  slug: "anyfun-foundation",
-  scheme: "anyfun",
+  name: tenant?.appName ?? "AnyFun",
+  slug: tenant ? `${tenant.slug}-app` : "anyfun-foundation",
+  scheme: tenant?.scheme ?? "anyfun",
   version: appVersion,
   orientation: "portrait",
   userInterfaceStyle: "automatic",
-  icon: "./assets/icon.png",
+  icon: tenantAsset("icon.png", "./assets/icon.png"),
   ios: {
     supportsTablet: true,
-    bundleIdentifier: "com.anyfun.foundation",
+    bundleIdentifier: tenant?.iosBundleId ?? "com.anyfun.foundation",
     buildNumber: iosBuildNumber,
   },
   android: {
-    package: "com.anyfun.foundation",
+    package: tenant?.androidPackage ?? "com.anyfun.foundation",
     versionCode: androidVersionCode,
     allowBackup: false,
     // Keep Android system back dispatch on the legacy bridge so the app-level
@@ -79,9 +99,15 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     // the activity. Native builds must be regenerated after this change.
     predictiveBackGestureEnabled: true,
     adaptiveIcon: {
-      backgroundColor: "#E9F0FF",
-      foregroundImage: "./assets/android-icon-foreground.png",
-      backgroundImage: "./assets/android-icon-background.png",
+      backgroundColor: tenant?.iconBackgroundColor ?? "#E9F0FF",
+      foregroundImage: tenantAsset(
+        "android-icon-foreground.png",
+        "./assets/android-icon-foreground.png",
+      ),
+      backgroundImage: tenantAsset(
+        "android-icon-background.png",
+        "./assets/android-icon-background.png",
+      ),
       monochromeImage: "./assets/android-icon-monochrome.png",
     },
     permissions: [
