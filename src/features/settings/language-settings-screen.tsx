@@ -17,7 +17,6 @@ import {
 import type { LocalePreference } from "../../core/preferences/preferences-store";
 import type { RootStackParamList } from "../../navigation/types";
 import { LANGUAGE_NAMES } from "./language-names";
-import { useEdgeBackGesture } from "../../navigation/edge-back-gesture";
 
 export function LanguageSettingsScreen({
   navigation,
@@ -30,7 +29,6 @@ export function LanguageSettingsScreen({
   );
   const [switchError, setSwitchError] = useState(false);
   const switching = pendingLocale !== null;
-  const edgeBack = useEdgeBackGesture(navigation.goBack);
   const languageCatalog =
     config.localization.localeCatalog ??
     config.localization.supportedLocales.map((code) => ({
@@ -46,7 +44,7 @@ export function LanguageSettingsScreen({
     ...languageCatalog.map((item) => item.code),
   ];
   return (
-    <Page {...edgeBack}>
+    <Page>
       <PageScroll>
         <Content paddingTop={insets.top + 16}>
           <ScreenHeader

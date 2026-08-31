@@ -28,7 +28,6 @@ import {
   resolveBottomTab,
 } from "./app-tabs";
 import { ModuleOverviewScreen } from "./module-overview-screen";
-import { useEdgeBackGesture } from "../../navigation/edge-back-gesture";
 
 type Props = NativeStackScreenProps<RootStackParamList, "AppShell">;
 
@@ -82,13 +81,9 @@ export function AppShellScreen({ navigation }: Props) {
     );
     return () => subscription.remove();
   }, [effectiveTab, isFocused]);
-  const edgeBack = useEdgeBackGesture(() => {
-    const action = resolveAppShellBack(effectiveTab);
-    if (action === "home") setTab("home");
-  });
 
   return (
-    <Page {...edgeBack}>
+    <Page>
       <View style={{ flex: 1 }}>
         {effectiveTab === "home" ? (
           <FoundationHomeScreen

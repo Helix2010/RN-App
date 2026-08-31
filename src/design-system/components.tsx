@@ -1,6 +1,6 @@
 import type { ComponentProps, PropsWithChildren, ReactNode } from "react";
 import type { RefreshControlProps } from "react-native";
-import { RefreshControl } from "react-native";
+import { Image, RefreshControl } from "react-native";
 import {
   Button,
   ScrollView,
@@ -70,7 +70,17 @@ export function AppIcon({
   );
 }
 
-export function BrandMark({ size = 48 }: { size?: number }) {
+/** 品牌标：优先使用租户服务端下发的 logo（uri），否则退回内置几何标。 */
+export function BrandMark({ size = 48, uri }: { size?: number; uri?: string }) {
+  if (uri) {
+    return (
+      <Image
+        source={{ uri }}
+        style={{ width: size, height: size, borderRadius: size * 0.28 }}
+        accessibilityLabel="brand logo"
+      />
+    );
+  }
   return (
     <YStack
       width={size}

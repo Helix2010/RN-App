@@ -16,6 +16,7 @@ import {
   toast,
 } from "../../design-system";
 import type { RootStackParamList } from "../../navigation/types";
+import { useTenantLogoUri } from "../../app/use-tenant-logo";
 import { Group, SRow } from "../profile/profile-screen";
 
 function fill(
@@ -35,6 +36,7 @@ export function AboutScreen({
   const insets = useSafeAreaInsets();
   const { config, t } = useFoundationRuntime();
   const hasUpdate = config.update.decision !== "none";
+  const logoUri = useTenantLogoUri();
   const size = config.update.full.size
     ? `${(config.update.full.size / 1024 / 1024).toFixed(1)} MB`
     : "";
@@ -50,7 +52,7 @@ export function AboutScreen({
       <PageScroll>
         <Content paddingTop="$2" gap="$4" paddingBottom={40}>
           <Stack alignItems="center" gap="$2" paddingVertical="$3">
-            <BrandMark size={72} />
+            <BrandMark size={72} uri={logoUri} />
             <SectionTitle fontSize={20}>
               {config.branding?.launch.title || t("app.name")}
             </SectionTitle>
