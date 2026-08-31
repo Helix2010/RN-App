@@ -1,0 +1,31 @@
+# ADR 0009：已知缺口与保留的扩展点
+
+- 状态：记录（2026-08-31）
+- 背景：L / A / S / P / D 页面组已按设计稿实现，本文记录"接口已定义但 UI 未接"以及"设计稿画了但本轮未做"的部分，避免被后续当成死代码误删。
+
+## 保留的 Gateway 扩展点（当前无调用方）
+
+| 方法 | 为什么保留 | 何时接上 |
+| --- | --- | --- |
+| `PredictGateway.subscribeMarkets` | 设计要求价格实时跳动；当前用 `usePredictEvents` / `useOrderBook` 轮询代替 | 接真实 CLOB WebSocket 时 |
+| `PredictGateway.getFeeBps` | 费率一期由事件对象携带；真实服务端费率是市场级 > 分类级 > 统一级三层 | 接真实费率接口时 |
+| `PredictGateway.getPnl` | 持仓页盈亏曲线（设计稿未画图表，仅汇总数字） | 增加盈亏走势图时 |
+| `WalletGateway.listTransfers` | 钱包交易记录列表（个人中心"交易记录"当前是占位） | 做 A 组交易记录页时 |
+| `DexGateway.searchTokens` | 首页 / 行情搜索框（当前搜索框不可输入） | 做搜索页时 |
+| `DexGateway.needsApproval` | 报价已带 `needsApproval`；真实链上查询需要独立调用 | 接真实链上读时 |
+
+## 设计稿已画、本轮未实现
+
+- **S-07 更新弹窗**：当前冷启动是跳转全屏"升级中心"（`UpdateCenter` + `autoPrompt`），设计要求的是首页上的模态弹窗（软更新可关、强更不可关）。
+- **禁截图**：L-04 备份页只有文案提示，未接 `expo-screen-capture`（FLAG_SECURE / iOS 截屏检测）。
+- **保存二维码到相册**（`receive-save`）、**开源许可**（`about-licenses`）、**钱包交易记录入口**（`send-history`）。
+- **应用锁实际生效**：偏好项与安全等级已做，但没有真正的生物识别 / PIN 解锁门禁（需 `expo-local-authentication` + 前后台超时）。
+
+## 设计稿只定义了入口、未详画的页面（当前点击 toast 占位）
+
+转账地址簿 CRUD、登录会话列表、登录记录、消息中心、帮助与客服、邀请返佣、用户协议 / 隐私政策（WebView）、更新日志、交易记录、创建 / 导入钱包全屏流程（L-04 只画了备份一步）。
+
+## 测试形态
+
+- 契约测试覆盖 Mock 网关（predict 10 例 / dex 6 例 / session 4 例）与核心库（money / format / auth-sheet）。
+- **UI 组件与页面无渲染测试**（`@testing-library/react-native` 已装未用）；页面行为目前靠模拟器人工回归，截图存于各 `docs/changes/*/`。
