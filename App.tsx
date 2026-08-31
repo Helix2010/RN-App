@@ -8,6 +8,7 @@ import { GatewayProvider } from "./src/core/gateways/gateway-context";
 import { ToastHost } from "./src/design-system";
 import { AppLockGate } from "./src/features/security/app-lock-gate";
 import { FoundationNavigator } from "./src/navigation/foundation-navigator";
+import { UpdateModal } from "./src/features/updates/update-modal";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -25,6 +26,7 @@ export default function App() {
               <BottomSheetModalProvider>
                 <StatusBar style="auto" />
                 <FoundationNavigator />
+                <UpdateModal />
                 <AppLockGate />
                 <ToastHost />
               </BottomSheetModalProvider>

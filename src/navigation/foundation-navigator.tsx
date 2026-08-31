@@ -9,7 +9,6 @@ import { useEffect } from "react";
 import { useTheme } from "tamagui";
 import { useFoundationRuntime } from "../app/runtime-context";
 import { AppShellScreen } from "../features/foundation/app-shell-screen";
-import { UpdateCenterScreen } from "../features/updates/update-center-screen";
 import { SettingsScreen } from "../features/settings/settings-screen";
 import { LanguageSettingsScreen } from "../features/settings/language-settings-screen";
 import { AppearanceSettingsScreen } from "../features/settings/appearance-settings-screen";
@@ -68,7 +67,7 @@ export function FoundationNavigator() {
         const action = resolveSystemBack(
           route?.name,
           navigationRef.canGoBack(),
-          config.update.decision === "required",
+          false,
         );
         if (action === "navigate") {
           navigationRef.goBack();
@@ -79,26 +78,6 @@ export function FoundationNavigator() {
     );
     return () => subscription.remove();
   }, [config.update.decision, navigationRef]);
-
-  if (config.update.decision === "required" && config.update.full.actionUrl) {
-    return (
-      <NavigationContainer ref={navigationRef} theme={navigationTheme}>
-        <Stack.Navigator
-          screenOptions={{
-            headerShown: false,
-            gestureEnabled: true,
-            fullScreenGestureEnabled: true,
-            animation: "slide_from_right",
-            animationMatchesGesture: true,
-          }}
-        >
-          <Stack.Screen name="UpdateCenter">
-            {(props) => <UpdateCenterScreen {...props} locked />}
-          </Stack.Screen>
-        </Stack.Navigator>
-      </NavigationContainer>
-    );
-  }
 
   return (
     <NavigationContainer ref={navigationRef} theme={navigationTheme}>
@@ -113,7 +92,6 @@ export function FoundationNavigator() {
       >
         <Stack.Screen name="AppShell" component={AppShellScreen} />
         <Stack.Screen name="Profile" component={ProfileScreen} />
-        <Stack.Screen name="UpdateCenter" component={UpdateCenterScreen} />
         <Stack.Screen name="Wallets" component={WalletsScreen} />
         <Stack.Screen name="WalletBackup" component={BackupScreen} />
         <Stack.Screen name="Settings" component={SettingsScreen} />

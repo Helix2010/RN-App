@@ -36,12 +36,16 @@ export type OtaCheckOptions = {
 let inFlightCheck: Promise<OtaCheckResult> | null = null;
 
 function currentMetadata(): UpdateMetadata {
+  const createdAt = Updates.createdAt;
   return {
     updateId: Updates.updateId ?? null,
     runtimeVersion: Updates.runtimeVersion ?? "embedded",
     channel: Updates.channel ?? appRuntime.otaChannel,
     isEmbedded: Updates.isEmbeddedLaunch,
-    createdAt: Updates.createdAt?.toISOString() ?? null,
+    createdAt:
+      createdAt && Number.isFinite(createdAt.getTime())
+        ? createdAt.toISOString()
+        : null,
     applyStrategy: "next_launch",
   };
 }

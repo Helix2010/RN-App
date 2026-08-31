@@ -86,6 +86,12 @@ async function readCache(
   return hydrateCachedBranding(normalizeConfig(parsed.data.config));
 }
 
+export async function loadCachedBootstrap(
+  locale: SupportedLocale,
+): Promise<BootstrapConfig | null> {
+  return readCache(locale);
+}
+
 function languagePackageKey(locale: SupportedLocale): string {
   return `foundation.language.v2.${encodeURIComponent(appRuntime.apiBaseUrl)}.${appRuntime.applicationId}.${locale}`;
 }

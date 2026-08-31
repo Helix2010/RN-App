@@ -1,5 +1,6 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useRef } from "react";
 import { useFoundationRuntime } from "../../app/runtime-context";
 import {
   Body,
@@ -13,11 +14,15 @@ import {
   ScreenHeader,
   SectionTitle,
   Stack,
+  Sheet,
+  type SheetHandle,
   toast,
 } from "../../design-system";
 import type { RootStackParamList } from "../../navigation/types";
 import { useTenantLogoUri } from "../../app/use-tenant-logo";
 import { Group, SRow } from "../profile/profile-screen";
+import { useManualUpdateCheck } from "../updates/use-manual-update-check";
+import { getCurrentUpdateMetadata } from "../../core/updates/update-service";
 
 function fill(
   template: string,
@@ -29,12 +34,18 @@ function fill(
   );
 }
 
-/** S-06 关于：品牌（来自 RN-Server branding）+ 版本；有更新时品牌色描边更新卡 → 升级中心；链接组；页脚 Build 信息。 */
+/** S-06 关于：租户品牌、当前版本、版本检查和只读版本信息。 */
 export function AboutScreen({
   navigation,
 }: NativeStackScreenProps<RootStackParamList, "About">) {
   const insets = useSafeAreaInsets();
   const { config, t } = useFoundationRuntime();
+  const {
+    state: updateCheckState,
+    checking: checkingUpdate,
+    check: checkUpdate,
+  } = useManualUpdateCheck();
+  const versionInfo = useRef<SheetHandle>(null);
   const hasUpdate = config.update.decision !== "none";
   const logoUri = useTenantLogoUri();
   const size = config.update.full.size
@@ -90,7 +101,7 @@ export function AboutScreen({
                 </Row>
               ))}
               <PrimaryButton
-                onPress={() => navigation.navigate("UpdateCenter")}
+                onPress={() => void checkUpdate()}
                 testID="about-update-now"
               >
                 {t("update.viewNow")}
@@ -100,16 +111,24 @@ export function AboutScreen({
             <Group title="">
               <SRow
                 title={t("settings.upToDate")}
-                value={t("settings.checkUpdate")}
-                onPress={() => navigation.navigate("UpdateCenter")}
+                value={
+                  checkingUpdate
+                    ? t("update.checking")
+                    : updateCheckState === "error"
+                      ? t("status.error")
+                      : updateCheckState === "latest"
+                        ? t("settings.upToDate")
+                        : t("settings.checkUpdate")
+                }
+                onPress={() => void checkUpdate()}
                 testID="about-check-update"
               />
             </Group>
           )}
           <Group title="">
             <SRow
-              title={t("update.release")}
-              onPress={() => navigation.navigate("UpdateCenter")}
+              title={t("update.versionInfo")}
+              onPress={() => versionInfo.current?.present()}
               testID="about-changelog"
             />
             <SRow
@@ -129,6 +148,62 @@ export function AboutScreen({
           </Body>
         </Content>
       </PageScroll>
+      <Sheet
+        ref={versionInfo}
+        title={t("update.versionInfo")}
+        closeLabel={t("action.close")}
+        scroll
+        testID="version-info-sheet"
+      >
+        <VersionInfoRow
+          label={t("update.currentVersion")}
+          value={`${config.app.version} (${config.app.buildNumber})`}
+        />
+        <VersionInfoRow
+          label={t("update.minimumVersion")}
+          value={config.update.minSupportedVersion}
+        />
+        <VersionInfoRow
+          label={t("update.latestVersion")}
+          value={config.update.latestVersion}
+        />
+        <VersionInfoRow
+          label={t("update.channel")}
+          value={config.update.full.channel}
+        />
+        <VersionInfoRow
+          label={t("update.requestId")}
+          value={config.support.diagnosticId}
+        />
+        <VersionInfoRow
+          label={t("update.release")}
+          value={config.update.full.releaseId ?? t("update.notConfigured")}
+        />
+        <VersionInfoRow
+          label={t("update.runtime")}
+          value={config.app.runtimeVersion}
+        />
+        <VersionInfoRow
+          label={t("update.otaTitle")}
+          value={
+            getCurrentUpdateMetadata().isEmbedded
+              ? t("update.embedded")
+              : (getCurrentUpdateMetadata().updateId ??
+                t("update.notConfigured"))
+          }
+        />
+      </Sheet>
     </Page>
+  );
+}
+
+function VersionInfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <Row justifyContent="space-between" alignItems="flex-start" gap="$3">
+      <Body flex={1}>{label}</Body>
+      <Body flex={1} textAlign="right" color="$color">
+        {value}
+      </Body>
+    </Row>
   );
 }

@@ -23,7 +23,6 @@ import {
   resolveBottomTab,
 } from "./app-tabs";
 import { ModuleOverviewScreen } from "./module-overview-screen";
-import { UpdateModal } from "../updates/update-modal";
 import { useEdgeBackGesture } from "../../navigation/edge-back-gesture";
 
 type Props = NativeStackScreenProps<RootStackParamList, "AppShell">;
@@ -31,7 +30,7 @@ type Props = NativeStackScreenProps<RootStackParamList, "AppShell">;
 export function AppShellScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
-  const { config, t, notificationIntent } = useFoundationRuntime();
+  const { config, t } = useFoundationRuntime();
   const [tab, setTab] = useState<AppTab>("home");
   const tabs = useMemo(
     () =>
@@ -49,15 +48,6 @@ export function AppShellScreen({ navigation }: Props) {
     const action = resolveAppShellBack(effectiveTab);
     if (action === "home") setTab("home");
   });
-  useEffect(() => {
-    if (
-      notificationIntent?.type === "app_update_available" ||
-      notificationIntent?.type === "ota_updated"
-    ) {
-      if (navigation.getState().routes.at(-1)?.name === "UpdateCenter") return;
-      navigation.navigate("UpdateCenter");
-    }
-  }, [navigation, notificationIntent]);
   useEffect(() => {
     const subscription = BackHandler.addEventListener(
       "hardwareBackPress",
@@ -124,7 +114,6 @@ export function AppShellScreen({ navigation }: Props) {
           />
         ))}
       </Row>
-      <UpdateModal />
     </Page>
   );
 }

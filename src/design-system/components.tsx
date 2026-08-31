@@ -4,9 +4,10 @@ import {
   type PropsWithChildren,
   type ReactElement,
   type ReactNode,
+  useState,
 } from "react";
 import type { RefreshControlProps } from "react-native";
-import { Image, RefreshControl, useWindowDimensions } from "react-native";
+import { Image, RefreshControl } from "react-native";
 import {
   Button,
   ScrollView,
@@ -162,18 +163,16 @@ export function ScreenHeader({
     <XStack alignItems="center" gap="$3" paddingVertical="$2">
       {onBack ? (
         <Button
-          width={42}
-          height={42}
-          borderRadius={999}
+          width={44}
+          height={44}
           padding={0}
-          backgroundColor="$surfaceVariant"
+          backgroundColor="transparent"
           color="$color"
-          borderColor="$borderColor"
-          borderWidth={1}
+          borderWidth={0}
           onPress={onBack}
           accessibilityRole="button"
           accessibilityLabel={backLabel}
-          pressStyle={{ opacity: 0.76, scale: 0.96 }}
+          pressStyle={{ opacity: 0.72, backgroundColor: "$surfaceVariant" }}
         >
           <AppIcon name="chevron-left" size={28} colorToken="color" />
         </Button>
@@ -307,8 +306,15 @@ export function SnapCarousel({
   children,
   itemWidth = 236,
   gap = 12,
-}: PropsWithChildren<{ itemWidth?: number; gap?: number }>) {
-  const { width } = useWindowDimensions();
+  fullWidth = false,
+}: PropsWithChildren<{
+  itemWidth?: number;
+  gap?: number;
+  fullWidth?: boolean;
+}>) {
+  const [viewportWidth, setViewportWidth] = useState(0);
+  const resolvedItemWidth =
+    fullWidth && viewportWidth > 0 ? viewportWidth : itemWidth;
   const scrollX = useSharedValue(0);
   const onScroll = useAnimatedScrollHandler({
     onScroll: (event) => {
@@ -321,14 +327,17 @@ export function SnapCarousel({
       horizontal
       showsHorizontalScrollIndicator={false}
       onScroll={onScroll}
+      onLayout={(event) => setViewportWidth(event.nativeEvent.layout.width)}
       scrollEventThrottle={16}
-      snapToInterval={itemWidth + gap}
+      snapToInterval={resolvedItemWidth + gap}
       snapToAlignment="start"
       decelerationRate="fast"
       disableIntervalMomentum
       contentContainerStyle={{
         gap,
-        paddingRight: Math.max(0, width - itemWidth - 32),
+        paddingRight: fullWidth
+          ? 0
+          : Math.max(0, viewportWidth - resolvedItemWidth),
       }}
       accessibilityRole="adjustable"
       accessibilityHint="左右滑动浏览并自动吸附到卡片"
@@ -337,7 +346,7 @@ export function SnapCarousel({
         <SnapCarouselItem
           key={(child as ReactElement).key ?? index}
           index={index}
-          itemWidth={itemWidth}
+          itemWidth={resolvedItemWidth}
           gap={gap}
           scrollX={scrollX}
         >

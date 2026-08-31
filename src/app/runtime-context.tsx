@@ -11,7 +11,11 @@ import {
 } from "react";
 import { AppState, BackHandler, Modal, useColorScheme } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
-import type { BootstrapSnapshot } from "../core/config/bootstrap-repository";
+import {
+  loadBootstrap,
+  loadCachedBootstrap,
+  type BootstrapSnapshot,
+} from "../core/config/bootstrap-repository";
 import type {
   BootstrapConfig,
   SupportedLocale,
@@ -19,7 +23,6 @@ import type {
 import { createFallbackConfig } from "../core/config/fallback-config";
 import { translateMessage } from "../core/config/localization";
 import { useBootstrap } from "../core/config/use-bootstrap";
-import { loadBootstrap } from "../core/config/bootstrap-repository";
 import { changeLocalePreference } from "../core/config/locale-change";
 import {
   usePreferencesStore,
@@ -32,6 +35,7 @@ import {
   type OtaCheckResult,
 } from "../core/updates/update-service";
 import { useUpdateStatus } from "../core/updates/use-update-status";
+import { resolveUpdatePlan } from "../core/updates/update-coordinator";
 import {
   Body,
   Card,
@@ -65,12 +69,21 @@ type RuntimeValue = {
   isInitialLoading: boolean;
   isRefreshing: boolean;
   refresh: () => Promise<BootstrapSnapshot>;
+  checkForUpdates: () => Promise<UpdateCheckResult>;
+  dismissUpdatePrompt: () => void;
+  manualUpdatePromptVersion: string | null;
   otaResult: OtaCheckResult | null;
   applyPendingOta: () => Promise<void>;
   notificationStatus: "idle" | "registered" | "denied" | "unavailable";
   enableUpdateNotifications: () => Promise<void>;
   notificationIntent: { type: string; eventId: string } | null;
 };
+
+export type UpdateCheckResult =
+  | { kind: "none"; snapshot: BootstrapSnapshot }
+  | { kind: "full"; snapshot: BootstrapSnapshot }
+  | { kind: "ota"; snapshot: BootstrapSnapshot; result: OtaCheckResult }
+  | { kind: "error"; error: Error };
 
 /** 导出仅供测试壳（src/test/harness.tsx）注入假运行时；业务代码请用 useFoundationRuntime。 */
 export const RuntimeContext = createContext<RuntimeValue | null>(null);
@@ -105,10 +118,15 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
     [fallback, snapshot],
   );
   const otaLastCheckRef = useRef<{ key: string; at: number } | null>(null);
+  const updateCheckRef = useRef<Promise<UpdateCheckResult> | null>(null);
   const [otaResult, setOtaResult] = useState<OtaCheckResult | null>(null);
+  const [manualUpdatePromptVersion, setManualUpdatePromptVersion] = useState<
+    string | null
+  >(null);
   const [launchMinimumElapsed, setLaunchMinimumElapsed] = useState(false);
   const [launchTimeout, setLaunchTimeout] = useState(false);
-  const [launchBranding, setLaunchBranding] = useState(config.branding);
+  const [launchBranding, setLaunchBranding] =
+    useState<BootstrapConfig["branding"]>();
   const [launchBrandingVersion, setLaunchBrandingVersion] = useState<
     number | null
   >(null);
@@ -125,15 +143,20 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
         ? "dark"
         : "light"
       : themePreference;
-  const activeBranding =
-    config.branding && launchBrandingVersion === config.branding.version
+  const brandingConfig =
+    config.branding?.enabled && config.branding.launch.enabled
+      ? config.branding
+      : undefined;
+  const activeBranding = !snapshot
+    ? (launchBranding ?? brandingConfig)
+    : brandingConfig && launchBrandingVersion === brandingConfig.version
       ? launchBranding
-      : config.branding;
+      : brandingConfig;
   const launchVisual = activeBranding
     ? resolveBrandingVisual(activeBranding.launch.visuals, launchTheme)
     : undefined;
   const brandingReady =
-    !config.branding || launchBrandingVersion === config.branding.version;
+    !brandingConfig || launchBrandingVersion === brandingConfig.version;
   const nativeUpdateStatus = useUpdateStatus();
   const t = useCallback(
     (key: string) => translateMessage(config.localization.messages, key),
@@ -159,12 +182,70 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
     },
     [localePreference, persistLocale, queryClient],
   );
+  useEffect(() => {
+    let active = true;
+    void loadCachedBootstrap(locale).then((cached) => {
+      const branding = cached?.branding;
+      if (!active || !branding?.enabled || !branding.launch.enabled) return;
+      setLaunchBranding(branding);
+      setLaunchBrandingVersion(branding.version);
+    });
+    return () => {
+      active = false;
+    };
+  }, [locale]);
   const refresh = useCallback(async (): Promise<BootstrapSnapshot> => {
     const result = await query.refetch();
     if (result.data) return result.data;
     if (snapshot) return snapshot;
     throw result.error ?? new Error("Remote Bootstrap is unavailable");
   }, [query, snapshot]);
+  const dismissUpdatePrompt = useCallback(() => {
+    setManualUpdatePromptVersion(null);
+  }, []);
+  const checkForUpdates = useCallback((): Promise<UpdateCheckResult> => {
+    if (updateCheckRef.current) return updateCheckRef.current;
+    const task = (async (): Promise<UpdateCheckResult> => {
+      try {
+        const refreshed = await refresh();
+        if (refreshed.source !== "remote" || refreshed.stale) {
+          return {
+            kind: "error",
+            error: new Error("Remote configuration is stale"),
+          };
+        }
+        const candidate = refreshed.config;
+        const plan = resolveUpdatePlan(candidate);
+        if (plan === "full") {
+          setManualUpdatePromptVersion(candidate.update.latestVersion);
+          return { kind: "full", snapshot: refreshed };
+        }
+        if (plan === "ota") {
+          const result = await checkAndDownloadOta(candidate);
+          setOtaResult(result);
+          if (result.status === "ready" || result.status === "rollback") {
+            return { kind: "ota", snapshot: refreshed, result };
+          }
+          if (result.status === "error") {
+            return { kind: "error", error: new Error("OTA check failed") };
+          }
+          return { kind: "none", snapshot: refreshed };
+        }
+        return { kind: "none", snapshot: refreshed };
+      } catch (error) {
+        return {
+          kind: "error",
+          error:
+            error instanceof Error ? error : new Error("Update check failed"),
+        };
+      }
+    })();
+    updateCheckRef.current = task;
+    void task.finally(() => {
+      if (updateCheckRef.current === task) updateCheckRef.current = null;
+    });
+    return task;
+  }, [refresh]);
   useEffect(() => {
     const minimumMs = config.branding?.launch.minDisplayMs ?? 700;
     const maximumMs = config.branding?.launch.maxDisplayMs ?? 1_800;
@@ -183,7 +264,7 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   ]);
   useEffect(() => {
     let active = true;
-    const remoteBranding = config.branding;
+    const remoteBranding = snapshot ? brandingConfig : undefined;
     if (!remoteBranding) return () => undefined;
     void hydrateCachedBranding({ ...config, branding: remoteBranding }).then(
       (cached) => {
@@ -210,7 +291,7 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
     return () => {
       active = false;
     };
-  }, [config]);
+  }, [brandingConfig, config, snapshot]);
   const runSilentOtaCheck = useCallback((candidate: BootstrapConfig) => {
     if (!candidate.features.otaEnabled || !candidate.update.ota.enabled) return;
     const key = [
@@ -273,8 +354,18 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
           });
         }
         void query.refetch().then((result) => {
-          if (result.data && !result.data.stale)
+          if (result.data && !result.data.stale) {
             runSilentOtaCheck(result.data.config);
+            if (
+              signal.type === "app_update_available" &&
+              result.data.config.update.decision !== "none" &&
+              result.data.config.update.full.actionUrl
+            ) {
+              setManualUpdatePromptVersion(
+                result.data.config.update.latestVersion,
+              );
+            }
+          }
         });
       }),
     [query, runSilentOtaCheck],
@@ -346,6 +437,9 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
       isInitialLoading: query.isPending,
       isRefreshing: query.isFetching && !query.isPending,
       refresh,
+      checkForUpdates,
+      dismissUpdatePrompt,
+      manualUpdatePromptVersion,
       otaResult,
       applyPendingOta,
       notificationStatus,
@@ -359,6 +453,9 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
       query.isFetching,
       query.isPending,
       refresh,
+      checkForUpdates,
+      dismissUpdatePrompt,
+      manualUpdatePromptVersion,
       setLocale,
       setTheme,
       runtimeSnapshot,
@@ -375,15 +472,22 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
     <FoundationThemeProvider config={config} preference={themePreference}>
       {!snapshot ? (
         query.isPending ? (
-          launchMinimumElapsed ? (
+          launchMinimumElapsed && !activeBranding ? (
             <BootstrapSkeleton />
           ) : (
             <LaunchScreen
               message={
-                locale === "en-US"
+                activeBranding?.launch.subtitle ||
+                (locale === "en-US"
                   ? "Connecting to configuration service"
-                  : "正在连接配置服务"
+                  : "正在连接配置服务")
               }
+              title={activeBranding?.launch.title}
+              backgroundColor={launchVisual?.backgroundColor}
+              logo={launchVisual?.logo}
+              backgroundImage={launchVisual?.backgroundImage}
+              animationType={activeBranding?.launch.animation.type}
+              animationDurationMs={activeBranding?.launch.animation.durationMs}
             />
           )
         ) : (

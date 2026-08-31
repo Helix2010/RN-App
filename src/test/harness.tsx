@@ -71,6 +71,12 @@ function buildRuntime(options: HarnessOptions): RuntimeValue {
     isInitialLoading: false,
     isRefreshing: false,
     refresh: async () => ({ config, source: "fallback", stale: false }),
+    checkForUpdates: async () => ({
+      kind: "none",
+      snapshot: { config, source: "fallback", stale: false },
+    }),
+    dismissUpdatePrompt: () => {},
+    manualUpdatePromptVersion: null,
     otaResult: null,
     applyPendingOta: async () => {},
     notificationStatus: "registered",

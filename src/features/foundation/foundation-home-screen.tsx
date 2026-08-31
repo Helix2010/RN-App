@@ -333,7 +333,7 @@ export function FoundationHomeScreen({
                 events.data.items.length === 0 ? (
                   <Body>{t("state.empty")}</Body>
                 ) : (
-                  <SnapCarousel itemWidth={236} gap={12}>
+                  <SnapCarousel itemWidth={236} gap={12} fullWidth>
                     {events.data.items.map((event) => (
                       <PredictionHomeCard
                         key={event.id}
@@ -354,9 +354,9 @@ export function FoundationHomeScreen({
                   retryLabel={t("action.retryNow")}
                 />
               ) : (
-                <SnapCarousel itemWidth={236} gap={12}>
-                  <SkeletonBlock width={236} height={132} borderRadius="$4" />
-                  <SkeletonBlock width={236} height={132} borderRadius="$4" />
+                <SnapCarousel itemWidth={236} gap={12} fullWidth>
+                  <SkeletonBlock width="100%" height={132} borderRadius="$4" />
+                  <SkeletonBlock width="100%" height={132} borderRadius="$4" />
                 </SnapCarousel>
               )}
             </Stack>
@@ -493,7 +493,7 @@ function PredictionHomeCard({
   const multi = event.markets.length > 1;
   return (
     <Card
-      width={236}
+      width="100%"
       padding="$3"
       shadowOpacity={0}
       onPress={onPress}

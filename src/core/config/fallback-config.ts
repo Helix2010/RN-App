@@ -627,7 +627,6 @@ const zhCN = {
   "update.optional": "发现可选更新",
   "update.recommended": "建议升级到最新版本",
   "update.required": "当前版本必须升级后继续使用",
-  "update.releaseControl": "升级中心",
   "update.policy": "版本策略",
   "update.currentVersion": "当前版本",
   "update.currentVersionHint":
@@ -638,6 +637,7 @@ const zhCN = {
   "update.latestVersion": "最新版本",
   "update.channel": "分发通道",
   "update.release": "发布记录",
+  "update.versionInfo": "版本信息",
   "update.requestId": "请求编号",
   "update.otaTitle": "JS 与资源热更新",
   "update.runtime": "运行时版本",
@@ -1335,7 +1335,6 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "update.optional": "An optional update is available",
   "update.recommended": "Updating to the latest version is recommended",
   "update.required": "Update is required to continue",
-  "update.releaseControl": "Update center",
   "update.policy": "Version policy",
   "update.currentVersion": "Current version",
   "update.currentVersionHint":
@@ -1346,6 +1345,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "update.latestVersion": "Latest version",
   "update.channel": "Distribution channel",
   "update.release": "Release",
+  "update.versionInfo": "Version information",
   "update.requestId": "Request ID",
   "update.otaTitle": "JS and asset hot update",
   "update.runtime": "Runtime version",

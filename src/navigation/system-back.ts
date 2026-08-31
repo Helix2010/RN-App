@@ -1,7 +1,6 @@
 export type RootRouteName =
   | "AppShell"
   | "Profile"
-  | "UpdateCenter"
   | "Settings"
   | "LanguageSettings"
   | "AppearanceSettings"
@@ -27,7 +26,7 @@ export function resolveSystemBack(
   canGoBack: boolean,
   updateLocked: boolean,
 ): "navigate" | "consume" | "bubble" {
-  if (routeName === "UpdateCenter" && updateLocked) return "consume";
+  if (updateLocked && routeName === "AppShell") return "consume";
   if (routeName && routeName !== "AppShell" && canGoBack) return "navigate";
   return "bubble";
 }

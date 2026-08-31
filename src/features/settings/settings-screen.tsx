@@ -28,6 +28,7 @@ import { Group, SRow } from "../profile/profile-screen";
 import { useSession } from "../session/hooks/use-session";
 import { LANGUAGE_NAMES } from "./language-names";
 import { useAppLockToggle } from "../security/use-app-lock-toggle";
+import { useManualUpdateCheck } from "../updates/use-manual-update-check";
 
 function fill(
   template: string,
@@ -46,6 +47,11 @@ export function SettingsScreen({
   const insets = useSafeAreaInsets();
   const { config, localePreference, themePreference, t } =
     useFoundationRuntime();
+  const {
+    state: updateCheckState,
+    checking: checkingUpdate,
+    check: checkUpdate,
+  } = useManualUpdateCheck();
   const { toggle: toggleAppLock } = useAppLockToggle();
   const session = useSession();
   const address = session.data?.address;
@@ -255,14 +261,22 @@ export function SettingsScreen({
             <SRow
               title={t("settings.checkUpdate")}
               value={
-                hasUpdate
-                  ? fill(t("settings.newVersion"), {
-                      version: config.update.latestVersion,
-                    })
-                  : t("settings.upToDate")
+                checkingUpdate
+                  ? t("update.checking")
+                  : updateCheckState === "error"
+                    ? t("status.error")
+                    : updateCheckState === "latest"
+                      ? t("settings.upToDate")
+                      : updateCheckState === "available" && !hasUpdate
+                        ? t("update.otaReadyNextLaunch")
+                        : hasUpdate
+                          ? fill(t("settings.newVersion"), {
+                              version: config.update.latestVersion,
+                            })
+                          : t("settings.upToDate")
               }
               dot={hasUpdate}
-              onPress={() => navigation.navigate("UpdateCenter")}
+              onPress={() => void checkUpdate()}
               testID="settings-check-update"
             />
             <SRow

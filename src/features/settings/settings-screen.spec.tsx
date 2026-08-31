@@ -1,5 +1,6 @@
-import { screen } from "@testing-library/react-native";
+import { fireEvent, screen, waitFor } from "@testing-library/react-native";
 import { usePreferencesStore } from "../../core/preferences/preferences-store";
+import { createFallbackConfig } from "../../core/config/fallback-config";
 import {
   createTestGateways,
   fakeNavigation,
@@ -75,5 +76,27 @@ describe("SettingsScreen", () => {
       }),
     });
     expect(screen.getByText(runtime.t("settings.upToDate"))).toBeTruthy();
+  });
+
+  it("checks updates in place without navigating to another screen", async () => {
+    const navigation = fakeNavigation();
+    const checkForUpdates = jest.fn(async () => ({
+      kind: "none" as const,
+      snapshot: {
+        config: createFallbackConfig("zh-CN"),
+        source: "remote" as const,
+        stale: false,
+      },
+    }));
+    const gateways = createTestGateways();
+    await signIn(gateways);
+    await renderWithProviders(
+      <SettingsScreen navigation={navigation} route={fakeNavigation()} />,
+      { gateways, runtime: { checkForUpdates } },
+    );
+
+    void fireEvent.press(screen.getByTestId("settings-check-update"));
+    await waitFor(() => expect(checkForUpdates).toHaveBeenCalledTimes(1));
+    expect(navigation.navigate).not.toHaveBeenCalledWith("UpdateCenter");
   });
 });

@@ -44,13 +44,19 @@ function formatSize(bytes: number | null): string {
  * Android 直装包走应用内下载（按钮变进度条 → 安装），其余走系统打开更新地址。
  */
 export function UpdateModal() {
-  const { config, t } = useFoundationRuntime();
+  const {
+    config,
+    t,
+    manualUpdatePromptVersion,
+    dismissUpdatePrompt,
+    checkForUpdates,
+  } = useFoundationRuntime();
   const lastPromptedVersion = useUpdatePromptStore(
     (state) => state.lastPromptedVersion,
   );
   const lastPromptedAt = useUpdatePromptStore((state) => state.lastPromptedAt);
   const markPrompted = useUpdatePromptStore((state) => state.markPrompted);
-  const [dismissed, setDismissed] = useState(false);
+  const [dismissedVersion, setDismissedVersion] = useState<string | null>(null);
   const [progress, setProgress] = useState<ApkDownloadProgress | null>(null);
   const [installing, setInstalling] = useState(false);
 
@@ -72,7 +78,14 @@ export function UpdateModal() {
       nowMs: Date.now(),
     }),
   );
-  const visible = !dismissed && Boolean(update.full.actionUrl) && eligible;
+  const manualPrompt =
+    manualUpdatePromptVersion === update.latestVersion &&
+    update.decision !== "none";
+  const visible =
+    forced ||
+    (dismissedVersion !== update.latestVersion &&
+      Boolean(update.full.actionUrl) &&
+      (eligible || manualPrompt));
 
   // 记录本次提醒，供 24h 节流；强制更新不写（每次都要弹）
   useEffect(() => {
@@ -82,10 +95,13 @@ export function UpdateModal() {
   if (!visible) return null;
 
   const downloading = progress !== null;
-  const percent = progress ? Math.round(progress.percentage * 100) : 0;
+  const percent = progress ? Math.round(progress.percentage) : 0;
 
   const onUpdate = async () => {
-    if (!update.full.actionUrl) return;
+    if (!update.full.actionUrl) {
+      await checkForUpdates();
+      return;
+    }
     if (!canDirectInstall) {
       await Linking.openURL(update.full.actionUrl);
       toast(t("update.openedStore"), "info");
@@ -109,7 +125,10 @@ export function UpdateModal() {
       animationType="fade"
       // 强制更新：系统返回键不关闭
       onRequestClose={() => {
-        if (!forced) setDismissed(true);
+        if (!forced) {
+          setDismissedVersion(update.latestVersion);
+          dismissUpdatePrompt();
+        }
       }}
       testID="update-modal"
     >
@@ -119,7 +138,14 @@ export function UpdateModal() {
         padding="$4"
         backgroundColor="$backdrop"
         // 强制更新：点遮罩不关闭
-        onPress={forced ? undefined : () => setDismissed(true)}
+        onPress={
+          forced
+            ? undefined
+            : () => {
+                setDismissedVersion(update.latestVersion);
+                dismissUpdatePrompt();
+              }
+        }
       >
         <Card
           padding="$5"
@@ -146,6 +172,9 @@ export function UpdateModal() {
           </Body>
           {forced ? (
             <Body color="$warning">{t("update.forceSubtitle")}</Body>
+          ) : null}
+          {forced && !update.full.actionUrl ? (
+            <Body color="$danger">{t("update.fullUnavailable")}</Body>
           ) : null}
           <Stack gap="$1.5">
             {update.releaseNotes.slice(0, 3).map((note) => (
@@ -178,12 +207,19 @@ export function UpdateModal() {
               onPress={() => void onUpdate()}
               testID="update-modal-now"
             >
-              {installing ? t("update.install") : t("update.now")}
+              {installing
+                ? t("update.install")
+                : update.full.actionUrl
+                  ? t("update.now")
+                  : t("action.retry")}
             </PrimaryButton>
           )}
           {forced ? null : (
             <SecondaryButton
-              onPress={() => setDismissed(true)}
+              onPress={() => {
+                setDismissedVersion(update.latestVersion);
+                dismissUpdatePrompt();
+              }}
               testID="update-modal-later"
             >
               {t("update.later")}
