@@ -1,8 +1,40 @@
 import type { ExpoConfig, ConfigContext } from "expo/config";
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+type TenantBuildConfig = {
+  slug: string;
+  appName: string;
+  scheme: string;
+  androidPackage: string;
+  iosBundleId: string;
+  apiBaseUrl: string;
+  applicationId: string;
+  distributionChannel: "development" | "staging" | "store" | "direct" | "mdm";
+  otaChannel: "development" | "staging" | "production";
+  version: string;
+  androidVersionCode: number;
+  iosBuildNumber: string;
+  iconBackgroundColor?: string;
+};
+
+const tenantSlug = process.env.EXPO_PUBLIC_TENANT;
+const tenantFile = tenantSlug
+  ? resolve(process.cwd(), "tenants", tenantSlug, "tenant.json")
+  : null;
+if (tenantFile && !existsSync(tenantFile)) {
+  throw new Error(`Tenant configuration not found: ${tenantFile}`);
+}
+const tenant = tenantFile
+  ? (JSON.parse(readFileSync(tenantFile, "utf8")) as TenantBuildConfig)
+  : null;
 
 const distributionChannel =
-  process.env.EXPO_PUBLIC_DISTRIBUTION_CHANNEL ?? "development";
+  tenant?.distributionChannel ??
+  process.env.EXPO_PUBLIC_DISTRIBUTION_CHANNEL ??
+  "development";
 const otaChannel =
+  tenant?.otaChannel ??
   process.env.EXPO_PUBLIC_OTA_CHANNEL ??
   (distributionChannel === "development" || distributionChannel === "staging"
     ? distributionChannel
@@ -11,40 +43,31 @@ const updatesUrl = process.env.EXPO_UPDATES_URL;
 const codeSigningCertificate =
   process.env.EXPO_UPDATES_CODE_SIGNING_CERTIFICATE;
 const codeSigningKeyId = process.env.EXPO_UPDATES_CODE_SIGNING_KEY_ID ?? "main";
-const applicationId = process.env.EXPO_PUBLIC_APPLICATION_ID ?? "dex-mobile";
-/**
- * 租户工厂：`node scripts/tenant.mjs <slug> --env-file --pull-branding` 写入 EXPO_PUBLIC_TENANT_* 与
- * assets/tenants/<slug>/ 图标；这里只读 env，不碰文件系统（app.config 与 RN 共享 tsconfig）。
- */
-const tenantSlug = process.env.EXPO_PUBLIC_TENANT;
-const tenant = tenantSlug
-  ? {
-      slug: tenantSlug,
-      appName: process.env.EXPO_PUBLIC_TENANT_NAME ?? "AnyFun",
-      scheme: process.env.EXPO_PUBLIC_TENANT_SCHEME ?? tenantSlug,
-      androidPackage:
-        process.env.EXPO_PUBLIC_TENANT_ANDROID_PACKAGE ??
-        `com.${tenantSlug}.app`,
-      iosBundleId:
-        process.env.EXPO_PUBLIC_TENANT_IOS_BUNDLE_ID ?? `com.${tenantSlug}.app`,
-      iconBackgroundColor: process.env.EXPO_PUBLIC_TENANT_ICON_BG,
-    }
-  : null;
+const applicationId =
+  tenant?.applicationId ??
+  process.env.EXPO_PUBLIC_APPLICATION_ID ??
+  "dex-mobile";
 const tenantAsset = (name: string, fallback: string): string =>
   tenant ? `./assets/tenants/${tenant.slug}/${name}` : fallback;
 const googleServicesFile = process.env.GOOGLE_SERVICES_JSON;
-const appVersion = "1.2.1";
-const androidVersionCode = 15;
-const iosBuildNumber = "7";
+const appVersion = tenant?.version ?? "0.0.0-dev";
+const androidVersionCode = tenant?.androidVersionCode ?? 1;
+const iosBuildNumber = tenant?.iosBuildNumber ?? "1";
 const buildNumber =
   process.env.EXPO_OS === "ios" ? iosBuildNumber : String(androidVersionCode);
 const apiBaseUrl =
+  tenant?.apiBaseUrl ??
   process.env.EXPO_PUBLIC_API_BASE_URL ??
   (distributionChannel === "development" ? "http://localhost:3000" : "");
 
 if (!apiBaseUrl) {
   throw new Error(
     "EXPO_PUBLIC_API_BASE_URL is required outside the development profile",
+  );
+}
+if (distributionChannel !== "development" && !tenant) {
+  throw new Error(
+    "EXPO_PUBLIC_TENANT is required for non-development builds; use tenants/<slug>/tenant.json",
   );
 }
 if (!/^[a-z0-9][a-z0-9_-]{1,119}$/.test(applicationId)) {

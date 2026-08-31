@@ -6,5 +6,10 @@
   "iosBundleId": "com.anyfun.foundation",
   "apiBaseUrl": "https://api.anyfun.win",
   "applicationId": "dex-mobile",
+  "distributionChannel": "direct",
+  "otaChannel": "production",
+  "version": "1.2.1",
+  "androidVersionCode": 15,
+  "iosBuildNumber": "7",
   "iconBackgroundColor": "#E9F0FF"
 }

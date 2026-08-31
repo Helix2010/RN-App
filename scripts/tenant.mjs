@@ -5,20 +5,15 @@
  * - 读取 tenants/<slug>/tenant.json（应用名 / scheme / 包名 / API 域名 / applicationId / 图标底色）
  * - --pull-branding：GET <apiBaseUrl>/v1/mobile/bootstrap，把租户服务端 branding 的 logo 下载为
  *   assets/tenants/<slug>/icon.png（桌面图标 + Android 自适应前景），并生成纯色背景 PNG（图标底色）
- * - --env-file：写 .env.tenant（EXPO_PUBLIC_* 变量），供 `expo prebuild` / `eas build --profile` 读取
- * app.config.ts 通过 EXPO_PUBLIC_TENANT=<slug> 读取同一份 tenant.json 生成 name / scheme / 包名 / 图标路径。
+ * - --env-file：只写租户 slug；其他构建字段始终从 tenant.json 读取，避免配置复制与漂移
+ * app.config.ts 通过 EXPO_PUBLIC_TENANT=<slug> 读取 tenant.json 生成全部构建配置。
  */
-import {
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Buffer } from "node:buffer";
 import { deflateSync } from "node:zlib";
+import { readTenantConfig } from "./tenant-config.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const [slug, ...flags] = process.argv.slice(2);
@@ -33,21 +28,7 @@ if (!existsSync(tenantFile)) {
   console.error(`tenant not found: ${tenantFile}`);
   process.exit(1);
 }
-const tenant = JSON.parse(readFileSync(tenantFile, "utf8"));
-for (const key of [
-  "slug",
-  "appName",
-  "scheme",
-  "androidPackage",
-  "iosBundleId",
-  "apiBaseUrl",
-  "applicationId",
-]) {
-  if (!tenant[key]) {
-    console.error(`tenant.json missing ${key}`);
-    process.exit(1);
-  }
-}
+const tenant = readTenantConfig(slug);
 const assetDir = resolve(root, "assets", "tenants", slug);
 mkdirSync(assetDir, { recursive: true });
 
@@ -139,19 +120,7 @@ if (flags.includes("--pull-branding")) {
 }
 
 if (flags.includes("--env-file")) {
-  const env = [
-    `EXPO_PUBLIC_TENANT=${slug}`,
-    `EXPO_PUBLIC_TENANT_NAME=${tenant.appName}`,
-    `EXPO_PUBLIC_TENANT_SCHEME=${tenant.scheme}`,
-    `EXPO_PUBLIC_TENANT_ANDROID_PACKAGE=${tenant.androidPackage}`,
-    `EXPO_PUBLIC_TENANT_IOS_BUNDLE_ID=${tenant.iosBundleId}`,
-    `EXPO_PUBLIC_TENANT_ICON_BG=${tenant.iconBackgroundColor ?? "#FFFFFF"}`,
-    `EXPO_PUBLIC_API_BASE_URL=${tenant.apiBaseUrl}`,
-    `EXPO_PUBLIC_APPLICATION_ID=${tenant.applicationId}`,
-    `EXPO_PUBLIC_DISTRIBUTION_CHANNEL=${tenant.distributionChannel ?? "store"}`,
-    `EXPO_PUBLIC_OTA_CHANNEL=${tenant.otaChannel ?? "production"}`,
-    "",
-  ].join("\n");
+  const env = `EXPO_PUBLIC_TENANT=${slug}\n`;
   writeFileSync(resolve(root, ".env.tenant"), env);
   console.log("wrote .env.tenant");
 }
@@ -159,6 +128,4 @@ if (flags.includes("--env-file")) {
 console.log(
   `tenant ${slug}: ${tenant.appName} · ${tenant.androidPackage} · ${tenant.apiBaseUrl}`,
 );
-console.log(
-  `next: EXPO_PUBLIC_TENANT=${slug} npx expo prebuild --clean && eas build --profile production-store`,
-);
+console.log(`next: pnpm android:release ${slug}`);

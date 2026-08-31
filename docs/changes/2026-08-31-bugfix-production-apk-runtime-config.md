@@ -12,7 +12,7 @@
 ## Given / When / Then
 
 1. Given 未提供生产 API 地址 When 执行 Android Release 构建 Then 构建立即失败，禁止回退到 localhost。
-2. Given AnyFun 生产环境 When 执行统一构建命令 Then prebuild 与 Gradle 使用同一组环境变量。
+2. Given `tenants/anyfun/tenant.json` When 执行统一构建命令 Then prebuild 与 Gradle 使用同一份租户配置。
 3. Given APK 已构建 When 校验嵌入配置 Then API、渠道、应用身份、版本、Build、OTA 与 runtimeVersion 必须全部匹配后才复制产物。
 
 ## UI 与交互状态

@@ -20,6 +20,14 @@
 - `src/generated/**` MUST 由工具生成，禁止手改。
 - feature 之间 MUST NOT 直接深层导入；共享能力先判断属于 design-system、core，还是独立领域模块。
 
+## SaaS 租户构建
+
+- 生产构建 MUST 显式选择租户 slug；Android 直装包统一使用 `pnpm android:release <slug>`。
+- `tenants/<slug>/tenant.json` MUST 是该租户构建信息的唯一事实源，集中维护域名、applicationId、应用名、scheme、Android 包名、iOS Bundle ID、发布渠道、OTA Channel、版本、Build 与图标配置。
+- `app.config.ts`、`eas.json`、CI 参数和本地命令 MUST NOT 再硬编码或复制租户 API、applicationId、包名、版本和 Build；环境变量只允许传递租户 slug 或密钥类配置。
+- Release 构建 MUST 在产物复制前读取 APK 内嵌 `app.config`，校验租户域名、渠道、应用身份、版本、Build、OTA 和 runtimeVersion；任一不一致必须失败。
+- 新租户 MUST 新建独立 `tenant.json` 与品牌资产，禁止复用其他租户包名、签名、域名或缓存命名空间。
+
 ## 安全与隐私
 
 - MUST NOT 在代码、日志、埋点、异常附件或截图中写入 token、密码、验证码、身份证件、银行卡等敏感信息。
