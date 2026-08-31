@@ -12,6 +12,7 @@ import {
   mockNowIso,
   mockRandom,
   simulate,
+  scheduleMock,
 } from "../../../core/mock/mock-runtime";
 import {
   add,
@@ -915,8 +916,8 @@ export class MockPredictGateway implements PredictGateway {
         .padStart(14, "0")}${"1".repeat(50)}`,
     };
     state.txs.unshift(tx);
-    setTimeout(() => void this.advanceTx(tx.id, "confirming"), 1_200);
-    setTimeout(() => void this.advanceTx(tx.id, "confirmed"), 3_500);
+    scheduleMock(() => void this.advanceTx(tx.id, "confirming"), 1_200);
+    scheduleMock(() => void this.advanceTx(tx.id, "confirmed"), 3_500);
     return tx;
   }
 

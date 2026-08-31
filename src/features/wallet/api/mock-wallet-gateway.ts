@@ -12,6 +12,7 @@ import {
   mockNowIso,
   mockRandom,
   simulate,
+  scheduleMock,
 } from "../../../core/mock/mock-runtime";
 import {
   add,
@@ -257,8 +258,8 @@ export class MockWalletGateway implements WalletGateway {
       state.transfers.unshift(transfer);
       await this.save();
       // 状态机推进：submitted → confirming → confirmed
-      setTimeout(() => void this.advance(transfer.id, "confirming"), 1_500);
-      setTimeout(() => void this.advance(transfer.id, "confirmed"), 4_000);
+      scheduleMock(() => void this.advance(transfer.id, "confirming"), 1_500);
+      scheduleMock(() => void this.advance(transfer.id, "confirmed"), 4_000);
       return transfer;
     });
   }

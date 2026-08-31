@@ -15,6 +15,7 @@ import {
   mockNowIso,
   mockRandom,
   simulate,
+  scheduleMock,
 } from "../../../core/mock/mock-runtime";
 import {
   fromDecimal,
@@ -504,8 +505,8 @@ export class MockDexGateway implements DexGateway {
         .padStart(14, "0")}${"2".repeat(50)}`,
     };
     state.txs.unshift(tx);
-    setTimeout(() => void this.advanceTx(tx.id, "confirming"), 1_200);
-    setTimeout(() => void this.advanceTx(tx.id, "confirmed"), 3_200);
+    scheduleMock(() => void this.advanceTx(tx.id, "confirming"), 1_200);
+    scheduleMock(() => void this.advanceTx(tx.id, "confirmed"), 3_200);
     return tx;
   }
 

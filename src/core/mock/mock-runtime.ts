@@ -100,3 +100,12 @@ export async function simulate<T>(
 export function isEmptyMode(): boolean {
   return mockRuntime().emptyMode;
 }
+
+/**
+ * Mock 状态机用的延时：在 Node（Jest）下 unref，避免测试跑完后进程被挂起的定时器吊住；
+ * 在 RN 运行时 unref 不存在，退化为普通 setTimeout。
+ */
+export function scheduleMock(fn: () => void, ms: number): void {
+  const timer = setTimeout(fn, ms) as unknown as { unref?: () => void };
+  timer.unref?.();
+}
