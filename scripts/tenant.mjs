@@ -23,11 +23,6 @@ if (!slug) {
   );
   process.exit(1);
 }
-const tenantFile = resolve(root, "tenants", slug, "tenant.json");
-if (!existsSync(tenantFile)) {
-  console.error(`tenant not found: ${tenantFile}`);
-  process.exit(1);
-}
 const tenant = readTenantConfig(slug);
 const assetDir = resolve(root, "assets", "tenants", slug);
 mkdirSync(assetDir, { recursive: true });
