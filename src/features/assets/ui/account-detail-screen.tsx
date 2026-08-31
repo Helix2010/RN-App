@@ -10,7 +10,7 @@ import {
   shortenAddress,
 } from "../../../core/i18n/format";
 import { pickTranslation } from "../../../core/i18n/localized-text";
-import { isNegative } from "../../../core/money/money";
+import { isNegative, toApproxNumber } from "../../../core/money/money";
 import {
   AmountText,
   AppIcon,
@@ -113,9 +113,9 @@ function PredictAccount({ address }: { address: string }) {
   );
   const total = balance.data
     ? formatUsd(
-        Number(balance.data.available.raw) / 1e6 +
-          Number(balance.data.lockedInOrders.raw) / 1e6 +
-          Number(balance.data.positionsValue.raw) / 1e6,
+        toApproxNumber(balance.data.available) +
+          toApproxNumber(balance.data.lockedInOrders) +
+          toApproxNumber(balance.data.positionsValue),
         locale,
       )
     : undefined;

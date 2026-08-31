@@ -602,7 +602,7 @@ function TokenHomeRow({
       <Stack flex={1}>
         <SectionTitle>{summary.token.symbol}</SectionTitle>
         <Body fontSize={12}>
-          {summary.token.chain.toUpperCase()} · {t("module.dex.liquidity")}{" "}
+          {summary.token.chain.toUpperCase()} · {t("dex.liquidity")}{" "}
           {formatCompactNumber(summary.liquidityUsd, locale)}
         </Body>
       </Stack>

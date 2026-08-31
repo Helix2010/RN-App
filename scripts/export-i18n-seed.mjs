@@ -6,7 +6,13 @@
  * 用法：node scripts/export-i18n-seed.mjs [--check]
  *   --check：只校验两张表键集合一致且与已导出文件一致（CI 用）。
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import {
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+  existsSync,
+  mkdirSync,
+} from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -41,8 +47,40 @@ if (missingEn.length || missingZh.length) {
   process.exit(1);
 }
 
-const outDir = resolve(root, "i18n/seed");
 const check = process.argv.includes("--check");
+
+// 校验：代码里静态引用的 t("key") 必须存在于字典（动态前缀 t(`prefix.${x}`) 按前缀放行）
+const sourceFiles = [];
+(function walk(dir) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = resolve(dir, entry.name);
+    if (entry.isDirectory()) walk(full);
+    else if (/\.tsx?$/.test(entry.name) && !entry.name.endsWith(".spec.ts"))
+      sourceFiles.push(full);
+  }
+})(resolve(root, "src"));
+const code = sourceFiles.map((file) => readFileSync(file, "utf8")).join("\n");
+const staticKeys = new Set(
+  [...code.matchAll(/\bt\(\s*"([^"]+)"/g)].map((match) => match[1]),
+);
+const dynamicPrefixes = [...code.matchAll(/\bt\(\s*`([^`$]*)\$\{/g)].map(
+  (match) => match[1],
+);
+const missing = [...staticKeys].filter((key) => !zhKeys.has(key));
+if (missing.length) {
+  console.error(
+    "i18n: keys used in code but missing from fallback dictionary:",
+    missing,
+  );
+  process.exit(1);
+}
+if (dynamicPrefixes.length && !check) {
+  console.log(
+    `i18n: ${dynamicPrefixes.length} dynamic key prefixes (not statically verifiable): ${[...new Set(dynamicPrefixes)].join(", ")}`,
+  );
+}
+
+const outDir = resolve(root, "i18n/seed");
 const files = { "zh-CN": zh, "en-US": en };
 let changed = false;
 for (const [locale, messages] of Object.entries(files)) {

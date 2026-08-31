@@ -221,4 +221,23 @@ describe("MockPredictGateway", () => {
       positions.some((p) => p.marketId === "m-btc-120k" && p.outcome === "no"),
     ).toBe(true);
   });
+  it("refuses to place an order when the mock runtime injects a failure, leaving the balance untouched", async () => {
+    const gateway = new MockPredictGateway(memoryStorage());
+    const before = await gateway.getBalance(ADDRESS);
+    useMockRuntime.getState().set({ failureRate: 1 });
+    await expect(
+      gateway.placeOrder(ADDRESS, {
+        marketId: "m-btc-120k",
+        outcome: "yes",
+        side: "buy",
+        type: "market",
+        amount: fromDecimal("100", 6, "USDC"),
+      }),
+    ).rejects.toMatchObject({ kind: "server" });
+    useMockRuntime.getState().set({ failureRate: 0 });
+    const after = await gateway.getBalance(ADDRESS);
+    expect(toDecimalString(after.available)).toBe(
+      toDecimalString(before.available),
+    );
+  });
 });

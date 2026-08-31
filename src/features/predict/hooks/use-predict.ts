@@ -212,11 +212,22 @@ export function usePredictDeposit(address: string | undefined) {
         input.walletToken.decimals,
         input.walletToken.symbol,
       );
-      await wallet.adjustBalance(address as string, input.walletToken, {
+      const debit = {
         ...walletAmount,
         raw: (-BigInt(walletAmount.raw)).toString(),
-      });
-      return predict.deposit(address as string, input.amount);
+      };
+      await wallet.adjustBalance(address as string, input.walletToken, debit);
+      try {
+        return await predict.deposit(address as string, input.amount);
+      } catch (error) {
+        // 两个网关的组合不是原子的：预测账户入账失败时把钱包扣减退回
+        await wallet.adjustBalance(
+          address as string,
+          input.walletToken,
+          walletAmount,
+        );
+        throw error;
+      }
     },
     onSuccess: () => {
       if (address) invalidate(address);
@@ -235,15 +246,22 @@ export function usePredictWithdraw(address: string | undefined) {
       walletToken: Parameters<typeof wallet.adjustBalance>[1];
     }) => {
       const tx = await predict.withdraw(address as string, input.amount);
-      await wallet.adjustBalance(
-        address as string,
-        input.walletToken,
-        fromDecimal(
-          toDecimalString(input.amount),
-          input.walletToken.decimals,
-          input.walletToken.symbol,
-        ),
+      const credit = fromDecimal(
+        toDecimalString(input.amount),
+        input.walletToken.decimals,
+        input.walletToken.symbol,
       );
+      try {
+        await wallet.adjustBalance(
+          address as string,
+          input.walletToken,
+          credit,
+        );
+      } catch (error) {
+        // 钱包入账失败：把预测账户扣减退回，避免资金消失
+        await predict.deposit(address as string, input.amount);
+        throw error;
+      }
       return tx;
     },
     onSuccess: () => {

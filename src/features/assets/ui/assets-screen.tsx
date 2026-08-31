@@ -6,6 +6,7 @@ import {
   formatUsd,
   shortenAddress,
 } from "../../../core/i18n/format";
+import { toApproxNumber } from "../../../core/money/money";
 import {
   AmountText,
   AppIcon,
@@ -99,7 +100,7 @@ export function AssetsScreen({
           verified: true,
         },
         amount: data.predict.available,
-        usdValue: Number(data.predict.available.raw) / 1e6,
+        usdValue: toApproxNumber(data.predict.available),
         change24hPct: 0,
       }
     : null;
