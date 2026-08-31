@@ -23,6 +23,7 @@ import {
 import type { RootStackParamList } from "../../navigation/types";
 import { useApprovals } from "../dex/hooks/use-dex";
 import { Group, SRow } from "../profile/profile-screen";
+import { useAppLockToggle } from "../security/use-app-lock-toggle";
 import { useSession, useSignOut } from "../session/hooks/use-session";
 import { useWalletAccounts } from "../wallet/hooks/use-wallet";
 
@@ -49,22 +50,27 @@ export function SecurityCenterScreen({
   const accounts = useWalletAccounts();
   const approvals = useApprovals(config.modules.dex ? address : undefined);
   const signOut = useSignOut();
+  const { enrolled, toggle: toggleAppLock } = useAppLockToggle();
   const confirm = useRef<SheetHandle>(null);
 
   const embedded = (accounts.data ?? []).find(
     (item) => item.connector === "embedded",
   );
   const backedUp = embedded ? embedded.backedUp : true;
-  const checks = [prefs.appLockEnabled, prefs.txConfirm, backedUp];
+  // 设备没录入凭据时应用锁不生效，不能算作已开启的保护
+  const checks = [prefs.appLockEnabled && enrolled, prefs.txConfirm, backedUp];
   const passed = checks.filter(Boolean).length;
   const level = passed === 3 ? "high" : passed === 2 ? "medium" : "low";
+  // 锁开着但设备没凭据时，"建议开启应用锁"是错的——该提示的是去系统里设锁屏
   const suggestion = !backedUp
     ? t("security.suggest.backup")
     : !prefs.appLockEnabled
       ? t("security.suggest.appLock")
-      : !prefs.txConfirm
-        ? t("security.suggest.txConfirm")
-        : undefined;
+      : !enrolled
+        ? t("security.appLock.unavailable")
+        : !prefs.txConfirm
+          ? t("security.suggest.txConfirm")
+          : undefined;
   const levelColor =
     level === "high" ? "$success" : level === "medium" ? "$warning" : "$danger";
   const cycleLock = () => {
@@ -135,13 +141,15 @@ export function SecurityCenterScreen({
           <Group title={t("security.section.protection")}>
             <SRow
               title={t("settings.appLock")}
-              subtitle={t("security.appLock.hint")}
+              subtitle={
+                enrolled
+                  ? t("security.appLock.hint")
+                  : t("security.appLock.unavailable")
+              }
               trailing={
                 <Switch
                   value={prefs.appLockEnabled}
-                  onValueChange={(next) =>
-                    prefs.update({ appLockEnabled: next })
-                  }
+                  onValueChange={(next) => void toggleAppLock(next)}
                   accessibilityLabel={t("settings.appLock")}
                   testID="sec-app-lock"
                 />

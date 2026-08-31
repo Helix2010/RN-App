@@ -27,6 +27,7 @@ import type { RootStackParamList } from "../../navigation/types";
 import { Group, SRow } from "../profile/profile-screen";
 import { useSession } from "../session/hooks/use-session";
 import { LANGUAGE_NAMES } from "./language-names";
+import { useAppLockToggle } from "../security/use-app-lock-toggle";
 
 function fill(
   template: string,
@@ -45,6 +46,7 @@ export function SettingsScreen({
   const insets = useSafeAreaInsets();
   const { config, localePreference, themePreference, t } =
     useFoundationRuntime();
+  const { toggle: toggleAppLock } = useAppLockToggle();
   const session = useSession();
   const address = session.data?.address;
   const prefs = usePreferencesStore();
@@ -224,9 +226,7 @@ export function SettingsScreen({
               trailing={
                 <Switch
                   value={prefs.appLockEnabled}
-                  onValueChange={(next) =>
-                    prefs.update({ appLockEnabled: next })
-                  }
+                  onValueChange={(next) => void toggleAppLock(next)}
                   accessibilityLabel={t("settings.appLock")}
                   testID="settings-app-lock"
                 />

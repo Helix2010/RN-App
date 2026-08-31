@@ -52,6 +52,7 @@ import {
 import type { Quote } from "../model/dex";
 import { TxProgress } from "../../assets/ui/tx-progress";
 import { ChainDot, TokenAvatar, chainName, fill } from "./shared";
+import { useRequireVerification } from "../../security/use-require-verification";
 
 function fmt(value: Money, locale: string, withSymbol = true): string {
   const approx = toApproxNumber(value);
@@ -91,6 +92,7 @@ export function SwapScreen({
 }) {
   const insets = useSafeAreaInsets();
   const { config, t } = useFoundationRuntime();
+  const requireVerification = useRequireVerification();
   const locale = config.localization.selectedLocale;
   const theme = useTheme();
   const session = useSession();
@@ -206,7 +208,8 @@ export function SwapScreen({
     confirmSheet.current?.present();
   };
 
-  const submit = (current: Quote) => {
+  const submit = async (current: Quote) => {
+    if (!(await requireVerification())) return;
     swap.mutate(current.id, {
       onSuccess: (result) => {
         confirmSheet.current?.dismiss();
@@ -668,7 +671,9 @@ export function SwapScreen({
             ) : (
               <PrimaryButton
                 disabled={swap.isPending}
-                onPress={() => quote.data && submit(quote.data)}
+                onPress={() => {
+                  if (quote.data) void submit(quote.data);
+                }}
                 testID="swap-confirm"
               >
                 {swap.isPending ? t("login.signing") : t("swap.confirm")}

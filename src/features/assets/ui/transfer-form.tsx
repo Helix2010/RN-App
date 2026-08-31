@@ -31,6 +31,7 @@ import {
 import { TOKENS } from "../../wallet/fixtures/wallet";
 import { useWalletBalances } from "../../wallet/hooks/use-wallet";
 import { TxProgress } from "./tx-progress";
+import { useRequireVerification } from "../../security/use-require-verification";
 
 export type TransferDirection = "deposit" | "withdraw";
 const PREDICT_USDC = { decimals: 6, symbol: "USDC" };
@@ -60,6 +61,7 @@ export function TransferForm({
   onMinimize?: () => void;
 }) {
   const { config, t } = useFoundationRuntime();
+  const requireVerification = useRequireVerification();
   const locale = config.localization.selectedLocale;
   const [direction, setDirection] =
     useState<TransferDirection>(initialDirection);
@@ -91,7 +93,8 @@ export function TransferForm({
   const disabled =
     isZero(amount) || insufficient || deposit.isPending || withdraw.isPending;
 
-  const submit = () => {
+  const submit = async () => {
+    if (!(await requireVerification())) return;
     const input = { amount, walletToken: WALLET_USDC };
     const mutation = direction === "deposit" ? deposit : withdraw;
     mutation.mutate(input, {
@@ -227,7 +230,7 @@ export function TransferForm({
       </Row>
       <PrimaryButton
         disabled={disabled}
-        onPress={submit}
+        onPress={() => void submit()}
         testID="transfer-submit"
       >
         {fill(

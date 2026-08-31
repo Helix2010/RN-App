@@ -51,6 +51,7 @@ import type {
   TimeInForce,
 } from "../model/predict";
 import { fill, outcomeLabel } from "./shared";
+import { useRequireVerification } from "../../security/use-require-verification";
 
 export type OrderSheetHandle = {
   open: (market: Market, outcome: Outcome, side?: OrderSide) => void;
@@ -71,6 +72,7 @@ export const OrderSheet = forwardRef<
   }
 >(function OrderSheet({ event, feeBps, onInsufficient }, ref) {
   const { config, t } = useFoundationRuntime();
+  const requireVerification = useRequireVerification();
   const locale = config.localization.selectedLocale;
   const sheet = useRef<SheetHandle>(null);
   const session = useSession();
@@ -190,8 +192,9 @@ export const OrderSheet = forwardRef<
     !place.isPending,
   );
 
-  const submit = () => {
+  const submit = async () => {
     if (!request || !market) return;
+    if (!(await requireVerification())) return;
     place.mutate(request, {
       onSuccess: (result) => {
         sheet.current?.dismiss();
@@ -540,7 +543,7 @@ export const OrderSheet = forwardRef<
       ) : (
         <PrimaryButton
           disabled={!canSubmit}
-          onPress={submit}
+          onPress={() => void submit()}
           backgroundColor={outcome === "yes" ? "$success" : "$danger"}
           testID="order-submit"
         >

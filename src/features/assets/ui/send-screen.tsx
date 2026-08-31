@@ -45,6 +45,7 @@ import {
 } from "../../wallet/hooks/use-wallet";
 import type { TokenBalance } from "../../wallet/model/wallet";
 import { TxProgress } from "./tx-progress";
+import { useRequireVerification } from "../../security/use-require-verification";
 
 const ADDRESS_BOOK = [
   { label: "交易所 A", address: "0x9b2e4d17c6a83f05e1b7d9c2a4f6e8b0d3c5a7e9" },
@@ -69,6 +70,7 @@ export function SendScreen({
 }) {
   const insets = useSafeAreaInsets();
   const { config, t } = useFoundationRuntime();
+  const requireVerification = useRequireVerification();
   const locale = config.localization.selectedLocale;
   const session = useSession();
   const address = session.data?.address ?? "";
@@ -122,8 +124,10 @@ export function SendScreen({
     if (value) setTo(value);
   };
 
-  const submit = () => {
+  const submit = async () => {
     if (!selected || !amount) return;
+    // 转出：交易前验证 + 大额阈值（两者任一命中都要验证）
+    if (!(await requireVerification({ usdValue: usd }))) return;
     send.mutate(
       { from: address, to: to.trim(), token: selected.token, amount },
       {
@@ -396,7 +400,7 @@ export function SendScreen({
             </Stack>
             <PrimaryButton
               disabled={send.isPending}
-              onPress={submit}
+              onPress={() => void submit()}
               testID="send-confirm"
             >
               {send.isPending

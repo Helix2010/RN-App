@@ -6,6 +6,7 @@ import { FoundationRuntimeProvider } from "./src/app/runtime-context";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { GatewayProvider } from "./src/core/gateways/gateway-context";
 import { ToastHost } from "./src/design-system";
+import { AppLockGate } from "./src/features/security/app-lock-gate";
 import { FoundationNavigator } from "./src/navigation/foundation-navigator";
 
 const queryClient = new QueryClient({
@@ -24,6 +25,7 @@ export default function App() {
               <BottomSheetModalProvider>
                 <StatusBar style="auto" />
                 <FoundationNavigator />
+                <AppLockGate />
                 <ToastHost />
               </BottomSheetModalProvider>
             </GatewayProvider>
