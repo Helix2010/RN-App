@@ -46,16 +46,6 @@ export function useSendToken() {
   });
 }
 
-export function useWalletTransfers(address: string | undefined) {
-  const { wallet } = useGateways();
-  return useQuery({
-    queryKey: ["wallet-transfers", address],
-    queryFn: () => wallet.listTransfers(address as string),
-    enabled: Boolean(address),
-    refetchInterval: 2_000,
-  });
-}
-
 export function useSwitchAccount() {
   const { wallet, session } = useGateways();
   const queryClient = useQueryClient();

@@ -34,7 +34,7 @@ export function fill(
   );
 }
 
-export const STATUS_TONE: Record<
+const STATUS_TONE: Record<
   MarketStatus,
   "success" | "textMuted" | "warning" | "info"
 > = {

@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
 import { useGateways } from "../../../core/gateways/gateway-context";
 import {
   fromDecimal,
@@ -62,24 +61,6 @@ export function usePriceHistory(
     enabled: Boolean(marketId),
     staleTime: 30_000,
   });
-}
-
-/** 实时价格：订阅市场事件，返回最新 Yes 价格覆盖。 */
-export function useLivePrices(marketIds: string[]) {
-  const { predict } = useGateways();
-  const [prices, setPrices] = useState<Record<string, number>>({});
-  const key = marketIds.join(",");
-  useEffect(() => {
-    if (!key) return undefined;
-    return predict.subscribeMarkets(key.split(","), (event) => {
-      if (event.type === "price_change")
-        setPrices((previous) => ({
-          ...previous,
-          [event.marketId]: event.yesPriceCents,
-        }));
-    });
-  }, [key, predict]);
-  return prices;
 }
 
 export function useAdjudication(marketId: string | undefined) {
@@ -183,15 +164,6 @@ export function usePredictActivity(address: string | undefined) {
   return useQuery({
     queryKey: ["activity", address],
     queryFn: () => predict.listActivity(address as string),
-    enabled: Boolean(address),
-  });
-}
-
-export function usePnl(address: string | undefined, range: PriceRange) {
-  const { predict } = useGateways();
-  return useQuery({
-    queryKey: ["predict-pnl", address, range],
-    queryFn: () => predict.getPnl(address as string, range),
     enabled: Boolean(address),
   });
 }

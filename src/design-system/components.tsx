@@ -130,58 +130,6 @@ export function BrandMark({ size = 48, uri }: { size?: number; uri?: string }) {
   );
 }
 
-export function AppHeader({
-  eyebrow,
-  title,
-  subtitle,
-  action,
-  onBrandPress,
-  brandLabel = "App profile",
-}: {
-  eyebrow?: string;
-  title: string;
-  subtitle?: string;
-  action?: ReactNode;
-  onBrandPress?: () => void;
-  brandLabel?: string;
-}) {
-  return (
-    <XStack justifyContent="space-between" alignItems="center" gap="$3">
-      <XStack alignItems="center" gap="$3" flex={1}>
-        {onBrandPress ? (
-          <Button
-            width={40}
-            height={40}
-            padding={0}
-            borderRadius={12}
-            backgroundColor="transparent"
-            borderWidth={0}
-            onPress={onBrandPress}
-            accessibilityRole="button"
-            accessibilityLabel={brandLabel}
-          >
-            <BrandMark size={40} />
-          </Button>
-        ) : (
-          <BrandMark size={40} />
-        )}
-        <Stack gap="$1" flex={1}>
-          {eyebrow ? <Label fontSize={11}>{eyebrow}</Label> : null}
-          <Heading fontSize={24} lineHeight={29}>
-            {title}
-          </Heading>
-          {subtitle ? (
-            <Body fontSize={13} numberOfLines={1}>
-              {subtitle}
-            </Body>
-          ) : null}
-        </Stack>
-      </XStack>
-      {action}
-    </XStack>
-  );
-}
-
 export function ScreenHeader({
   eyebrow,
   title,
@@ -226,12 +174,6 @@ export function ScreenHeader({
     </XStack>
   );
 }
-
-export const Divider = styled(YStack, {
-  height: 1,
-  width: "100%",
-  backgroundColor: "$borderColor",
-});
 
 export const Content = styled(YStack, {
   width: "100%",
@@ -326,51 +268,6 @@ export function HorizontalScroll({ children }: PropsWithChildren) {
   );
 }
 
-export function ListRow({
-  title,
-  subtitle,
-  leading,
-  trailing,
-  onPress,
-}: {
-  title: string;
-  subtitle?: string;
-  leading?: ReactNode;
-  trailing?: ReactNode;
-  onPress?: () => void;
-}) {
-  const content = (
-    <XStack flex={1} alignItems="center" gap="$3">
-      {leading}
-      <Stack flex={1} gap="$1">
-        <SectionTitle>{title}</SectionTitle>
-        {subtitle ? <Body fontSize={12}>{subtitle}</Body> : null}
-      </Stack>
-      {trailing}
-    </XStack>
-  );
-  return onPress ? (
-    <Button
-      minHeight={58}
-      paddingHorizontal="$3"
-      paddingVertical="$2"
-      borderRadius="$4"
-      backgroundColor="$surfaceVariant"
-      borderWidth={0}
-      onPress={onPress}
-      pressStyle={{ opacity: 0.78 }}
-      accessibilityRole="button"
-      accessibilityLabel={title}
-    >
-      {content}
-    </Button>
-  ) : (
-    <XStack minHeight={52} alignItems="center">
-      {content}
-    </XStack>
-  );
-}
-
 export const Heading = styled(Text, {
   color: "$color",
   fontSize: 28,
@@ -407,13 +304,6 @@ export const AmountText = styled(Text, {
   lineHeight: 30,
   fontWeight: "700",
   fontVariant: ["tabular-nums"],
-});
-
-export const AddressText = styled(Text, {
-  color: "$textMuted",
-  fontSize: 13,
-  lineHeight: 18,
-  letterSpacing: 0.2,
 });
 
 export const PrimaryButton = styled(Button, {

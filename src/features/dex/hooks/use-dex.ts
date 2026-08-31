@@ -3,15 +3,6 @@ import { useGateways } from "../../../core/gateways/gateway-context";
 import type { ChainId, TokenRef } from "../../../core/gateways/types";
 import type { CandleInterval, QuoteRequest, TokenQuery } from "../model/dex";
 
-export function useDexChains() {
-  const { dex } = useGateways();
-  return useQuery({
-    queryKey: ["dex-chains"],
-    queryFn: () => dex.listChains(),
-    staleTime: Infinity,
-  });
-}
-
 export function useDexTokens(query: TokenQuery) {
   const { dex } = useGateways();
   return useQuery({

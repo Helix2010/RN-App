@@ -33,7 +33,7 @@ const GatewayContext = createContext<Gateways | null>(null);
  * 组装一套 Mock 网关。业务层只依赖接口，切换实现只改这里。
  * Http 实现（P6）同样在此按 bootstrap.services 选择。
  */
-export function createMockGateways(storage: KeyValueStorage): Gateways {
+function createMockGateways(storage: KeyValueStorage): Gateways {
   const session = new MockSessionGateway(storage);
   const wallet = new MockWalletGateway(storage);
   const predict = new MockPredictGateway(storage);

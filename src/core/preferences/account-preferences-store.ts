@@ -25,7 +25,7 @@ export type AccountPreferences = {
   dnd: { enabled: boolean; start: string; end: string };
 };
 
-export const DEFAULT_ACCOUNT_PREFERENCES: AccountPreferences = {
+const DEFAULT_ACCOUNT_PREFERENCES: AccountPreferences = {
   quoteCurrency: "USDT",
   predict: { confirmBeforeOrder: true, defaultOrderType: "market" },
   dex: { defaultSlippage: "auto", riskWarning: true },

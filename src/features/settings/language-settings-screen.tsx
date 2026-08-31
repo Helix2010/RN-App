@@ -132,6 +132,7 @@ export function LanguageSettingsScreen({
               );
             })}
           </Card>
+          <Body fontSize={12}>{t("lang.hint")}</Body>
         </Content>
       </PageScroll>
     </Page>

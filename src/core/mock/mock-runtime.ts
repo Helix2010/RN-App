@@ -47,7 +47,7 @@ export const useMockRuntime = create<MockRuntimeState>()(
 );
 
 /** 供非 React 代码（Mock 网关）读取当前设置。 */
-export function mockRuntime(): Omit<MockRuntimeState, "set" | "reset"> {
+function mockRuntime(): Omit<MockRuntimeState, "set" | "reset"> {
   return useMockRuntime.getState();
 }
 

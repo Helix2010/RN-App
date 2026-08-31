@@ -1,3 +1,4 @@
+import * as Haptics from "expo-haptics";
 import { useEffect, type ReactNode } from "react";
 import { Pressable, TextInput, type TextInputProps } from "react-native";
 import Animated, {
@@ -32,7 +33,10 @@ export function Switch({
   }));
   return (
     <Pressable
-      onPress={() => onValueChange(!value)}
+      onPress={() => {
+        void Haptics.selectionAsync();
+        onValueChange(!value);
+      }}
       disabled={disabled}
       accessibilityRole="switch"
       accessibilityState={{ checked: value, disabled }}

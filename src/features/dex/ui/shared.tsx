@@ -16,7 +16,7 @@ export function fill(
   );
 }
 
-export const CHAIN_COLORS: Record<ChainId, string> = {
+const CHAIN_COLORS: Record<ChainId, string> = {
   bsc: "#F0B90B",
   eth: "#627EEA",
   base: "#0052FF",

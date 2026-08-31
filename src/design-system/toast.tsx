@@ -1,3 +1,4 @@
+import * as Haptics from "expo-haptics";
 import { useEffect } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { FadeInUp, FadeOutUp } from "react-native-reanimated";
@@ -16,7 +17,7 @@ type ToastState = {
 
 let nextToastId = 1;
 
-export const useToastStore = create<ToastState>((set) => ({
+const useToastStore = create<ToastState>((set) => ({
   queue: [],
   show: (text, kind = "info", durationMs = 2_400) =>
     set((state) => ({
@@ -35,6 +36,10 @@ export function toast(
   kind: ToastKind = "info",
   durationMs?: number,
 ): void {
+  if (kind === "success")
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  else if (kind === "error")
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
   useToastStore.getState().show(text, kind, durationMs);
 }
 
