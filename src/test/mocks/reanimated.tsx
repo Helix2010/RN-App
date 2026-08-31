@@ -18,6 +18,14 @@ export const useSharedValue = <T,>(initial: T): SharedValue<T> => ({
   value: initial,
 });
 export const useAnimatedStyle = (factory: () => object) => factory();
+export const useAnimatedScrollHandler = (handlers: unknown) => handlers;
+/** 静态渲染：直接给出输出区间的首值，够断言布局，不做插值 */
+export const interpolate = (
+  _value: number,
+  _input: readonly number[],
+  output: readonly number[],
+) => output[0] ?? 0;
+export const Extrapolation = { CLAMP: "clamp", EXTEND: "extend" } as const;
 export const useDerivedValue = <T,>(factory: () => T): SharedValue<T> => ({
   value: factory(),
 });

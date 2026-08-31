@@ -20,8 +20,7 @@ import {
   Body,
   Card,
   Content,
-  HairlineCard,
-  HorizontalScroll,
+  SnapCarousel,
   IconButton,
   InlineText,
   Label,
@@ -334,7 +333,7 @@ export function FoundationHomeScreen({
                 events.data.items.length === 0 ? (
                   <Body>{t("state.empty")}</Body>
                 ) : (
-                  <HorizontalScroll>
+                  <SnapCarousel itemWidth={236} gap={12}>
                     {events.data.items.map((event) => (
                       <PredictionHomeCard
                         key={event.id}
@@ -346,7 +345,7 @@ export function FoundationHomeScreen({
                         onPress={onOpenPredict}
                       />
                     ))}
-                  </HorizontalScroll>
+                  </SnapCarousel>
                 )
               ) : events.isError ? (
                 <InlineErrorRow
@@ -355,10 +354,10 @@ export function FoundationHomeScreen({
                   retryLabel={t("action.retryNow")}
                 />
               ) : (
-                <HorizontalScroll>
+                <SnapCarousel itemWidth={236} gap={12}>
                   <SkeletonBlock width={236} height={132} borderRadius="$4" />
                   <SkeletonBlock width={236} height={132} borderRadius="$4" />
-                </HorizontalScroll>
+                </SnapCarousel>
               )}
             </Stack>
           ) : null}
@@ -403,24 +402,6 @@ export function FoundationHomeScreen({
               )}
             </Stack>
           ) : null}
-
-          <HairlineCard>
-            <Label>{t("home.security")}</Label>
-            <SectionTitle>{t("home.securityTitle")}</SectionTitle>
-            <Body>{t("home.securityDescription")}</Body>
-            <Row gap="$2" flexWrap="wrap">
-              <Badge>
-                <InlineText color="$success" fontSize={12} fontWeight="700">
-                  {t("home.secureStorage")}
-                </InlineText>
-              </Badge>
-              <Badge>
-                <InlineText color="$info" fontSize={12} fontWeight="700">
-                  {t("home.signedUpdates")}
-                </InlineText>
-              </Badge>
-            </Row>
-          </HairlineCard>
         </Content>
       </PageScroll>
       <AccountSheet ref={accountSheet} />
