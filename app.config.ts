@@ -33,9 +33,9 @@ const tenant = tenantSlug
 const tenantAsset = (name: string, fallback: string): string =>
   tenant ? `./assets/tenants/${tenant.slug}/${name}` : fallback;
 const googleServicesFile = process.env.GOOGLE_SERVICES_JSON;
-const appVersion = "1.2.0";
-const androidVersionCode = 14;
-const iosBuildNumber = "6";
+const appVersion = "1.2.1";
+const androidVersionCode = 15;
+const iosBuildNumber = "7";
 const buildNumber =
   process.env.EXPO_OS === "ios" ? iosBuildNumber : String(androidVersionCode);
 const apiBaseUrl =
