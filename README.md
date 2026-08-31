@@ -18,7 +18,7 @@ pnpm start:go
 
 Expo Go 可预览 UI 和服务端配置；Logo、原生图标、版本号和真实发布行为必须使用 `pnpm prebuild` 后的 Development Build 验证。动画开屏和设置/主题切换可在 Expo Go 预览；Android 模拟器访问本机服务时可执行 `adb reverse tcp:3000 tcp:3000`。
 
-每个项目构建通过 `EXPO_PUBLIC_API_BASE_URL` 的域名绑定 RN-Server 租户，`EXPO_PUBLIC_APPLICATION_ID` 只标识客户端应用。bootstrap 请求不再携带 tenant 参数，本地缓存按 API 域名、应用身份和语言隔离。
+每个项目构建通过 `EXPO_PUBLIC_API_BASE_URL` 的域名绑定 RN-Server 租户，`EXPO_PUBLIC_APPLICATION_ID` 只标识客户端应用。bootstrap 请求不再携带 tenant 参数，本地缓存按 API 域名、应用身份和语言隔离。Android 直装 Release 包请使用 `EXPO_PUBLIC_API_BASE_URL=https://api.anyfun.win pnpm android:release`，该命令会将生产环境变量同时传给 Expo prebuild 和 Gradle，避免把 `localhost:3000` 写入 Release APK。
 
 执行 `pnpm check` 可运行格式、Lint、类型、测试和 API 契约检查。
 
