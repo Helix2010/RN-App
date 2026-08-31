@@ -773,6 +773,7 @@
     "wallets.disconnectConfirm": "断开 {label}？",
     "wallets.explorer": "在区块浏览器查看",
     "wallets.hint": "切换钱包后，持仓、自选与记录按地址分别显示；预测账户与钱包地址一一对应。",
+    "wallets.notBackedUp": "未备份",
     "wallets.others": "其他钱包",
     "wallets.rename": "修改显示名",
     "wallets.renamed": "已更新显示名",

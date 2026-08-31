@@ -552,6 +552,7 @@ const zhCN = {
   "wallets.disconnect": "断开此钱包",
   "wallets.disconnectConfirm": "断开 {label}？",
   "wallets.add": "添加钱包",
+  "wallets.notBackedUp": "未备份",
   "wallets.hint":
     "切换钱包后，持仓、自选与记录按地址分别显示；预测账户与钱包地址一一对应。",
   "wallets.switched": "已切换到 {label}，请重新签名登录",
@@ -1360,6 +1361,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "wallets.disconnect": "Disconnect this wallet",
   "wallets.disconnectConfirm": "Disconnect {label}?",
   "wallets.add": "Add wallet",
+  "wallets.notBackedUp": "Not backed up",
   "wallets.hint":
     "After switching, positions, watchlist and history follow the address; the predict account maps 1:1 to the wallet.",
   "wallets.switched": "Switched to {label}. Please sign in again.",

@@ -773,6 +773,7 @@
     "wallets.disconnectConfirm": "Disconnect {label}?",
     "wallets.explorer": "View on explorer",
     "wallets.hint": "After switching, positions, watchlist and history follow the address; the predict account maps 1:1 to the wallet.",
+    "wallets.notBackedUp": "Not backed up",
     "wallets.others": "Other wallets",
     "wallets.rename": "Rename",
     "wallets.renamed": "Display name updated",
