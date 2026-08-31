@@ -72,7 +72,9 @@ type RuntimeValue = {
   notificationIntent: { type: string; eventId: string } | null;
 };
 
-const RuntimeContext = createContext<RuntimeValue | null>(null);
+/** 导出仅供测试壳（src/test/harness.tsx）注入假运行时；业务代码请用 useFoundationRuntime。 */
+export const RuntimeContext = createContext<RuntimeValue | null>(null);
+export type { RuntimeValue };
 
 function systemLocale(): SupportedLocale {
   return getLocales()[0]?.languageCode === "en" ? "en-US" : "zh-CN";
