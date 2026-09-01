@@ -29,7 +29,12 @@ export function launchLinks(connector: WalletConnectorId): string[] {
   return WALLET_NATIVE_LINKS[connector] ?? [];
 }
 
-/** 用来探测"这个钱包装了没"，需要 AndroidManifest 的 queries 声明配合。 */
-export function probeLink(connector: WalletConnectorId): string | null {
-  return WALLET_NATIVE_LINKS[connector]?.[0] ?? null;
+/**
+ * 用来探测"这个钱包装了没"，需要 AndroidManifest 的 queries 声明配合。
+ *
+ * 返回所有候选：OKX 的两个 App 装哪个都算装了，只探第一个会把只装了独立
+ * 钱包 App 的用户误标成"未安装"。
+ */
+export function probeLinks(connector: WalletConnectorId): string[] {
+  return WALLET_NATIVE_LINKS[connector] ?? [];
 }

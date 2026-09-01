@@ -114,6 +114,16 @@ describe("isWalletInstalled", () => {
     await expect(isWalletInstalled("metamask")).resolves.toBe(true);
   });
 
+  it("counts either OKX app as installed", async () => {
+    // OKX 有两个 App：只探第一个会把装了独立钱包 App 的用户误标成未安装
+    jest
+      .spyOn(Linking, "canOpenURL")
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+
+    await expect(isWalletInstalled("okx")).resolves.toBe(true);
+  });
+
   it("treats a probe error as not installed", async () => {
     jest
       .spyOn(Linking, "canOpenURL")

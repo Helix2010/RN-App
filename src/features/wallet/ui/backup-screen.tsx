@@ -9,6 +9,7 @@ import { copyToClipboard } from "../../../core/ui/copy-to-clipboard";
 import { useGateways } from "../../../core/gateways/gateway-context";
 import { useScreenProtect } from "../../../core/security/screen-protect";
 import {
+  ActionButton,
   AppIcon,
   Body,
   Content,
@@ -22,6 +23,7 @@ import {
   SectionTitle,
   Stack,
   toast,
+  useAsyncAction,
   useTheme,
 } from "../../../design-system";
 import type { RootStackParamList } from "../../../navigation/types";
@@ -86,7 +88,6 @@ export function BackupScreen({
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [wrong, setWrong] = useState(false);
-  const [marking, setMarking] = useState(false);
   // 刚创建的钱包把助记词直接带过来，避免紧接着再弹一次身份验证；
   // 从设置页进来则必须现场解封（会弹系统验证）。
   const freshPhrase = route.params?.phrase;
@@ -139,28 +140,23 @@ export function BackupScreen({
     // 助记词不能一直躺在剪贴板里
     setTimeout(() => void Clipboard.setStringAsync("").catch(() => {}), 60_000);
   };
-  const verify = async () => {
-    if (marking) return;
-    const ok =
-      words.length === WORD_COUNT &&
-      targets.every((index) => answers[index] === words[index]);
-    if (!ok) {
-      setWrong(true);
-      toast(t("backup.wrong"), "error");
-      return;
-    }
-    setMarking(true);
-    try {
+  const { run: verify, pending: marking } = useAsyncAction(
+    async () => {
+      const ok =
+        words.length === WORD_COUNT &&
+        targets.every((index) => answers[index] === words[index]);
+      if (!ok) {
+        setWrong(true);
+        toast(t("backup.wrong"), "error");
+        return false;
+      }
       // 答对了但这一步失败过去是静默的：用户停在原页面，不知道备份没记上
       if (embedded) await wallet.markBackedUp(embedded.address);
       void queryClient.invalidateQueries({ queryKey: ["wallet-accounts"] });
       setStep(3);
-    } catch {
-      toast(t("backup.markFailed"), "error");
-    } finally {
-      setMarking(false);
-    }
-  };
+    },
+    { failureMessage: t("backup.markFailed") },
+  );
 
   return (
     <Page>
@@ -310,13 +306,15 @@ export function BackupScreen({
                   </Row>
                 </Stack>
               ))}
-              <PrimaryButton
-                disabled={marking || targets.some((index) => !answers[index])}
-                onPress={() => void verify()}
+              <ActionButton
+                disabled={targets.some((index) => !answers[index])}
+                loading={marking}
+                loadingLabel={t("common.processing")}
+                onPress={() => verify()}
                 testID="backup-verify"
               >
-                {marking ? t("common.processing") : t("common.confirm")}
-              </PrimaryButton>
+                {t("common.confirm")}
+              </ActionButton>
               <SecondaryButton onPress={() => setStep(1)}>
                 {t("action.back")}
               </SecondaryButton>

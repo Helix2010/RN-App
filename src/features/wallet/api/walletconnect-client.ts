@@ -7,7 +7,7 @@ import {
   walletNetworks,
 } from "../../../core/wallet/config/wallet-runtime-config";
 import type { WalletConnectorId } from "../../session/model/session";
-import { launchLinks, probeLink } from "./wallet-deep-links";
+import { launchLinks, probeLinks } from "./wallet-deep-links";
 import {
   WalletConnectConnector,
   WalletConnectUnavailableError,
@@ -84,13 +84,14 @@ async function openFirstAvailable(links: string[]): Promise<boolean> {
 export async function isWalletInstalled(
   connector: WalletConnectorId,
 ): Promise<boolean> {
-  const link = probeLink(connector);
-  if (!link) return false;
-  try {
-    return await Linking.canOpenURL(link);
-  } catch {
-    return false;
+  for (const link of probeLinks(connector)) {
+    try {
+      if (await Linking.canOpenURL(link)) return true;
+    } catch {
+      // 这个 scheme 探不到就试下一个候选
+    }
   }
+  return false;
 }
 
 /**
@@ -138,9 +139,4 @@ export async function openWalletOrFallback(
   );
   if (await openFirstAvailable(links)) return;
   fallback(input.uri);
-}
-
-/** 供测试重置模块级客户端缓存。 */
-export function resetWalletConnectClient(): void {
-  clientPromise = null;
 }
