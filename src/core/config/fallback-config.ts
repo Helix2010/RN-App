@@ -1573,7 +1573,31 @@ export function createFallbackConfig(locale: SupportedLocale): BootstrapConfig {
       dark,
     },
     modules: { predict: true, dex: true },
-    wallet: { walletConnectProjectId: "", chains: ["bsc", "eth", "base"] },
+    wallet: {
+      walletConnectProjectId: "",
+      chains: ["bsc", "eth", "base"],
+      // 端点留空：没连上服务端时不该猜 RPC，依赖它的功能应如实不可用
+      networks: [
+        {
+          id: "bsc",
+          chainId: 56,
+          rpcUrls: [],
+          explorerUrl: "https://bscscan.com",
+        },
+        {
+          id: "eth",
+          chainId: 1,
+          rpcUrls: [],
+          explorerUrl: "https://etherscan.io",
+        },
+        {
+          id: "base",
+          chainId: 8453,
+          rpcUrls: [],
+          explorerUrl: "https://basescan.org",
+        },
+      ],
+    },
     branding: {
       schemaVersion: 1,
       version: 1,

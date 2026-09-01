@@ -139,6 +139,18 @@ export const bootstrapSchema = z.object({
     .object({
       walletConnectProjectId: z.string(),
       chains: z.array(z.enum(["bsc", "eth", "base"])).min(1),
+      // 端点按租户下发；老服务端没有这段时用 chains 推默认值，
+      // 不能因为版本落后就让整个 bootstrap 解析失败
+      networks: z
+        .array(
+          z.object({
+            id: z.enum(["bsc", "eth", "base"]),
+            chainId: z.number().int().positive(),
+            rpcUrls: z.array(z.url()),
+            explorerUrl: z.url(),
+          }),
+        )
+        .optional(),
     })
     .default({ walletConnectProjectId: "", chains: ["bsc", "eth", "base"] }),
   features: z.object({

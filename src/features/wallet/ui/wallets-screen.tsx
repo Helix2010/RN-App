@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import { useGateways } from "../../../core/gateways/gateway-context";
 import { shortenAddress } from "../../../core/i18n/format";
+import { explorerAddressUrl } from "../../../core/wallet/config/wallet-runtime-config";
 import {
   AppIcon,
   Badge,
@@ -183,8 +184,13 @@ export function WalletsScreen({
                   icon="open-in-new"
                   title={t("wallets.explorer")}
                   onPress={() =>
+                    // 以前这里硬编码了 bscscan，不管账户在哪条链；
+                    // 现在用服务端下发的浏览器地址 + 该账户的首条链
                     void Clipboard.setStringAsync(
-                      `https://bscscan.com/address/${address}`,
+                      explorerAddressUrl(
+                        current?.chains[0] ?? "bsc",
+                        current?.address ?? address,
+                      ),
                     ).then(() => toast(t("receive.copied"), "success"))
                   }
                   testID="wallets-explorer"

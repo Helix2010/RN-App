@@ -1,5 +1,10 @@
 import { Linking } from "react-native";
-import type { ChainId } from "../../../core/gateways/types";
+import {
+  enabledChains,
+  isWalletConnectConfigured,
+  onWalletConfigChange,
+  walletConnectProjectId,
+} from "../../../core/wallet/config/wallet-runtime-config";
 import type { WalletConnectorId } from "../../session/model/session";
 import {
   WalletConnectConnector,
@@ -14,37 +19,12 @@ import {
 
 const WALLET_CONNECT_METADATA_URL = "https://walletconnect.com";
 
-/**
- * 钱包参数**只**来自服务端 bootstrap（按租户下发）。这里没有构建期兜底：
- * projectId 是租户配置而不是构建参数，混两条来源会让"某台机器能连、CI 出的包
- * 不能连"这类问题无法排查。
- */
-let delivered: { projectId: string | null; chains: ChainId[] } | null = null;
-
-export function applyDeliveredWalletConfig(config: {
-  walletConnectProjectId: string;
-  chains: ChainId[];
-}): void {
-  const projectId = config.walletConnectProjectId.trim() || null;
-  const changed = delivered?.projectId !== projectId;
-  delivered = { projectId, chains: config.chains };
-  // projectId 变了就丢弃已建的客户端，下次连接用新的
-  if (changed) clientPromise = null;
-}
-
-export function walletConnectProjectId(): string | null {
-  return delivered?.projectId ?? null;
-}
-
-export function walletConnectChains(): ChainId[] {
-  return delivered?.chains ?? ["bsc", "eth", "base"];
-}
-
-export function isWalletConnectConfigured(): boolean {
-  return walletConnectProjectId() !== null;
-}
-
 let clientPromise: Promise<SignClientLike> | null = null;
+
+// projectId 变了就丢弃已建的客户端，下次连接用新的
+onWalletConfigChange(() => {
+  clientPromise = null;
+});
 
 async function createClient(appName: string): Promise<SignClientLike> {
   const projectId = walletConnectProjectId();
@@ -84,7 +64,7 @@ export function createWalletConnectConnector(options: {
       return clientPromise;
     },
     present: options.present,
-    chains: walletConnectChains(),
+    chains: enabledChains(),
     available: isWalletConnectConfigured,
     openWallet: async (connector) => {
       const link = walletDeepLink(connector);

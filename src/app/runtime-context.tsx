@@ -47,7 +47,7 @@ import {
 } from "../design-system";
 import { LaunchScreen } from "./launch-screen";
 import { BootstrapSkeleton } from "./bootstrap-skeleton";
-import { applyDeliveredWalletConfig } from "../features/wallet/api/walletconnect-client";
+import { applyDeliveredWalletConfig } from "../core/wallet/config/wallet-runtime-config";
 import {
   registerPushTokenIfAuthorized,
   subscribeToUpdateSignals,

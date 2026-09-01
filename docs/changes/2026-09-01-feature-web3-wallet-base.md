@@ -190,3 +190,34 @@ CI 的 `check-expo-doctor` 抓到两个真问题（本地 `pnpm check` 不覆盖
 - RN-Server 的 TLS 证书 pinning（逆向 E-007 的对位项）。
 - 可选的越狱 / root 检测与 Play Integrity（逆向 E-013），建议一期只提示不阻断。
 - 真实链上数据（余额 / 转账广播）仍是 Mock 账本，按"一期业务全 Mock"的产品决策保留。
+
+## P3+ 链端点也走统一下发（本次）
+
+起因：`walletConnectProjectId` 走下发之后，RPC 与区块浏览器地址显然是同一类东西（租户配置、要能轮换、不该重新打包）。核实时还发现两处现存问题：`CHAINS[x].explorerUrl` 定义了却**从没被读过**（死配置），而唯一需要浏览器链接的 `wallets-screen.tsx` 里**硬编码了 `https://bscscan.com/address/...`**，不管账户在哪条链。
+
+### Given / When / Then
+
+- Given 租户在配置里给某条链填了自己的 `rpcUrls` / `explorerUrl` Then App 冷启动即用新端点，**不用重新打包**。
+- Given 填的是 `http://` 明文端点 Then 服务端拒绝并回退到默认值（明文 RPC 会泄露 App 查询的每个地址与余额）。
+- Given 某条链只出现在 `networks` 里没写进 `chains` Then 视为启用，不必两处都配。
+- Given `explorerUrl` 末尾带斜杠 Then 归一化掉，避免拼出双斜杠。
+- Given 老服务端不下发 `networks` Then App 用 `chains` 推默认值，**不让整个 bootstrap 解析失败**（白标产品里 App 版本必然落后服务端）。
+- Given 还没连上服务端 Then `rpcUrls` 为空，依赖它的功能应如实不可用——不猜端点。
+
+### 技术影响
+
+- 服务端 `normalizeWallet` 改为输出 `{walletConnectProjectId, chains, networks:[{id, chainId, rpcUrls, explorerUrl}]}`。`chainId` 来自平台目录、**不允许租户改写**（改错会让签名打到错链）；端点可改。`chains` 保留在 payload 里给只认旧结构的客户端。
+- App 新增 `src/core/wallet/config/wallet-runtime-config.ts`：下发配置的唯一持有处，暴露 `walletConnectProjectId / enabledChains / networkFor / evmChainId / chainForEvmId / explorerAddressUrl / rpcUrlsFor` 与 `onWalletConfigChange`（projectId 变化时丢弃已建的 WalletConnect 客户端）。原来放在 `walletconnect-client.ts` 里的 holder 搬走了——RPC 与浏览器地址不属于 WalletConnect 范畴。
+- 修掉硬编码的 bscscan：改用 `explorerAddressUrl(current.chains[0], current.address)`。
+- `CHAINS` 保留为**展示元数据**（名称 / 符号 / 精度 / 颜色），端点一律来自服务端。
+
+### 验证
+
+- 服务端 6 例（`wallet_config_test.go`）：默认全链、按 `chains` 过滤、租户端点覆盖且 chainId 不可改写、明文端点被拒并回退、projectId trim、坏配置回退到全链而不是空列表。
+- App 6 例（`wallet-runtime-config.spec.ts`）：未下发时 WalletConnect 不可用且 RPC 为空、下发后用新端点、老服务端缺 `networks` 时从 `chains` 推、只在真的变化时通知订阅者、未在下发列表里的链仍有可用默认值。
+- `pnpm check` 49 suites / 250 例全绿；RN-Server `go test ./...` 全绿。
+- **线上 + 设备实测**：`api.anyfun.win` 的 bootstrap 已返回三条链的 `chainId/rpcUrls/explorerUrl`；App 清数据冷启动后，`adb root` 读 `foundation.bootstrap.v3.*` 缓存确认**三条 networks 全部被接受并落缓存**（若 schema 不匹配会静默回落到 fallback，缓存里就不会有这段）✅
+
+### 关于 RPC 的一个必须说清的边界
+
+下发给客户端的 RPC 地址**按定义就是公开的**——任何人都能从包里或抓包拿到。所以：租户要么用可以公开的端点（按域名限制来源、或带速率限制的 key），要么让 RN-Server 代理 RPC。**绝不要把 bearer 类密钥拼在 rpcUrl 里**。当前默认值用的是各链的公共端点（BSC dataseed / publicnode / base mainnet），能跑但有速率限制，正式上线应换成租户自己的服务商。
