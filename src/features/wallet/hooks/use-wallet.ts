@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useGateways } from "../../../core/gateways/gateway-context";
-import type { ChainId } from "../../../core/gateways/types";
+import type { ChainId, Tx } from "../../../core/gateways/types";
 import type { SendRequest } from "../model/wallet";
 
 export function useWalletConnectors() {
@@ -92,15 +92,28 @@ export function useSwitchAccount() {
   });
 }
 
-/** 轮询一笔钱包转账直到终态。 */
-export function useWalletTransfer(id: string | undefined) {
+/**
+ * 轮询一笔钱包转账直到终态。
+ *
+ * @param initial 提交时拿到的记录。作为 initialData 填进去，进度页从第一帧起就有
+ *   数据；之后某次轮询失败也只是保留上一次的状态，而不是退回"还没签名"——
+ *   一笔已经花了 gas 的真实交易在界面上倒退成没发生过，用户会再发一笔。
+ */
+export function useWalletTransfer(id: string | undefined, initial?: Tx) {
   const { wallet } = useGateways();
   return useQuery({
     queryKey: ["wallet-transfer", id],
     queryFn: () => wallet.getTransaction(id as string),
     enabled: Boolean(id),
+    initialData: initial,
+    // 标成"很旧"，挂上就立刻去链上问一次
+    initialDataUpdatedAt: initial ? 0 : undefined,
+    retry: 2,
     refetchInterval: (query) => {
-      const status = query.state.data?.status;
+      const data = query.state.data;
+      // null = 查过了但谁都不认识这个 id，再问也不会有答案
+      if (data === null) return false;
+      const status = data?.status;
       if (status === "confirmed" || status === "failed") return false;
       // 已进入等待出块阶段就放慢：真链上出块要几秒，800ms 一次只是在撞节点限流
       return status === "confirming" ? 2_500 : 800;

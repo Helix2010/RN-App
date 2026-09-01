@@ -6,7 +6,10 @@ import { useFoundationRuntime } from "../../../app/runtime-context";
 import { CHAINS, type ChainId } from "../../../core/gateways/types";
 import { useGateways } from "../../../core/gateways/gateway-context";
 import { classifyEvmAddress } from "../../../core/wallet/address";
-import { evmChainIdOf } from "../../../core/wallet/config/wallet-runtime-config";
+import {
+  evmChainIdOf,
+  isTestnetChain,
+} from "../../../core/wallet/config/wallet-runtime-config";
 import {
   compare,
   fromDecimal,
@@ -44,7 +47,11 @@ import {
   useWalletBalances,
   useWalletTransfer,
 } from "../../wallet/hooks/use-wallet";
-import type { SendRequest, TokenBalance } from "../../wallet/model/wallet";
+import type {
+  SendRequest,
+  TokenBalance,
+  WalletTransfer,
+} from "../../wallet/model/wallet";
 import { transferErrorCopy } from "../../wallet/model/transfer-errors";
 import { TxProgress } from "./tx-progress";
 import { useRequireVerification } from "../../security/use-require-verification";
@@ -76,7 +83,15 @@ export function SendScreen({
   const [to, setTo] = useState("");
   const [tokenKey, setTokenKey] = useState<string | undefined>();
   const [text, setText] = useState("");
-  const [txId, setTxId] = useState<string | undefined>();
+  /**
+   * 已提交的那一笔。进度页只从这里读，不再读 selected / amount：转出成功后余额
+   * 刷新会让 selected 换成另一个币（甚至变成 undefined），进度页要么标题换币种，
+   * 要么整个卸载回表单——而那笔真实交易已经发出去了。
+   */
+  const [receipt, setReceipt] = useState<{
+    record: WalletTransfer;
+    to: string;
+  } | null>(null);
   // 从点确认到 mutate 真正开始之间要 await 生物验证，这段窗口里 send.isPending
   // 还是 false；不挡住第二次点击就会签出两笔
   const [verifying, setVerifying] = useState(false);
@@ -89,7 +104,11 @@ export function SendScreen({
   const onchain = wallet.sendsOnchain(chain);
   const balances = useWalletBalances(address || undefined, chain);
   const send = useSendToken();
-  const tx = useWalletTransfer(txId);
+  const tx = useWalletTransfer(receipt?.record.id, receipt?.record);
+  const external = Boolean(
+    session.data && session.data.connector !== "embedded",
+  );
+  const testnet = isTestnetChain(chain);
   const tokens = (balances.data ?? []).filter((item) => !isZero(item.amount));
   const selected: TokenBalance | undefined =
     tokens.find(
@@ -196,7 +215,7 @@ export function SendScreen({
       {
         onSuccess: (record) => {
           confirm.current?.dismiss();
-          setTxId(record.id);
+          setReceipt({ record, to: to.trim() });
           toast(t("send.submitted"), "success");
         },
         onError: (error) => {
@@ -209,14 +228,16 @@ export function SendScreen({
     );
   };
 
-  if (txId && selected && amount) {
+  if (receipt) {
     return (
       <Page>
         <Content paddingTop={insets.top + 8} flex={1} justifyContent="center">
           <TxProgress
             tx={tx.data}
-            title={`${t("assets.send")} ${formatMoney(amount, locale)} → ${bookHit?.label ?? shortenAddress(to.trim())}`}
+            title={`${t("assets.send")} ${formatMoney(receipt.record.amount, locale)} → ${shortenAddress(receipt.to)}`}
             onDone={onBack}
+            // 真链上一笔要等几秒到几分钟，没有出口就是把用户关在这一页
+            onMinimize={onBack}
             doneLabel={t("common.done")}
           />
         </Content>
@@ -301,7 +322,10 @@ export function SendScreen({
               value={chain}
               options={(Object.keys(CHAINS) as ChainId[]).map((id) => ({
                 value: id,
-                label: CHAINS[id].name,
+                // 测试链必须标出来：它的币没有价值，和主网并排会被当成真资产
+                label: isTestnetChain(id)
+                  ? `${CHAINS[id].name} · ${t("send.testnetTag")}`
+                  : CHAINS[id].name,
               }))}
               onChange={(next) => {
                 setChain(next);
@@ -519,6 +543,17 @@ export function SendScreen({
                 {t("send.demoLedger")}
               </Body>
             )}
+            {testnet ? (
+              <Body fontSize={12} color="$warning" textAlign="center">
+                {t("send.testnetNotice")}
+              </Body>
+            ) : null}
+            {/* 外部钱包：点确认后 App 会被切到钱包 App，不说一声用户会以为闪退 */}
+            {external && (send.isPending || verifying) ? (
+              <Body fontSize={12} color="$textMuted" textAlign="center">
+                {t("send.confirmInWallet")}
+              </Body>
+            ) : null}
             {selected.token.verified ? null : (
               <Row
                 alignItems="center"

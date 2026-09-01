@@ -179,6 +179,11 @@ export function explorerAddressUrl(chain: ChainId, address: string): string {
   return `${networkFor(chain).explorerUrl}/address/${address}`;
 }
 
+/** 测试链：币没有价值，界面上任何显示这条链资产的地方都要标出来。 */
+export function isTestnetChain(chain: ChainId): boolean {
+  return networkFor(chain).testnet;
+}
+
 /** 链层（余额 / 广播）用的 RPC 端点；未下发时为空，调用方必须处理不可用。 */
 export function rpcUrlsFor(chain: ChainId): string[] {
   return networkFor(chain).rpcUrls;

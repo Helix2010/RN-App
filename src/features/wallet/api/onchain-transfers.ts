@@ -27,12 +27,12 @@ const MAX_TRACKED = 50;
  * Mock 账本。不需要额外的 feature flag——"有没有端点"本身就是最直接的判据，
  * 也让灰度等于"给哪个租户配 RPC"。
  *
- * 每条链一套客户端，惰性创建：没人转那条链就不该建连接。下发的端点变了就丢弃重建。
+ * 每条链一套客户端，惰性创建：没人转那条链就不该建连接。端点实时读取，不重建。
  */
 export class OnchainTransfers {
   private readonly services = new Map<
     ChainId,
-    { endpoints: string; chain: ChainClient; transfer: TransferService }
+    { chain: ChainClient; transfer: TransferService }
   >();
   /**
    * txHash → 这笔转账的链与快照。
@@ -50,8 +50,8 @@ export class OnchainTransfers {
       /** 签名弹窗 / 外部钱包里显示的说明，已 i18n */
       reason: string;
       now?: () => number;
-      /** 仅供测试替换：默认按下发的端点建真实客户端 */
-      createChain?: (endpoints: string[]) => ChainClient;
+      /** 仅供测试替换：默认按下发的端点建真实客户端。参数是端点的实时读取函数 */
+      createChain?: (endpoints: () => string[]) => ChainClient;
     },
   ) {}
 
@@ -177,18 +177,17 @@ export class OnchainTransfers {
     chain: ChainClient;
     transfer: TransferService;
   } {
-    const endpoints = rpcUrlsFor(chain);
-    if (endpoints.length === 0)
+    if (rpcUrlsFor(chain).length === 0)
       throw new Error(`no rpc endpoint delivered for ${chain}`);
-    const key = endpoints.join("|");
     const existing = this.services.get(chain);
-    // 端点变了就重建：租户换了节点之后不该继续用旧的
-    if (existing && existing.endpoints === key) return existing;
+    if (existing) return existing;
+    // 端点通过函数实时读取：租户换了节点立刻生效，而客户端上挂着的发送队列
+    // 和 nonce 下限不会因此丢失（丢了在途的一笔和下一笔就会撞 nonce）
+    const endpoints = () => rpcUrlsFor(chain);
     const chainClient =
       this.deps.createChain?.(endpoints) ??
       new ChainClient(createRpcClient(endpoints));
     const entry = {
-      endpoints: key,
       chain: chainClient,
       transfer: new TransferService({
         chain: chainClient,

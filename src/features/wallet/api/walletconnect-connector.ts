@@ -81,6 +81,8 @@ export type WalletConnectDeps = {
   installed?: (connector: WalletConnectorId) => Promise<boolean>;
   /** 等待用户在钱包里批准的超时（毫秒）；到点抛 timeout，UI 才能给出反馈 */
   approvalTimeoutMs?: number;
+  /** 签名 / 发交易请求的超时；不传用默认 */
+  requestTimeoutMs?: number;
 };
 
 export class WalletConnectUnavailableError extends Error {
@@ -144,6 +146,8 @@ function connectorOf(session: ConnectedSession): WalletConnectorId | null {
 }
 
 const DEFAULT_APPROVAL_TIMEOUT_MS = 120_000;
+/** 签名 / 发交易请求的超时。比配对长：用户可能要在钱包里看清楚再点。 */
+const DEFAULT_REQUEST_TIMEOUT_MS = 180_000;
 
 export class WalletConnectConnector implements ExternalWalletConnector {
   private readonly connections = new Map<string, Connection>();
@@ -345,17 +349,31 @@ class WalletConnectSigner implements WalletSigner {
     const client = await this.deps.client();
     // Android 上请求发出后必须把用户切到钱包 App，否则他看不到确认页
     await this.deps.openWallet?.(this.connection.connector);
+    // 必须有超时：用户直接杀掉钱包 App 时 request() 永远不 resolve，而确认页在
+    // 签名期间是锁死的（不能关、不能返回），没有超时就等于把用户关在里面
+    const timeoutMs = this.deps.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      return await client.request<T>({
-        topic: this.connection.topic,
-        chainId: this.chainRef(chainId),
-        request: { method, params },
-      });
+      return await Promise.race([
+        client.request<T>({
+          topic: this.connection.topic,
+          chainId: this.chainRef(chainId),
+          request: { method, params },
+        }),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(
+            () => reject(new WalletConnectTimeoutError()),
+            timeoutMs,
+          );
+        }),
+      ]);
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
       if (/reject|denied|cancel/i.test(message))
         throw new WalletConnectRejectedError(message);
       throw error;
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 

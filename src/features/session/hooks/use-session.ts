@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useWalletConnectPairing } from "../../wallet/model/walletconnect-store";
 import { appRuntime } from "../../../core/network/api-client";
 import { useCallback, useEffect, useState } from "react";
 import { AppState } from "react-native";
@@ -122,6 +123,8 @@ export function useWalletLogin(domain: string, signReason?: string) {
       setState({ step: "connecting", connector });
       try {
         const account = await wallet.connect(connector);
+        // 连上了就收起二维码；不收的话签名确认页会被压在它下面，用户得自己划掉
+        useWalletConnectPairing.getState().dismiss();
         const challenge = await session.challenge({
           address: account.address,
           connector,
@@ -134,6 +137,8 @@ export function useWalletLogin(domain: string, signReason?: string) {
           setState({ step: "needs-wallet" });
           return;
         }
+        // 超时 / 拒绝时也要收起：超时提示的 toast 会被还开着的二维码压住
+        useWalletConnectPairing.getState().dismiss();
         // 和 sign 一样区分原因：连接阶段最常见的就是"用户没在钱包里点批准"，
         // 一律报 failed 的话用户不知道该重试还是该去钱包里看
         setState({ step: "error", reason: reasonOf(error), connector });

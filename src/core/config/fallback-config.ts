@@ -214,6 +214,9 @@ const zhCN = {
   "send.feeUnavailable": "暂不可估",
   "send.feeRequired": "手续费暂时无法估算，先不能转出。请稍后再试。",
   "send.demoLedger": "演示账本：这笔转出只记在本机，不会上链。",
+  "send.testnetTag": "测试网",
+  "send.testnetNotice": "这是测试网，转出的代币没有真实价值。",
+  "send.confirmInWallet": "已跳转到钱包 App，请在那里确认后返回。",
   "send.error.feeChanged": "网络费在你确认后明显上涨，已停止签名。请重新确认。",
   // 失败原因必须分开讲：最高频的困惑是"我有 USDT，为什么转不了"，
   // 答案是缺原生币付手续费，而不是余额不足
@@ -998,6 +1001,11 @@ const enUS: Record<keyof typeof zhCN, string> = {
     "The network fee cannot be estimated right now, so sending is paused. Try again shortly.",
   "send.demoLedger":
     "Demo ledger: this send is recorded on this device only and never reaches the chain.",
+  "send.testnetTag": "Testnet",
+  "send.testnetNotice":
+    "This is a test network. Tokens sent here have no real value.",
+  "send.confirmInWallet":
+    "Switched to your wallet app — confirm there, then come back.",
   "send.error.feeChanged":
     "The network fee rose sharply after you confirmed, so signing was stopped. Please confirm again.",
   "send.error.gas":

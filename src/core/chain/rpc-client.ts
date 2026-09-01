@@ -47,13 +47,19 @@ type JsonRpcResponse<T> = {
 };
 
 /**
- * @param endpoints 服务端下发的 RPC 列表；按顺序尝试，前一个失败就换下一个。
- *   顺序是有意义的：租户自配的端点通常比公共节点可靠，应该排在前面。
+ * @param source 服务端下发的 RPC 列表，或每次调用时返回它的函数；按顺序尝试，
+ *   前一个失败就换下一个。顺序是有意义的：租户自配的端点通常比公共节点可靠，
+ *   应该排在前面。
+ *
+ *   传函数是为了让端点**实时生效而不必重建客户端**：客户端上面挂着每个地址的
+ *   发送队列和 nonce 下限，为了换端点把它们丢掉，在途的那笔和下一笔就会并发，
+ *   拿到同一个 nonce。
  */
 export function createRpcClient(
-  endpoints: string[],
+  source: string[] | (() => string[]),
   options: RpcClientOptions = {},
 ): RpcClient {
+  const endpointsNow = () => (typeof source === "function" ? source() : source);
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const doFetch = options.fetchImpl ?? fetch;
   let requestId = 0;
@@ -100,6 +106,7 @@ export function createRpcClient(
 
   return {
     async call<T>(method: string, params: unknown[] = []): Promise<T> {
+      const endpoints = endpointsNow();
       if (endpoints.length === 0) throw new RpcUnavailableError(0);
       for (const endpoint of endpoints) {
         try {

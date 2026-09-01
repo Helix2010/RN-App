@@ -35,6 +35,7 @@ function setup(options?: {
   available?: () => boolean;
   installed?: (connector: string) => Promise<boolean>;
   approvalTimeoutMs?: number;
+  requestTimeoutMs?: number;
 }) {
   const request = options?.request ?? jest.fn(async () => "0xsigned");
   const client: SignClientLike = {
@@ -56,6 +57,7 @@ function setup(options?: {
     available: options?.available,
     installed: options?.installed ?? (async () => true),
     approvalTimeoutMs: options?.approvalTimeoutMs,
+    requestTimeoutMs: options?.requestTimeoutMs,
   };
   return {
     connector: new WalletConnectConnector(deps),
@@ -236,6 +238,19 @@ describe("WalletConnectConnector", () => {
       approvalTimeoutMs: 10,
     });
     await expect(connector.connect("metamask")).rejects.toThrow(/timeout/i);
+  });
+
+  it("gives up on a signing request the wallet never answers", async () => {
+    // 用户直接杀掉钱包 App 时 request() 永远不 resolve，而确认页在签名期间是锁死的
+    const { connector } = setup({
+      request: jest.fn(() => new Promise(() => {})),
+      requestTimeoutMs: 10,
+    });
+    await connector.connect("metamask");
+
+    await expect(
+      connector.signer(ADDRESS).signMessage("hi", { reason: "r" }),
+    ).rejects.toThrow(/timeout/i);
   });
 
   it("lets the user cancel a pairing that is still waiting", async () => {

@@ -108,6 +108,22 @@ describe("createRpcClient", () => {
     );
   });
 
+  it("reads the endpoint list afresh on every call when given a getter", async () => {
+    // 换端点不该重建客户端：上面挂着的发送队列和 nonce 下限会丢
+    let endpoints = ["https://old.example"];
+    const fetchImpl = jest.fn(async () => jsonResponse({ result: "0x1" }));
+    const client = createRpcClient(() => endpoints, { fetchImpl });
+
+    await client.call("eth_chainId");
+    endpoints = ["https://new.example"];
+    await client.call("eth_chainId");
+
+    const urls = (fetchImpl.mock.calls as unknown as [string][]).map(
+      (call) => call[0],
+    );
+    expect(urls).toEqual(["https://old.example", "https://new.example"]);
+  });
+
   it("refuses to pretend it can work without endpoints", async () => {
     // 服务端还没下发 RPC 时不能猜一个公共节点：那等于把用户的查询交给未声明的第三方
     const client = createRpcClient([]);

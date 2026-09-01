@@ -169,27 +169,25 @@ describe("OnchainTransfers send", () => {
     ).rejects.toThrow(/no rpc endpoint/);
   });
 
-  it("rebuilds the client when the tenant's endpoints change", async () => {
+  it("picks up new endpoints without rebuilding the client", async () => {
     deliverBscRpc(["https://old.example"]);
-    const created: string[][] = [];
+    const getters: (() => string[])[] = [];
     const { chain } = fakeChain();
     const onchain = new OnchainTransfers({
       reason: "r",
       createChain: (endpoints) => {
-        created.push(endpoints);
+        getters.push(endpoints);
         return chain;
       },
     });
 
     await onchain.send(request(), signer());
-    await onchain.send(request(), signer());
-    expect(created).toHaveLength(1);
-
     deliverBscRpc(["https://new.example"]);
     await onchain.send(request(), signer());
 
-    // 租户换了节点之后继续用旧端点，等于配置改了却没生效
-    expect(created).toEqual([["https://old.example"], ["https://new.example"]]);
+    // 只建了一次（队列与 nonce 下限得以保留），但端点读到的是新的
+    expect(getters).toHaveLength(1);
+    expect(getters[0]?.()).toEqual(["https://new.example"]);
   });
 });
 

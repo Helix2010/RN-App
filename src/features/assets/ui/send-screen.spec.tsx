@@ -344,3 +344,49 @@ describe("SendScreen double submit", () => {
     jest.mocked(LocalAuthentication.getEnrolledLevelAsync).mockResolvedValue(3);
   });
 });
+
+describe("SendScreen progress page", () => {
+  it("keeps showing the submitted transfer even after the balance refresh empties the list", async () => {
+    // 转出成功后余额刷新会让 selected 变成 undefined；进度页要是跟着它走，
+    // 就会整个卸载回表单——而那笔真实交易已经发出去了
+    let sent = false;
+    const record = {
+      id: "0xabc",
+      kind: "send" as const,
+      status: "submitted" as const,
+      hash: "0xabc",
+      token: balance({ address: USDT_BSC, symbol: "USDT", verified: true })
+        .token,
+      amount: fromDecimal("100", 18, "USDT"),
+      counterparty: RECIPIENT,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    const { runtime } = await openConfirm({
+      verified: true,
+      prepare: (gateways) => {
+        gateways.wallet.getBalances = jest.fn(async () =>
+          sent
+            ? []
+            : [balance({ address: USDT_BSC, symbol: "USDT", verified: true })],
+        );
+        gateways.wallet.send = jest.fn(async () => {
+          sent = true;
+          return record;
+        });
+        gateways.wallet.getTransaction = jest.fn(async () => ({
+          ...record,
+          status: "confirming" as const,
+        }));
+      },
+    });
+
+    void fireEvent.press(await screen.findByTestId("send-confirm"));
+
+    await waitFor(() => expect(screen.getByTestId("tx-progress")).toBeTruthy());
+    // 余额刷新之后仍然在进度页，而且有出口
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.getByTestId("tx-progress")).toBeTruthy();
+    expect(screen.getByText(runtime.t("tx.minimize"))).toBeTruthy();
+    expect(screen.getByText(/100\.00 USDT/)).toBeTruthy();
+  });
+});
