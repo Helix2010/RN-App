@@ -62,7 +62,7 @@ function fakeExternal(): ExternalWalletConnector {
       address,
       signMessage: async () => "0xexternal",
       signTypedData: async () => "0xexternal",
-      signTransaction: async () => "0xexternal",
+      submitTransaction: async () => "0xexternal",
     })),
   };
 }
@@ -244,7 +244,7 @@ describe("EmbeddedWalletGateway", () => {
         address,
         signMessage: async () => "0xrestored",
         signTypedData: async () => "0xrestored",
-        signTransaction: async () => "0xrestored",
+        submitTransaction: async () => "0xrestored",
       };
     });
     external.restore = jest.fn(async () => {

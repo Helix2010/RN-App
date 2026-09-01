@@ -7,6 +7,7 @@ import type {
 import type { WalletConnectorId } from "../../session/model/session";
 import type { WalletConnector } from "../model/wallet";
 import type { ExternalWalletConnector } from "./embedded-wallet-gateway";
+import { assertSubmittable } from "../../../core/wallet/signer/transaction-guard";
 import { pairingLinks } from "./wallet-deep-links";
 
 /**
@@ -34,7 +35,7 @@ export type ConnectedSession = {
 /** `@walletconnect/sign-client` 中我们实际用到的部分。 */
 export type SignClientLike = {
   connect: (args: {
-    requiredNamespaces: Record<string, unknown>;
+    requiredNamespaces?: Record<string, unknown>;
     optionalNamespaces?: Record<string, unknown>;
   }) => Promise<{ uri?: string; approval: () => Promise<ConnectedSession> }>;
   request: <T>(args: {
@@ -232,14 +233,16 @@ export class WalletConnectConnector implements ExternalWalletConnector {
     const client = await this.deps.client();
     const networks = this.deps.networks();
     const { uri, approval } = await client.connect({
-      requiredNamespaces: {
+      // 用 optionalNamespaces：requiredNamespaces 里的方法是"钱包必须支持"，
+      // 声明了 MetaMask 不支持的 eth_signTransaction 反而可能被拒绝配对。
+      // SDK 2.24 已经把 requiredNamespaces 自动转成 optional，这里顺着它写清。
+      optionalNamespaces: {
         eip155: {
           chains: networks.map((network) => `eip155:${network.chainId}`),
           methods: [
             "personal_sign",
             "eth_signTypedData_v4",
             "eth_sendTransaction",
-            "eth_signTransaction",
           ],
           events: ["chainChanged", "accountsChanged"],
         },
@@ -381,13 +384,18 @@ class WalletConnectSigner implements WalletSigner {
     ]);
   }
 
-  async signTransaction(
+  async submitTransaction(
     transaction: EvmTransactionRequest,
     _context: SignRequestContext,
+    _broadcast: (signedTransaction: string) => Promise<string>,
   ): Promise<string> {
     void _context;
+    // 外部钱包自己签名并广播，所以用不上 broadcast：请求的返回值就是 txHash。
+    // 这里也不传 nonce / 手续费——钱包自己算的比我们准，猜错反而会让它拒签。
+    void _broadcast;
+    assertSubmittable(transaction);
     return this.send<string>(
-      "eth_signTransaction",
+      "eth_sendTransaction",
       [
         {
           from: transaction.from ?? this.connection.address,

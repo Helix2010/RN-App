@@ -1,5 +1,6 @@
 import { Wallet, type TypedDataDomain, type TypedDataField } from "ethers";
 import type { KeystoreVault } from "../vault/keystore-vault";
+import { assertLocallySignable } from "./transaction-guard";
 import type {
   EvmTransactionRequest,
   SignRequestContext,
@@ -39,15 +40,22 @@ export class EmbeddedSigner implements WalletSigner {
     );
   }
 
-  async signTransaction(
+  async submitTransaction(
     transaction: EvmTransactionRequest,
     context: SignRequestContext,
+    broadcast: (signedTransaction: string) => Promise<string>,
   ): Promise<string> {
-    return this.vault.withPrivateKey(this.address, context.reason, (key) =>
-      new Wallet(key).signTransaction({
-        ...transaction,
-        from: transaction.from ?? this.address,
-      }),
+    // 必须在取密钥之前校验：字段不全时 ethers 会静默用默认值签出废交易
+    assertLocallySignable(transaction);
+    const signed = await this.vault.withPrivateKey(
+      this.address,
+      context.reason,
+      (key) =>
+        new Wallet(key).signTransaction({
+          ...transaction,
+          from: transaction.from ?? this.address,
+        }),
     );
+    return broadcast(signed);
   }
 }

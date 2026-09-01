@@ -32,9 +32,23 @@ export interface WalletSigner {
     value: Record<string, unknown>,
     context: SignRequestContext,
   ): Promise<string>;
-  /** 返回已签名的原始交易（十六进制），广播由链层负责 */
-  signTransaction(
+  /**
+   * 提交交易，返回 txHash。
+   *
+   * 为什么不是"签名后由链层广播"：**MetaMask 不支持 `eth_signTransaction`**，
+   * 外部钱包只能走 `eth_sendTransaction`——它自己管 nonce、自己估 gas、自己签名
+   * 并广播，只把 txHash 还回来。所以"签名"和"广播"这条缝在外部钱包上不存在，
+   * 强行分离会写出一个走不通的接口。
+   *
+   * 两条实现的差异收在这里：
+   * - 内置钱包：本地签名，然后用传入的 `broadcast` 发出去（签名器不碰网络）；
+   * - 外部钱包：忽略 `broadcast`，整笔交给钱包 App。
+   *
+   * @param broadcast 把已签名的原始交易发出去并返回 txHash
+   */
+  submitTransaction(
     transaction: EvmTransactionRequest,
     context: SignRequestContext,
+    broadcast: (signedTransaction: string) => Promise<string>,
   ): Promise<string>;
 }
