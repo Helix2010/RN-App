@@ -17,14 +17,32 @@ export class UnsignableTransactionError extends Error {
   }
 }
 
+const GWEI = 1_000_000_000n;
+
 /**
- * 手续费的绝对红线：10000 Gwei。
+ * 每条链的 maxFeePerGas 绝对红线（按 EIP-155 chainId）。
  *
- * 这不是"合理值上限"，而是"绝对不可能合理"的红线——以太坊历史峰值也没到这个量级。
- * 它挡的是被篡改或算错的费用参数（一个虚高的 maxFeePerGas 会把用户的原生币
- * 全部烧成手续费）。真正贴近市场的相对上限由链层按当前 gasPrice 判断，两层都要有。
+ * 为什么按链：链层那道"不超过节点报的 gasPrice 四倍"的相对上限，对**恶意节点**
+ * 是无效的——基准 gasPrice 也是它报的。所以绝对红线才是恶意节点面前唯一的防线，
+ * 而一条与链无关的 10000 Gwei 对 BSC（常态 1～3 Gwei）是三千倍常态，一笔 ERC-20
+ * 转账最多能被烧掉 0.6 BNB。
+ *
+ * 取值原则："历史极端拥堵值的几倍"，保证正常拥堵不误拒、恶意节点能造成的损失
+ * 有界：以太坊历史极端约 1000 Gwei，BSC 约 20～50，Base / OP 常态不到 1。
+ * 目录里没有的链退回 10000 Gwei——总比没有强。
  */
-const MAX_FEE_WEI_CEILING = 10_000n * 1_000_000_000n;
+const MAX_FEE_PER_GAS_BY_CHAIN: Record<number, bigint> = {
+  1: 2_000n * GWEI,
+  56: 200n * GWEI,
+  8453: 100n * GWEI,
+  11155420: 100n * GWEI,
+};
+const MAX_FEE_WEI_CEILING = 10_000n * GWEI;
+
+/** 供测试与文档：某条链的红线。 */
+export function maxFeePerGasCeiling(chainId: number): bigint {
+  return MAX_FEE_PER_GAS_BY_CHAIN[chainId] ?? MAX_FEE_WEI_CEILING;
+}
 
 /** 任何提交路径都必须满足的部分（外部钱包会自己补 nonce 与手续费）。 */
 export function assertSubmittable(transaction: EvmTransactionRequest): void {
@@ -66,7 +84,7 @@ export function assertLocallySignable(
     throw new UnsignableTransactionError(
       "maxPriorityFeePerGas 不能大于 maxFeePerGas",
     );
-  if (transaction.maxFeePerGas > MAX_FEE_WEI_CEILING)
+  if (transaction.maxFeePerGas > maxFeePerGasCeiling(transaction.chainId))
     throw new UnsignableTransactionError(
       "手续费高得不合理，拒绝签名（可能是费用参数被篡改或算错）",
     );

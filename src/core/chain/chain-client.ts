@@ -37,6 +37,16 @@ const FEE_HEADROOM_MULTIPLIER = 4n;
  */
 const MAX_PENDING_GAP = 32;
 
+/**
+ * 本地 nonce 下限的有效期。
+ *
+ * 下限的作用是"节点还没看到我刚广播的那笔时，别把同一个 nonce 再发一遍"。
+ * 这个窗口只有几秒到几分钟：十分钟后那笔要么已经上链（节点的 pending 计数自然
+ * 包含它），要么已经被内存池丢掉（继续把它算在内就会留下一个永远填不上的空洞，
+ * 之后每一笔都卡住）。所以下限必须会过期。
+ */
+const NONCE_FLOOR_TTL_MS = 10 * 60_000;
+
 const QUANTITY = /^0x[0-9a-fA-F]+$/;
 
 /**
@@ -57,10 +67,30 @@ function parseQuantity(raw: unknown): bigint {
 }
 
 export class ChainClient {
-  /** 本地记住发出去的最大 nonce，节点报一个更小的值时不采纳 */
-  private readonly highestNonce = new Map<string, number>();
+  /** 本地记住发出去的最大 nonce（及时间），节点报一个更小的值时不采纳 */
+  private readonly highestNonce = new Map<
+    string,
+    { nonce: number; at: number }
+  >();
 
-  constructor(private readonly rpc: RpcClient) {}
+  constructor(
+    private readonly rpc: RpcClient,
+    private readonly options: { now?: () => number } = {},
+  ) {}
+
+  private now(): number {
+    return this.options.now?.() ?? Date.now();
+  }
+
+  private floorFor(address: string): number | undefined {
+    const entry = this.highestNonce.get(address.toLowerCase());
+    if (!entry) return undefined;
+    if (this.now() - entry.at > NONCE_FLOOR_TTL_MS) {
+      this.highestNonce.delete(address.toLowerCase());
+      return undefined;
+    }
+    return entry.nonce;
+  }
 
   async getNativeBalance(address: string): Promise<bigint> {
     const raw = await this.rpc.call<string>("eth_getBalance", [
@@ -135,15 +165,16 @@ export class ChainClient {
         undefined,
         `pending=${pending} latest=${latest}`,
       );
-    const floor = this.highestNonce.get(address.toLowerCase());
+    const floor = this.floorFor(address);
     return floor !== undefined && floor > pending ? floor : pending;
   }
 
   /** 记下已经用掉的 nonce，下一笔从它之后开始。 */
   noteNonceUsed(address: string, nonce: number): void {
     const key = address.toLowerCase();
-    const floor = this.highestNonce.get(key) ?? -1;
-    if (nonce + 1 > floor) this.highestNonce.set(key, nonce + 1);
+    const floor = this.floorFor(address) ?? -1;
+    if (nonce + 1 > floor)
+      this.highestNonce.set(key, { nonce: nonce + 1, at: this.now() });
   }
 
   /**
@@ -169,7 +200,14 @@ export class ChainClient {
     ]);
     const base = block?.baseFeePerGas ? parseQuantity(block.baseFeePerGas) : 0n;
     const reference = parseQuantity(gasPrice);
-    const tip = priority === null ? reference : parseQuantity(priority);
+    // 节点不支持 eth_maxPriorityFeePerGas 时，小费不能直接用 gasPrice：
+    // gasPrice 已经包含了 baseFee，再叠上去等于每笔多付一个 baseFee
+    const tip =
+      priority === null
+        ? reference > base
+          ? reference - base
+          : reference
+        : parseQuantity(priority);
     const computed = base * 2n + tip;
     // 下限：算出来比节点报的 gasPrice 还低时，用 gasPrice
     const maxFeePerGas = computed > reference ? computed : reference;

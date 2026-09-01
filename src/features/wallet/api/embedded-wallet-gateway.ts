@@ -316,6 +316,10 @@ export class EmbeddedWalletGateway implements WalletGateway {
     return this.deps.chainData.getTransaction(id);
   }
 
+  sendsOnchain(chain: ChainId): boolean {
+    return this.deps.onchain?.available(chain) ?? false;
+  }
+
   async quoteTransfer(request: SendRequest): Promise<TransferQuote | null> {
     const onchain = this.deps.onchain;
     if (!onchain?.available(request.token.chain)) return null;

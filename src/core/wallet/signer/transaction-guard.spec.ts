@@ -1,4 +1,5 @@
 import {
+  maxFeePerGasCeiling,
   UnsignableTransactionError,
   assertLocallySignable,
   assertSubmittable,
@@ -121,5 +122,45 @@ describe("assertSubmittable", () => {
     expect(() => assertSubmittable({ chainId: 56, to: TO })).toThrow(
       /既没有转账金额也没有调用数据/,
     );
+  });
+});
+
+describe("per-chain fee ceiling", () => {
+  const GWEI = 1_000_000_000n;
+
+  it("is far lower on BSC than on Ethereum, because normal fees are", () => {
+    // 与链无关的 10000 Gwei 对 BSC 是三千倍常态，恶意节点一笔就能烧掉 0.6 BNB
+    expect(maxFeePerGasCeiling(56)).toBeLessThan(maxFeePerGasCeiling(1));
+    expect(maxFeePerGasCeiling(56)).toBeLessThanOrEqual(200n * GWEI);
+  });
+
+  it("rejects a BSC fee that Ethereum would still accept", () => {
+    const fee = 500n * GWEI;
+    expect(() =>
+      assertLocallySignable({
+        chainId: 56,
+        to: "0x000000000000000000000000000000000000dEaD",
+        value: 1n,
+        nonce: 1,
+        gasLimit: 21_000n,
+        maxFeePerGas: fee,
+        maxPriorityFeePerGas: fee,
+      }),
+    ).toThrow(/手续费高得不合理/);
+    expect(() =>
+      assertLocallySignable({
+        chainId: 1,
+        to: "0x000000000000000000000000000000000000dEaD",
+        value: 1n,
+        nonce: 1,
+        gasLimit: 21_000n,
+        maxFeePerGas: fee,
+        maxPriorityFeePerGas: fee,
+      }),
+    ).not.toThrow();
+  });
+
+  it("falls back to the generic red line for a chain it does not know", () => {
+    expect(maxFeePerGasCeiling(999_999)).toBe(10_000n * GWEI);
   });
 });

@@ -55,4 +55,6 @@ export interface WalletGateway {
   listTransfers(address: string): Promise<WalletTransfer[]>;
   /** 链上手续费预估；这条链没走真链时返回 null。 */
   quoteTransfer(request: SendRequest): Promise<TransferQuote | null>;
+  /** 这条链上的转出会不会真的上链。界面要据此告诉用户这是真钱还是演示账本。 */
+  sendsOnchain(chain: ChainId): boolean;
 }

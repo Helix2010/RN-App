@@ -1,3 +1,4 @@
+import { Wallet } from "ethers";
 import type { ChainClient } from "../../../core/chain/chain-client";
 import { CHAINS, type ChainId } from "../../../core/gateways/types";
 import { money } from "../../../core/money/money";
@@ -10,6 +11,10 @@ import type { SendRequest } from "../model/wallet";
 import { OnchainTransfers } from "./onchain-transfers";
 
 const FROM = "0x9858EfFD232B4033E47d90003D41EC34EcaEda94";
+/** 第 0 个派生地址就是 FROM：要真签，服务层才能从 raw 算出 hash */
+const TEST_WALLET = Wallet.fromPhrase(
+  "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+);
 const TO = "0x000000000000000000000000000000000000dEaD";
 const USDT = "0x55d398326f99059ff775485246999027b3197955";
 
@@ -80,7 +85,8 @@ function signer(): WalletSigner {
     managesOwnFees: false,
     signMessage: async () => "0x",
     signTypedData: async () => "0x",
-    submitTransaction: async (_tx, _ctx, broadcast) => broadcast("0xraw"),
+    submitTransaction: async (tx, _ctx, broadcast) =>
+      broadcast(await TEST_WALLET.signTransaction(tx)),
   };
 }
 
@@ -114,8 +120,10 @@ describe("OnchainTransfers send", () => {
     const record = await onchain.send(request(), signer());
 
     expect(record.status).toBe("submitted");
-    expect(record.hash).toBe("0xdeadbeef");
-    expect(record.id).toBe("0xdeadbeef");
+    // hash 由本地签名原文算出，不是节点回答的 0xdeadbeef
+    expect(record.hash).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(record.hash).not.toBe("0xdeadbeef");
+    expect(record.id).toBe(record.hash);
   });
 
   it("charges the fee in the chain's native coin, not in the token being sent", async () => {
@@ -260,8 +268,8 @@ describe("OnchainTransfers progress", () => {
       createChain: () => chain,
     });
 
-    await onchain.send(request(), signer());
-    const tx = await onchain.getTransaction("0xdeadbeef");
+    const sent = await onchain.send(request(), signer());
+    const tx = await onchain.getTransaction(sent.id);
 
     expect(tx?.status).toBe("confirming");
   });
@@ -274,9 +282,9 @@ describe("OnchainTransfers progress", () => {
       createChain: () => chain,
     });
 
-    await onchain.send(request(), signer());
-    receipts.set("0xdeadbeef", { status: "reverted" });
-    const tx = await onchain.getTransaction("0xdeadbeef");
+    const sent = await onchain.send(request(), signer());
+    receipts.set(sent.id, { status: "reverted" });
+    const tx = await onchain.getTransaction(sent.id);
 
     // revert 和"网络失败"完全不同：钱花了 gas 但没转成功
     expect(tx?.status).toBe("failed");
@@ -291,12 +299,10 @@ describe("OnchainTransfers progress", () => {
       createChain: () => chain,
     });
 
-    await onchain.send(request(), signer());
-    receipts.set("0xdeadbeef", { status: "success" });
+    const sent = await onchain.send(request(), signer());
+    receipts.set(sent.id, { status: "success" });
 
-    expect((await onchain.getTransaction("0xdeadbeef"))?.status).toBe(
-      "confirmed",
-    );
+    expect((await onchain.getTransaction(sent.id))?.status).toBe("confirmed");
   });
 
   it("does not claim to know a hash it never submitted", async () => {

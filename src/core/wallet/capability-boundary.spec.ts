@@ -12,6 +12,11 @@ const BOUNDARY_DIRS = ["vault", "signer", "keygen"];
 const FORBIDDEN_IMPORTS = [
   "../../network",
   "network/api-client",
+  // 链层会说话（RPC）；签名器只能拿到已经构造好的交易
+  "../chain/",
+  "../../chain/",
+  "core/chain/",
+  "rpc-client",
   "expo-notifications",
   "@react-native-async-storage",
   "@tanstack/react-query",

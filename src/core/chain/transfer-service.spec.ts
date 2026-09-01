@@ -1,5 +1,7 @@
+import { Transaction, Wallet } from "ethers";
 import { ChainClient } from "./chain-client";
 import {
+  FeeChangedError,
   InsufficientBalanceError,
   InsufficientGasError,
   TransferGasAnomalyError,
@@ -9,6 +11,10 @@ import {
 import type { WalletSigner } from "../wallet/signer/types";
 
 const FROM = "0x9858EfFD232B4033E47d90003D41EC34EcaEda94";
+/** 第 0 个派生地址就是 FROM：本地签名器要用真钥匙签，raw tx 才能算出 hash */
+const PHRASE =
+  "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+const TEST_WALLET = Wallet.fromPhrase(PHRASE);
 const TO = "0x000000000000000000000000000000000000dEaD";
 const USDT = "0x55d398326f99059ff775485246999027b3197955";
 
@@ -70,7 +76,8 @@ function localSigner() {
     signTypedData: async () => "0x",
     submitTransaction: async (transaction, _context, broadcast) => {
       submitted.push(transaction);
-      return broadcast("0xsignedraw");
+      // 真的签：服务层要从 raw 里算 hash
+      return broadcast(await TEST_WALLET.signTransaction(transaction));
     },
   };
   return { signer, submitted };
@@ -99,13 +106,15 @@ describe("TransferService with a local signer", () => {
 
     const result = await service.submit(request(), signer);
 
-    expect(result).toEqual({ hash: "0xhash", nonce: 4 });
+    const [raw] = broadcast.mock.calls[0] as unknown as [string];
+    // hash 来自本地签名的原文，不是节点回答的 "0xhash"
+    expect(result).toEqual({ hash: Transaction.from(raw).hash, nonce: 4 });
     const tx = submitted[0];
     // 收款地址在 calldata 里，to 是合约
     expect(tx?.to).toBe(USDT);
     expect(tx?.value).toBe(0n);
     expect(tx?.data?.startsWith("0xa9059cbb")).toBe(true);
-    expect(broadcast).toHaveBeenCalledWith("0xsignedraw");
+    expect(raw.startsWith("0x02")).toBe(true); // EIP-1559 typed tx
   });
 
   it("sends a native transfer straight to the recipient", async () => {
@@ -231,12 +240,65 @@ describe("TransferService gas ceiling", () => {
     const service = new TransferService({ chain, reason: "r" });
 
     await expect(service.submit(request(), signer)).resolves.toMatchObject({
-      hash: "0xhash",
+      nonce: 4,
     });
   });
 });
 
+describe("TransferService fee binding", () => {
+  it("refuses to sign a fee far above what the user was quoted", async () => {
+    // 报价和签名是两次独立询链：节点可以报价时报低、签名时报高
+    const { chain } = fakeChain({ gasLimit: 30_000n, maxFeePerGas: 10n ** 9n });
+    const { signer } = localSigner();
+    const service = new TransferService({ chain, reason: "r" });
+    const quoted = 10_000n * 10n ** 9n; // 用户看到的：远低于 30000 × 1 Gwei
+
+    const error = await service
+      .submit(request({ maxFeeWei: quoted }), signer)
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(FeeChangedError);
+    expect(chain.getNextNonce).not.toHaveBeenCalled();
+  });
+
+  it("tolerates normal drift below a quarter", async () => {
+    const { chain } = fakeChain({ gasLimit: 30_000n, maxFeePerGas: 10n ** 9n });
+    const { signer } = localSigner();
+    const service = new TransferService({ chain, reason: "r" });
+    const quoted = (30_000n * 10n ** 9n * 10n) / 11n; // 实际比报价高约 10%
+
+    await expect(
+      service.submit(request({ maxFeeWei: quoted }), signer),
+    ).resolves.toMatchObject({ nonce: 4 });
+  });
+
+  it("signs without a bound when none was given (external wallets show their own fee)", async () => {
+    const { chain } = fakeChain();
+    const { signer } = localSigner();
+    await expect(
+      new TransferService({ chain, reason: "r" }).submit(request(), signer),
+    ).resolves.toMatchObject({ nonce: 4 });
+  });
+});
+
 describe("TransferService with an external wallet", () => {
+  it("checks the recipient in the orchestration layer, not only inside the signer", async () => {
+    // 不依赖每个签名器实现自觉
+    const { chain } = fakeChain();
+    const { signer } = externalSigner();
+    const service = new TransferService({ chain, reason: "r" });
+
+    await expect(
+      service.submit(
+        request({
+          tokenAddress: "native",
+          to: "0x9858EfFD232B4033E47d90003D41EC34EcaEDA94",
+        }),
+        signer,
+      ),
+    ).rejects.toThrow(/收款地址不合法/);
+  });
+
   it("hands over the intent without nonce or fees", async () => {
     const { chain } = fakeChain();
     const { signer, submitted } = externalSigner();
@@ -264,12 +326,12 @@ describe("TransferService serialisation", () => {
       managesOwnFees: false,
       signMessage: async () => "0x",
       signTypedData: async () => "0x",
-      submitTransaction: async (_tx, _ctx, broadcast) => {
+      submitTransaction: async (tx, _ctx, broadcast) => {
         inFlight += 1;
         maxInFlight = Math.max(maxInFlight, inFlight);
         await new Promise((resolve) => setTimeout(resolve, 5));
         inFlight -= 1;
-        return broadcast("0xraw");
+        return broadcast(await TEST_WALLET.signTransaction(tx));
       },
     };
     const service = new TransferService({ chain, reason: "r" });

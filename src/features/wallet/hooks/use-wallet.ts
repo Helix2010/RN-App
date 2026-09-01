@@ -71,6 +71,7 @@ export function useTransferQuote(request: SendRequest | undefined) {
     staleTime: 15_000,
     // 节点抖一下就把手续费显示成"不可估"太吓人，但也不能一直重试
     retry: 1,
+    retryDelay: 800,
   });
 }
 

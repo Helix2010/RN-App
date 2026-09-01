@@ -1,5 +1,6 @@
 import { RpcError, RpcUnavailableError } from "../../../core/chain/rpc-client";
 import {
+  FeeChangedError,
   InsufficientBalanceError,
   InsufficientGasError,
   TransferGasAnomalyError,
@@ -28,6 +29,8 @@ export function transferErrorCopy(error: unknown): TransferErrorCopy {
     return { key: "send.error.gas", values: { symbol: error.nativeSymbol } };
   if (error instanceof InsufficientBalanceError)
     return { key: "send.error.balance", values: { symbol: error.symbol } };
+  // 用户看到的报价和要签的费用对不上：让他重新看一眼，而不是替他决定
+  if (error instanceof FeeChangedError) return { key: "send.error.feeChanged" };
   if (error instanceof TransferGasAnomalyError)
     return {
       key: "send.error.gasAnomaly",

@@ -349,6 +349,10 @@ export class MockWalletGateway implements WalletGateway {
     return null;
   }
 
+  sendsOnchain(): boolean {
+    return false;
+  }
+
   async listTransfers(address: string): Promise<WalletTransfer[]> {
     const state = await this.load();
     return state.transfers.filter(

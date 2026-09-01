@@ -1,5 +1,6 @@
 import { RpcError, RpcUnavailableError } from "../../../core/chain/rpc-client";
 import {
+  FeeChangedError,
   InsufficientBalanceError,
   InsufficientGasError,
   TransferGasAnomalyError,
@@ -23,6 +24,12 @@ describe("transferErrorCopy", () => {
     expect(
       transferErrorCopy(new InsufficientBalanceError("USDT", 100n, 1n)),
     ).toEqual({ key: "send.error.balance", values: { symbol: "USDT" } });
+  });
+
+  it("asks the user to re-confirm when the fee moved away from the quote", () => {
+    expect(transferErrorCopy(new FeeChangedError(1n, 100n)).key).toBe(
+      "send.error.feeChanged",
+    );
   });
 
   it("names the token whose transfer would burn absurd gas", () => {

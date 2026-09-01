@@ -212,6 +212,9 @@ const zhCN = {
   "send.failed": "转出失败",
   "send.feeEstimating": "估算中…",
   "send.feeUnavailable": "暂不可估",
+  "send.feeRequired": "手续费暂时无法估算，先不能转出。请稍后再试。",
+  "send.demoLedger": "演示账本：这笔转出只记在本机，不会上链。",
+  "send.error.feeChanged": "网络费在你确认后明显上涨，已停止签名。请重新确认。",
   // 失败原因必须分开讲：最高频的困惑是"我有 USDT，为什么转不了"，
   // 答案是缺原生币付手续费，而不是余额不足
   "send.error.gas": "网络费要用 {symbol} 支付，余额不足。请先充入少量后重试。",
@@ -991,6 +994,12 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "send.failed": "Send failed",
   "send.feeEstimating": "Estimating…",
   "send.feeUnavailable": "Estimate unavailable",
+  "send.feeRequired":
+    "The network fee cannot be estimated right now, so sending is paused. Try again shortly.",
+  "send.demoLedger":
+    "Demo ledger: this send is recorded on this device only and never reaches the chain.",
+  "send.error.feeChanged":
+    "The network fee rose sharply after you confirmed, so signing was stopped. Please confirm again.",
   "send.error.gas":
     "The network fee is paid in {symbol} and your balance is too low. Top up a little and retry.",
   "send.error.balance": "Insufficient {symbol} balance",

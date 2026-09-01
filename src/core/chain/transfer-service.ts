@@ -1,6 +1,11 @@
+import { Transaction } from "ethers";
 import type { SignRequestContext, WalletSigner } from "../wallet/signer/types";
-import { assertLocallySignable } from "../wallet/signer/transaction-guard";
+import {
+  assertLocallySignable,
+  assertSubmittable,
+} from "../wallet/signer/transaction-guard";
 import { ChainClient } from "./chain-client";
+import { RpcError } from "./rpc-client";
 
 /**
  * 一笔链上转出的完整编排：预检 → 构造 → 校验 → 签名提交 → nonce 记账。
@@ -28,6 +33,26 @@ const NATIVE = "native";
  * 这个上限和手续费红线是两道不同的防线：一道管单价，一道管用量。
  */
 const TRANSFER_GAS_CEILING = 500_000n;
+
+/**
+ * 签名时的手续费比用户在确认页看到的报价高出太多。
+ *
+ * 确认页的报价和真正签名用的费用是两次独立询链——节点可以在报价时报低、签名时
+ * 报高，用户看到 0.0001 却签了 0.5。所以调用方把用户看到的数带进来，超出容差
+ * 就拒绝，让用户重新确认。
+ */
+export class FeeChangedError extends Error {
+  constructor(
+    readonly quoted: bigint,
+    readonly actual: bigint,
+  ) {
+    super(`fee rose from ${quoted} to ${actual} since it was quoted`);
+    this.name = "FeeChangedError";
+  }
+}
+
+/** 签名费允许比报价高出的比例（1/4）：正常波动以内，超出就要用户重新看一眼。 */
+const FEE_DRIFT_TOLERANCE = { numerator: 5n, denominator: 4n };
 
 /** 合约在转账里消耗的 gas 异常。这不是网络问题，重试不会好。 */
 export class TransferGasAnomalyError extends Error {
@@ -78,6 +103,11 @@ export type TransferRequest = {
   nativeSymbol: string;
   /** 最小单位（wei / token 的最小精度） */
   amount: bigint;
+  /**
+   * 用户在确认页看到并接受的手续费（wei）。本地签名时实际费用不得明显超过它。
+   * 外部钱包自己展示费用，不需要这个字段。
+   */
+  maxFeeWei?: bigint;
 };
 
 export type SubmittedTransfer = {
@@ -214,7 +244,13 @@ export class TransferService {
     const context: SignRequestContext = { reason: this.deps.reason };
 
     if (signer.managesOwnFees) {
-      // 钱包自己算 nonce 与手续费；我们只交出意图
+      // 钱包自己算 nonce 与手续费；我们只交出意图。
+      // chainId / 收款地址的体检在编排层也做一次，不依赖每个签名器实现自觉
+      assertSubmittable({
+        chainId: request.chainId,
+        from: request.from,
+        ...target,
+      });
       const hash = await signer.submitTransaction(
         { chainId: request.chainId, from: request.from, ...target },
         context,
@@ -226,7 +262,14 @@ export class TransferService {
     }
 
     const gas = await this.quoteGas(request);
-    await this.assertFunded(request, gas.gasLimit * gas.maxFeePerGas);
+    const feeCost = gas.gasLimit * gas.maxFeePerGas;
+    if (
+      request.maxFeeWei !== undefined &&
+      feeCost * FEE_DRIFT_TOLERANCE.denominator >
+        request.maxFeeWei * FEE_DRIFT_TOLERANCE.numerator
+    )
+      throw new FeeChangedError(request.maxFeeWei, feeCost);
+    await this.assertFunded(request, feeCost);
     const nonce = await this.deps.chain.getNextNonce(request.from);
     const transaction = {
       chainId: request.chainId,
@@ -239,8 +282,22 @@ export class TransferService {
     };
     // 最后一道：ethers 缺字段不报错，会签出 nonce=0 的废交易
     assertLocallySignable(transaction);
-    const hash = await signer.submitTransaction(transaction, context, (raw) =>
-      this.deps.chain.broadcast(raw),
+    const hash = await signer.submitTransaction(
+      transaction,
+      context,
+      async (raw) => {
+        // txHash 由签名后的原文决定，本地就能算出来，不必信节点的回答。
+        // 节点返回另一笔交易的 hash 时，界面会去追踪一笔不是我们的交易。
+        const expected = Transaction.from(raw).hash;
+        if (!expected)
+          throw new RpcError("signed transaction has no hash", undefined);
+        const reported = await this.deps.chain.broadcast(raw);
+        if (reported?.toLowerCase() !== expected.toLowerCase())
+          console.warn(
+            `[chain] 节点返回的 txHash 与本地计算不一致，以本地为准：${reported}`,
+          );
+        return expected;
+      },
     );
     // 广播成功才占用这个 nonce；失败时留给下一笔重用
     this.deps.chain.noteNonceUsed(request.from, nonce);

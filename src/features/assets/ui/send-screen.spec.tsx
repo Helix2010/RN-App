@@ -225,3 +225,88 @@ describe("SendScreen recipient validation", () => {
     );
   });
 });
+
+describe("SendScreen on a real chain", () => {
+  it("will not let the user sign while the fee is unknown", async () => {
+    // 签名费要绑定到用户看到的数；没看到就没有可绑的
+    const { runtime } = await openConfirm({
+      verified: true,
+      prepare: (gateways) => {
+        gateways.wallet.sendsOnchain = () => true;
+        gateways.wallet.quoteTransfer = jest.fn(async () => {
+          throw new Error("node down");
+        });
+      },
+    });
+
+    // 报价失败会先重试一次（800ms），提示要等它放弃之后才出现
+    await waitFor(
+      () =>
+        expect(screen.getByText(runtime.t("send.feeRequired"))).toBeTruthy(),
+      { timeout: 4_000 },
+    );
+    const submit = screen.getByTestId("send-submit");
+    expect(submit.props["aria-disabled"]).toBe(true);
+  });
+
+  it("hands the quoted fee to the send so signing is bound to it", async () => {
+    const send = jest.fn(async () => {
+      throw new Error("stop here");
+    });
+    await openConfirm({
+      verified: true,
+      prepare: (gateways) => {
+        gateways.wallet.sendsOnchain = () => true;
+        gateways.wallet.quoteTransfer = jest.fn(async () => ({
+          fee: money(300_000_000_000_000n, 18, "BNB"),
+          maxAmount: null,
+        }));
+        gateways.wallet.send = send;
+      },
+    });
+    await waitFor(() =>
+      expect(screen.getAllByText(/0\.0003 BNB/).length).toBeGreaterThan(0),
+    );
+
+    void fireEvent.press(await screen.findByTestId("send-confirm"));
+
+    await waitFor(() => expect(send).toHaveBeenCalled());
+    const [request] = send.mock.calls[0] as unknown as [
+      { maxFee?: { raw: string } },
+    ];
+    expect(request.maxFee?.raw).toBe("300000000000000");
+  });
+
+  it("says so when the send only reaches the demo ledger", async () => {
+    const { runtime } = await openConfirm({ verified: true });
+    await waitFor(() =>
+      expect(screen.getByText(runtime.t("send.demoLedger"))).toBeTruthy(),
+    );
+  });
+
+  it("shows the exact amount that will be signed, not a rounded one", async () => {
+    const gateways = createTestGateways();
+    await signIn(gateways);
+    gateways.wallet.getBalances = jest.fn(async () => [
+      balance({ address: USDT_BSC, symbol: "USDT", verified: true }),
+    ]);
+    await renderWithProviders(
+      <SendScreen onBack={jest.fn()} initialChain="bsc" />,
+      { gateways },
+    );
+    void fireEvent.changeText(
+      await screen.findByTestId("send-address"),
+      RECIPIENT,
+    );
+    void fireEvent.changeText(
+      await screen.findByTestId("send-amount"),
+      "1.009",
+    );
+    void fireEvent.press(await screen.findByTestId("send-submit"));
+
+    // formatMoney 会把 1.009 四舍五入成 1.01；签的却是 1.009
+    await waitFor(() =>
+      expect(screen.getAllByText("1.009 USDT").length).toBeGreaterThan(0),
+    );
+  });
+});

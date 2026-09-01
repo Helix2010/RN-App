@@ -125,6 +125,18 @@ describe("ChainClient nonce", () => {
     await expect(client.getNextNonce(ADDRESS)).resolves.toBe(5);
   });
 
+  it("forgets a local floor after ten minutes, so a dropped transaction cannot strand the account", async () => {
+    // 广播成功但随后被内存池丢掉：继续把它算在内会留下一个永远填不上的空洞
+    let now = 1_000_000;
+    const { rpc } = nonceStub("0x5", "0x5");
+    const client = new ChainClient(rpc, { now: () => now });
+    client.noteNonceUsed(ADDRESS, 9);
+    await expect(client.getNextNonce(ADDRESS)).resolves.toBe(10);
+
+    now += 11 * 60_000;
+    await expect(client.getNextNonce(ADDRESS)).resolves.toBe(5);
+  });
+
   it("rejects a quantity the node did not encode as hex", async () => {
     const { rpc } = stubRpc({ eth_getBalance: "1000" });
     await expect(
@@ -207,6 +219,21 @@ describe("ChainClient fees", () => {
     await expect(new ChainClient(rpc).getFeeData()).resolves.toMatchObject({
       maxFeePerGas: 1_000_000_000n,
     });
+  });
+
+  it("does not pay a whole extra baseFee as tip when the node lacks eth_maxPriorityFeePerGas", async () => {
+    // gasPrice 已经包含 baseFee；把它整个当小费等于每笔多付一个 baseFee
+    const { rpc } = stubRpc({
+      eth_getBlockByNumber: { baseFeePerGas: "0x2540be400" }, // 10 Gwei
+      eth_gasPrice: "0x2e90edd00", // 12.5 Gwei
+      eth_maxPriorityFeePerGas: () => {
+        throw new Error("method not found");
+      },
+    });
+
+    const fee = await new ChainClient(rpc).getFeeData();
+
+    expect(fee.maxPriorityFeePerGas).toBe(2_500_000_000n);
   });
 
   it("refuses a fee far above the reported gas price", async () => {

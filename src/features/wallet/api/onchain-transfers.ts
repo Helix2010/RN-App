@@ -156,6 +156,7 @@ export class OnchainTransfers {
       // 手续费花的是链的原生币，不是被转的代币——写错会让"没 gas"提示说错币种
       nativeSymbol: CHAINS[request.token.chain].nativeSymbol,
       amount: BigInt(request.amount.raw),
+      maxFeeWei: request.maxFee ? BigInt(request.maxFee.raw) : undefined,
     };
   }
 

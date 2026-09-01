@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import { CHAINS, type ChainId } from "../../../core/gateways/types";
+import { useGateways } from "../../../core/gateways/gateway-context";
 import { classifyEvmAddress } from "../../../core/wallet/address";
 import { evmChainIdOf } from "../../../core/wallet/config/wallet-runtime-config";
 import {
@@ -79,6 +80,9 @@ export function SendScreen({
   const confirm = useRef<SheetHandle>(null);
   const book = useRef<SheetHandle>(null);
 
+  const { wallet } = useGateways();
+  // 这条链是真链还是演示账本：两者的确认页必须让用户分得清
+  const onchain = wallet.sendsOnchain(chain);
   const balances = useWalletBalances(address || undefined, chain);
   const send = useSendToken();
   const tx = useWalletTransfer(txId);
@@ -120,13 +124,6 @@ export function SendScreen({
           Math.max(toApproxNumber(selected.amount), 1e-9)) *
         selected.usdValue
       : 0;
-  const canSubmit =
-    addressValid &&
-    selected &&
-    amount &&
-    !isZero(amount) &&
-    !insufficient &&
-    !send.isPending;
   // 预估要用真实的收款地址：ERC-20 转给未初始化的地址 gas 更高
   const quoteRequest: SendRequest | undefined =
     address && selected && addressValid
@@ -145,6 +142,19 @@ export function SendScreen({
     : quote.isFetching
       ? t("send.feeEstimating")
       : t("send.feeUnavailable");
+  const exactAmount = amount
+    ? `${toDecimalString(amount)} ${amount.symbol}`
+    : "—";
+  // 真链上没有报价就不能签：签名费要绑定到用户看到的数，没看到就没有可绑的
+  const feeKnown = !onchain || Boolean(quote.data);
+  const canSubmit =
+    addressValid &&
+    selected &&
+    amount &&
+    !isZero(amount) &&
+    !insufficient &&
+    feeKnown &&
+    !send.isPending;
 
   const paste = async () => {
     const value = (await Clipboard.getStringAsync()).trim();
@@ -156,7 +166,14 @@ export function SendScreen({
     // 转出：交易前验证 + 大额阈值（两者任一命中都要验证）
     if (!(await requireVerification({ usdValue: usd }))) return;
     send.mutate(
-      { from: address, to: to.trim(), token: selected.token, amount },
+      {
+        from: address,
+        to: to.trim(),
+        token: selected.token,
+        amount,
+        // 把确认页上显示的手续费带进去：签名时实际费用不得明显超过它
+        maxFee: onchain ? quote.data?.fee : undefined,
+      },
       {
         onSuccess: (record) => {
           confirm.current?.dismiss();
@@ -349,6 +366,11 @@ export function SendScreen({
 
           <Stack>
             <DetailRow label={t("send.networkFee")} value={feeText} />
+            {onchain && !quote.data && !quote.isFetching ? (
+              <Body fontSize={12} color="$warning">
+                {t("send.feeRequired")}
+              </Body>
+            ) : null}
             <DetailRow label={t("send.eta")} value={t("send.etaValue")} />
             <DetailRow
               label={t("send.recipientGets")}
@@ -462,17 +484,21 @@ export function SendScreen({
                 }
                 tone={selected.token.verified ? undefined : "warning"}
               />
-              <DetailRow
-                label={t("send.amount")}
-                value={formatMoney(amount, locale)}
-              />
+              {/* 确认页的金额必须是签名的那个数：formatMoney 会四舍五入到两位，
+                  1.009 会显示成 1.01 */}
+              <DetailRow label={t("send.amount")} value={exactAmount} />
               <DetailRow label={t("send.networkFee")} value={feeText} />
               <DetailRow
                 label={t("send.recipientGets")}
-                value={formatMoney(amount, locale)}
+                value={exactAmount}
                 tone="positive"
               />
             </Stack>
+            {onchain ? null : (
+              <Body fontSize={12} color="$textMuted" textAlign="center">
+                {t("send.demoLedger")}
+              </Body>
+            )}
             {selected.token.verified ? null : (
               <Row
                 alignItems="center"

@@ -395,6 +395,14 @@ describe("EmbeddedWalletGateway on-chain routing", () => {
     expect(ledger).toHaveBeenCalledWith("tx_1");
   });
 
+  it("tells the UI which chains really send on-chain", () => {
+    const { port } = fakeOnchain(["bsc"]);
+    const { gateway } = setup({ onchain: port });
+    expect(gateway.sendsOnchain("bsc")).toBe(true);
+    expect(gateway.sendsOnchain("eth")).toBe(false);
+    expect(setup().gateway.sendsOnchain("bsc")).toBe(false);
+  });
+
   it("quotes a fee only for chains that are actually on-chain", async () => {
     const { port } = fakeOnchain(["bsc"]);
     const { gateway } = setup({ onchain: port });

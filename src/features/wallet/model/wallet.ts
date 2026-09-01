@@ -35,6 +35,8 @@ export type SendRequest = {
   to: string;
   token: TokenRef;
   amount: Money;
+  /** 用户在确认页看到并接受的手续费；真链签名时实际费用不得明显超过它 */
+  maxFee?: Money;
 };
 
 /**
