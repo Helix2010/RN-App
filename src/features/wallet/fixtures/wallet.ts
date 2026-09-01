@@ -39,6 +39,10 @@ export const CONNECTORS: WalletConnector[] = [
   },
 ];
 
+/** Mock 模式下的演示助记词（真实模式由 KeystoreVault 生成，绝不写进代码）。 */
+export const MOCK_MNEMONIC =
+  "ripple harbor velvet orbit candle meadow silver anchor pioneer glacier timber lantern";
+
 export const EXTERNAL_ADDRESS = "0x3f4a8c21b7d94e0a1f6c5d2e8b9a7c3d4e5f9a2c";
 export const EMBEDDED_ADDRESS = "0x8a1c6e0f3b7d2a9c5e4f1b8d7a6c3e2f9b0df042";
 

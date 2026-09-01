@@ -14,6 +14,8 @@ export type RootRouteName =
   | "Approvals"
   | "Wallets"
   | "WalletBackup"
+  | "WalletSetup"
+  | "WalletImport"
   | "Transfer"
   | "AccountDetail"
   | "Send"

@@ -1,3 +1,5 @@
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useEffect, useRef } from "react";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import { formatMoney, shortenAddress } from "../../../core/i18n/format";
@@ -18,6 +20,7 @@ import {
   type SheetHandle,
 } from "../../../design-system";
 import {
+  useWalletAccounts,
   useWalletBalances,
   useWalletConnectors,
 } from "../../wallet/hooks/use-wallet";
@@ -25,6 +28,7 @@ import type { WalletConnector } from "../../wallet/model/wallet";
 import { tenantDomain, useWalletLogin } from "../hooks/use-session";
 import { useAuthSheet } from "../model/auth-sheet-store";
 import type { AuthIntent, WalletConnectorId } from "../model/session";
+import type { RootStackParamList } from "../../../navigation/types";
 
 function fill(template: string, values: Record<string, string>): string {
   return Object.entries(values).reduce(
@@ -64,8 +68,19 @@ export function ConnectWalletSheet() {
   const { t } = useFoundationRuntime();
   const { open, intent, close, fulfill } = useAuthSheet();
   const sheet = useRef<SheetHandle>(null);
-  const login = useWalletLogin(tenantDomain());
+  const login = useWalletLogin(tenantDomain(), t("login.reason"));
   const connectors = useWalletConnectors();
+  const accounts = useWalletAccounts();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const hasEmbedded = (accounts.data ?? []).some(
+    (account) => account.connector === "embedded",
+  );
+  const goToWallet = (screen: "WalletSetup" | "WalletImport") => {
+    close();
+    login.reset();
+    navigation.navigate(screen);
+  };
 
   // 只在 open 真正翻转时 present / dismiss；挂载时不调用 dismiss（gorhom 会把延迟的 onDismiss 回调打到随后的 present 上）
   const wasOpen = useRef(false);
@@ -94,6 +109,12 @@ export function ConnectWalletSheet() {
     }
   };
 
+  // 没有钱包时不要停在一个点不动的 sheet 上，直接把用户带到创建 / 导入
+  useEffect(() => {
+    if (login.state.step === "needs-wallet") goToWallet("WalletSetup");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [login.state.step]);
+
   const onDismiss = () => {
     wasOpen.current = false;
     login.reset();
@@ -102,6 +123,7 @@ export function ConnectWalletSheet() {
 
   const picking =
     login.state.step === "pick" ||
+    login.state.step === "needs-wallet" ||
     login.state.step === "connecting" ||
     (login.state.step === "error" && !login.state.account);
 
@@ -134,6 +156,9 @@ export function ConnectWalletSheet() {
               : undefined
           }
           onPick={(id) => void login.connect(id)}
+          hasEmbedded={hasEmbedded}
+          onCreate={() => goToWallet("WalletSetup")}
+          onImport={() => goToWallet("WalletImport")}
           t={t}
         />
       ) : (
@@ -153,12 +178,19 @@ function ConnectorPicker({
   loading,
   busyConnector,
   onPick,
+  hasEmbedded,
+  onCreate,
+  onImport,
   t,
 }: {
   connectors: WalletConnector[];
   loading: boolean;
   busyConnector?: WalletConnectorId;
   onPick: (id: WalletConnectorId) => void;
+  /** 本机已有自托管钱包 => 第一行是"使用内置钱包"，否则是"创建钱包" */
+  hasEmbedded: boolean;
+  onCreate: () => void;
+  onImport: () => void;
   t: (key: string) => string;
 }) {
   if (loading) {
@@ -181,18 +213,20 @@ function ConnectorPicker({
           <Label>{t("login.builtin")}</Label>
           <ConnectorRow
             icon="wallet-plus-outline"
-            title={t("login.createWallet")}
-            subtitle={t("login.createHint")}
+            title={hasEmbedded ? t("login.useWallet") : t("login.createWallet")}
+            subtitle={
+              hasEmbedded ? t("login.useWalletHint") : t("login.createHint")
+            }
             testID="login-create"
             busy={busyConnector === "embedded"}
-            onPress={() => onPick("embedded")}
+            onPress={() => (hasEmbedded ? onPick("embedded") : onCreate())}
           />
           <ConnectorRow
             icon="key-outline"
             title={t("login.importWallet")}
             subtitle={t("login.importHint")}
             testID="login-import"
-            onPress={() => onPick("embedded")}
+            onPress={onImport}
           />
         </Stack>
       ) : null}

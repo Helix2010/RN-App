@@ -14,7 +14,10 @@ import { MockPredictGateway } from "../../features/predict/api/mock-predict-gate
 import type { SessionGateway } from "../../features/session/api/gateway";
 import { MockSessionGateway } from "../../features/session/api/mock-session-gateway";
 import type { WalletGateway } from "../../features/wallet/api/gateway";
+import { EmbeddedWalletGateway } from "../../features/wallet/api/embedded-wallet-gateway";
 import { MockWalletGateway } from "../../features/wallet/api/mock-wallet-gateway";
+import { KeystoreVault } from "../wallet/vault/keystore-vault";
+import { expoAuthenticate, expoSecureStore } from "../wallet/vault/expo-ports";
 import type { KeyValueStorage } from "./types";
 
 export type Gateways = {
@@ -23,23 +26,45 @@ export type Gateways = {
   predict: PredictGateway;
   dex: DexGateway;
   assets: AssetsGateway;
-  /** 一期恒为 mock；接真后由 bootstrap.services.mode 决定 */
+  /** 业务数据来源；密钥与签名始终是真的 */
   mode: "mock" | "live";
+  /** 丢弃内存中的钱包解锁态；应用上锁 / 进后台时调用 */
+  lockKeys: () => void;
 };
 
 const GatewayContext = createContext<Gateways | null>(null);
 
 /**
- * 组装一套 Mock 网关。业务层只依赖接口，切换实现只改这里。
- * Http 实现（P6）同样在此按 bootstrap.services 选择。
+ * 组装网关。**钱包密钥与签名是真的**（KeystoreVault + EmbeddedSigner）；
+ * 余额 / 转账 / 预测 / 兑换等业务数据一期仍是 Mock，由 `chainData` 注入，
+ * 接真实链与后端时只替换这里。Http 会话实现（P2）同样在此按 bootstrap.services 选择。
  */
-function createMockGateways(storage: KeyValueStorage): Gateways {
+function createGateways(storage: KeyValueStorage): Gateways {
+  const vault = new KeystoreVault({
+    storage,
+    secureStore: expoSecureStore,
+    authenticate: expoAuthenticate,
+  });
+  const chainData = new MockWalletGateway(storage);
+  const wallet = new EmbeddedWalletGateway({
+    vault,
+    chainData,
+    storage,
+    seedDemoBalances: (address) => chainData.seedDemoBalances(address),
+  });
   const session = new MockSessionGateway(storage);
-  const wallet = new MockWalletGateway(storage);
   const predict = new MockPredictGateway(storage);
   const dex = new MockDexGateway(storage, wallet);
   const assets = new MockAssetsGateway(wallet, predict);
-  return { session, wallet, predict, dex, assets, mode: "mock" };
+  return {
+    session,
+    wallet,
+    predict,
+    dex,
+    assets,
+    mode: "mock",
+    lockKeys: () => vault.lock(),
+  };
 }
 
 export function GatewayProvider({
@@ -47,7 +72,7 @@ export function GatewayProvider({
   gateways,
 }: PropsWithChildren<{ gateways?: Gateways }>) {
   const value = useMemo(
-    () => gateways ?? createMockGateways(AsyncStorage),
+    () => gateways ?? createGateways(AsyncStorage),
     [gateways],
   );
   return (

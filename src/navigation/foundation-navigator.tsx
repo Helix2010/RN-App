@@ -19,6 +19,8 @@ import { WalletsScreen } from "../features/wallet/ui/wallets-screen";
 import { BackupScreen } from "../features/wallet/ui/backup-screen";
 import { ProfileScreen } from "../features/profile/profile-screen";
 import { ConnectWalletSheet } from "../features/session/ui/connect-wallet-sheet";
+import { WalletImportScreen } from "../features/wallet/ui/wallet-import-screen";
+import { WalletSetupScreen } from "../features/wallet/ui/wallet-setup-screen";
 import { AccountDetailScreen } from "../features/assets/ui/account-detail-screen";
 import { SendScreen } from "../features/assets/ui/send-screen";
 import { TransferScreen } from "../features/assets/ui/transfer-screen";
@@ -93,6 +95,8 @@ export function FoundationNavigator() {
         <Stack.Screen name="AppShell" component={AppShellScreen} />
         <Stack.Screen name="Profile" component={ProfileScreen} />
         <Stack.Screen name="Wallets" component={WalletsScreen} />
+        <Stack.Screen name="WalletSetup" component={WalletSetupScreen} />
+        <Stack.Screen name="WalletImport" component={WalletImportScreen} />
         <Stack.Screen name="WalletBackup" component={BackupScreen} />
         <Stack.Screen name="Settings" component={SettingsScreen} />
         <Stack.Screen
