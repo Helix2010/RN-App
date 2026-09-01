@@ -12,7 +12,7 @@ import { MockDexGateway } from "../../features/dex/api/mock-dex-gateway";
 import type { PredictGateway } from "../../features/predict/api/gateway";
 import { MockPredictGateway } from "../../features/predict/api/mock-predict-gateway";
 import type { SessionGateway } from "../../features/session/api/gateway";
-import { MockSessionGateway } from "../../features/session/api/mock-session-gateway";
+import { HttpSessionGateway } from "../../features/session/api/http-session-gateway";
 import type { WalletGateway } from "../../features/wallet/api/gateway";
 import { EmbeddedWalletGateway } from "../../features/wallet/api/embedded-wallet-gateway";
 import { MockWalletGateway } from "../../features/wallet/api/mock-wallet-gateway";
@@ -52,7 +52,9 @@ function createGateways(storage: KeyValueStorage): Gateways {
     storage,
     seedDemoBalances: (address) => chainData.seedDemoBalances(address),
   });
-  const session = new MockSessionGateway(storage);
+  // 会话是真的：挑战由 RN-Server 构造并核销 nonce，签名换回的令牌进安全存储。
+  // 测试通过 GatewayProvider 注入 Mock 会话，不走这条路径。
+  const session = new HttpSessionGateway(storage);
   const predict = new MockPredictGateway(storage);
   const dex = new MockDexGateway(storage, wallet);
   const assets = new MockAssetsGateway(wallet, predict);

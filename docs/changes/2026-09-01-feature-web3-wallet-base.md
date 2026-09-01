@@ -90,3 +90,29 @@
   - `expo-secure-store` 的条目是 `requireAuthentication:false`：身份验证目前由 Vault 在**应用内**强制，而 Robinhood 是用 Keystore 的 `setUserAuthenticationRequired` 由**硬件**强制。进程内有代码执行能力的攻击者可绕过应用内门控，硬件门控不能。P4 会尝试在设备已录入生物识别时改用 `requireAuthentication: true`，未录入时回退（否则会把用户锁死）。
   - 测试环境坑：RNTL 14 + React 19 下，同一个用例里连续两次 `fireEvent.changeText` 会把工作留在全局调度器里，导致**后续用例**的 `render` 产出空树（`findByTestId` 超时）。已把用例改成单次输入；根因未解（设 `IS_REACT_ACT_ENVIRONMENT=true` 无效）。
   - iOS 未验证。
+
+## P2 真实 SIWE（本次）
+
+### Given / When / Then
+
+- Given 点"使用内置钱包" When 取挑战 Then 挑战由 **RN-Server 构造整条 SIWE 消息**并下发（`POST /v1/mobile/auth/nonce`），客户端不再自己拼消息、不再自己造 nonce。
+- Given 用钱包签完名 When 提交 Then `POST /v1/mobile/auth/verify` 由服务端 ecrecover 验签；首次成功即注册（`registered: true`），之后是登录。
+- Given 同一个 nonce 再用一次 Then 服务端拒绝（`WALLET_CHALLENGE_USED`）。
+- Given 消息里写别人的地址、签名用自己的密钥 Then 服务端拒绝（`WALLET_SIGNATURE_INVALID`），且该挑战立即作废。
+- Given 已登录 When 退出 Then 服务端撤销令牌，旧令牌立刻不可用；服务端不可达时本地照样清干净，不把用户卡在登录态。
+- Given 服务端回 401 When `refresh()` Then 清空本地会话；只是网络不通时保留本地会话（离线可用）。
+
+### 技术影响
+
+- 新增 `HttpSessionGateway`：会话令牌存 `expo-secure-store`（不进普通存储），会话本身缓存在普通存储供离线读取；`authorization()` 供后续业务请求带令牌。`gateway-context` 生产装配改用它（测试仍由 harness 注入 Mock 会话）。
+- 服务端（RN-Server `beec74f`）：`internal/siwe`（EIP-191 信封 + Keccak-256 + secp256k1 恢复 + EIP-55 + EIP-4361 解析）、`internal/api/wallet_auth.go`、迁移 25（`wallet_auth_nonce` / `wallet_user` / `wallet_session`）、ADR-0012。新增依赖 `decred/dcrd/dcrec/secp256k1/v4`（比 go-ethereum 轻得多）。
+- 会话 7 天；nonce 10 分钟且一次性，`SELECT … FOR UPDATE` 保证并发只核销一次。
+
+### 验证
+
+- App 单测 7 例（`http-session-gateway.spec`）：挑战取自服务端、签名换会话且令牌进安全存储、过期会话被丢弃、登出撤销、服务端失败仍本地登出、401 清会话、网络错误保留会话。
+- 服务端单测 11 例（`internal/siwe`）：真实 ethers 签名向量、多字节消息（EIP-191 长度前缀按字节）、legacy v=0/1、篡改签名/消息被拒、EIP-55 规范向量、EIP-4361 解析与畸形拒绝、domain/nonce/时间绑定、地址替换攻击。
+- 本地 MySQL 集成往返：nonce → 真实签名 → verify（`registered` 先 true 后 false）→ 重放 401 → session → 登出 → 复用 401；错误密钥签名被拒且挑战立即作废。
+- **线上往返**（`api.anyfun.win`，RN-Server 已部署）：注册 → 会话 → 重放拒绝 → 登出，全部符合预期。
+- **设备端到端**（模拟器干净安装 1.2.4/build18，打线上）：创建钱包 → 12 词备份页 → 退出重开 sheet → "Use my wallet" → 签名登录成功，首页显示 `0x850F…82CE`；生产库 `wallet_user` 出现该地址（`login_count=1`，`first_seen_at` 即注册时间），`wallet_session` 一条未撤销、链为 `bsc,eth,base`，`wallet_auth_nonce` 已核销 ✅ logcat 无 auth 相关错误。
+- 未验证：iOS；会话 7 天到期后的重新登录（需要等或改时钟）。
