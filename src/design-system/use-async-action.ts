@@ -33,7 +33,10 @@ export function useAsyncAction<TArgs extends unknown[]>(
       if (running.current) return;
       running.current = true;
       setPending(true);
-      void action(...args)
+      // 先进 Promise 链再调 action：action 同步 throw 时也要走到 catch/finally，
+      // 否则 pending 永远为 true，按钮转圈锁死直到组件重挂
+      void Promise.resolve()
+        .then(() => action(...args))
         .then((outcome) => {
           // 返回 false = 守卫拦下了，什么都没做，别报成功
           if (outcome !== false && successMessage)

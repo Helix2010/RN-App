@@ -50,6 +50,8 @@ export function UpdateModal() {
   const [dismissedVersion, setDismissedVersion] = useState<string | null>(null);
   const [progress, setProgress] = useState<ApkDownloadProgress | null>(null);
   const [installing, setInstalling] = useState(false);
+  // "打开商店 / 仅刷新更新信息"两个分支之前没有进行中态，能反复点出多个并发请求
+  const [busy, setBusy] = useState(false);
 
   const update = config.update;
   const forced = update.decision === "required";
@@ -89,6 +91,16 @@ export function UpdateModal() {
   const percent = progress ? Math.round(progress.percentage) : 0;
 
   const onUpdate = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await runUpdate();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runUpdate = async () => {
     if (!update.full.actionUrl) {
       await checkForUpdates();
       return;
@@ -137,6 +149,8 @@ export function UpdateModal() {
                 dismissUpdatePrompt();
               }
         }
+        accessibilityRole={forced ? undefined : "button"}
+        accessibilityLabel={forced ? undefined : t("common.close")}
       >
         <Card
           padding="$5"
@@ -165,7 +179,21 @@ export function UpdateModal() {
             <Body color="$warning">{t("update.forceSubtitle")}</Body>
           ) : null}
           {forced && !update.full.actionUrl ? (
-            <Body color="$danger">{t("update.fullUnavailable")}</Body>
+            <Stack gap="$2">
+              <Body color="$danger">{t("update.fullUnavailable")}</Body>
+              {/* 强制更新却没有安装包 = 配置错误把全体用户锁在这一页。
+                  给一个逃生口，让用户至少能看到服务状态 / 联系方式 */}
+              <Body
+                color="$primary"
+                onPress={() =>
+                  void Linking.openURL(config.support.statusPageUrl)
+                }
+                accessibilityRole="link"
+                testID="update-modal-status-page"
+              >
+                {t("update.statusPage")}
+              </Body>
+            </Stack>
           ) : null}
           <Stack gap="$1.5">
             {update.releaseNotes.slice(0, 3).map((note) => (
@@ -196,6 +224,7 @@ export function UpdateModal() {
           ) : (
             <PrimaryButton
               onPress={() => void onUpdate()}
+              disabled={busy}
               testID="update-modal-now"
             >
               {installing

@@ -4,7 +4,8 @@ import type {
   TokenRef,
   Tx,
 } from "../../../core/gateways/types";
-import type { Money } from "../../../core/money/money";
+import { CHAINS } from "../../../core/gateways/types";
+import { money, toApproxNumber, type Money } from "../../../core/money/money";
 import { EmbeddedSigner } from "../../../core/wallet/signer/embedded-signer";
 import type { WalletSigner } from "../../../core/wallet/signer/types";
 import type { KeystoreVault } from "../../../core/wallet/vault/keystore-vault";
@@ -95,6 +96,7 @@ export type OnchainTransferPort = {
   send: (request: SendRequest, signer: WalletSigner) => Promise<WalletTransfer>;
   quote: (request: SendRequest) => Promise<TransferQuote>;
   listTransfers: (address: string) => WalletTransfer[];
+  nativeBalance: (chain: ChainId, address: string) => Promise<bigint>;
   getTransaction: (id: string) => Promise<Tx | null>;
 };
 
@@ -289,7 +291,71 @@ export class EmbeddedWalletGateway implements WalletGateway {
     const balances = await this.deps.chainData.getBalances(address, chain);
     // 代币目录（含 verified 标记）由服务端下发，服务端被攻破时它可以把攻击者的
     // 合约标成"已验证"。所以 verified 只能由客户端那份表授予，元数据不符的丢掉。
-    return trustedTokens(balances);
+    return this.withOnchainNative(address, chain, trustedTokens(balances));
+  }
+
+  /**
+   * 转出走真链的链，原生币余额也必须来自真链。
+   *
+   * 代币（ERC-20）还要等服务端的代币目录，但原生币没有这个依赖。不接的话，
+   * 用户真转出了一笔，"资产"页刷出来的数字纹丝不动——他会以为钱没转出去。
+   * 价格暂时沿用账本里隐含的单价（金额是真的，单价是演示的，比两者都假强）；
+   * 账本里没有这条链的原生币时补一条，单价按 0——测试链的币本来就没有价值。
+   */
+  private async withOnchainNative(
+    address: string,
+    chain: ChainId | undefined,
+    list: TokenBalance[],
+  ): Promise<TokenBalance[]> {
+    const onchain = this.deps.onchain;
+    if (!onchain) return list;
+    const result = [...list];
+    const chains = chain ? [chain] : (Object.keys(CHAINS) as ChainId[]);
+    for (const id of chains) {
+      if (!onchain.available(id)) continue;
+      let raw: bigint;
+      try {
+        raw = await onchain.nativeBalance(id, address);
+      } catch (error) {
+        // 链上查不到就保留原值并留痕，别把余额显示成 0 让用户以为钱没了
+        console.warn(
+          `[wallet] ${id} 原生币余额查询失败，沿用上一次的值`,
+          error,
+        );
+        continue;
+      }
+      const native = CHAINS[id];
+      const amount = money(raw, native.nativeDecimals, native.nativeSymbol);
+      const index = result.findIndex(
+        (item) => item.token.chain === id && item.token.address === "native",
+      );
+      if (index >= 0) {
+        const previous = result[index] as TokenBalance;
+        const held = toApproxNumber(previous.amount);
+        const price = held > 0 ? previous.usdValue / held : 0;
+        result[index] = {
+          ...previous,
+          amount,
+          usdValue: toApproxNumber(amount) * price,
+        };
+      } else {
+        result.push({
+          token: {
+            chain: id,
+            address: "native",
+            symbol: native.nativeSymbol,
+            name: native.nativeSymbol,
+            decimals: native.nativeDecimals,
+            logoColor: native.color,
+            verified: true,
+          },
+          amount,
+          usdValue: 0,
+          change24hPct: 0,
+        });
+      }
+    }
+    return result;
   }
 
   adjustBalance(address: string, token: TokenRef, delta: Money): Promise<void> {

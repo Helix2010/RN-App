@@ -59,6 +59,17 @@ export class OnchainTransfers {
     return rpcUrlsFor(chain).length > 0;
   }
 
+  /**
+   * 原生币的链上余额。
+   *
+   * 原生币不需要代币目录（没有合约、精度固定），所以在目录落地之前就能先把它
+   * 接到真链上——这也是转出走真链之后必须做的：转出扣的是真钱，余额却停在演示
+   * 数字上，用户会以为钱没转出去。
+   */
+  async nativeBalance(chain: ChainId, address: string): Promise<bigint> {
+    return this.serviceFor(chain).chain.getNativeBalance(address);
+  }
+
   async send(
     request: SendRequest,
     signer: WalletSigner,

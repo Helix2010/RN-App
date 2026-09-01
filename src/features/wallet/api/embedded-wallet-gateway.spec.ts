@@ -54,6 +54,7 @@ function fakeOnchain(available: ChainId[]) {
           }
         : null,
     listTransfers: () => [],
+    nativeBalance: async () => 0n,
   };
   return { port, sent };
 }
@@ -492,5 +493,89 @@ describe("EmbeddedWalletGateway token trust", () => {
         },
       }),
     ).rejects.toBeInstanceOf(TokenMetadataMismatchError);
+  });
+});
+
+describe("EmbeddedWalletGateway native balances", () => {
+  it("replaces the demo native balance with the chain's answer where sends are real", async () => {
+    // 转出扣的是真钱，余额却停在演示数字上，用户会以为钱没转出去
+    const { port } = fakeOnchain(["bsc"]);
+    port.nativeBalance = async () => 5n * 10n ** 17n; // 0.5 BNB
+    const { gateway, chainData } = setup({ onchain: port });
+    jest.spyOn(chainData, "getBalances").mockResolvedValue([
+      {
+        token: { ...sendRequest("bsc").token },
+        amount: money(2n * 10n ** 18n, 18, "BNB"),
+        usdValue: 1_200,
+        change24hPct: 0,
+      },
+    ]);
+
+    const [bnb] = await gateway.getBalances(ADDRESS, "bsc");
+
+    expect(bnb?.amount.raw).toBe((5n * 10n ** 17n).toString());
+    // 单价沿用账本隐含的 600：金额是真的，单价是演示的，比两者都假强
+    expect(bnb?.usdValue).toBeCloseTo(300);
+  });
+
+  it("leaves chains without endpoints on the demo ledger", async () => {
+    const { port } = fakeOnchain(["bsc"]);
+    port.nativeBalance = jest.fn(async () => 1n);
+    const { gateway, chainData } = setup({ onchain: port });
+    jest.spyOn(chainData, "getBalances").mockResolvedValue([
+      {
+        token: { ...sendRequest("eth").token, symbol: "ETH", chain: "eth" },
+        amount: money(3n, 18, "ETH"),
+        usdValue: 0,
+        change24hPct: 0,
+      },
+    ]);
+
+    const [eth] = await gateway.getBalances(ADDRESS, "eth");
+
+    expect(eth?.amount.raw).toBe("3");
+    expect(port.nativeBalance).not.toHaveBeenCalled();
+  });
+
+  it("adds a native entry for a real chain the demo ledger knows nothing about", async () => {
+    // 测试链在演示账本里没有条目；没有这一条，真链能力在发送页根本不可达
+    const { port } = fakeOnchain(["op-sepolia"]);
+    port.nativeBalance = async () => 10n ** 18n;
+    const { gateway, chainData } = setup({ onchain: port });
+    jest.spyOn(chainData, "getBalances").mockResolvedValue([]);
+
+    const list = await gateway.getBalances(ADDRESS, "op-sepolia");
+
+    expect(list).toHaveLength(1);
+    expect(list[0]?.token).toMatchObject({
+      chain: "op-sepolia",
+      address: "native",
+      symbol: "ETH",
+    });
+    // 测试链的币没有价值
+    expect(list[0]?.usdValue).toBe(0);
+  });
+
+  it("keeps the previous figure when the node cannot be reached", async () => {
+    const { port } = fakeOnchain(["bsc"]);
+    port.nativeBalance = async () => {
+      throw new Error("node down");
+    };
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const { gateway, chainData } = setup({ onchain: port });
+    jest.spyOn(chainData, "getBalances").mockResolvedValue([
+      {
+        token: { ...sendRequest("bsc").token },
+        amount: money(7n, 18, "BNB"),
+        usdValue: 0,
+        change24hPct: 0,
+      },
+    ]);
+
+    const [bnb] = await gateway.getBalances(ADDRESS, "bsc");
+
+    // 别把余额显示成 0 让用户以为钱没了
+    expect(bnb?.amount.raw).toBe("7");
+    warn.mockRestore();
   });
 });

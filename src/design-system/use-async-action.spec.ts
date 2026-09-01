@@ -104,3 +104,25 @@ describe("useAsyncAction", () => {
     expect(messages()).toContain("已保存");
   });
 });
+
+describe("useAsyncAction with an action that throws synchronously", () => {
+  it("still reports failure and releases the button", async () => {
+    // 之前同步 throw 时 catch/finally 挂不上，pending 永远为 true，按钮转圈锁死
+    const { result } = await renderHook(() =>
+      useAsyncAction(
+        (): Promise<void> => {
+          throw new Error("sync boom");
+        },
+        { failureMessage: "failed" },
+      ),
+    );
+
+    await act(async () => {
+      result.current.run();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.pending).toBe(false);
+  });
+});

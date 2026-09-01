@@ -185,8 +185,6 @@ const zhCN = {
   "send.address": "收款地址",
   "send.tokenContract": "代币合约",
   "send.nativeToken": "原生代币（无合约）",
-  "send.tokenVerified": "已验证",
-  "send.tokenUnverified": "未验证",
   "send.unverifiedWarning":
     "这个代币不在平台已验证列表里。转出前请核对上面的合约地址，地址被换掉时符号看起来是一样的。",
   "send.checkAddress": "转出无法撤销。请逐字核对完整地址。",
@@ -717,10 +715,6 @@ const zhCN = {
   "update.required": "当前版本必须升级后继续使用",
   "update.policy": "版本策略",
   "update.currentVersion": "当前版本",
-  "update.currentVersionHint":
-    "版本会在启动时自动检查，更新前会展示下载和安装状态。",
-  "update.versionDetails": "版本详情",
-  "update.info": "信息",
   "update.minimumVersion": "最低支持",
   "update.latestVersion": "最新版本",
   "update.channel": "分发通道",
@@ -762,6 +756,7 @@ const zhCN = {
   "update.details": "升级详情",
   "update.notConfigured": "尚未配置",
   "update.fullOpened": "已打开当前分发渠道的升级入口",
+  "update.statusPage": "查看服务状态与联系方式",
   "update.fullUnavailable": "当前分发渠道尚未配置可安装地址",
   "update.apkDownloadTitle": "正在准备应用升级",
   "update.apkDownloading": "正在安全下载完整安装包，请保持网络连接。",
@@ -967,8 +962,6 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "send.address": "Recipient address",
   "send.tokenContract": "Token contract",
   "send.nativeToken": "Native token (no contract)",
-  "send.tokenVerified": "Verified",
-  "send.tokenUnverified": "Unverified",
   "send.unverifiedWarning":
     "This token is not on the platform's verified list. Check the contract address above — a swapped address still shows the same symbol.",
   "send.checkAddress":
@@ -1530,10 +1523,6 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "update.required": "Update is required to continue",
   "update.policy": "Version policy",
   "update.currentVersion": "Current version",
-  "update.currentVersionHint":
-    "The app checks for updates when it starts and shows download and install progress before applying one.",
-  "update.versionDetails": "Version details",
-  "update.info": " info",
   "update.minimumVersion": "Minimum supported",
   "update.latestVersion": "Latest version",
   "update.channel": "Distribution channel",
@@ -1582,6 +1571,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "update.details": "Update details",
   "update.notConfigured": "Not configured",
   "update.fullOpened": "Opened the update entry for this distribution channel",
+  "update.statusPage": "Service status and contact",
   "update.fullUnavailable":
     "No install URL is configured for this distribution channel",
   "update.apkDownloadTitle": "Preparing app update",

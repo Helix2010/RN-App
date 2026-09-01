@@ -60,16 +60,17 @@ export function WalletsScreen({
     current?.label ??
     (address ? shortenAddress(address) : "");
 
-  const onSwitch = (target: string, targetLabel: string) => {
-    switchAccount.mutate(target, {
-      onSuccess: () => {
-        toast(fill(t("wallets.switched"), { label: targetLabel }), "info");
-        navigation.popToTop();
-        requestAuth();
-      },
-      onError: () => toast(t("wallets.switchFailed"), "error"),
-    });
-  };
+  // 切换钱包会登出再登录，连点两行会并发两次；和下面的重命名 / 断开一样走
+  // useAsyncAction，进行中禁点、失败有提示
+  const { run: onSwitch, pending: switching } = useAsyncAction(
+    async (target: string, targetLabel: string) => {
+      await switchAccount.mutateAsync(target);
+      toast(fill(t("wallets.switched"), { label: targetLabel }), "info");
+      navigation.popToTop();
+      requestAuth();
+    },
+    { failureMessage: t("wallets.switchFailed") },
+  );
   // 这几个操作以前失败是彻底静默的（void promise 把异常丢了），用户只看到
   // 界面没变化，以为自己没点上。useAsyncAction 让进行中和失败提示成为默认行为。
   const { run: saveLabel, pending: renaming } = useAsyncAction(
@@ -147,6 +148,7 @@ export function WalletsScreen({
                       : undefined
                   }
                   onPress={() => onSwitch(item.address, item.label)}
+                  disabled={switching}
                   testID={`wallets-item-${item.connector}`}
                 />
               ))}
@@ -291,11 +293,13 @@ function WalletRow({
   onPress,
   onBackup,
   testID,
+  disabled,
 }: {
   label: string;
   address: string;
   connector: string;
   chains: string;
+  disabled?: boolean;
   selected?: boolean;
   notBackedUp?: string;
   onPress?: () => void;
@@ -311,7 +315,8 @@ function WalletRow({
       backgroundColor="$surfaceVariant"
       borderWidth={selected ? 1.5 : 0}
       borderColor="$primary"
-      onPress={onPress}
+      onPress={disabled ? undefined : onPress}
+      opacity={disabled ? 0.5 : 1}
       accessibilityRole={onPress ? "button" : undefined}
       accessibilityLabel={label}
       testID={testID}

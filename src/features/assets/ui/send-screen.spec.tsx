@@ -390,3 +390,27 @@ describe("SendScreen progress page", () => {
     expect(screen.getByText(/100\.00 USDT/)).toBeTruthy();
   });
 });
+
+describe("SendScreen amount presets", () => {
+  it("computes a preset from the exact balance, not a rounded float", async () => {
+    const gateways = createTestGateways();
+    await signIn(gateways);
+    gateways.wallet.getBalances = jest.fn(async () => [
+      balance({ address: USDT_BSC, symbol: "USDT", verified: true }),
+    ]);
+    await renderWithProviders(
+      <SendScreen onBack={jest.fn()} initialChain="bsc" />,
+      { gateways },
+    );
+    void fireEvent.changeText(
+      await screen.findByTestId("send-address"),
+      RECIPIENT,
+    );
+    // 余额 500 USDT，25% = 125
+    void fireEvent.press(await screen.findByText("25%"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("send-amount").props.value).toBe("125"),
+    );
+  });
+});

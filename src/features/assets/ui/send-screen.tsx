@@ -14,6 +14,7 @@ import {
   compare,
   fromDecimal,
   isZero,
+  money,
   toApproxNumber,
   toDecimalString,
 } from "../../../core/money/money";
@@ -168,6 +169,13 @@ export function SendScreen({
   const exactAmount = amount
     ? `${toDecimalString(amount)} ${amount.symbol}`
     : "—";
+  // "全部" 与预设的基数：原生币走真链时是扣掉手续费的上限
+  const nativeOnchain =
+    onchain && selected !== undefined && selected.token.address === "native";
+  const ceilingKnown = !nativeOnchain || Boolean(quote.data?.maxAmount);
+  const ceiling =
+    quote.data?.maxAmount ?? selected?.amount ?? money(0n, 18, "");
+  const precision = Math.min(6, selected?.token.decimals ?? 6);
   // 真链上没有报价就不能签：签名费要绑定到用户看到的数，没看到就没有可绑的
   const feeKnown = !onchain || Boolean(quote.data);
   const canSubmit =
@@ -338,7 +346,12 @@ export function SendScreen({
 
           <Stack gap="$2">
             <Body fontSize={12}>{t("transfer.token")}</Body>
-            <Row gap="$2" flexWrap="wrap">
+            <Row
+              gap="$2"
+              flexWrap="wrap"
+              accessibilityRole="radiogroup"
+              accessibilityLabel={t("transfer.token")}
+            >
               {tokens.map((item) => {
                 const key = `${item.token.chain}:${item.token.address}`;
                 const active =
@@ -388,19 +401,27 @@ export function SendScreen({
                 amount: formatMoney(selected.amount, locale),
               })}
               error={insufficient ? t("transfer.insufficient") : undefined}
-              onMax={() =>
-                // 原生币的"全部"必须扣掉手续费，否则这一笔必然失败
-                setText(
-                  toDecimalString(quote.data?.maxAmount ?? selected.amount, 6),
-                )
+              // 原生币的"全部"必须扣掉手续费，否则这一笔必然失败；真链上报价没回来
+              // 之前不知道该扣多少，MAX 先不给（给了就是让用户签一笔必败的）
+              onMax={
+                ceilingKnown
+                  ? () => setText(toDecimalString(ceiling, precision))
+                  : undefined
               }
               maxLabel={t("common.max")}
               presets={[25, 50, 75, 100]}
+              // 按整数算而不是浮点：浮点 toFixed 再去零，对 0 位精度的代币会把
+              // "100" 变成 "1"
               onPreset={(pct) =>
                 setText(
-                  ((toApproxNumber(selected.amount) * pct) / 100)
-                    .toFixed(Math.min(6, selected.token.decimals))
-                    .replace(/\.?0+$/, ""),
+                  toDecimalString(
+                    money(
+                      (BigInt(ceiling.raw) * BigInt(pct)) / 100n,
+                      ceiling.decimals,
+                      ceiling.symbol,
+                    ),
+                    precision,
+                  ),
                 )
               }
               accessibilityLabel={t("send.amount")}
