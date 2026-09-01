@@ -85,6 +85,18 @@ describe("createRpcClient", () => {
     expect((error as RpcError).detail).toContain("BEP20");
   });
 
+  it("reports every endpoint answering with an http error as unavailable too", async () => {
+    // 5xx / 限流的语义是"没连上"，界面该说"检查网络"，不是"节点拒绝了这笔交易"
+    const fetchImpl = jest.fn(async () => jsonResponse({}, 502));
+    const client = createRpcClient(["https://a.example", "https://b.example"], {
+      fetchImpl,
+    });
+
+    await expect(client.call("eth_chainId")).rejects.toBeInstanceOf(
+      RpcUnavailableError,
+    );
+  });
+
   it("reports every endpoint failing as unavailable, not as an rpc error", async () => {
     const fetchImpl = jest.fn().mockRejectedValue(new Error("network down"));
     const client = createRpcClient(["https://a.example", "https://b.example"], {

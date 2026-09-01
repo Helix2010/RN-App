@@ -77,6 +77,10 @@ export function SendScreen({
   const [tokenKey, setTokenKey] = useState<string | undefined>();
   const [text, setText] = useState("");
   const [txId, setTxId] = useState<string | undefined>();
+  // 从点确认到 mutate 真正开始之间要 await 生物验证，这段窗口里 send.isPending
+  // 还是 false；不挡住第二次点击就会签出两笔
+  const [verifying, setVerifying] = useState(false);
+  const submitting = useRef(false);
   const confirm = useRef<SheetHandle>(null);
   const book = useRef<SheetHandle>(null);
 
@@ -163,8 +167,23 @@ export function SendScreen({
 
   const submit = async () => {
     if (!selected || !amount) return;
+    if (submitting.current) return;
+    submitting.current = true;
+    setVerifying(true);
+    const release = () => {
+      submitting.current = false;
+      setVerifying(false);
+    };
     // 转出：交易前验证 + 大额阈值（两者任一命中都要验证）
-    if (!(await requireVerification({ usdValue: usd }))) return;
+    const verified = await requireVerification({ usdValue: usd }).catch(
+      () => false,
+    );
+    if (!verified) {
+      release();
+      return;
+    }
+    // 守卫一直握到 mutation 结束：isPending 的重渲染晚于 mutate 一个宏任务，
+    // 这里松手的话，排队的第二次点击仍能挤进来
     send.mutate(
       {
         from: address,
@@ -185,6 +204,7 @@ export function SendScreen({
           const copy = transferErrorCopy(error);
           toast(fill(t(copy.key), copy.values ?? {}), "error");
         },
+        onSettled: release,
       },
     );
   };
@@ -518,18 +538,18 @@ export function SendScreen({
               </Row>
             )}
             <PrimaryButton
-              disabled={send.isPending}
+              disabled={send.isPending || verifying}
               onPress={() => void submit()}
               testID="send-confirm"
             >
-              {send.isPending
+              {send.isPending || verifying
                 ? t("login.signing")
                 : fill(t("send.confirm"), {
                     amount: formatMoney(amount, locale),
                   })}
             </PrimaryButton>
             <SecondaryButton
-              disabled={send.isPending}
+              disabled={send.isPending || verifying}
               onPress={() => confirm.current?.dismiss()}
             >
               {t("common.cancel")}

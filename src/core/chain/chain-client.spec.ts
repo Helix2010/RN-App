@@ -291,6 +291,17 @@ describe("ChainClient gas and receipts", () => {
     );
   });
 
+  it("asks whether the node already knows a hash", async () => {
+    const known = stubRpc({ eth_getTransactionByHash: { hash: "0xabc" } });
+    await expect(
+      new ChainClient(known.rpc).hasTransaction("0xabc"),
+    ).resolves.toBe(true);
+    const unknown = stubRpc({ eth_getTransactionByHash: null });
+    await expect(
+      new ChainClient(unknown.rpc).hasTransaction("0xabc"),
+    ).resolves.toBe(false);
+  });
+
   it("ignores a receipt that belongs to a different transaction", async () => {
     // 节点把别的交易的回执塞回来，界面会把一笔没发生的转账显示成已确认
     const warn = jest.spyOn(console, "warn").mockImplementation(() => {});

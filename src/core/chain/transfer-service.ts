@@ -5,7 +5,14 @@ import {
   assertSubmittable,
 } from "../wallet/signer/transaction-guard";
 import { ChainClient } from "./chain-client";
-import { RpcError } from "./rpc-client";
+import { RpcError, RpcUnavailableError } from "./rpc-client";
+
+/**
+ * 节点说"这笔它已经知道了"的几种说法。第一个端点超时后换节点重发同一份 raw，
+ * 第二个节点就会这么答——这是成功，不是失败。
+ */
+const ALREADY_KNOWN =
+  /already known|known transaction|already exists|nonce too low|already imported/i;
 
 /**
  * 一笔链上转出的完整编排：预检 → 构造 → 校验 → 签名提交 → nonce 记账。
@@ -206,11 +213,43 @@ export class TransferService {
     return { gasLimit, ...fee };
   }
 
-  private async assertFunded(
+  /**
+   * 余额预检分两步，中间夹着 gas 估算：
+   * 1. 先比"有没有这么多币"——这一步不需要 gas，而且必须在 `eth_estimateGas`
+   *    之前做：余额不足时节点会 revert，报文是合约内部话，给不了用户人话；
+   * 2. 估完 gas 再比"付不付得起手续费"。
+   */
+  private async assertHoldsAmount(
     request: TransferRequest,
-    feeCost: bigint,
-  ): Promise<void> {
+  ): Promise<{ native: bigint }> {
     const native = await this.deps.chain.getNativeBalance(request.from);
+    if (this.isNative(request)) {
+      if (native < request.amount)
+        throw new InsufficientBalanceError(
+          request.tokenSymbol,
+          request.amount,
+          native,
+        );
+      return { native };
+    }
+    const balances = await this.deps.chain.getTokenBalances(request.from, [
+      request.tokenAddress,
+    ]);
+    const held = balances.get(request.tokenAddress.toLowerCase()) ?? 0n;
+    if (held < request.amount)
+      throw new InsufficientBalanceError(
+        request.tokenSymbol,
+        request.amount,
+        held,
+      );
+    return { native };
+  }
+
+  private assertCoversFee(
+    request: TransferRequest,
+    native: bigint,
+    feeCost: bigint,
+  ): void {
     if (this.isNative(request)) {
       // 原生币转账：金额和手续费出自同一个余额
       const required = request.amount + feeCost;
@@ -224,16 +263,38 @@ export class TransferService {
     }
     if (native < feeCost)
       throw new InsufficientGasError(request.nativeSymbol, feeCost, native);
-    const balances = await this.deps.chain.getTokenBalances(request.from, [
-      request.tokenAddress,
-    ]);
-    const held = balances.get(request.tokenAddress.toLowerCase()) ?? 0n;
-    if (held < request.amount)
-      throw new InsufficientBalanceError(
-        request.tokenSymbol,
-        request.amount,
-        held,
-      );
+  }
+
+  /**
+   * 广播，并把"结果不明"变成"确定"。
+   *
+   * 端点 A 收下了却没在超时前回话，客户端换到端点 B 重发同一份 raw，B 答
+   * "already known"；或者所有端点都超时。这两种情况下交易很可能已经在链上，
+   * 报成失败会诱导用户重试——第二笔就真的发出去了。所以结果不明时问一句节点
+   * 认不认识这个 hash，认识就是成功。
+   */
+  private async broadcastResolved(
+    raw: string,
+    expected: string,
+  ): Promise<void> {
+    try {
+      const reported = await this.deps.chain.broadcast(raw);
+      if (reported?.toLowerCase() !== expected.toLowerCase())
+        console.warn(
+          `[chain] 节点返回的 txHash 与本地计算不一致，以本地为准：${reported}`,
+        );
+      return;
+    } catch (error) {
+      const ambiguous =
+        error instanceof RpcUnavailableError ||
+        (error instanceof RpcError && ALREADY_KNOWN.test(error.detail ?? ""));
+      if (!ambiguous) throw error;
+      const known = await this.deps.chain
+        .hasTransaction(expected)
+        .catch(() => false);
+      if (!known) throw error;
+      console.warn("[chain] 广播结果不明，但节点已认识这笔交易，按已提交处理");
+    }
   }
 
   private async run(
@@ -261,6 +322,7 @@ export class TransferService {
       return { hash };
     }
 
+    const { native } = await this.assertHoldsAmount(request);
     const gas = await this.quoteGas(request);
     const feeCost = gas.gasLimit * gas.maxFeePerGas;
     if (
@@ -269,7 +331,7 @@ export class TransferService {
         request.maxFeeWei * FEE_DRIFT_TOLERANCE.numerator
     )
       throw new FeeChangedError(request.maxFeeWei, feeCost);
-    await this.assertFunded(request, feeCost);
+    this.assertCoversFee(request, native, feeCost);
     const nonce = await this.deps.chain.getNextNonce(request.from);
     const transaction = {
       chainId: request.chainId,
@@ -291,11 +353,7 @@ export class TransferService {
         const expected = Transaction.from(raw).hash;
         if (!expected)
           throw new RpcError("signed transaction has no hash", undefined);
-        const reported = await this.deps.chain.broadcast(raw);
-        if (reported?.toLowerCase() !== expected.toLowerCase())
-          console.warn(
-            `[chain] 节点返回的 txHash 与本地计算不一致，以本地为准：${reported}`,
-          );
+        await this.broadcastResolved(raw, expected);
         return expected;
       },
     );

@@ -101,7 +101,6 @@ export function createRpcClient(
   return {
     async call<T>(method: string, params: unknown[] = []): Promise<T> {
       if (endpoints.length === 0) throw new RpcUnavailableError(0);
-      let lastError: unknown;
       for (const endpoint of endpoints) {
         try {
           return await once<T>(endpoint, method, params);
@@ -109,10 +108,10 @@ export function createRpcClient(
           // 合约 revert 之类的**执行错误换个节点也一样**，别浪费一轮重试
           if (error instanceof RpcError && error.code !== undefined)
             throw error;
-          lastError = error;
         }
       }
-      if (lastError instanceof RpcError) throw lastError;
+      // 走到这里说明每个端点都没给出带 code 的 JSON-RPC 错误：HTTP 5xx、超时、
+      // 空响应……语义都是"没连上"，界面要说"检查网络"，而不是"节点拒绝了这笔交易"
       throw new RpcUnavailableError(endpoints.length);
     },
   };

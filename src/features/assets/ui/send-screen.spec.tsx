@@ -10,6 +10,7 @@ import type { TokenBalance } from "../../wallet/model/wallet";
 import { InsufficientGasError } from "../../../core/chain/transfer-service";
 import { fromDecimal, money } from "../../../core/money/money";
 import { ToastHost } from "../../../design-system";
+import * as LocalAuthentication from "expo-local-authentication";
 
 const RECIPIENT = "0x9858EfFD232B4033E47d90003D41EC34EcaEda94";
 const USDT_BSC = "0x55d398326f99059ff775485246999027b3197955";
@@ -308,5 +309,38 @@ describe("SendScreen on a real chain", () => {
     await waitFor(() =>
       expect(screen.getAllByText("1.009 USDT").length).toBeGreaterThan(0),
     );
+  });
+});
+
+describe("SendScreen double submit", () => {
+  it("sends once when the confirm button is tapped twice during verification", async () => {
+    // 从点确认到 mutate 之间要 await 生物验证，这段窗口里 isPending 还是 false。
+    // 注意：fireEvent 会在 act 里同步刷新状态，所以这里其实是 verifying 态把
+    // 第二次点击挡住的；ref 守卫覆盖的是真机上重渲染之前那个更窄的窗口，
+    // 在 jest 里观察不到，只能靠代码审阅。
+    const send = jest.fn(async () => {
+      throw new Error("stop here");
+    });
+    jest
+      .mocked(LocalAuthentication.getEnrolledLevelAsync)
+      .mockImplementation(
+        () => new Promise((resolve) => setTimeout(() => resolve(3), 30)),
+      );
+    await openConfirm({
+      verified: true,
+      prepare: (gateways) => {
+        gateways.wallet.send = send;
+      },
+    });
+
+    const confirm = await screen.findByTestId("send-confirm");
+    void fireEvent.press(confirm);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    void fireEvent.press(confirm);
+
+    await waitFor(() => expect(send).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(send).toHaveBeenCalledTimes(1);
+    jest.mocked(LocalAuthentication.getEnrolledLevelAsync).mockResolvedValue(3);
   });
 });

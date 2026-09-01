@@ -216,10 +216,8 @@ export class ChainClient {
       throw new Error(
         `fee estimate ${maxFeePerGas} exceeds ${FEE_HEADROOM_MULTIPLIER}x the reported gas price`,
       );
-    return {
-      maxFeePerGas,
-      maxPriorityFeePerGas: tip > maxFeePerGas ? maxFeePerGas : tip,
-    };
+    // maxFeePerGas ≥ 2·base + tip ≥ tip 恒成立，不需要再夹一次
+    return { maxFeePerGas, maxPriorityFeePerGas: tip };
   }
 
   /**
@@ -244,6 +242,20 @@ export class ChainClient {
       },
     ]);
     return (parseQuantity(raw) * 12n) / 10n;
+  }
+
+  /**
+   * 节点是否已经知道这笔交易（在内存池里或已上链）。
+   *
+   * 用在广播结果不明的时候：端点超时后换节点重发，第二个节点说 "already known"，
+   * 这到底是成功还是失败，只有问一句才知道。判错方向会让用户重试并发出第二笔。
+   */
+  async hasTransaction(hash: string): Promise<boolean> {
+    const found = await this.rpc.call<{ hash?: string } | null>(
+      "eth_getTransactionByHash",
+      [hash],
+    );
+    return Boolean(found?.hash);
   }
 
   async broadcast(signedTransaction: string): Promise<string> {

@@ -1,5 +1,6 @@
 import { Transaction, Wallet } from "ethers";
 import { ChainClient } from "./chain-client";
+import { RpcError, RpcUnavailableError } from "./rpc-client";
 import {
   FeeChangedError,
   InsufficientBalanceError,
@@ -63,6 +64,7 @@ function fakeChain(overrides: Partial<ChainStub> = {}) {
     getNextNonce: jest.fn(async () => state.nonce),
     noteNonceUsed,
     broadcast,
+    hasTransaction: jest.fn(async () => false),
   } as unknown as ChainClient;
   return { chain, broadcast, noteNonceUsed, state };
 }
@@ -207,14 +209,30 @@ describe("TransferService balance pre-checks", () => {
   });
 
   it("never asks the node to estimate a transfer it knows is unfunded", async () => {
-    // estimateGas 在余额不足时 revert，报文是合约内部话，不能给用户看
-    const { chain } = fakeChain({ nativeBalance: 0n });
+    // estimateGas 在余额不足时 revert，报文是合约内部话，不能给用户看——
+    // 所以"有没有这么多币"必须在估算之前比
+    const { chain } = fakeChain({ tokenBalance: 10n });
     const { signer } = localSigner();
     const service = new TransferService({ chain, reason: "r" });
 
-    await service.submit(request(), signer).catch(() => undefined);
-    // 估算发生在预检之前是允许的（要拿手续费数字），但预检必须拦在签名之前
+    const error = await service
+      .submit(request({ amount: 100n }), signer)
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(InsufficientBalanceError);
+    expect(chain.estimateGas).not.toHaveBeenCalled();
     expect(chain.getNextNonce).not.toHaveBeenCalled();
+  });
+
+  it("checks a native amount before estimating, then the fee on top", async () => {
+    const { chain } = fakeChain({ nativeBalance: 5n });
+    const { signer } = localSigner();
+    const service = new TransferService({ chain, reason: "r" });
+
+    await expect(
+      service.submit(request({ tokenAddress: "native", amount: 10n }), signer),
+    ).rejects.toBeInstanceOf(InsufficientBalanceError);
+    expect(chain.estimateGas).not.toHaveBeenCalled();
   });
 });
 
@@ -242,6 +260,70 @@ describe("TransferService gas ceiling", () => {
     await expect(service.submit(request(), signer)).resolves.toMatchObject({
       nonce: 4,
     });
+  });
+});
+
+describe("TransferService broadcast outcome", () => {
+  function nodeSays(detail: string) {
+    return new RpcError("rpc error", -32000, detail);
+  }
+
+  it("treats 'already known' as success when the node has the transaction", async () => {
+    // 端点 A 收下却超时，换到 B 重发同一份 raw：B 说已知道——这是成功，不是失败
+    const { chain, noteNonceUsed } = fakeChain();
+    (chain.broadcast as jest.Mock).mockRejectedValue(nodeSays("already known"));
+    (chain.hasTransaction as jest.Mock).mockResolvedValue(true);
+    const { signer } = localSigner();
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+
+    const result = await new TransferService({ chain, reason: "r" }).submit(
+      request(),
+      signer,
+    );
+
+    expect(result.hash).toMatch(/^0x[0-9a-f]{64}$/);
+    // 报成失败会诱导用户重试，第二笔就真的发出去了
+    expect(noteNonceUsed).toHaveBeenCalledWith(FROM, 4);
+    warn.mockRestore();
+  });
+
+  it("resolves an all-endpoints-timed-out broadcast the same way", async () => {
+    const { chain } = fakeChain();
+    (chain.broadcast as jest.Mock).mockRejectedValue(
+      new RpcUnavailableError(2),
+    );
+    (chain.hasTransaction as jest.Mock).mockResolvedValue(true);
+    const { signer } = localSigner();
+    jest.spyOn(console, "warn").mockImplementation(() => {});
+
+    await expect(
+      new TransferService({ chain, reason: "r" }).submit(request(), signer),
+    ).resolves.toMatchObject({ nonce: 4 });
+  });
+
+  it("does not invent a success the node cannot confirm", async () => {
+    const { chain, noteNonceUsed } = fakeChain();
+    (chain.broadcast as jest.Mock).mockRejectedValue(nodeSays("nonce too low"));
+    (chain.hasTransaction as jest.Mock).mockResolvedValue(false);
+    const { signer } = localSigner();
+
+    await expect(
+      new TransferService({ chain, reason: "r" }).submit(request(), signer),
+    ).rejects.toBeInstanceOf(RpcError);
+    expect(noteNonceUsed).not.toHaveBeenCalled();
+  });
+
+  it("still fails plainly on an error that is not ambiguous", async () => {
+    const { chain } = fakeChain();
+    (chain.broadcast as jest.Mock).mockRejectedValue(
+      nodeSays("insufficient funds for gas * price + value"),
+    );
+    const { signer } = localSigner();
+
+    await expect(
+      new TransferService({ chain, reason: "r" }).submit(request(), signer),
+    ).rejects.toBeInstanceOf(RpcError);
+    expect(chain.hasTransaction).not.toHaveBeenCalled();
   });
 });
 

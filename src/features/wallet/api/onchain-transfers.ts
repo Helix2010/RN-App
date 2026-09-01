@@ -17,6 +17,9 @@ import type {
 /** 原生币的哨兵地址，和 TokenRef 的约定一致。 */
 const NATIVE = "native";
 
+/** 内存里最多记这么多笔：进度只在提交后几分钟内有意义，更早的去区块浏览器看。 */
+const MAX_TRACKED = 50;
+
 /**
  * 真实链上的转出。
  *
@@ -79,6 +82,12 @@ export class OnchainTransfers {
       from: request.from,
       transfer: record,
     });
+    // Map 保持插入顺序：超出上限就丢最早的
+    while (this.submitted.size > MAX_TRACKED) {
+      const oldest = this.submitted.keys().next().value;
+      if (oldest === undefined) break;
+      this.submitted.delete(oldest);
+    }
     return record;
   }
 
