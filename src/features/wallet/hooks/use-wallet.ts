@@ -8,7 +8,9 @@ export function useWalletConnectors() {
   return useQuery({
     queryKey: ["wallet-connectors"],
     queryFn: () => wallet.listConnectors(),
-    staleTime: Infinity,
+    // 不能永久缓存：外部钱包的可用性取决于 bootstrap 下发的 projectId，
+    // 而 bootstrap 是启动后才到的，缓存住就会一直显示"未启用"。
+    staleTime: 30_000,
   });
 }
 

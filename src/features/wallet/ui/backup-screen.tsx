@@ -1,10 +1,12 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useQueryClient } from "@tanstack/react-query";
+import { LangEn } from "ethers";
 import * as Clipboard from "expo-clipboard";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import { useGateways } from "../../../core/gateways/gateway-context";
+import { useScreenProtect } from "../../../core/security/screen-protect";
 import {
   AppIcon,
   Body,
@@ -25,31 +27,20 @@ import type { RootStackParamList } from "../../../navigation/types";
 import { useSession } from "../../session/hooks/use-session";
 import { useWalletAccounts } from "../hooks/use-wallet";
 
-/** Mock 助记词（真实实现由钱包服务派生，绝不落盘明文）。 */
-const WORDS = [
-  "ripple",
-  "harbor",
-  "velvet",
-  "orbit",
-  "candle",
-  "meadow",
-  "silver",
-  "anchor",
-  "pioneer",
-  "glacier",
-  "timber",
-  "lantern",
-];
-const DECOYS = [
-  "falcon",
-  "marble",
-  "prism",
-  "cobalt",
-  "summit",
-  "ember",
-  "quartz",
-  "willow",
-];
+const WORD_COUNT = 12;
+const wordlist = LangEn.wordlist();
+
+/** 干扰词来自真实 BIP-39 词表，且不与助记词本身重复。 */
+function decoysFor(word: string, seed: number, count: number): string[] {
+  const picks: string[] = [];
+  let state = (seed + 1) * 7919;
+  while (picks.length < count) {
+    state = (state * 1103515245 + 12345) & 0x7fffffff;
+    const candidate = wordlist.getWord(state % 2048);
+    if (candidate !== word && !picks.includes(candidate)) picks.push(candidate);
+  }
+  return picks;
+}
 
 function fill(
   template: string,
@@ -75,11 +66,14 @@ function shuffle<T>(items: T[], seed: number): T[] {
 /** L-04 备份助记词：抄写 → 验证（乱序选词 3 个）→ 完成；三段进度；可"稍后备份"。 */
 export function BackupScreen({
   navigation,
+  route,
 }: NativeStackScreenProps<RootStackParamList, "WalletBackup">) {
   const insets = useSafeAreaInsets();
   const { t } = useFoundationRuntime();
   const theme = useTheme();
   const { wallet } = useGateways();
+  // 助记词页必须挡住截图 / 录屏
+  useScreenProtect("wallet-seed-phrase");
   const queryClient = useQueryClient();
   const session = useSession();
   const accounts = useWalletAccounts();
@@ -91,9 +85,31 @@ export function BackupScreen({
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [wrong, setWrong] = useState(false);
+  // 刚创建的钱包把助记词直接带过来，避免紧接着再弹一次身份验证；
+  // 从设置页进来则必须现场解封（会弹系统验证）。
+  const freshPhrase = route.params?.phrase;
+  const [phrase, setPhrase] = useState<string | null>(freshPhrase ?? null);
+  const [revealError, setRevealError] = useState(false);
+  const address = embedded?.address;
+  useEffect(() => {
+    if (phrase !== null || !address) return;
+    let cancelled = false;
+    void wallet
+      .revealMnemonic(address, t("backup.revealReason"))
+      .then((value) => {
+        if (!cancelled) setPhrase(value);
+      })
+      .catch(() => {
+        if (!cancelled) setRevealError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [address, phrase, t, wallet]);
+  const words = useMemo(() => (phrase ? phrase.split(" ") : []), [phrase]);
   const targets = useMemo(
     () =>
-      shuffle([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], 7)
+      shuffle([...Array(WORD_COUNT).keys()], 7)
         .slice(0, 3)
         .sort((a, b) => a - b),
     [],
@@ -101,24 +117,27 @@ export function BackupScreen({
   const options = useMemo(
     () =>
       Object.fromEntries(
-        targets.map((index, position) => [
-          index,
-          shuffle(
-            [WORDS[index] as string, ...shuffle(DECOYS, index + 1).slice(0, 3)],
-            position + 11,
-          ),
-        ]),
+        targets.map((index, position) => {
+          const word = words[index] ?? "";
+          return [
+            index,
+            shuffle([word, ...decoysFor(word, index, 3)], position + 11),
+          ];
+        }),
       ) as Record<number, string[]>,
-    [targets],
+    [targets, words],
   );
 
   const copy = async () => {
-    await Clipboard.setStringAsync(WORDS.join(" "));
+    if (!phrase) return;
+    await Clipboard.setStringAsync(phrase);
     toast(t("backup.copied"), "success");
     setTimeout(() => void Clipboard.setStringAsync(""), 60_000);
   };
   const verify = async () => {
-    const ok = targets.every((index) => answers[index] === WORDS[index]);
+    const ok =
+      words.length === WORD_COUNT &&
+      targets.every((index) => answers[index] === words[index]);
     if (!ok) {
       setWrong(true);
       toast(t("backup.wrong"), "error");
@@ -152,14 +171,31 @@ export function BackupScreen({
       </Content>
       <PageScroll>
         <Content paddingTop="$1" gap="$4" paddingBottom={40}>
-          {step === 1 ? (
+          {step === 1 && !phrase ? (
+            <Stack gap="$3" testID="backup-locked">
+              <SectionTitle fontSize={18}>
+                {revealError ? t("backup.revealFailed") : t("backup.locked")}
+              </SectionTitle>
+              {revealError ? (
+                <SecondaryButton
+                  onPress={() => {
+                    setRevealError(false);
+                    setPhrase(null);
+                  }}
+                  testID="backup-retry"
+                >
+                  {t("backup.retry")}
+                </SecondaryButton>
+              ) : null}
+            </Stack>
+          ) : step === 1 ? (
             <>
               <Stack gap="$1">
                 <SectionTitle fontSize={18}>{t("backup.heading")}</SectionTitle>
                 <Body>{t("backup.hint")}</Body>
               </Stack>
               <Row flexWrap="wrap" gap="$2">
-                {WORDS.map((word, index) => (
+                {words.map((word, index) => (
                   <Row
                     key={word}
                     width="31%"
@@ -237,7 +273,7 @@ export function BackupScreen({
                             selected ? "$primary" : "$surfaceVariant"
                           }
                           borderWidth={
-                            wrong && selected && word !== WORDS[index] ? 1.5 : 0
+                            wrong && selected && word !== words[index] ? 1.5 : 0
                           }
                           borderColor="$danger"
                           onPress={() => {

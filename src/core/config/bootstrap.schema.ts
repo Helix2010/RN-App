@@ -134,6 +134,13 @@ export const bootstrapSchema = z.object({
     .refine((value) => value.predict || value.dex, {
       message: "At least one business module must be enabled",
     }),
+  /** 服务端下发的钱包参数：projectId 是客户端标识（非密钥），按租户下发免重打包 */
+  wallet: z
+    .object({
+      walletConnectProjectId: z.string(),
+      chains: z.array(z.enum(["bsc", "eth", "base"])).min(1),
+    })
+    .default({ walletConnectProjectId: "", chains: ["bsc", "eth", "base"] }),
   features: z.object({
     updateCenter: z.boolean(),
     otaEnabled: z.boolean(),

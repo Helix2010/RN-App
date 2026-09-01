@@ -1,3 +1,5 @@
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useEffect, useRef } from "react";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import { formatMoney, shortenAddress } from "../../../core/i18n/format";
@@ -18,6 +20,7 @@ import {
   type SheetHandle,
 } from "../../../design-system";
 import {
+  useWalletAccounts,
   useWalletBalances,
   useWalletConnectors,
 } from "../../wallet/hooks/use-wallet";
@@ -25,6 +28,7 @@ import type { WalletConnector } from "../../wallet/model/wallet";
 import { tenantDomain, useWalletLogin } from "../hooks/use-session";
 import { useAuthSheet } from "../model/auth-sheet-store";
 import type { AuthIntent, WalletConnectorId } from "../model/session";
+import type { RootStackParamList } from "../../../navigation/types";
 
 function fill(template: string, values: Record<string, string>): string {
   return Object.entries(values).reduce(
@@ -64,8 +68,19 @@ export function ConnectWalletSheet() {
   const { t } = useFoundationRuntime();
   const { open, intent, close, fulfill } = useAuthSheet();
   const sheet = useRef<SheetHandle>(null);
-  const login = useWalletLogin(tenantDomain());
+  const login = useWalletLogin(tenantDomain(), t("login.reason"));
   const connectors = useWalletConnectors();
+  const accounts = useWalletAccounts();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const hasEmbedded = (accounts.data ?? []).some(
+    (account) => account.connector === "embedded",
+  );
+  const goToWallet = (screen: "WalletSetup" | "WalletImport") => {
+    close();
+    login.reset();
+    navigation.navigate(screen);
+  };
 
   // 只在 open 真正翻转时 present / dismiss；挂载时不调用 dismiss（gorhom 会把延迟的 onDismiss 回调打到随后的 present 上）
   const wasOpen = useRef(false);
@@ -94,6 +109,12 @@ export function ConnectWalletSheet() {
     }
   };
 
+  // 没有钱包时不要停在一个点不动的 sheet 上，直接把用户带到创建 / 导入
+  useEffect(() => {
+    if (login.state.step === "needs-wallet") goToWallet("WalletSetup");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [login.state.step]);
+
   const onDismiss = () => {
     wasOpen.current = false;
     login.reset();
@@ -102,6 +123,7 @@ export function ConnectWalletSheet() {
 
   const picking =
     login.state.step === "pick" ||
+    login.state.step === "needs-wallet" ||
     login.state.step === "connecting" ||
     (login.state.step === "error" && !login.state.account);
 
@@ -134,6 +156,9 @@ export function ConnectWalletSheet() {
               : undefined
           }
           onPick={(id) => void login.connect(id)}
+          hasEmbedded={hasEmbedded}
+          onCreate={() => goToWallet("WalletSetup")}
+          onImport={() => goToWallet("WalletImport")}
           t={t}
         />
       ) : (
@@ -153,12 +178,19 @@ function ConnectorPicker({
   loading,
   busyConnector,
   onPick,
+  hasEmbedded,
+  onCreate,
+  onImport,
   t,
 }: {
   connectors: WalletConnector[];
   loading: boolean;
   busyConnector?: WalletConnectorId;
   onPick: (id: WalletConnectorId) => void;
+  /** 本机已有自托管钱包 => 第一行是"使用内置钱包"，否则是"创建钱包" */
+  hasEmbedded: boolean;
+  onCreate: () => void;
+  onImport: () => void;
   t: (key: string) => string;
 }) {
   if (loading) {
@@ -174,6 +206,8 @@ function ConnectorPicker({
   const external = connectors
     .filter((item) => item.kind === "external" && item.id !== "walletconnect")
     .sort((a, b) => Number(b.installed) - Number(a.installed));
+  const externalAvailable =
+    connectors.find((item) => item.id === "walletconnect")?.installed ?? false;
   return (
     <Stack gap="$3">
       {embedded.length ? (
@@ -181,18 +215,20 @@ function ConnectorPicker({
           <Label>{t("login.builtin")}</Label>
           <ConnectorRow
             icon="wallet-plus-outline"
-            title={t("login.createWallet")}
-            subtitle={t("login.createHint")}
+            title={hasEmbedded ? t("login.useWallet") : t("login.createWallet")}
+            subtitle={
+              hasEmbedded ? t("login.useWalletHint") : t("login.createHint")
+            }
             testID="login-create"
             busy={busyConnector === "embedded"}
-            onPress={() => onPick("embedded")}
+            onPress={() => (hasEmbedded ? onPick("embedded") : onCreate())}
           />
           <ConnectorRow
             icon="key-outline"
             title={t("login.importWallet")}
             subtitle={t("login.importHint")}
             testID="login-import"
-            onPress={() => onPick("embedded")}
+            onPress={onImport}
           />
         </Stack>
       ) : null}
@@ -204,17 +240,24 @@ function ConnectorPicker({
             letter={item.name[0]}
             color={item.logoColor}
             title={item.name}
-            subtitle={item.installed ? t("login.installed") : undefined}
+            subtitle={
+              item.installed ? t("login.installed") : t("login.unavailable")
+            }
             testID={`login-wc-${item.id}`}
             busy={busyConnector === item.id}
+            // 连接器没接上时点了只会静默失败，直接置灰更诚实
+            disabled={!item.installed}
             onPress={() => onPick(item.id)}
           />
         ))}
         <ConnectorRow
           icon="qrcode-scan"
           title={t("login.otherWallet")}
-          subtitle={t("login.otherHint")}
+          subtitle={
+            externalAvailable ? t("login.otherHint") : t("login.unavailable")
+          }
           testID="login-wc-other"
+          disabled={!externalAvailable}
           onPress={() => onPick("walletconnect")}
           busy={busyConnector === "walletconnect"}
         />
@@ -230,6 +273,7 @@ function ConnectorRow({
   title,
   subtitle,
   busy,
+  disabled,
   onPress,
   testID,
 }: {
@@ -239,6 +283,7 @@ function ConnectorRow({
   title: string;
   subtitle?: string;
   busy?: boolean;
+  disabled?: boolean;
   onPress: () => void;
   testID: string;
 }) {
@@ -250,13 +295,13 @@ function ConnectorRow({
       paddingHorizontal="$3"
       borderRadius="$4"
       backgroundColor="$surfaceVariant"
-      onPress={busy ? undefined : onPress}
+      onPress={busy || disabled ? undefined : onPress}
       accessibilityRole="button"
       accessibilityLabel={title}
-      accessibilityState={{ busy }}
+      accessibilityState={{ busy, disabled }}
       testID={testID}
-      pressStyle={{ opacity: 0.75 }}
-      opacity={busy ? 0.7 : 1}
+      pressStyle={{ opacity: disabled ? 1 : 0.75 }}
+      opacity={disabled ? 0.45 : busy ? 0.7 : 1}
     >
       <Stack
         width={36}

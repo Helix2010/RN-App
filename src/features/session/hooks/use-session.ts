@@ -5,6 +5,7 @@ import { useGateways } from "../../../core/gateways/gateway-context";
 import type { SignInChallenge } from "../api/gateway";
 import type { Session, WalletConnectorId } from "../model/session";
 import type { WalletAccount } from "../../wallet/model/wallet";
+import { WalletNotProvisionedError } from "../../wallet/api/gateway";
 
 const sessionQueryKey = ["session"] as const;
 
@@ -51,6 +52,8 @@ export function tenantDomain(): string {
 
 export type LoginStep =
   | { step: "pick" }
+  /** 本机还没有自托管钱包，UI 应引导去创建 / 导入 */
+  | { step: "needs-wallet" }
   | { step: "connecting"; connector: WalletConnectorId }
   | {
       step: "confirm";
@@ -75,7 +78,7 @@ export type LoginStep =
 /**
  * 分步登录（L-02 → L-03）：connect 后停在确认层展示人话版 SIWE，sign 才发起签名。
  */
-export function useWalletLogin(domain: string) {
+export function useWalletLogin(domain: string, signReason?: string) {
   const { session, wallet } = useGateways();
   const queryClient = useQueryClient();
   const [state, setState] = useState<LoginStep>({ step: "pick" });
@@ -92,7 +95,11 @@ export function useWalletLogin(domain: string) {
           domain,
         });
         setState({ step: "confirm", account, challenge, connector });
-      } catch {
+      } catch (error) {
+        if (error instanceof WalletNotProvisionedError) {
+          setState({ step: "needs-wallet" });
+          return;
+        }
         setState({ step: "error", reason: "failed", connector });
       }
     },
@@ -108,6 +115,7 @@ export function useWalletLogin(domain: string) {
       const signature = await wallet.signMessage(
         account.address,
         challenge.message,
+        signReason ? { reason: signReason } : undefined,
       );
       const next = await session.verify(
         { address: account.address, connector, chains: account.chains, domain },
@@ -135,7 +143,7 @@ export function useWalletLogin(domain: string) {
       });
       return null;
     }
-  }, [domain, queryClient, session, state, wallet]);
+  }, [domain, queryClient, session, signReason, state, wallet]);
 
   const reset = useCallback(() => setState({ step: "pick" }), []);
   return { state, connect, sign, reset };

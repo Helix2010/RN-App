@@ -17,6 +17,7 @@ import {
   PrimaryButton,
   Stack,
 } from "../../design-system";
+import { useGateways } from "../../core/gateways/gateway-context";
 import { useSession } from "../session/hooks/use-session";
 
 /**
@@ -31,6 +32,7 @@ export function AppLockGate() {
   const locked = useAppLock((state) => state.locked);
   const enrolled = useAppLock((state) => state.enrolled);
   const session = useSession();
+  const { lockKeys } = useGateways();
   const signedIn = Boolean(session.data?.address);
   const logoUri = useTenantLogoUri();
   const failed = useAppLock((state) => state.lastAttemptFailed);
@@ -55,8 +57,9 @@ export function AppLockGate() {
     if (coldStartHandled.current) return;
     if (!signedIn || !enabled || !enrolled) return;
     coldStartHandled.current = true;
+    lockKeys();
     useAppLock.getState().lock();
-  }, [enabled, enrolled, signedIn]);
+  }, [enabled, enrolled, lockKeys, signedIn]);
 
   useEffect(() => {
     const onChange = (next: AppStateStatus) => {
@@ -73,12 +76,14 @@ export function AppLockGate() {
         nowMs: Date.now(),
         enrolled: store.enrolled,
       });
-      if (shouldLock) store.lock();
-      else store.clearBackgrounded();
+      if (shouldLock) {
+        lockKeys();
+        store.lock();
+      } else store.clearBackgrounded();
     };
     const subscription = AppState.addEventListener("change", onChange);
     return () => subscription.remove();
-  }, [autoLockMinutes, signedIn]);
+  }, [autoLockMinutes, lockKeys, signedIn]);
 
   const unlock = useCallback(async () => {
     if (prompting.current) return;

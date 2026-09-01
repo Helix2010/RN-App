@@ -28,6 +28,7 @@ import {
   CONNECTORS,
   EMBEDDED_ADDRESS,
   EXTERNAL_ADDRESS,
+  MOCK_MNEMONIC,
   REFERENCE_PRICES_USD,
   TOKENS,
   tokenKey,
@@ -39,7 +40,14 @@ import type {
   WalletConnector,
   WalletTransfer,
 } from "../model/wallet";
-import type { WalletGateway } from "./gateway";
+import {
+  WalletProvisioningUnsupportedError,
+  type WalletGateway,
+} from "./gateway";
+import {
+  deriveAccount,
+  accountFromPrivateKey,
+} from "../../../core/wallet/keygen/mnemonic";
 
 type State = {
   accounts: WalletAccount[];
@@ -214,6 +222,69 @@ export class MockWalletGateway implements WalletGateway {
     if (isNegative(next)) throw new Error("insufficient balance");
     ledger[key] = next.raw;
     await this.save();
+  }
+
+  /**
+   * Mock 的开通流程：地址用真实的 BIP-39/BIP-44 派生（便于 UI 走真实校验路径），
+   * 但不保管任何密钥，签名仍是假摘要。
+   */
+  async createWallet(): Promise<{ account: WalletAccount; mnemonic: string }> {
+    const account = await this.connect("embedded");
+    return { account, mnemonic: MOCK_MNEMONIC };
+  }
+
+  async importMnemonic(phrase: string, index = 0): Promise<WalletAccount> {
+    const derived = deriveAccount(phrase, index);
+    return this.addAccount(derived.address, "embedded");
+  }
+
+  async importPrivateKey(privateKey: string): Promise<WalletAccount> {
+    const derived = accountFromPrivateKey(privateKey);
+    return this.addAccount(derived.address, "embedded");
+  }
+
+  async revealMnemonic(address: string): Promise<string> {
+    const state = await this.load();
+    const account = state.accounts.find((item) => item.address === address);
+    if (!account) throw new Error("account not found");
+    if (account.connector !== "embedded")
+      throw new WalletProvisioningUnsupportedError(account.connector);
+    return MOCK_MNEMONIC;
+  }
+
+  /**
+   * 仅用于演示：给一个真实生成的地址铺一份 Mock 余额，让 Mock 业务面还能被浏览。
+   * 接真实链数据后删掉这个方法与它的注入点。
+   */
+  async seedDemoBalances(address: string): Promise<void> {
+    const state = await this.load();
+    state.balances[address] ??= seedBalances(address);
+    await this.save();
+  }
+
+  private async addAccount(
+    address: string,
+    connector: WalletConnectorId,
+  ): Promise<WalletAccount> {
+    const state = await this.load();
+    let account = state.accounts.find((item) => item.address === address);
+    if (!account) {
+      account = {
+        address,
+        label: `Wallet ${state.accounts.length + 1}`,
+        connector,
+        chains: ["bsc", "eth", "base"],
+        current: false,
+        backedUp: connector !== "embedded",
+      };
+      state.accounts.push(account);
+      state.balances[address] = seedBalances(address);
+    }
+    state.accounts.forEach((item) => {
+      item.current = item.address === address;
+    });
+    await this.save();
+    return account;
   }
 
   async signMessage(address: string, message: string): Promise<string> {
