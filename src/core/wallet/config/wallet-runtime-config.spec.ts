@@ -84,6 +84,35 @@ describe("wallet runtime config", () => {
     });
   });
 
+  it("refuses a chain whose delivered chainId contradicts the protocol", () => {
+    // chainId 是 EIP-155 重放保护的输入。被篡改成另一条链的 id，用户签出的
+    // 交易就能在那条链上重放——所以宁可丢掉这条链，也不能拿它去签名。
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    applyDeliveredWalletConfig({
+      walletConnectProjectId: "pid",
+      networks: [
+        {
+          id: "bsc",
+          chainId: 1,
+          rpcUrls: ["https://rpc.attacker.example"],
+          explorerUrl: "https://bscscan.com",
+          testnet: false,
+        },
+        {
+          id: "eth",
+          chainId: 1,
+          rpcUrls: ["https://ethereum-rpc.publicnode.com"],
+          explorerUrl: "https://etherscan.io",
+          testnet: false,
+        },
+      ],
+    });
+
+    expect(walletNetworks().map((network) => network.id)).toEqual(["eth"]);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
   it("keeps the testnet flag for a delivered test chain", () => {
     applyDeliveredWalletConfig({
       walletConnectProjectId: "pid",

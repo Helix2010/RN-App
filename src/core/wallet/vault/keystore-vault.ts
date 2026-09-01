@@ -34,7 +34,7 @@ const SCRYPT_PARAMS = { N: 2 ** 15, r: 8, p: 1, dkLen: 32 } as const;
 
 type VaultEntryKind = "mnemonic" | "private-key";
 
-/** 对外可见的条目元数据 —— 不含任何密钥материал。 */
+/** 对外可见的条目元数据 —— 不含任何密钥材料。 */
 type VaultEntry = {
   address: string;
   kind: VaultEntryKind;

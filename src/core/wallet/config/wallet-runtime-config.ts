@@ -25,7 +25,18 @@ type DeliveredWalletConfig = {
   networks: WalletNetwork[];
 };
 
-/** 平台默认：链的展示元数据在客户端，端点等服务端下发。 */
+/**
+ * 每条链的 EIP-155 chain id。
+ *
+ * 这份常量有**两个不同的角色**，别当成重复配置删掉：
+ * 1. 服务端没下发时的兜底值；
+ * 2. **安全断言** —— 下发值必须与它一致，否则拒绝该条链。
+ *
+ * 第 2 点是纵深防御。chainId 是 EIP-155 重放保护的输入：如果服务端（或到
+ * 服务端的链路）被篡改成另一条链的 id，用户签出的交易可以在那条链上重放。
+ * 端点和 projectId 可以由租户随意配置，chainId 不行——它属于协议事实，
+ * 不属于配置。
+ */
 const FALLBACK_CHAIN_IDS: Record<ChainId, number> = {
   eth: 1,
   bsc: 56,
@@ -54,19 +65,39 @@ function fallbackNetworks(chains: ChainId[]): WalletNetwork[] {
 let delivered: DeliveredWalletConfig | null = null;
 const listeners = new Set<() => void>();
 
+/**
+ * 丢掉 chainId 与协议事实不符的链。
+ *
+ * 宁可少一条链，也不能拿一个可疑的 chainId 去签名——那等于交出重放保护。
+ * 静默接受是最坏的选项，所以这里也留下一条 warning。
+ */
+function withTrustedChainIds(networks: WalletNetwork[]): WalletNetwork[] {
+  return networks.filter((network) => {
+    const expected = FALLBACK_CHAIN_IDS[network.id];
+    if (expected === undefined || network.chainId === expected) return true;
+    console.warn(
+      `[wallet] 拒绝 ${network.id}：下发的 chainId ${network.chainId} 与协议事实 ${expected} 不一致`,
+    );
+    return false;
+  });
+}
+
 export function applyDeliveredWalletConfig(config: {
   walletConnectProjectId: string;
   chains?: ChainId[];
   networks?: WalletNetwork[];
 }): void {
+  const trustedNetworks = config.networks
+    ? withTrustedChainIds(config.networks)
+    : undefined;
   const chains =
-    config.networks?.map((network) => network.id) ??
+    trustedNetworks?.map((network) => network.id) ??
     config.chains ??
     (["bsc", "eth", "base"] as ChainId[]);
   const next: DeliveredWalletConfig = {
     walletConnectProjectId: config.walletConnectProjectId.trim(),
     chains,
-    networks: config.networks ?? fallbackNetworks(chains),
+    networks: trustedNetworks ?? fallbackNetworks(chains),
   };
   const changed =
     delivered === null ||
