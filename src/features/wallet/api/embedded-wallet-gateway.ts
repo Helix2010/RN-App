@@ -13,6 +13,7 @@ import type { WalletConnectorId } from "../../session/model/session";
 import type {
   SendRequest,
   TokenBalance,
+  TransferQuote,
   WalletAccount,
   WalletConnector,
   WalletTransfer,
@@ -70,11 +71,24 @@ type Registry = {
   meta: Record<string, AccountMeta>;
 };
 
+/**
+ * 真实链上的转出。注入了并且那条链有 RPC 端点时才用它，否则回落到 Mock 账本——
+ * 服务端有没有下发端点本身就是灰度开关。
+ */
+export type OnchainTransferPort = {
+  available: (chain: ChainId) => boolean;
+  send: (request: SendRequest, signer: WalletSigner) => Promise<WalletTransfer>;
+  quote: (request: SendRequest) => Promise<TransferQuote>;
+  listTransfers: (address: string) => WalletTransfer[];
+  getTransaction: (id: string) => Promise<Tx | null>;
+};
+
 type EmbeddedWalletGatewayDeps = {
   vault: KeystoreVault;
   chainData: WalletChainData;
   storage: KeyValueStorage;
   external?: ExternalWalletConnector;
+  onchain?: OnchainTransferPort;
   /**
    * 仅用于演示：给新开通的地址铺一份 Mock 余额，让 Mock 业务面还能被浏览。
    * 真实链数据接入后应直接删掉这个注入。
@@ -273,16 +287,32 @@ export class EmbeddedWalletGateway implements WalletGateway {
     return this.deps.chainData.adjustBalance(address, token, delta);
   }
 
-  send(request: SendRequest): Promise<WalletTransfer> {
+  async send(request: SendRequest): Promise<WalletTransfer> {
+    const onchain = this.deps.onchain;
+    // 那条链没下发 RPC 就走 Mock：不猜端点，也不让用户以为转了真钱
+    if (onchain?.available(request.token.chain))
+      return onchain.send(request, await this.signerFor(request.from));
     return this.deps.chainData.send(request);
   }
 
-  getTransaction(id: string): Promise<Tx | null> {
+  async getTransaction(id: string): Promise<Tx | null> {
+    // 链上交易的 id 是 txHash，只有 onchain 那边认得；查不到再问 Mock
+    const onchain = await this.deps.onchain?.getTransaction(id);
+    if (onchain) return onchain;
     return this.deps.chainData.getTransaction(id);
   }
 
-  listTransfers(address: string): Promise<WalletTransfer[]> {
-    return this.deps.chainData.listTransfers(address);
+  async quoteTransfer(request: SendRequest): Promise<TransferQuote | null> {
+    const onchain = this.deps.onchain;
+    if (!onchain?.available(request.token.chain)) return null;
+    return onchain.quote(request);
+  }
+
+  async listTransfers(address: string): Promise<WalletTransfer[]> {
+    // 链上转账只在内存里，Mock 账本不认识；不合并的话用户转完账回列表会发现记录没了
+    const onchain = this.deps.onchain?.listTransfers(address) ?? [];
+    const ledger = await this.deps.chainData.listTransfers(address);
+    return [...onchain, ...ledger];
   }
 
   // ---- 内部 ----

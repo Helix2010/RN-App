@@ -5,8 +5,11 @@ import {
   signIn,
 } from "../../../test/harness";
 import { SendScreen } from "./send-screen";
+import type { Gateways } from "../../../core/gateways/gateway-context";
 import type { TokenBalance } from "../../wallet/model/wallet";
-import { fromDecimal } from "../../../core/money/money";
+import { InsufficientGasError } from "../../../core/chain/transfer-service";
+import { fromDecimal, money } from "../../../core/money/money";
+import { ToastHost } from "../../../design-system";
 
 const RECIPIENT = "0x9858EfFD232B4033E47d90003D41EC34EcaEda94";
 const USDT_BSC = "0x55d398326f99059ff775485246999027b3197955";
@@ -32,7 +35,10 @@ function balance(overrides: {
   };
 }
 
-async function openConfirm(options: { verified: boolean }) {
+async function openConfirm(options: {
+  verified: boolean;
+  prepare?: (gateways: Gateways) => void;
+}) {
   const gateways = createTestGateways();
   await signIn(gateways);
   gateways.wallet.getBalances = jest.fn(async () => [
@@ -42,8 +48,13 @@ async function openConfirm(options: { verified: boolean }) {
       verified: options.verified,
     }),
   ]);
+  options.prepare?.(gateways);
   const rendered = await renderWithProviders(
-    <SendScreen onBack={jest.fn()} initialChain="bsc" />,
+    <>
+      <SendScreen onBack={jest.fn()} initialChain="bsc" />
+      {/* 失败原因是通过 toast 说出来的，不挂 host 就断言不到用户真正看到的东西 */}
+      <ToastHost />
+    </>,
     { gateways },
   );
 
@@ -95,5 +106,59 @@ describe("SendScreen confirmation", () => {
 
     await waitFor(() => expect(screen.getByText(/USDT ·/)).toBeTruthy());
     expect(screen.queryByText(runtime.t("send.unverifiedWarning"))).toBeNull();
+  });
+});
+
+describe("SendScreen network fee", () => {
+  it("says the fee cannot be estimated rather than inventing a number", async () => {
+    // Mock 账本给不出链上手续费。编一个数字更糟：写小了用户会以为余额够
+    const { runtime } = await openConfirm({ verified: true });
+
+    await waitFor(() =>
+      expect(screen.getAllByText(runtime.t("send.feeUnavailable")).length).toBe(
+        2,
+      ),
+    );
+  });
+
+  it("shows the real fee once the chain quotes one", async () => {
+    await openConfirm({
+      verified: true,
+      prepare: (gateways) => {
+        gateways.wallet.quoteTransfer = jest.fn(async () => ({
+          fee: money(300_000_000_000_000n, 18, "BNB"),
+          maxAmount: null,
+        }));
+      },
+    });
+
+    await waitFor(() =>
+      expect(screen.getAllByText(/0\.0003 BNB/).length).toBeGreaterThan(0),
+    );
+  });
+});
+
+describe("SendScreen failure reasons", () => {
+  it("tells the user to top up gas instead of just saying it failed", async () => {
+    // 最高频的困惑："我有 USDT，为什么转不了"。答案是缺 BNB，而不是余额不足
+    const { runtime } = await openConfirm({
+      verified: true,
+      prepare: (gateways) => {
+        gateways.wallet.send = jest.fn(async () => {
+          throw new InsufficientGasError("BNB", 300n, 0n);
+        });
+      },
+    });
+
+    void fireEvent.press(await screen.findByTestId("send-confirm"));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          runtime.t("send.error.gas").replace("{symbol}", "BNB"),
+        ),
+      ).toBeTruthy(),
+    );
+    expect(screen.queryByText(runtime.t("send.failed"))).toBeNull();
   });
 });

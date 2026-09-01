@@ -107,7 +107,9 @@ export async function renderWithProviders(
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false, gcTime: 0 },
-      mutations: { retry: false },
+      // gcTime 也要归零：mutation 默认在缓存里留 5 分钟，那个定时器会让 jest
+      // 在跑完之后空等 5 分钟才退出（CI 上就是一次挂起）
+      mutations: { retry: false, gcTime: 0 },
     },
   });
 

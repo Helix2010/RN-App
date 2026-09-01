@@ -67,7 +67,6 @@ export type SubmittedTransfer = {
 
 type TransferDeps = {
   chain: ChainClient;
-  signer: (address: string) => WalletSigner;
   /** 展示在系统验证弹窗 / 外部钱包里的说明，已 i18n */
   reason: string;
 };
@@ -78,8 +77,15 @@ export class TransferService {
 
   constructor(private readonly deps: TransferDeps) {}
 
-  async submit(request: TransferRequest): Promise<SubmittedTransfer> {
-    return this.serialize(request.from, () => this.run(request));
+  /**
+   * @param signer 由调用方按账户解析后传入——同一个服务实例会服务多个账户，
+   *   而外部钱包的签名器解析本身可能要先恢复连接，不适合固定在构造时。
+   */
+  async submit(
+    request: TransferRequest,
+    signer: WalletSigner,
+  ): Promise<SubmittedTransfer> {
+    return this.serialize(request.from, () => this.run(request, signer));
   }
 
   /** 估算这笔转账要花多少原生币做手续费，供 UI 在输入阶段就提示。 */
@@ -177,8 +183,10 @@ export class TransferService {
       );
   }
 
-  private async run(request: TransferRequest): Promise<SubmittedTransfer> {
-    const signer = this.deps.signer(request.from);
+  private async run(
+    request: TransferRequest,
+    signer: WalletSigner,
+  ): Promise<SubmittedTransfer> {
     const target = this.callData(request);
     const context: SignRequestContext = { reason: this.deps.reason };
 

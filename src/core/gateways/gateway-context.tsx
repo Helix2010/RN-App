@@ -24,6 +24,7 @@ import {
   presentWalletConnectUri,
 } from "../../features/wallet/model/walletconnect-store";
 import { MockWalletGateway } from "../../features/wallet/api/mock-wallet-gateway";
+import { OnchainTransfers } from "../../features/wallet/api/onchain-transfers";
 import { KeystoreVault } from "../wallet/vault/keystore-vault";
 import { expoAuthenticate, expoSecureStore } from "../wallet/vault/expo-ports";
 import { appRuntime } from "../network/api-client";
@@ -71,11 +72,15 @@ function createGateways(storage: KeyValueStorage): Gateways {
   // 不取消订阅：createGateways 由 useMemo 在整个 App 生命周期里只跑一次，
   // 而 cancelConnect 是幂等的，万一 memo 被丢弃重算也只是多调一次空操作
   onPairingDismissed(() => external.cancelConnect());
+  // 真实链上转出。签名器由网关在每次转账时按账户解析后传进来，所以这里不需要
+  // 反向引用网关。
+  const onchain = new OnchainTransfers({ reason: "wallet.sign.transfer" });
   const wallet = new EmbeddedWalletGateway({
     vault,
     chainData,
     storage,
     external,
+    onchain,
     seedDemoBalances: (address) => chainData.seedDemoBalances(address),
   });
   // 会话是真的：挑战由 RN-Server 构造并核销 nonce，签名换回的令牌进安全存储。

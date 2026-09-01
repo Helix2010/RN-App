@@ -4,11 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import { CHAINS, type ChainId } from "../../../core/gateways/types";
 import { evmChainIdOf } from "../../../core/wallet/config/wallet-runtime-config";
-import {
-  formatMoney,
-  formatUsd,
-  shortenAddress,
-} from "../../../core/i18n/format";
+import { formatMoney, shortenAddress } from "../../../core/i18n/format";
 import {
   compare,
   fromDecimal,
@@ -42,10 +38,12 @@ import {
 import { useSession } from "../../session/hooks/use-session";
 import {
   useSendToken,
+  useTransferQuote,
   useWalletBalances,
   useWalletTransfer,
 } from "../../wallet/hooks/use-wallet";
-import type { TokenBalance } from "../../wallet/model/wallet";
+import type { SendRequest, TokenBalance } from "../../wallet/model/wallet";
+import { transferErrorCopy } from "../../wallet/model/transfer-errors";
 import { TxProgress } from "./tx-progress";
 import { useRequireVerification } from "../../security/use-require-verification";
 
@@ -116,11 +114,24 @@ export function SendScreen({
     !isZero(amount) &&
     !insufficient &&
     !send.isPending;
-  const nativeSymbol = CHAINS[chain].nativeSymbol;
-  const feeText =
-    chain === "bsc"
-      ? `≈ 0.0003 ${nativeSymbol} (${formatUsd(0.19, locale)})`
-      : `≈ 0.0009 ${nativeSymbol} (${formatUsd(4.1, locale)})`;
+  // 预估要用真实的收款地址：ERC-20 转给未初始化的地址 gas 更高
+  const quoteRequest: SendRequest | undefined =
+    address && selected && addressValid
+      ? {
+          from: address,
+          to: to.trim(),
+          token: selected.token,
+          amount: selected.amount,
+        }
+      : undefined;
+  const quote = useTransferQuote(quoteRequest);
+  // Mock 账本（quote 为 null）和预估失败都显示"暂不可估"：编一个数字更糟——
+  // 手续费写小了，用户会以为余额够
+  const feeText = quote.data
+    ? formatMoney(quote.data.fee, locale)
+    : quote.isFetching
+      ? t("send.feeEstimating")
+      : t("send.feeUnavailable");
 
   const paste = async () => {
     const value = (await Clipboard.getStringAsync()).trim();
@@ -139,7 +150,11 @@ export function SendScreen({
           setTxId(record.id);
           toast(t("send.submitted"), "success");
         },
-        onError: () => toast(t("send.failed"), "error"),
+        onError: (error) => {
+          // "转出失败"把所有原因混成一件事；缺 gas 和余额不足要用户做的事完全不同
+          const copy = transferErrorCopy(error);
+          toast(fill(t(copy.key), copy.values ?? {}), "error");
+        },
       },
     );
   };
@@ -303,7 +318,12 @@ export function SendScreen({
                 amount: formatMoney(selected.amount, locale),
               })}
               error={insufficient ? t("transfer.insufficient") : undefined}
-              onMax={() => setText(toDecimalString(selected.amount, 6))}
+              onMax={() =>
+                // 原生币的"全部"必须扣掉手续费，否则这一笔必然失败
+                setText(
+                  toDecimalString(quote.data?.maxAmount ?? selected.amount, 6),
+                )
+              }
               maxLabel={t("common.max")}
               presets={[25, 50, 75, 100]}
               onPreset={(pct) =>
