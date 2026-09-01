@@ -182,6 +182,13 @@ const zhCN = {
   "receive.copied": "已复制",
   "send.title": "转出",
   "send.address": "收款地址",
+  "send.tokenContract": "代币合约",
+  "send.nativeToken": "原生代币（无合约）",
+  "send.tokenVerified": "已验证",
+  "send.tokenUnverified": "未验证",
+  "send.unverifiedWarning":
+    "这个代币不在平台已验证列表里。转出前请核对上面的合约地址，地址被换掉时符号看起来是一样的。",
+  "send.checkAddress": "转出无法撤销。请逐字核对完整地址。",
   "send.addressPlaceholder": "粘贴或扫描地址",
   "send.paste": "粘贴",
   "send.addressBook": "地址簿",
@@ -929,6 +936,14 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "receive.copied": "Copied",
   "send.title": "Send",
   "send.address": "Recipient address",
+  "send.tokenContract": "Token contract",
+  "send.nativeToken": "Native token (no contract)",
+  "send.tokenVerified": "Verified",
+  "send.tokenUnverified": "Unverified",
+  "send.unverifiedWarning":
+    "This token is not on the platform's verified list. Check the contract address above — a swapped address still shows the same symbol.",
+  "send.checkAddress":
+    "Transfers cannot be undone. Check the full address character by character.",
   "send.addressPlaceholder": "Paste or scan an address",
   "send.paste": "Paste",
   "send.addressBook": "Address book",

@@ -3,6 +3,7 @@ import { useRef, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import { CHAINS, type ChainId } from "../../../core/gateways/types";
+import { evmChainIdOf } from "../../../core/wallet/config/wallet-runtime-config";
 import {
   formatMoney,
   formatUsd,
@@ -36,6 +37,7 @@ import {
   Stack,
   TextField,
   toast,
+  useTheme,
 } from "../../../design-system";
 import { useSession } from "../../session/hooks/use-session";
 import {
@@ -69,6 +71,7 @@ export function SendScreen({
   initialChain?: ChainId;
 }) {
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
   const { config, t } = useFoundationRuntime();
   const requireVerification = useRequireVerification();
   const locale = config.localization.selectedLocale;
@@ -381,12 +384,45 @@ export function SendScreen({
       >
         {selected && amount ? (
           <Stack gap="$3">
+            {/* 完整地址而不是缩略形式：剪贴板劫持伪造的地址首尾往往一致，
+                缩略显示看不出差别，而这是最后一道可见防线 */}
+            <Stack
+              gap="$1"
+              padding="$3"
+              borderRadius="$4"
+              backgroundColor="$surfaceVariant"
+            >
+              <Body fontSize={12} color="$textMuted">
+                {t("send.address")}
+                {bookHit ? ` · ${bookHit.label}` : ""}
+              </Body>
+              <InlineText
+                fontSize={13}
+                fontWeight="700"
+                letterSpacing={0.6}
+                testID="send-confirm-address"
+              >
+                {to.trim()}
+              </InlineText>
+              <Body fontSize={11} color="$textMuted">
+                {t("send.checkAddress")}
+              </Body>
+            </Stack>
             <Stack>
               <DetailRow
-                label={t("send.address")}
-                value={`${bookHit ? `${bookHit.label} · ` : ""}${shortenAddress(to.trim(), 10, 6)}`}
+                label={t("send.network")}
+                value={`${CHAINS[chain].name} · ${evmChainIdOf(chain)}`}
               />
-              <DetailRow label={t("send.network")} value={CHAINS[chain].name} />
+              {/* 合约地址被篡改时，符号看起来完全一样。不显示它就等于没有防线 */}
+              <DetailRow
+                label={t("send.tokenContract")}
+                value={
+                  selected.token.address === "native"
+                    ? `${selected.token.symbol} · ${t("send.nativeToken")}`
+                    : `${selected.token.symbol} · ${selected.token.address}`
+                }
+                tone={selected.token.verified ? undefined : "warning"}
+              />
               <DetailRow
                 label={t("send.amount")}
                 value={formatMoney(amount, locale)}
@@ -398,6 +434,24 @@ export function SendScreen({
                 tone="positive"
               />
             </Stack>
+            {selected.token.verified ? null : (
+              <Row
+                alignItems="center"
+                gap="$2"
+                padding="$3"
+                borderRadius="$4"
+                style={{ backgroundColor: `${theme.warning.val}22` }}
+              >
+                <AppIcon
+                  name="shield-alert-outline"
+                  size={18}
+                  colorToken="warning"
+                />
+                <Body flex={1} fontSize={12} color="$warning">
+                  {t("send.unverifiedWarning")}
+                </Body>
+              </Row>
+            )}
             <PrimaryButton
               disabled={send.isPending}
               onPress={() => void submit()}
