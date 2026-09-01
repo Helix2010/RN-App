@@ -152,3 +152,32 @@
 ### 需要你提供
 
 WalletConnect（Reown）的 **projectId**：在 https://dashboard.reown.com 建一个项目即可，是客户端标识不是密钥。拿到后在管理端（或直接改租户 bootstrap 配置）把 `wallet.walletConnectProjectId` 填上，**不需要重新打包**，App 冷启动即生效。填好后我可以在装了 MetaMask 的设备上跑完整的配对 + 签名验证。
+
+## P4 加固：敏感界面防截屏（本次）
+
+### Given / When / Then
+
+- Given 停在助记词展示 / 校验页 Then 系统截图与**程序化抓屏**（含埋点 SDK 录屏）都被挡住。
+- Given 停在助记词 / 私钥导入页 Then 同样被挡住。
+- Given 离开这些页面 Then 保护释放，其他页面能正常截图分享。
+- Given 设备或系统不支持防截屏 Then 不抛错、不挡住用户看助记词。
+
+### 技术影响
+
+- 新增 `src/core/security/screen-protect.ts`：`PROTECTED_FLOWS` 显式列出受保护流程 + `useScreenProtect(flow)`。这是 Robinhood 中央 `ScreenProtectManager` 的对位实现（逆向 E-019 / F-002）：`FLAG_SECURE` 只加在**明确列出**的敏感流程上——全局开会影响正常截图分享，逐页手写又容易漏。
+- 用 tag 调用 `preventScreenCaptureAsync(flow)` / `allowScreenCaptureAsync(flow)`：两个受保护页面叠在一起时，先离开的那个不会撤掉仍在前台那个的保护。
+- 新增依赖 `expo-screen-capture`（原生模块，需全量包，不能 OTA）。
+
+### 验证
+
+- 单测 3 例：挂载即保护、卸载即释放、tag 正确、不支持的设备不崩、受保护流程清单显式。
+- `pnpm check` 全绿（48 suites / 244 例）。
+- **设备验证**（模拟器）：停在助记词页时 uiautomator 能读到 12 个词（页面确实在显示），但 `adb exec-out screencap` 返回**全黑**（15KB 纯黑 PNG）；返回上一页后同样的命令拿到 121KB 正常内容 —— 保护生效且正确释放 ✅
+- iOS 未验证（iOS 只能拦截截图事件，无法像 Android 的 `FLAG_SECURE` 那样阻止抓屏）。
+
+## 剩余（P4 未做的部分）
+
+- `expo-secure-store` 的条目仍是 `requireAuthentication:false`：身份验证由 Vault 在应用内强制，而不是 Keystore 硬件强制。计划：设备已录入生物识别时改用 `requireAuthentication: true`，未录入时回退（否则把用户锁死）。
+- RN-Server 的 TLS 证书 pinning（逆向 E-007 的对位项）。
+- 可选的越狱 / root 检测与 Play Integrity（逆向 E-013），建议一期只提示不阻断。
+- 真实链上数据（余额 / 转账广播）仍是 Mock 账本，按"一期业务全 Mock"的产品决策保留。

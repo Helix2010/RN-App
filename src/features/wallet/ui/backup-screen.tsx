@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import { useGateways } from "../../../core/gateways/gateway-context";
+import { useScreenProtect } from "../../../core/security/screen-protect";
 import {
   AppIcon,
   Body,
@@ -71,6 +72,8 @@ export function BackupScreen({
   const { t } = useFoundationRuntime();
   const theme = useTheme();
   const { wallet } = useGateways();
+  // 助记词页必须挡住截图 / 录屏
+  useScreenProtect("wallet-seed-phrase");
   const queryClient = useQueryClient();
   const session = useSession();
   const accounts = useWalletAccounts();
