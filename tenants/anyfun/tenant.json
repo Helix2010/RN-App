@@ -8,8 +8,8 @@
   "applicationId": "dex-mobile",
   "distributionChannel": "direct",
   "otaChannel": "production",
-  "version": "1.2.4",
-  "androidVersionCode": 18,
+  "version": "1.2.5",
+  "androidVersionCode": 19,
   "iosBuildNumber": "7",
   "iconBackgroundColor": "#E9F0FF"
 }
