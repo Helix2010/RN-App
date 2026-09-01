@@ -1,11 +1,12 @@
 import { useRef, useState } from "react";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useFoundationRuntime } from "../../../app/runtime-context";
 import {
+  fill,
   formatMoney,
   formatUsd,
   shortenAddress,
 } from "../../../core/i18n/format";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useFoundationRuntime } from "../../../app/runtime-context";
 import { toApproxNumber } from "../../../core/money/money";
 import {
   AmountText,
@@ -34,13 +35,6 @@ import type { TokenBalance } from "../../wallet/model/wallet";
 import { useAssetsOverview } from "../hooks/use-assets";
 import { ReceiveSheet } from "./receive-sheet";
 import { TransferForm } from "./transfer-form";
-
-function fill(template: string, values: Record<string, string>): string {
-  return Object.entries(values).reduce(
-    (text, [key, value]) => text.replace(`{${key}}`, value),
-    template,
-  );
-}
 
 /** A-01 资产总览：估值直接落在页面底色上；账户卡 1 + 1；币种列表标注所在账户。 */
 export function AssetsScreen({

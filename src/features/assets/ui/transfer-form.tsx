@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
+import { fill, formatMoney, formatUsd } from "../../../core/i18n/format";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import type { TokenRef } from "../../../core/gateways/types";
-import { formatMoney, formatUsd } from "../../../core/i18n/format";
 import {
   compare,
   fromDecimal,
@@ -36,13 +36,6 @@ import { useRequireVerification } from "../../security/use-require-verification"
 export type TransferDirection = "deposit" | "withdraw";
 const PREDICT_USDC = { decimals: 6, symbol: "USDC" };
 const WALLET_USDC = TOKENS["USDC.bsc"] as TokenRef;
-
-function fill(template: string, values: Record<string, string>): string {
-  return Object.entries(values).reduce(
-    (text, [key, value]) => text.replace(`{${key}}`, value),
-    template,
-  );
-}
 
 /**
  * A-02 划转：钱包 ⇄ 预测账户（链上存入 / 取出）。提交后切到三段进度。

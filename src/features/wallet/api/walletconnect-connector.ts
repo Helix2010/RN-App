@@ -135,9 +135,7 @@ export function parseAccounts(
 }
 
 /** 从会话对端的自述名字认出钱包；认不出返回 null（走通用 WalletConnect）。 */
-export function connectorOf(
-  session: ConnectedSession,
-): WalletConnectorId | null {
+function connectorOf(session: ConnectedSession): WalletConnectorId | null {
   const name = session.peer?.metadata?.name?.toLowerCase() ?? "";
   if (name.includes("metamask")) return "metamask";
   if (name.includes("okx") || name.includes("okex")) return "okx";

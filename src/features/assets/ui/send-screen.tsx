@@ -1,10 +1,10 @@
 import * as Clipboard from "expo-clipboard";
+import { fill, formatMoney, shortenAddress } from "../../../core/i18n/format";
 import { useRef, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import { CHAINS, type ChainId } from "../../../core/gateways/types";
 import { evmChainIdOf } from "../../../core/wallet/config/wallet-runtime-config";
-import { formatMoney, shortenAddress } from "../../../core/i18n/format";
 import {
   compare,
   fromDecimal,
@@ -55,13 +55,6 @@ import { useRequireVerification } from "../../security/use-require-verification"
  */
 const ADDRESS_BOOK: { label: string; address: string }[] = [];
 const EVM_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
-
-function fill(template: string, values: Record<string, string>): string {
-  return Object.entries(values).reduce(
-    (text, [key, value]) => text.replace(`{${key}}`, value),
-    template,
-  );
-}
 
 /** A-05 转出：地址（粘贴 / 地址簿）→ 网络与币种联动 → 数量 → 确认层 → 三段进度。 */
 export function SendScreen({

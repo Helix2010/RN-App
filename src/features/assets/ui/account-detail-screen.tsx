@@ -1,14 +1,15 @@
 import * as Clipboard from "expo-clipboard";
-import { useRef, useState } from "react";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useFoundationRuntime } from "../../../app/runtime-context";
-import { CHAINS, type ChainId } from "../../../core/gateways/types";
 import {
+  fill,
   formatDateTime,
   formatMoney,
   formatUsd,
   shortenAddress,
 } from "../../../core/i18n/format";
+import { useRef, useState } from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useFoundationRuntime } from "../../../app/runtime-context";
+import { CHAINS, type ChainId } from "../../../core/gateways/types";
 import { pickTranslation } from "../../../core/i18n/localized-text";
 import { isNegative, toApproxNumber } from "../../../core/money/money";
 import {
@@ -47,13 +48,6 @@ import {
 } from "../../predict/ui/split-merge-sheet";
 
 const PREDICT_CONTRACT = "0x8a1c4e0b2d7f9a3c5e6b8d0f1a2c3e4d5f6a7f042";
-
-function fill(template: string, values: Record<string, string>): string {
-  return Object.entries(values).reduce(
-    (text, [key, value]) => text.replace(`{${key}}`, value),
-    template,
-  );
-}
 
 /** A-03 账户详情：预测账户（三格 + 资金记录）或钱包（地址 + 按链筛选）。 */
 export function AccountDetailScreen({

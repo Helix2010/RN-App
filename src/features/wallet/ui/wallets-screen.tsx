@@ -1,11 +1,11 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { fill, shortenAddress } from "../../../core/i18n/format";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import { useGateways } from "../../../core/gateways/gateway-context";
 import { copyToClipboard } from "../../../core/ui/copy-to-clipboard";
-import { shortenAddress } from "../../../core/i18n/format";
 import { explorerAddressUrl } from "../../../core/wallet/config/wallet-runtime-config";
 import {
   ActionButton,
@@ -33,16 +33,6 @@ import { SRow } from "../../profile/profile-screen";
 import { useSession } from "../../session/hooks/use-session";
 import { requestAuth } from "../../session/model/auth-sheet-store";
 import { useSwitchAccount, useWalletAccounts } from "../hooks/use-wallet";
-
-function fill(
-  template: string,
-  values: Record<string, string | number>,
-): string {
-  return Object.entries(values).reduce(
-    (text, [key, value]) => text.replace(`{${key}}`, String(value)),
-    template,
-  );
-}
 
 /** S-09 钱包管理：当前使用 / 其他钱包 单选切换；当前钱包操作组；添加钱包复用 L-02。 */
 export function WalletsScreen({

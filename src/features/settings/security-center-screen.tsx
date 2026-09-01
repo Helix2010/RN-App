@@ -1,8 +1,8 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { fill, formatDate, shortenAddress } from "../../core/i18n/format";
 import { useRef } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../app/runtime-context";
-import { formatDate, shortenAddress } from "../../core/i18n/format";
 import { usePreferencesStore } from "../../core/preferences/preferences-store";
 import {
   Body,
@@ -26,16 +26,6 @@ import { Group, SRow } from "../profile/profile-screen";
 import { useAppLockToggle } from "../security/use-app-lock-toggle";
 import { useSession, useSignOut } from "../session/hooks/use-session";
 import { useWalletAccounts } from "../wallet/hooks/use-wallet";
-
-function fill(
-  template: string,
-  values: Record<string, string | number>,
-): string {
-  return Object.entries(values).reduce(
-    (text, [key, value]) => text.replace(`{${key}}`, String(value)),
-    template,
-  );
-}
 
 /** S-08 安全中心（钱包身份）：安全等级由本机可判定项计算；应用保护 / 钱包与会话 / 资金安全 三组；断开所有会话。 */
 export function SecurityCenterScreen({

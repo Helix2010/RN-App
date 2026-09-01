@@ -1,8 +1,8 @@
 import { useNavigation } from "@react-navigation/native";
+import { fill, formatMoney, shortenAddress } from "../../../core/i18n/format";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useEffect, useRef } from "react";
 import { useFoundationRuntime } from "../../../app/runtime-context";
-import { formatMoney, shortenAddress } from "../../../core/i18n/format";
 import {
   AppIcon,
   Body,
@@ -29,13 +29,6 @@ import { tenantDomain, useWalletLogin } from "../hooks/use-session";
 import { useAuthSheet } from "../model/auth-sheet-store";
 import type { AuthIntent, WalletConnectorId } from "../model/session";
 import type { RootStackParamList } from "../../../navigation/types";
-
-function fill(template: string, values: Record<string, string>): string {
-  return Object.entries(values).reduce(
-    (text, [key, value]) => text.replace(`{${key}}`, value),
-    template,
-  );
-}
 
 function intentLabel(
   intent: AuthIntent,

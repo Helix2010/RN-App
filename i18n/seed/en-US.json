@@ -480,6 +480,7 @@
     "send.error.balance": "Insufficient {symbol} balance",
     "send.error.gas": "The network fee is paid in {symbol} and your balance is too low. Top up a little and retry.",
     "send.error.network": "Cannot reach a chain node. Check your connection and retry.",
+    "send.error.noKey": "This device has no key for that account, so it cannot sign. Import the wallet again.",
     "send.error.node": "The node rejected this transaction. Please try again later.",
     "send.error.rejected": "Cancelled — nothing was sent",
     "send.error.timeout": "The wallet did not respond. Open your wallet app to confirm.",

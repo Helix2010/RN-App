@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { fill } from "../../core/i18n/format";
 import { Linking, Modal } from "react-native";
 import { useFoundationRuntime } from "../../app/runtime-context";
 import {
@@ -22,16 +23,6 @@ import {
   Stack,
   toast,
 } from "../../design-system";
-
-function fill(
-  template: string,
-  values: Record<string, string | number>,
-): string {
-  return Object.entries(values).reduce(
-    (text, [key, value]) => text.replace(`{${key}}`, String(value)),
-    template,
-  );
-}
 
 function formatSize(bytes: number | null): string {
   if (!bytes) return "";

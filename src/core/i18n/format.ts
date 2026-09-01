@@ -169,3 +169,22 @@ export function formatDate(iso: string, locale: string): string {
     day: "numeric",
   }).format(new Date(iso));
 }
+
+/**
+ * 把文案里的 `{name}` 占位符换成实际值。
+ *
+ * 曾经有 15 份逐字重复的实现，还分成两个类型签名不同的变体——窄的那个不接受数字，
+ * 复制到新界面时就得先手动 toString。统一到这一份。
+ *
+ * **只替换每个占位符的第一次出现**（`String.replace` 的字符串模式行为）。所以一条
+ * 文案里同一个占位符不要写两次——真踩到了，改文案比改这里更合适。
+ */
+export function fill(
+  template: string,
+  values: Record<string, string | number>,
+): string {
+  return Object.entries(values).reduce(
+    (text, [key, value]) => text.replace(`{${key}}`, String(value)),
+    template,
+  );
+}

@@ -1,8 +1,6 @@
 import {
-  CHAINS,
   memoryStorage,
   nextId,
-  type Chain,
   type ChainId,
   type KeyValueStorage,
   type TokenRef,
@@ -107,10 +105,6 @@ export class MockWalletGateway implements WalletGateway {
     if (this.state) await this.storage.setItem(KEY, JSON.stringify(this.state));
   }
 
-  async listChains(): Promise<Chain[]> {
-    return Object.values(CHAINS);
-  }
-
   async listConnectors(): Promise<WalletConnector[]> {
     return simulate(() => CONNECTORS);
   }
@@ -118,11 +112,6 @@ export class MockWalletGateway implements WalletGateway {
   async listAccounts(): Promise<WalletAccount[]> {
     const state = await this.load();
     return state.accounts;
-  }
-
-  async currentAccount(): Promise<WalletAccount | null> {
-    const state = await this.load();
-    return state.accounts.find((account) => account.current) ?? null;
   }
 
   async connect(connector: WalletConnectorId): Promise<WalletAccount> {

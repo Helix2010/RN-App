@@ -1,5 +1,4 @@
 import type {
-  Chain,
   ChainId,
   KeyValueStorage,
   TokenRef,
@@ -48,7 +47,6 @@ const DEFAULT_SIGN_REASON = "Confirm with your wallet";
 /** 链上数据来源。一期是 Mock 账本；接真链后换成 RPC / 索引器实现。 */
 type WalletChainData = Pick<
   WalletGateway,
-  | "listChains"
   | "listConnectors"
   | "getBalances"
   | "adjustBalance"
@@ -151,11 +149,6 @@ export class EmbeddedWalletGateway implements WalletGateway {
         backedUp: true,
       }));
     return [...embedded, ...external];
-  }
-
-  async currentAccount(): Promise<WalletAccount | null> {
-    const accounts = await this.listAccounts();
-    return accounts.find((account) => account.current) ?? null;
   }
 
   async connect(connector: WalletConnectorId): Promise<WalletAccount> {
@@ -277,10 +270,6 @@ export class EmbeddedWalletGateway implements WalletGateway {
   }
 
   // ---- 链上数据（委托） ----
-
-  listChains(): Promise<Chain[]> {
-    return this.deps.chainData.listChains();
-  }
 
   async listConnectors(): Promise<WalletConnector[]> {
     const base = await this.deps.chainData.listConnectors();

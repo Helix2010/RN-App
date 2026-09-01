@@ -218,6 +218,8 @@ const zhCN = {
   "send.error.node": "节点拒绝了这笔交易，请稍后重试",
   "send.error.tokenMismatch":
     "这个代币的合约信息与已知记录不符，已阻止转出。请联系客服核实。",
+  "send.error.noKey":
+    "这台设备上找不到该账户的密钥，无法签名。请重新导入钱包。",
   "send.error.rejected": "已取消，这笔转出没有发出",
   "send.error.authFailed": "身份验证未通过，这笔转出没有发出",
   "send.error.timeout": "钱包没有响应。请打开钱包 App 确认这笔请求",
@@ -990,6 +992,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
     "The node rejected this transaction. Please try again later.",
   "send.error.tokenMismatch":
     "This token's contract details do not match our records, so the send was blocked. Please contact support.",
+  "send.error.noKey":
+    "This device has no key for that account, so it cannot sign. Import the wallet again.",
   "send.error.rejected": "Cancelled — nothing was sent",
   "send.error.authFailed": "Verification failed — nothing was sent",
   "send.error.timeout":

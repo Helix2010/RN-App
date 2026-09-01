@@ -100,6 +100,12 @@ function setup(options?: {
   return { gateway, vault, chainData, seeded };
 }
 
+/** 界面拿"当前账户"就是这么拿的：listAccounts 里带 current 标记的那一条。 */
+async function currentOf(gateway: EmbeddedWalletGateway) {
+  const accounts = await gateway.listAccounts();
+  return accounts.find((account) => account.current) ?? null;
+}
+
 function fakeExternal(): ExternalWalletConnector {
   return {
     connect: jest.fn(async () => ({
@@ -133,7 +139,7 @@ describe("EmbeddedWalletGateway", () => {
   it("has no accounts and refuses to connect before a wallet is provisioned", async () => {
     const { gateway } = setup();
     expect(await gateway.listAccounts()).toEqual([]);
-    expect(await gateway.currentAccount()).toBeNull();
+    expect(await currentOf(gateway)).toBeNull();
     await expect(gateway.connect("embedded")).rejects.toBeInstanceOf(
       WalletNotProvisionedError,
     );
@@ -152,7 +158,7 @@ describe("EmbeddedWalletGateway", () => {
     expect(seeded).toEqual([account.address]);
 
     await gateway.markBackedUp(account.address);
-    expect((await gateway.currentAccount())?.backedUp).toBe(true);
+    expect((await currentOf(gateway))?.backedUp).toBe(true);
   });
 
   it("imports a mnemonic and signs a message that recovers to that address", async () => {
@@ -194,7 +200,7 @@ describe("EmbeddedWalletGateway", () => {
     // 断开只是取消选中；密钥仍在 Vault 里，否则用户资产就没了
     expect(await vault.has(account.address)).toBe(true);
     expect(await gateway.listAccounts()).toHaveLength(1);
-    expect(await gateway.currentAccount()).toBeNull();
+    expect(await currentOf(gateway)).toBeNull();
   });
 
   it("switches between several wallets and remembers the choice", async () => {
@@ -208,7 +214,7 @@ describe("EmbeddedWalletGateway", () => {
     const accounts = await gateway.listAccounts();
     expect(accounts).toHaveLength(2);
     expect(accounts.filter((item) => item.current)).toHaveLength(1);
-    expect((await gateway.currentAccount())?.address).toBe(first.address);
+    expect((await currentOf(gateway))?.address).toBe(first.address);
   });
 
   it("reveals the mnemonic of a created wallet", async () => {
@@ -223,7 +229,7 @@ describe("EmbeddedWalletGateway", () => {
     const { gateway } = setup();
     const { account } = await gateway.createWallet();
     await gateway.rename(account.address, "日常钱包");
-    expect((await gateway.currentAccount())?.label).toBe("日常钱包");
+    expect((await currentOf(gateway))?.label).toBe("日常钱包");
   });
 
   it("keeps the built-in wallet in the connector list alongside external ones", async () => {
@@ -336,7 +342,6 @@ describe("EmbeddedWalletGateway", () => {
     const { account } = await gateway.createWallet();
     await gateway.getBalances(account.address);
     expect(spy).toHaveBeenCalledWith(account.address, undefined);
-    expect(await gateway.listChains()).not.toHaveLength(0);
   });
 });
 

@@ -1,4 +1,5 @@
 import * as Clipboard from "expo-clipboard";
+import { fill } from "../../../core/i18n/format";
 import { forwardRef, useState } from "react";
 import { Share } from "react-native";
 import QRCode from "react-native-qrcode-svg";
@@ -18,13 +19,6 @@ import {
   type SheetHandle,
   useTheme,
 } from "../../../design-system";
-
-function fill(template: string, values: Record<string, string>): string {
-  return Object.entries(values).reduce(
-    (text, [key, value]) => text.replace(`{${key}}`, value),
-    template,
-  );
-}
 
 /** A-04 收款：链 chip 只改提示文案，二维码内容为纯地址。 */
 export const ReceiveSheet = forwardRef<

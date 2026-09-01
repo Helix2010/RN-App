@@ -3,18 +3,15 @@ import {
   type ChainId,
   type TokenRef,
 } from "../../../core/gateways/types";
-import { formatTokenPrice, splitLeadingZeros } from "../../../core/i18n/format";
+import {
+  formatTokenPrice,
+  splitLeadingZeros,
+  fill,
+} from "../../../core/i18n/format";
 import { InlineText, Row, Stack } from "../../../design-system";
 
-export function fill(
-  template: string,
-  values: Record<string, string | number>,
-): string {
-  return Object.entries(values).reduce(
-    (text, [key, value]) => text.replace(`{${key}}`, String(value)),
-    template,
-  );
-}
+// 本模块内部也用它；其它屏幕一直从这里取，保持入口不变
+export { fill };
 
 const CHAIN_COLORS: Record<ChainId, string> = {
   bsc: "#F0B90B",

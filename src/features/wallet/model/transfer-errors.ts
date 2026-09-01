@@ -3,7 +3,10 @@ import {
   InsufficientBalanceError,
   InsufficientGasError,
 } from "../../../core/chain/transfer-service";
-import { WalletAuthRequiredError } from "../../../core/wallet/vault/keystore-vault";
+import {
+  WalletAuthRequiredError,
+  WalletVaultError,
+} from "../../../core/wallet/vault/keystore-vault";
 
 /**
  * 把转出失败翻译成用户能照着做的一句话。
@@ -36,6 +39,9 @@ export function transferErrorCopy(error: unknown): TransferErrorCopy {
           ? "send.error.rejected"
           : "send.error.authFailed",
     };
+  // 这台设备上签不了这个账户：记录被删了，或者密文解不开。
+  // 它和"验证未通过"不同——重试不会好，用户要做的是重新导入钱包。
+  if (error instanceof WalletVaultError) return { key: "send.error.noKey" };
   // WalletConnect 的错误类型按 name 判断：instanceof 会把 WalletConnect SDK
   // 拖进转出界面的模块图，而这些类都显式设了 name，本身就是对外契约。
   const name = error instanceof Error ? error.name : "";

@@ -4,7 +4,10 @@ import {
   InsufficientGasError,
 } from "../../../core/chain/transfer-service";
 import { UnsignableTransactionError } from "../../../core/wallet/signer/transaction-guard";
-import { WalletAuthRequiredError } from "../../../core/wallet/vault/keystore-vault";
+import {
+  WalletAuthRequiredError,
+  WalletVaultError,
+} from "../../../core/wallet/vault/keystore-vault";
 import { transferErrorCopy } from "./transfer-errors";
 
 describe("transferErrorCopy", () => {
@@ -57,6 +60,15 @@ describe("transferErrorCopy", () => {
 
     expect(transferErrorCopy(rejected).key).toBe("send.error.rejected");
     expect(transferErrorCopy(timeout).key).toBe("send.error.timeout");
+  });
+
+  it("tells the user this device cannot sign for that account", () => {
+    // 真实签名路径会抛它（记录被删 / 密文解不开），落到兜底文案就只剩"转出失败"，
+    // 而用户要做的其实是重新导入钱包
+    expect(
+      transferErrorCopy(new WalletVaultError("account is not in this vault"))
+        .key,
+    ).toBe("send.error.noKey");
   });
 
   it("says nothing was sent when the local guard blocked signing", () => {

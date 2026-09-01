@@ -1,9 +1,14 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import {
+  fill,
+  formatDate,
+  formatUsd,
+  shortenAddress,
+} from "../../core/i18n/format";
 import * as Clipboard from "expo-clipboard";
 import { useEffect, useRef } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../app/runtime-context";
-import { formatDate, formatUsd, shortenAddress } from "../../core/i18n/format";
 import { toApproxNumber } from "../../core/money/money";
 import { usePreferencesStore } from "../../core/preferences/preferences-store";
 import {
@@ -32,16 +37,6 @@ import { usePredictBalance } from "../predict/hooks/use-predict";
 import { useSession, useSignOut } from "../session/hooks/use-session";
 import { requestAuth } from "../session/model/auth-sheet-store";
 import { useWalletAccounts } from "../wallet/hooks/use-wallet";
-
-function fill(
-  template: string,
-  values: Record<string, string | number>,
-): string {
-  return Object.entries(values).reduce(
-    (text, [key, value]) => text.replace(`{${key}}`, String(value)),
-    template,
-  );
-}
 
 /** S-01 个人中心（钱包身份）：头部身份卡、快捷格、钱包 / 我的 / 更多 三组、断开连接并退出。 */
 export function ProfileScreen({

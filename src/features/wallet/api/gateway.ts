@@ -1,9 +1,4 @@
-import type {
-  Chain,
-  ChainId,
-  TokenRef,
-  Tx,
-} from "../../../core/gateways/types";
+import type { ChainId, TokenRef, Tx } from "../../../core/gateways/types";
 import type { Money } from "../../../core/money/money";
 import type { WalletConnectorId } from "../../session/model/session";
 import type {
@@ -32,10 +27,8 @@ export class WalletNotProvisionedError extends Error {
 }
 
 export interface WalletGateway {
-  listChains(): Promise<Chain[]>;
   listConnectors(): Promise<WalletConnector[]>;
   listAccounts(): Promise<WalletAccount[]>;
-  currentAccount(): Promise<WalletAccount | null>;
   connect(connector: WalletConnectorId): Promise<WalletAccount>;
   disconnect(address: string): Promise<void>;
   switchAccount(address: string): Promise<WalletAccount>;

@@ -72,7 +72,12 @@ export function verifyAgainstAllowlist(token: {
   return { status: "verified" };
 }
 
-/** 供测试与管理端提示：某条链上有哪些被客户端背书的合约地址。 */
+/**
+ * 某条链上有哪些被客户端背书的合约地址。
+ *
+ * 目前只有测试在用——它用这份清单反查每条记录都能通过校验，防止表本身写错。
+ * 将来管理端做代币目录时，这里也是"这个地址在 App 里会显示成已验证吗"的判据。
+ */
 export function allowlistedAddresses(chain: ChainId): string[] {
   return Object.keys(ALLOWLIST[chain] ?? {});
 }

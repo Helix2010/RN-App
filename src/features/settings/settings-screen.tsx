@@ -1,4 +1,5 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { fill } from "../../core/i18n/format";
 import * as Clipboard from "expo-clipboard";
 import { useRef } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -29,16 +30,6 @@ import { useSession } from "../session/hooks/use-session";
 import { LANGUAGE_NAMES } from "./language-names";
 import { useAppLockToggle } from "../security/use-app-lock-toggle";
 import { useManualUpdateCheck } from "../updates/use-manual-update-check";
-
-function fill(
-  template: string,
-  values: Record<string, string | number>,
-): string {
-  return Object.entries(values).reduce(
-    (text, [key, value]) => text.replace(`{${key}}`, String(value)),
-    template,
-  );
-}
 
 /** S-02 设置：通用 / 通知 / 交易偏好 / 安全 / 关于 五组，值列直接显示当前设置。 */
 export function SettingsScreen({

@@ -5,6 +5,7 @@ import {
   formatDate,
   formatTimeUntil,
   formatUsd,
+  fill,
 } from "../../../core/i18n/format";
 import { pickTranslation } from "../../../core/i18n/localized-text";
 import { mockNow } from "../../../core/mock/mock-runtime";
@@ -24,15 +25,8 @@ import type {
   PredictEvent,
 } from "../model/predict";
 
-export function fill(
-  template: string,
-  values: Record<string, string | number>,
-): string {
-  return Object.entries(values).reduce(
-    (text, [key, value]) => text.replace(`{${key}}`, String(value)),
-    template,
-  );
-}
+// 本模块内部也用它；其它屏幕一直从这里取，保持入口不变
+export { fill };
 
 const STATUS_TONE: Record<
   MarketStatus,

@@ -1,4 +1,5 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { fill } from "../../../core/i18n/format";
 import { useQueryClient } from "@tanstack/react-query";
 import { LangEn } from "ethers";
 import * as Clipboard from "expo-clipboard";
@@ -43,16 +44,6 @@ function decoysFor(word: string, seed: number, count: number): string[] {
     if (candidate !== word && !picks.includes(candidate)) picks.push(candidate);
   }
   return picks;
-}
-
-function fill(
-  template: string,
-  values: Record<string, string | number>,
-): string {
-  return Object.entries(values).reduce(
-    (text, [key, value]) => text.replace(`{${key}}`, String(value)),
-    template,
-  );
 }
 
 function shuffle<T>(items: T[], seed: number): T[] {

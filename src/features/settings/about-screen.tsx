@@ -1,4 +1,5 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { fill } from "../../core/i18n/format";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRef } from "react";
 import { useFoundationRuntime } from "../../app/runtime-context";
@@ -23,16 +24,6 @@ import { useTenantLogoUri } from "../../app/use-tenant-logo";
 import { Group, SRow } from "../profile/profile-screen";
 import { useManualUpdateCheck } from "../updates/use-manual-update-check";
 import { getCurrentUpdateMetadata } from "../../core/updates/update-service";
-
-function fill(
-  template: string,
-  values: Record<string, string | number>,
-): string {
-  return Object.entries(values).reduce(
-    (text, [key, value]) => text.replace(`{${key}}`, String(value)),
-    template,
-  );
-}
 
 /** S-06 关于：租户品牌、当前版本、版本检查和只读版本信息。 */
 export function AboutScreen({
