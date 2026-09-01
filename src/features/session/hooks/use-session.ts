@@ -102,6 +102,13 @@ export type LoginStep =
       connector: WalletConnectorId;
     };
 
+function reasonOf(error: unknown): "rejected" | "timeout" | "failed" {
+  const message = error instanceof Error ? error.message : "";
+  if (/reject/i.test(message)) return "rejected";
+  if (/timeout/i.test(message)) return "timeout";
+  return "failed";
+}
+
 /**
  * 分步登录（L-02 → L-03）：connect 后停在确认层展示人话版 SIWE，sign 才发起签名。
  */
@@ -127,7 +134,9 @@ export function useWalletLogin(domain: string, signReason?: string) {
           setState({ step: "needs-wallet" });
           return;
         }
-        setState({ step: "error", reason: "failed", connector });
+        // 和 sign 一样区分原因：连接阶段最常见的就是"用户没在钱包里点批准"，
+        // 一律报 failed 的话用户不知道该重试还是该去钱包里看
+        setState({ step: "error", reason: reasonOf(error), connector });
       }
     },
     [domain, session, wallet],
@@ -156,14 +165,9 @@ export function useWalletLogin(domain: string, signReason?: string) {
       setState({ step: "pick" });
       return next;
     } catch (error) {
-      const message = error instanceof Error ? error.message : "";
       setState({
         step: "error",
-        reason: /reject/i.test(message)
-          ? "rejected"
-          : /timeout/i.test(message)
-            ? "timeout"
-            : "failed",
+        reason: reasonOf(error),
         account,
         challenge,
         connector,

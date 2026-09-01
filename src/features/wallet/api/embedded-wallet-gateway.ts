@@ -261,7 +261,7 @@ export class EmbeddedWalletGateway implements WalletGateway {
       : base
           .filter((item) => item.kind === "external")
           // 没有外部连接器实现时如实标记不可用，而不是让用户点了没反应
-          .map((item) => ({ ...item, installed: false }));
+          .map((item) => ({ ...item, configured: false, installed: false }));
     return [...embedded, ...external];
   }
 

@@ -1,7 +1,7 @@
-import * as Clipboard from "expo-clipboard";
 import { useEffect, useRef } from "react";
 import QRCode from "react-native-qrcode-svg";
 import { useFoundationRuntime } from "../../../app/runtime-context";
+import { copyToClipboard } from "../../../core/ui/copy-to-clipboard";
 import {
   AppIcon,
   Body,
@@ -10,11 +10,11 @@ import {
   SectionTitle,
   Sheet,
   Stack,
-  toast,
   useTheme,
   type SheetHandle,
 } from "../../../design-system";
 import { useWalletConnectPairing } from "../model/walletconnect-store";
+import { WALLET_NAMES } from "../model/wallet-names";
 
 /**
  * WalletConnect 配对：展示二维码给桌面 / 其他设备上的钱包扫，
@@ -24,6 +24,8 @@ export function WalletConnectSheet() {
   const { t } = useFoundationRuntime();
   const theme = useTheme();
   const uri = useWalletConnectPairing((state) => state.uri);
+  const reason = useWalletConnectPairing((state) => state.reason);
+  const connector = useWalletConnectPairing((state) => state.connector);
   const dismiss = useWalletConnectPairing((state) => state.dismiss);
   const sheet = useRef<SheetHandle>(null);
   const wasOpen = useRef(false);
@@ -41,15 +43,25 @@ export function WalletConnectSheet() {
 
   const copy = async () => {
     if (!uri) return;
-    await Clipboard.setStringAsync(uri);
-    toast(t("walletconnect.copied"), "success");
+    await copyToClipboard(uri, {
+      success: t("walletconnect.copied"),
+      failure: t("common.copyFailed"),
+    });
   };
 
   return (
     <Sheet
       ref={sheet}
       title={t("walletconnect.title")}
-      subtitle={t("walletconnect.hint")}
+      subtitle={
+        // 用户点的是 MetaMask 却看到二维码时，必须说明本机没装它
+        reason === "wallet-missing" && connector
+          ? t("walletconnect.missingWallet").replace(
+              "{wallet}",
+              WALLET_NAMES[connector] ?? connector,
+            )
+          : t("walletconnect.hint")
+      }
       closeLabel={t("common.close")}
       onDismiss={() => {
         wasOpen.current = false;

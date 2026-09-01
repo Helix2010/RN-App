@@ -1,3 +1,4 @@
+import Constants from "expo-constants";
 import { Linking } from "react-native";
 import {
   isWalletConnectConfigured,
@@ -6,6 +7,7 @@ import {
   walletNetworks,
 } from "../../../core/wallet/config/wallet-runtime-config";
 import type { WalletConnectorId } from "../../session/model/session";
+import { launchLinks, probeLink } from "./wallet-deep-links";
 import {
   WalletConnectConnector,
   WalletConnectUnavailableError,
@@ -17,8 +19,6 @@ import {
  * 根本不会初始化，UI 会把外部钱包如实标记为不可用。
  */
 
-const WALLET_CONNECT_METADATA_URL = "https://walletconnect.com";
-
 let clientPromise: Promise<SignClientLike> | null = null;
 
 // projectId 变了就丢弃已建的客户端，下次连接用新的
@@ -26,9 +26,25 @@ onWalletConfigChange(() => {
   clientPromise = null;
 });
 
+/** 本 App 的身份：钱包里会显示它，批准后也按它回跳。 */
+function appIdentity(): { url: string; native: string } {
+  const extra = Constants.expoConfig?.extra as
+    { apiBaseUrl?: string } | undefined;
+  const scheme = Constants.expoConfig?.scheme;
+  const native = `${typeof scheme === "string" ? scheme : "anyfun"}://`;
+  let url = "https://anyfun.win";
+  try {
+    if (extra?.apiBaseUrl) url = new URL(extra.apiBaseUrl).origin;
+  } catch {
+    // 配置坏了不该让钱包连不上，用兜底域名
+  }
+  return { url, native };
+}
+
 async function createClient(appName: string): Promise<SignClientLike> {
   const projectId = walletConnectProjectId();
   if (!projectId) throw new WalletConnectUnavailableError();
+  const identity = appIdentity();
   // 动态 import：Metro 会把它切成单独的模块，未配置时不进启动路径
   const { SignClient } = await import("@walletconnect/sign-client");
   const client = await SignClient.init({
@@ -36,11 +52,45 @@ async function createClient(appName: string): Promise<SignClientLike> {
     metadata: {
       name: appName,
       description: `${appName} mobile`,
-      url: WALLET_CONNECT_METADATA_URL,
+      url: identity.url,
       icons: [],
+      // 没有 redirect，用户在钱包里点完批准会停在钱包里，回到 App 才看到结果
+      redirect: { native: identity.native },
     },
   });
   return client as unknown as SignClientLike;
+}
+
+/**
+ * 依次尝试候选深链。
+ *
+ * **不要用 `canOpenURL` 做前置判断**：Android 11+ 的 package visibility 会让它
+ * 对未在 manifest `<queries>` 里声明的 scheme 一律返回 false，哪怕钱包装着。
+ * `openURL` 走 startActivity，不受这个限制，所以直接开、开不了再退。
+ */
+async function openFirstAvailable(links: string[]): Promise<boolean> {
+  for (const link of links) {
+    try {
+      await Linking.openURL(link);
+      return true;
+    } catch {
+      // 这个 scheme 打不开就试下一个（OKX 有两个 App）
+    }
+  }
+  return false;
+}
+
+/** 探测钱包是否安装。依赖 manifest 的 queries 声明，探不到就当没装。 */
+export async function isWalletInstalled(
+  connector: WalletConnectorId,
+): Promise<boolean> {
+  const link = probeLink(connector);
+  if (!link) return false;
+  try {
+    return await Linking.canOpenURL(link);
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -53,7 +103,7 @@ export function createWalletConnectConnector(options: {
   present: (input: {
     uri: string;
     connector: WalletConnectorId;
-    deepLink?: string;
+    deepLinks: string[];
   }) => Promise<void>;
 }): WalletConnectConnector {
   // 始终注入：可用性由 `isWalletConnectConfigured()` 动态判定，因为 projectId
@@ -71,43 +121,26 @@ export function createWalletConnectConnector(options: {
         chainId: network.chainId,
       })),
     available: isWalletConnectConfigured,
+    installed: isWalletInstalled,
     openWallet: async (connector) => {
-      const link = walletDeepLink(connector);
-      if (!link) return;
-      // 只在钱包确实装了的时候切过去；没装就留在本应用里，由 UI 提示
-      if (await Linking.canOpenURL(link)) await Linking.openURL(link);
+      await openFirstAvailable(launchLinks(connector));
     },
   });
 }
 
-function walletDeepLink(connector: WalletConnectorId): string | null {
-  switch (connector) {
-    case "metamask":
-      return "metamask://";
-    case "okx":
-      return "okx://";
-    case "trust":
-      return "trust://";
-    default:
-      return null;
-  }
-}
-
 /** 默认的 present：能唤起钱包就唤起，否则把 URI 交给回调（二维码 / 复制）。 */
 export async function openWalletOrFallback(
-  input: { uri: string; connector: WalletConnectorId; deepLink?: string },
+  input: { uri: string; connector: WalletConnectorId; deepLinks?: string[] },
   fallback: (uri: string) => void,
 ): Promise<void> {
-  if (input.deepLink) {
-    const url = `${input.deepLink}${encodeURIComponent(input.uri)}`;
-    try {
-      if (await Linking.canOpenURL(url)) {
-        await Linking.openURL(url);
-        return;
-      }
-    } catch {
-      // 深链不可用就退回二维码
-    }
-  }
+  const links = (input.deepLinks ?? []).map(
+    (link) => `${link}${encodeURIComponent(input.uri)}`,
+  );
+  if (await openFirstAvailable(links)) return;
   fallback(input.uri);
+}
+
+/** 供测试重置模块级客户端缓存。 */
+export function resetWalletConnectClient(): void {
+  clientPromise = null;
 }

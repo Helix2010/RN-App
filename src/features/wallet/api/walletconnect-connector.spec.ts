@@ -33,6 +33,8 @@ function setup(options?: {
   request?: jest.Mock;
   existing?: ConnectedSession[];
   available?: () => boolean;
+  installed?: (connector: string) => Promise<boolean>;
+  approvalTimeoutMs?: number;
 }) {
   const request = options?.request ?? jest.fn(async () => "0xsigned");
   const client: SignClientLike = {
@@ -52,6 +54,8 @@ function setup(options?: {
     openWallet,
     networks: () => NETWORKS,
     available: options?.available,
+    installed: options?.installed ?? (async () => true),
+    approvalTimeoutMs: options?.approvalTimeoutMs,
   };
   return {
     connector: new WalletConnectConnector(deps),
@@ -104,7 +108,7 @@ describe("WalletConnectConnector", () => {
     expect(present).toHaveBeenCalledWith(
       expect.objectContaining({
         connector: "metamask",
-        deepLink: "metamask://wc?uri=",
+        deepLinks: ["metamask://wc?uri="],
       }),
     );
   });
@@ -195,17 +199,58 @@ describe("WalletConnectConnector", () => {
     let ready = false;
     const { connector } = setup({ available: () => ready });
     const before = await connector.listConnectors();
-    expect(before.every((item) => item.installed === false)).toBe(true);
+    expect(before.every((item) => item.configured === false)).toBe(true);
     await expect(connector.connect("metamask")).rejects.toBeInstanceOf(
       WalletConnectUnavailableError,
     );
 
     ready = true;
     const after = await connector.listConnectors();
-    expect(after.every((item) => item.installed === true)).toBe(true);
+    expect(after.every((item) => item.configured === true)).toBe(true);
     await expect(connector.connect("metamask")).resolves.toMatchObject({
       address: ADDRESS,
     });
+  });
+
+  it("keeps a missing wallet app clickable instead of greying it out", async () => {
+    // 装了没装只改文案：置灰才会变成"点了没反应"
+    const { connector } = setup({ installed: async () => false });
+    const connectors = await connector.listConnectors();
+    const metamask = connectors.find((item) => item.id === "metamask");
+    expect(metamask).toMatchObject({ configured: true, installed: false });
+    // 扫码连接不需要本机装钱包
+    expect(
+      connectors.find((item) => item.id === "walletconnect"),
+    ).toMatchObject({ installed: true });
+  });
+
+  it("gives up waiting for approval instead of spinning forever", async () => {
+    const { connector } = setup({
+      approval: () => new Promise(() => {}),
+      approvalTimeoutMs: 10,
+    });
+    await expect(connector.connect("metamask")).rejects.toThrow(/timeout/i);
+  });
+
+  it("lets the user cancel a pairing that is still waiting", async () => {
+    const { connector } = setup({ approval: () => new Promise(() => {}) });
+    const pending = connector.connect("metamask");
+    // present 是同步 resolve 的假实现，下一个微任务里连接已经在等批准
+    await Promise.resolve();
+    connector.cancelConnect();
+    await expect(pending).rejects.toBeInstanceOf(WalletConnectRejectedError);
+  });
+
+  it("remembers which wallet a restored session belongs to", async () => {
+    // 写死 walletconnect 的话，冷启动后用 MetaMask 签名永远不会唤起 MetaMask
+    const { connector, openWallet } = setup({
+      existing: [session({ peer: { metadata: { name: "MetaMask" } } })],
+    });
+    const restored = await connector.restore();
+
+    expect(restored).toHaveLength(1);
+    await connector.signer(ADDRESS).signMessage("hi", { reason: "r" });
+    expect(openWallet).toHaveBeenCalledWith("metamask");
   });
 
   it("refuses to build a signer for an address it never connected", () => {

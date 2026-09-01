@@ -115,6 +115,35 @@ export function ConnectWalletSheet() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [login.state.step]);
 
+  // 连接阶段失败会退回钱包列表。不吭一声的话用户只看到列表复原，
+  // 以为自己没点上——必须说清是超时还是失败。
+  const reportedError = useRef<string | null>(null);
+  useEffect(() => {
+    const state = login.state;
+    if (state.step !== "error" || state.account) {
+      reportedError.current = null;
+      return;
+    }
+    const key = `${state.connector}:${state.reason}`;
+    if (reportedError.current === key) return;
+    reportedError.current = key;
+    const wallet =
+      (connectors.data ?? []).find((item) => item.id === state.connector)
+        ?.name ?? state.connector;
+    toast(
+      fill(
+        t(
+          state.reason === "timeout"
+            ? "login.connectTimeout"
+            : "login.connectFailed",
+        ),
+        { wallet },
+      ),
+      state.reason === "timeout" ? "warning" : "error",
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [login.state]);
+
   const onDismiss = () => {
     wasOpen.current = false;
     login.reset();
@@ -207,7 +236,7 @@ function ConnectorPicker({
     .filter((item) => item.kind === "external" && item.id !== "walletconnect")
     .sort((a, b) => Number(b.installed) - Number(a.installed));
   const externalAvailable =
-    connectors.find((item) => item.id === "walletconnect")?.installed ?? false;
+    connectors.find((item) => item.id === "walletconnect")?.configured ?? false;
   return (
     <Stack gap="$3">
       {embedded.length ? (
@@ -241,12 +270,19 @@ function ConnectorPicker({
             color={item.logoColor}
             title={item.name}
             subtitle={
-              item.installed ? t("login.installed") : t("login.unavailable")
+              busyConnector === item.id
+                ? fill(t("login.opening"), { wallet: item.name })
+                : !item.configured
+                  ? t("login.unavailable")
+                  : item.installed
+                    ? t("login.installed")
+                    : t("login.notInstalled")
             }
             testID={`login-wc-${item.id}`}
             busy={busyConnector === item.id}
-            // 连接器没接上时点了只会静默失败，直接置灰更诚实
-            disabled={!item.installed}
+            // 只有租户没配 projectId 才置灰。没装钱包仍然可点——会退到扫码，
+            // 置灰反而变成"点了没反应"
+            disabled={!item.configured}
             onPress={() => onPick(item.id)}
           />
         ))}
