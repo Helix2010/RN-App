@@ -49,7 +49,25 @@ export function ApprovalsScreen({ onBack }: { onBack: () => void }) {
       onError: () => toast(t("state.error"), "error"),
     });
   const revokeAll = async () => {
-    for (const item of unlimited) await revoke.mutateAsync(item.id);
+    // 中途失败过去会静默半途而废：列表没清干净，也没有任何提示
+    let done = 0;
+    for (const item of unlimited) {
+      try {
+        await revoke.mutateAsync(item.id);
+        done += 1;
+      } catch {
+        toast(
+          done === 0
+            ? t("state.error")
+            : fill(t("approvals.revokedPartly"), {
+                done: String(done),
+                total: String(unlimited.length),
+              }),
+          "error",
+        );
+        return;
+      }
+    }
     toast(t("approvals.revoked"), "success");
   };
 

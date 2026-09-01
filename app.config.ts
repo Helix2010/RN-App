@@ -146,6 +146,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     "expo-localization",
     "expo-secure-store",
     "expo-notifications",
+    // 外部钱包的 package visibility 声明：开发包也要，否则本地调不通深链
+    "./plugins/with-wallet-deep-links.js",
     ...(distributionChannel === "development"
       ? []
       : ["./plugins/with-production-android-optimizations.js"]),

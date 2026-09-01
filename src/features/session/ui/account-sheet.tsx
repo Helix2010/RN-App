@@ -65,13 +65,29 @@ export const AccountSheet = forwardRef<SheetHandle, { onClosed?: () => void }>(
                 borderWidth={current ? 1.5 : 0}
                 borderColor="$primary"
                 onPress={
-                  current
+                  current || switchAccount.isPending
                     ? undefined
-                    : () => switchAccount.mutate(account.address)
+                    : () =>
+                        switchAccount.mutate(account.address, {
+                          // 失败过去是完全静默的：行没反应，用户以为没点上
+                          onError: () =>
+                            toast(t("wallets.switchFailed"), "error"),
+                        })
                 }
                 accessibilityRole="button"
                 accessibilityLabel={account.label}
-                accessibilityState={{ selected: current }}
+                accessibilityState={{
+                  selected: current,
+                  busy:
+                    switchAccount.isPending &&
+                    switchAccount.variables === account.address,
+                }}
+                opacity={
+                  switchAccount.isPending &&
+                  switchAccount.variables === account.address
+                    ? 0.6
+                    : 1
+                }
                 pressStyle={{ opacity: 0.75 }}
               >
                 <Stack

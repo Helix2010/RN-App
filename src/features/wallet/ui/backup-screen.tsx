@@ -85,6 +85,7 @@ export function BackupScreen({
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [wrong, setWrong] = useState(false);
+  const [marking, setMarking] = useState(false);
   // 刚创建的钱包把助记词直接带过来，避免紧接着再弹一次身份验证；
   // 从设置页进来则必须现场解封（会弹系统验证）。
   const freshPhrase = route.params?.phrase;
@@ -135,6 +136,7 @@ export function BackupScreen({
     setTimeout(() => void Clipboard.setStringAsync(""), 60_000);
   };
   const verify = async () => {
+    if (marking) return;
     const ok =
       words.length === WORD_COUNT &&
       targets.every((index) => answers[index] === words[index]);
@@ -143,9 +145,17 @@ export function BackupScreen({
       toast(t("backup.wrong"), "error");
       return;
     }
-    if (embedded) await wallet.markBackedUp(embedded.address);
-    void queryClient.invalidateQueries({ queryKey: ["wallet-accounts"] });
-    setStep(3);
+    setMarking(true);
+    try {
+      // 答对了但这一步失败过去是静默的：用户停在原页面，不知道备份没记上
+      if (embedded) await wallet.markBackedUp(embedded.address);
+      void queryClient.invalidateQueries({ queryKey: ["wallet-accounts"] });
+      setStep(3);
+    } catch {
+      toast(t("backup.markFailed"), "error");
+    } finally {
+      setMarking(false);
+    }
   };
 
   return (
@@ -297,11 +307,11 @@ export function BackupScreen({
                 </Stack>
               ))}
               <PrimaryButton
-                disabled={targets.some((index) => !answers[index])}
+                disabled={marking || targets.some((index) => !answers[index])}
                 onPress={() => void verify()}
                 testID="backup-verify"
               >
-                {t("common.confirm")}
+                {marking ? t("common.processing") : t("common.confirm")}
               </PrimaryButton>
               <SecondaryButton onPress={() => setStep(1)}>
                 {t("action.back")}

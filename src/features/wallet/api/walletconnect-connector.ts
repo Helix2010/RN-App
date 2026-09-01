@@ -7,6 +7,7 @@ import type {
 import type { WalletConnectorId } from "../../session/model/session";
 import type { WalletConnector } from "../model/wallet";
 import type { ExternalWalletConnector } from "./embedded-wallet-gateway";
+import { pairingLinks } from "./wallet-deep-links";
 
 /**
  * 外部钱包（MetaMask / OKX / Trust / 任意 WalletConnect 钱包）。
@@ -18,13 +19,6 @@ import type { ExternalWalletConnector } from "./embedded-wallet-gateway";
  * 便于单测注入假实现，也便于以后换 SDK。
  */
 
-/** 各钱包的深链前缀；用户点了哪个就直接唤起对应 App。 */
-const WALLET_LINKS: Partial<Record<WalletConnectorId, string>> = {
-  metamask: "metamask://wc?uri=",
-  okx: "okx://main/wc?uri=",
-  trust: "trust://wc?uri=",
-};
-
 type SessionNamespace = {
   accounts: string[];
   chains?: string[];
@@ -33,6 +27,8 @@ type SessionNamespace = {
 export type ConnectedSession = {
   topic: string;
   namespaces: Record<string, SessionNamespace>;
+  /** 对端钱包的自述身份，冷启动恢复时用来认出是哪个钱包 */
+  peer?: { metadata?: { name?: string } };
 };
 
 /** `@walletconnect/sign-client` 中我们实际用到的部分。 */
@@ -62,7 +58,8 @@ export type WalletConnectDeps = {
   present: (input: {
     uri: string;
     connector: WalletConnectorId;
-    deepLink?: string;
+    /** 候选深链（已带 `wc?uri=`）；OKX 有两个 App，按顺序试 */
+    deepLinks: string[];
   }) => Promise<void>;
   /**
    * 服务端下发的链目录（id + EIP-155 chainId）。**不要在这里硬编码 chainId** ——
@@ -73,15 +70,30 @@ export type WalletConnectDeps = {
   openWallet?: (connector: WalletConnectorId) => Promise<void>;
   /**
    * 当前是否可用（projectId 由服务端 bootstrap 下发，启动后才知道）。
-   * 不可用时 `listConnectors` 会如实把外部钱包标成 installed:false。
+   * 不可用时 `listConnectors` 把外部钱包标成 configured:false，UI 会置灰。
    */
   available?: () => boolean;
+  /**
+   * 这个钱包 App 装了没。**只影响提示文案**：没装也允许点，走二维码。
+   * 探测本身依赖 AndroidManifest 的 queries 声明，探不到就当没装。
+   */
+  installed?: (connector: WalletConnectorId) => Promise<boolean>;
+  /** 等待用户在钱包里批准的超时（毫秒）；到点抛 timeout，UI 才能给出反馈 */
+  approvalTimeoutMs?: number;
 };
 
 export class WalletConnectUnavailableError extends Error {
   constructor() {
     super("WalletConnect is not configured for this build");
     this.name = "WalletConnectUnavailableError";
+  }
+}
+
+export class WalletConnectTimeoutError extends Error {
+  constructor() {
+    // message 里必须带 timeout：上层按它区分"用户拒绝"和"等太久"
+    super("wallet approval timeout");
+    this.name = "WalletConnectTimeoutError";
   }
 }
 
@@ -121,44 +133,92 @@ export function parseAccounts(
   return { address, chains: chains.length > 0 ? chains : [fallback] };
 }
 
+/** 从会话对端的自述名字认出钱包；认不出返回 null（走通用 WalletConnect）。 */
+export function connectorOf(
+  session: ConnectedSession,
+): WalletConnectorId | null {
+  const name = session.peer?.metadata?.name?.toLowerCase() ?? "";
+  if (name.includes("metamask")) return "metamask";
+  if (name.includes("okx") || name.includes("okex")) return "okx";
+  if (name.includes("trust")) return "trust";
+  return null;
+}
+
+const DEFAULT_APPROVAL_TIMEOUT_MS = 120_000;
+
 export class WalletConnectConnector implements ExternalWalletConnector {
   private readonly connections = new Map<string, Connection>();
+  /** 正在等批准的那次连接；用户关掉二维码时用它中断 */
+  private pendingReject: ((error: Error) => void) | null = null;
+  /** 二维码刚弹出来就被关掉时，连接还没走到等待批准那一步，用标记补上 */
+  private cancelRequested = false;
 
   constructor(private readonly deps: WalletConnectDeps) {}
 
   async listConnectors(): Promise<WalletConnector[]> {
-    // 配了 projectId 才算可用；能否唤起由深链决定，装了才会跳过去
-    const installed = this.deps.available?.() ?? true;
+    // configured：租户配了 projectId 才能连（没配就置灰）
+    // installed：这个钱包 App 装了没，只用于文案——没装也能点，走二维码
+    const configured = this.deps.available?.() ?? true;
+    const catalog: { id: WalletConnectorId; name: string; color: string }[] = [
+      { id: "metamask", name: "MetaMask", color: "#F6851B" },
+      { id: "okx", name: "OKX Wallet", color: "#000000" },
+      { id: "trust", name: "Trust Wallet", color: "#3375BB" },
+    ];
+    const installed = await Promise.all(
+      catalog.map((item) =>
+        configured && this.deps.installed
+          ? this.deps.installed(item.id).catch(() => false)
+          : Promise.resolve(false),
+      ),
+    );
     return [
+      ...catalog.map((item, index) => ({
+        id: item.id,
+        name: item.name,
+        kind: "external" as const,
+        configured,
+        installed: installed[index] ?? false,
+        logoColor: item.color,
+      })),
       {
-        id: "metamask",
-        name: "MetaMask",
-        kind: "external",
-        installed,
-        logoColor: "#F6851B",
-      },
-      {
-        id: "okx",
-        name: "OKX Wallet",
-        kind: "external",
-        installed,
-        logoColor: "#000000",
-      },
-      {
-        id: "trust",
-        name: "Trust Wallet",
-        kind: "external",
-        installed,
-        logoColor: "#3375BB",
-      },
-      {
-        id: "walletconnect",
+        id: "walletconnect" as WalletConnectorId,
         name: "WalletConnect",
-        kind: "external",
-        installed,
+        kind: "external" as const,
+        configured,
+        // 扫码连接不需要本机装任何钱包
+        installed: configured,
         logoColor: "#3B99FC",
       },
     ];
+  }
+
+  /**
+   * 等用户在钱包里批准。必须有超时：SDK 的 approval() 在用户直接杀掉钱包 App
+   * 时永远不 resolve，UI 就会一直转圈，看着像卡死。
+   */
+  private async awaitApproval(
+    approval: () => Promise<ConnectedSession>,
+  ): Promise<ConnectedSession> {
+    if (this.cancelRequested)
+      throw new WalletConnectRejectedError("user cancelled the pairing");
+    const timeoutMs =
+      this.deps.approvalTimeoutMs ?? DEFAULT_APPROVAL_TIMEOUT_MS;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        approval(),
+        new Promise<never>((_resolve, reject) => {
+          this.pendingReject = reject;
+          timer = setTimeout(
+            () => reject(new WalletConnectTimeoutError()),
+            timeoutMs,
+          );
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+      this.pendingReject = null;
+    }
   }
 
   async connect(connector: WalletConnectorId): Promise<{
@@ -168,6 +228,7 @@ export class WalletConnectConnector implements ExternalWalletConnector {
   }> {
     if (this.deps.available && !this.deps.available())
       throw new WalletConnectUnavailableError();
+    this.cancelRequested = false;
     const client = await this.deps.client();
     const networks = this.deps.networks();
     const { uri, approval } = await client.connect({
@@ -188,10 +249,10 @@ export class WalletConnectConnector implements ExternalWalletConnector {
       await this.deps.present({
         uri,
         connector,
-        deepLink: WALLET_LINKS[connector],
+        deepLinks: pairingLinks(connector),
       });
     }
-    const session = await approval();
+    const session = await this.awaitApproval(approval);
     const parsed = parseAccounts(session.namespaces, networks);
     if (!parsed) throw new WalletConnectRejectedError("no account was shared");
     this.connections.set(parsed.address.toLowerCase(), {
@@ -201,6 +262,16 @@ export class WalletConnectConnector implements ExternalWalletConnector {
       connector,
     });
     return { address: parsed.address, chains: parsed.chains };
+  }
+
+  /** 放弃正在等待的连接（用户关掉了二维码 / 返回了）。 */
+  cancelConnect(): void {
+    this.cancelRequested = true;
+    this.pendingReject?.(
+      // message 带 reject：上层按它归类成"用户取消"而不是"失败"
+      new WalletConnectRejectedError("user cancelled the pairing"),
+    );
+    this.pendingReject = null;
   }
 
   async disconnect(address: string): Promise<void> {
@@ -233,7 +304,8 @@ export class WalletConnectConnector implements ExternalWalletConnector {
         topic: session.topic,
         address: parsed.address,
         chains: parsed.chains,
-        connector: "walletconnect",
+        // 记住当初是哪个钱包：签名时要按它唤起，写死 walletconnect 就永远不跳
+        connector: connectorOf(session) ?? "walletconnect",
       });
       restored.push(parsed);
     }

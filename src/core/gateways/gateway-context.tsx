@@ -19,7 +19,10 @@ import {
   createWalletConnectConnector,
   openWalletOrFallback,
 } from "../../features/wallet/api/walletconnect-client";
-import { presentWalletConnectUri } from "../../features/wallet/model/walletconnect-store";
+import {
+  onPairingDismissed,
+  presentWalletConnectUri,
+} from "../../features/wallet/model/walletconnect-store";
 import { MockWalletGateway } from "../../features/wallet/api/mock-wallet-gateway";
 import { KeystoreVault } from "../wallet/vault/keystore-vault";
 import { expoAuthenticate, expoSecureStore } from "../wallet/vault/expo-ports";
@@ -57,9 +60,15 @@ function createGateways(storage: KeyValueStorage): Gateways {
     appName: appRuntime.applicationId,
     present: (input) =>
       openWalletOrFallback(input, (uri) =>
-        presentWalletConnectUri(uri, input.connector),
+        presentWalletConnectUri(
+          uri,
+          input.connector,
+          // 有候选深链却走到这里 = 本机没装这个钱包，UI 要说明白
+          input.deepLinks.length > 0 ? "wallet-missing" : "scan",
+        ),
       ),
   });
+  onPairingDismissed(() => external.cancelConnect());
   const wallet = new EmbeddedWalletGateway({
     vault,
     chainData,

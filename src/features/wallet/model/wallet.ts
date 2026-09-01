@@ -6,6 +6,9 @@ export type WalletConnector = {
   id: WalletConnectorId;
   name: string;
   kind: "embedded" | "external";
+  /** 租户配了 WalletConnect projectId 才能连；false 时 UI 置灰 */
+  configured: boolean;
+  /** 这个钱包 App 装在本机没有。false 只改文案：点了走扫码，不禁用 */
   installed: boolean;
   logoColor: string;
 };

@@ -53,6 +53,7 @@ function fakeExternal(): ExternalWalletConnector {
         id: "walletconnect" as const,
         name: "WalletConnect",
         kind: "external" as const,
+        configured: true,
         installed: true,
         logoColor: "#3B99FC",
       },

@@ -75,25 +75,44 @@ export function WalletsScreen({
         navigation.popToTop();
         requestAuth();
       },
+      onError: () => toast(t("wallets.switchFailed"), "error"),
     });
   };
+  // 这三个操作以前失败是彻底静默的（void promise 把异常丢了），
+  // 用户只看到界面没变化，以为自己没点上
+  const [renaming, setRenaming] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
   const saveLabel = async () => {
-    if (!address || !label.trim()) return;
-    await wallet.rename(address, label.trim());
-    void queryClient.invalidateQueries({ queryKey: ["wallet-accounts"] });
-    rename.current?.dismiss();
-    toast(t("wallets.renamed"), "success");
+    if (!address || !label.trim() || renaming) return;
+    setRenaming(true);
+    try {
+      await wallet.rename(address, label.trim());
+      void queryClient.invalidateQueries({ queryKey: ["wallet-accounts"] });
+      rename.current?.dismiss();
+      toast(t("wallets.renamed"), "success");
+    } catch {
+      toast(t("wallets.renameFailed"), "error");
+    } finally {
+      setRenaming(false);
+    }
   };
   const onDisconnect = async () => {
-    if (!address) return;
-    await wallet.disconnect(address);
-    void queryClient.invalidateQueries({ queryKey: ["wallet-accounts"] });
-    disconnect.current?.dismiss();
-    const next = others[0];
-    if (next) onSwitch(next.address, next.label);
-    else {
-      queryClient.setQueryData(["session"], null);
-      navigation.popToTop();
+    if (!address || disconnecting) return;
+    setDisconnecting(true);
+    try {
+      await wallet.disconnect(address);
+      void queryClient.invalidateQueries({ queryKey: ["wallet-accounts"] });
+      disconnect.current?.dismiss();
+      const next = others[0];
+      if (next) onSwitch(next.address, next.label);
+      else {
+        queryClient.setQueryData(["session"], null);
+        navigation.popToTop();
+      }
+    } catch {
+      toast(t("wallets.disconnectFailed"), "error");
+    } finally {
+      setDisconnecting(false);
     }
   };
 
@@ -227,6 +246,7 @@ export function WalletsScreen({
         ref={rename}
         title={t("wallets.rename")}
         closeLabel={t("common.close")}
+        locked={renaming}
       >
         <TextField
           value={label}
@@ -237,24 +257,30 @@ export function WalletsScreen({
         />
         <PrimaryButton
           onPress={() => void saveLabel()}
+          disabled={renaming}
           testID="wallets-rename-save"
         >
-          {t("common.save")}
+          {renaming ? t("common.saving") : t("common.save")}
         </PrimaryButton>
       </Sheet>
       <Sheet
         ref={disconnect}
         title={fill(t("wallets.disconnectConfirm"), { label: currentLabel })}
         closeLabel={t("common.close")}
+        locked={disconnecting}
       >
         <PrimaryButton
           backgroundColor="$danger"
           onPress={() => void onDisconnect()}
+          disabled={disconnecting}
           testID="wallets-disconnect-confirm"
         >
-          {t("wallets.disconnect")}
+          {disconnecting ? t("common.processing") : t("wallets.disconnect")}
         </PrimaryButton>
-        <SecondaryButton onPress={() => disconnect.current?.dismiss()}>
+        <SecondaryButton
+          onPress={() => disconnect.current?.dismiss()}
+          disabled={disconnecting}
+        >
           {t("common.cancel")}
         </SecondaryButton>
       </Sheet>
