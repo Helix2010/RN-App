@@ -142,6 +142,14 @@ function networkFor(chain: ChainId): WalletNetwork {
   );
 }
 
+/**
+ * 这条链的 EIP-155 chain id。确认页要显示它——链名可以重名（Base 和 Ethereum 的
+ * 原生币都叫 ETH），chainId 是唯一不会歧义的标识。
+ */
+export function evmChainIdOf(chain: ChainId): number {
+  return networkFor(chain).chainId;
+}
+
 /** 区块浏览器上的地址页；服务端下发的地址优先。 */
 export function explorerAddressUrl(chain: ChainId, address: string): string {
   return `${networkFor(chain).explorerUrl}/address/${address}`;
