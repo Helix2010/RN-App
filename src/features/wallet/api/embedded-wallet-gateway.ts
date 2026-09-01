@@ -240,16 +240,17 @@ export class EmbeddedWalletGateway implements WalletGateway {
   }
 
   async listConnectors(): Promise<WalletConnector[]> {
-    const listed = this.deps.external?.listConnectors
+    const base = await this.deps.chainData.listConnectors();
+    // 内置钱包始终来自基础列表；外部钱包的可用性交给外部连接器判断
+    // （它知道服务端有没有下发 WalletConnect projectId）。
+    const embedded = base.filter((item) => item.kind === "embedded");
+    const external = this.deps.external?.listConnectors
       ? await this.deps.external.listConnectors()
-      : await this.deps.chainData.listConnectors();
-    // 没有外部连接器实现时，如实标记为不可用，而不是让用户点了没反应
-    if (this.deps.external) return listed;
-    return listed.map((connector) =>
-      connector.kind === "external"
-        ? { ...connector, installed: false }
-        : connector,
-    );
+      : base
+          .filter((item) => item.kind === "external")
+          // 没有外部连接器实现时如实标记不可用，而不是让用户点了没反应
+          .map((item) => ({ ...item, installed: false }));
+    return [...embedded, ...external];
   }
 
   getBalances(address: string, chain?: ChainId): Promise<TokenBalance[]> {

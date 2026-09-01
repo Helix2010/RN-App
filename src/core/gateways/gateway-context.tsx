@@ -15,9 +15,15 @@ import type { SessionGateway } from "../../features/session/api/gateway";
 import { HttpSessionGateway } from "../../features/session/api/http-session-gateway";
 import type { WalletGateway } from "../../features/wallet/api/gateway";
 import { EmbeddedWalletGateway } from "../../features/wallet/api/embedded-wallet-gateway";
+import {
+  createWalletConnectConnector,
+  openWalletOrFallback,
+} from "../../features/wallet/api/walletconnect-client";
+import { presentWalletConnectUri } from "../../features/wallet/model/walletconnect-store";
 import { MockWalletGateway } from "../../features/wallet/api/mock-wallet-gateway";
 import { KeystoreVault } from "../wallet/vault/keystore-vault";
 import { expoAuthenticate, expoSecureStore } from "../wallet/vault/expo-ports";
+import { appRuntime } from "../network/api-client";
 import type { KeyValueStorage } from "./types";
 
 export type Gateways = {
@@ -46,10 +52,19 @@ function createGateways(storage: KeyValueStorage): Gateways {
     authenticate: expoAuthenticate,
   });
   const chainData = new MockWalletGateway(storage);
+  // 外部钱包：projectId 由服务端 bootstrap 下发，没下发时 UI 如实标记不可用
+  const external = createWalletConnectConnector({
+    appName: appRuntime.applicationId,
+    present: (input) =>
+      openWalletOrFallback(input, (uri) =>
+        presentWalletConnectUri(uri, input.connector),
+      ),
+  });
   const wallet = new EmbeddedWalletGateway({
     vault,
     chainData,
     storage,
+    external,
     seedDemoBalances: (address) => chainData.seedDemoBalances(address),
   });
   // 会话是真的：挑战由 RN-Server 构造并核销 nonce，签名换回的令牌进安全存储。

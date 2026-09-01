@@ -206,6 +206,8 @@ function ConnectorPicker({
   const external = connectors
     .filter((item) => item.kind === "external" && item.id !== "walletconnect")
     .sort((a, b) => Number(b.installed) - Number(a.installed));
+  const externalAvailable =
+    connectors.find((item) => item.id === "walletconnect")?.installed ?? false;
   return (
     <Stack gap="$3">
       {embedded.length ? (
@@ -238,17 +240,24 @@ function ConnectorPicker({
             letter={item.name[0]}
             color={item.logoColor}
             title={item.name}
-            subtitle={item.installed ? t("login.installed") : undefined}
+            subtitle={
+              item.installed ? t("login.installed") : t("login.unavailable")
+            }
             testID={`login-wc-${item.id}`}
             busy={busyConnector === item.id}
+            // 连接器没接上时点了只会静默失败，直接置灰更诚实
+            disabled={!item.installed}
             onPress={() => onPick(item.id)}
           />
         ))}
         <ConnectorRow
           icon="qrcode-scan"
           title={t("login.otherWallet")}
-          subtitle={t("login.otherHint")}
+          subtitle={
+            externalAvailable ? t("login.otherHint") : t("login.unavailable")
+          }
           testID="login-wc-other"
+          disabled={!externalAvailable}
           onPress={() => onPick("walletconnect")}
           busy={busyConnector === "walletconnect"}
         />
@@ -264,6 +273,7 @@ function ConnectorRow({
   title,
   subtitle,
   busy,
+  disabled,
   onPress,
   testID,
 }: {
@@ -273,6 +283,7 @@ function ConnectorRow({
   title: string;
   subtitle?: string;
   busy?: boolean;
+  disabled?: boolean;
   onPress: () => void;
   testID: string;
 }) {
@@ -284,13 +295,13 @@ function ConnectorRow({
       paddingHorizontal="$3"
       borderRadius="$4"
       backgroundColor="$surfaceVariant"
-      onPress={busy ? undefined : onPress}
+      onPress={busy || disabled ? undefined : onPress}
       accessibilityRole="button"
       accessibilityLabel={title}
-      accessibilityState={{ busy }}
+      accessibilityState={{ busy, disabled }}
       testID={testID}
-      pressStyle={{ opacity: 0.75 }}
-      opacity={busy ? 0.7 : 1}
+      pressStyle={{ opacity: disabled ? 1 : 0.75 }}
+      opacity={disabled ? 0.45 : busy ? 0.7 : 1}
     >
       <Stack
         width={36}

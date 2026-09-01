@@ -1,9 +1,20 @@
 const {
+  withDangerousMod,
   withGradleProperties,
   withSettingsGradle,
 } = require("expo/config-plugins");
+const { appendFileSync, readFileSync } = require("node:fs");
+const { join } = require("node:path");
 
 const MARKER = "// AnyFun production autolinking exclusions";
+const PROGUARD_MARKER = "# AnyFun R8 suppressions";
+// WalletConnect 的依赖树里带进了引用 java.awt 的桌面端代码（com.sun.jna）。
+// Android 上没有 java.awt，这些引用是死代码，R8 只是缺类告警 —— 但会让构建失败。
+const PROGUARD_RULES = `
+${PROGUARD_MARKER}
+-dontwarn java.awt.**
+-dontwarn com.sun.jna.**
+`;
 const AUTOLINKING_CALL = "expoAutolinking.useExpoModules()";
 const AUTOLINKING_SNIPPET = `${MARKER}
 expoAutolinking.exclude = [
@@ -26,6 +37,19 @@ function setGradleProperty(properties, key, value) {
 }
 
 function withProductionAndroidOptimizations(config) {
+  config = withDangerousMod(config, [
+    "android",
+    (result) => {
+      const rules = join(
+        result.modRequest.platformProjectRoot,
+        "app/proguard-rules.pro",
+      );
+      if (!readFileSync(rules, "utf8").includes(PROGUARD_MARKER)) {
+        appendFileSync(rules, PROGUARD_RULES);
+      }
+      return result;
+    },
+  ]);
   config = withSettingsGradle(config, (result) => {
     if (result.modResults.language !== "groovy") {
       throw new Error(

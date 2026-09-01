@@ -47,6 +47,7 @@ import {
 } from "../design-system";
 import { LaunchScreen } from "./launch-screen";
 import { BootstrapSkeleton } from "./bootstrap-skeleton";
+import { applyDeliveredWalletConfig } from "../features/wallet/api/walletconnect-client";
 import {
   registerPushTokenIfAuthorized,
   subscribeToUpdateSignals,
@@ -341,6 +342,12 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
       setNotificationStatus,
     );
   }, [config, snapshot, themePreference]);
+  // 钱包参数（WalletConnect projectId / 链集合）由服务端按租户下发；
+  // 应用后要让连接器列表重新读一次，否则外部钱包会一直停在"未启用"
+  useEffect(() => {
+    applyDeliveredWalletConfig(config.wallet);
+    void queryClient.invalidateQueries({ queryKey: ["wallet-connectors"] });
+  }, [config.wallet, queryClient]);
   useEffect(
     () =>
       subscribeToUpdateSignals((signal) => {

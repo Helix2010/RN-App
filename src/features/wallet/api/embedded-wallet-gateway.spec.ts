@@ -47,6 +47,15 @@ function fakeExternal(): ExternalWalletConnector {
       label: "kenneth.eth",
     })),
     disconnect: jest.fn(async () => {}),
+    listConnectors: async () => [
+      {
+        id: "walletconnect" as const,
+        name: "WalletConnect",
+        kind: "external" as const,
+        installed: true,
+        logoColor: "#3B99FC",
+      },
+    ],
     signer: jest.fn((address: string) => ({
       address,
       signMessage: async () => "0xexternal",
@@ -153,9 +162,25 @@ describe("EmbeddedWalletGateway", () => {
     expect((await gateway.currentAccount())?.label).toBe("日常钱包");
   });
 
+  it("keeps the built-in wallet in the connector list alongside external ones", async () => {
+    const external = fakeExternal();
+    const { gateway } = setup({ external });
+    const connectors = await gateway.listConnectors();
+    // 外部连接器只负责外部钱包，不能把内置钱包项吞掉
+    expect(connectors.filter((item) => item.kind === "embedded")).toHaveLength(
+      1,
+    );
+    expect(
+      connectors.filter((item) => item.kind === "external").length,
+    ).toBeGreaterThan(0);
+  });
+
   it("marks external connectors unavailable when no connector is wired", async () => {
     const { gateway } = setup();
     const connectors = await gateway.listConnectors();
+    expect(connectors.filter((item) => item.kind === "embedded")).toHaveLength(
+      1,
+    );
     expect(connectors.filter((item) => item.kind === "external")).not.toEqual(
       [],
     );

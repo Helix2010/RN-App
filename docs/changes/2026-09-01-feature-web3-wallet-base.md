@@ -116,3 +116,39 @@
 - **线上往返**（`api.anyfun.win`，RN-Server 已部署）：注册 → 会话 → 重放拒绝 → 登出，全部符合预期。
 - **设备端到端**（模拟器干净安装 1.2.4/build18，打线上）：创建钱包 → 12 词备份页 → 退出重开 sheet → "Use my wallet" → 签名登录成功，首页显示 `0x850F…82CE`；生产库 `wallet_user` 出现该地址（`login_count=1`，`first_seen_at` 即注册时间），`wallet_session` 一条未撤销、链为 `bsc,eth,base`，`wallet_auth_nonce` 已核销 ✅ logcat 无 auth 相关错误。
 - 未验证：iOS；会话 7 天到期后的重新登录（需要等或改时钟）。
+
+## P3 连接外部钱包（本次）
+
+### Given / When / Then
+
+- Given 服务端 bootstrap 下发了 `wallet.walletConnectProjectId` When 打开连接钱包 sheet Then 外部钱包（MetaMask / OKX / Trust / 其他）可点。
+- Given 服务端没下发 projectId Then 外部钱包整行置灰并写明"此版本未启用"，而不是点了静默失败。
+- Given 点 MetaMask/OKX/Trust When 已装该钱包 Then 用其深链直接唤起；未装则退回二维码 sheet。
+- Given 点"其他钱包" Then 展示 WalletConnect 配对二维码，可复制连接码，并提示"只在你自己的钱包里确认"。
+- Given 外部钱包批准连接 Then 得到地址与链，账户以 `connector=walletconnect` 记入本应用，**私钥始终留在外部钱包**；`backedUp` 视为 true（备份由钱包自己负责）。
+- Given 用外部钱包签名 Then 请求经 WalletConnect 会话转发，Android 上先把用户切到钱包 App；用户拒绝则抛 `WalletConnectRejectedError`。
+- Given 冷启动后仍有有效 WC 会话 Then `restore()` 恢复，不用重新扫码。
+
+### 技术影响
+
+- 新增 `WalletConnectConnector`（实现 P1 定义的 `ExternalWalletConnector`）：CAIP-10 账户解析、`personal_sign`（**按字节** hex 编码）、`eth_signTypedData_v4`、`eth_signTransaction`；与 SDK 的耦合收在 `SignClientLike` 窄接口后面，便于单测与换库。
+- `walletconnect-client.ts` 惰性 `import("@walletconnect/sign-client")`，未配置 projectId 时不初始化。
+- **参数全部由服务端下发**：bootstrap 新增 `wallet: { walletConnectProjectId, chains }`（RN-Server `5941868`，迁移 26 给已有租户补齐，管理端 PATCH 路径同样归一化）。**没有构建期兜底** —— projectId 是租户配置而不是构建参数，混两条来源会让"某台机器能连、CI 出的包不能连"无法排查。
+- 新增依赖：`@walletconnect/sign-client` / `@walletconnect/utils` / `@walletconnect/react-native-compat` + polyfill（`react-native-url-polyfill`、`fast-text-encoding`），polyfill 在 `index.ts` 最前加载。
+- 生产插件补 R8 抑制规则：WalletConnect 的依赖树里带进引用 `java.awt` 的桌面端代码（`com.sun.jna`），Android 上是死代码，但会让 `minifyReleaseWithR8` 直接失败。规则由插件写入，`prebuild --clean` 不会冲掉。
+- 连接器列表：`staleTime` 从 `Infinity` 改为 30s，并在 `applyDeliveredWalletConfig` 后主动失效——否则 bootstrap 到达前缓存的"未启用"会一直留着。
+
+### 验证
+
+- 单测 14 例（`walletconnect-connector.spec`）：CAIP-10 解析（含未知链回退、无账户返回 null）、required namespaces 的链与方法、深链选择、无账户即拒、`personal_sign` 参数顺序与多字节 hex、typed data 参数顺序、交易按自身链且金额 hex、钱包拒绝→类型化错误、未连接地址拒签、断开与重复断开、冷启动恢复、**projectId 未下发时置灰且 connect 抛 `WalletConnectUnavailableError`**。
+- `embedded-wallet-gateway.spec` 补 2 例：内置钱包项不被外部连接器吞掉、无外部连接器时内置项仍在。
+- `pnpm check` 全绿（47 suites / 241 例）。
+- **设备验证**（模拟器，打线上）：
+  - 未下发 projectId → sheet 中 4 个外部钱包整行置灰、副标题"Not enabled in this build" ✅
+  - 在生产租户配置里临时设一个 projectId → 冷启动后同一 sheet 中外部钱包变为可点、副标题"Installed"，且"内置钱包"分组仍在 ✅（随后已还原为空，`updated_by=claude-revert`）
+  - 这两步之间**只改了服务端配置，没有重新打包** —— 下发链路成立。
+- 未验证：与真实钱包 App 的完整配对与签名（需要一个真实的 WalletConnect projectId，见下）。R8 规则变更后的构建已通过。
+
+### 需要你提供
+
+WalletConnect（Reown）的 **projectId**：在 https://dashboard.reown.com 建一个项目即可，是客户端标识不是密钥。拿到后在管理端（或直接改租户 bootstrap 配置）把 `wallet.walletConnectProjectId` 填上，**不需要重新打包**，App 冷启动即生效。填好后我可以在装了 MetaMask 的设备上跑完整的配对 + 签名验证。
