@@ -9,6 +9,7 @@ import type { WalletConnectorId } from "../../session/model/session";
 import type {
   SendRequest,
   TokenBalance,
+  TransferQuote,
   WalletAccount,
   WalletConnector,
   WalletTransfer,
@@ -59,4 +60,6 @@ export interface WalletGateway {
   send(request: SendRequest): Promise<WalletTransfer>;
   getTransaction(id: string): Promise<Tx | null>;
   listTransfers(address: string): Promise<WalletTransfer[]>;
+  /** 链上手续费预估；这条链没走真链时返回 null。 */
+  quoteTransfer(request: SendRequest): Promise<TransferQuote | null>;
 }

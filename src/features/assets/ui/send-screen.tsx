@@ -4,11 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import { CHAINS, type ChainId } from "../../../core/gateways/types";
 import { evmChainIdOf } from "../../../core/wallet/config/wallet-runtime-config";
-import {
-  formatMoney,
-  formatUsd,
-  shortenAddress,
-} from "../../../core/i18n/format";
+import { formatMoney, shortenAddress } from "../../../core/i18n/format";
 import {
   compare,
   fromDecimal,
@@ -42,17 +38,22 @@ import {
 import { useSession } from "../../session/hooks/use-session";
 import {
   useSendToken,
+  useTransferQuote,
   useWalletBalances,
   useWalletTransfer,
 } from "../../wallet/hooks/use-wallet";
-import type { TokenBalance } from "../../wallet/model/wallet";
+import type { SendRequest, TokenBalance } from "../../wallet/model/wallet";
+import { transferErrorCopy } from "../../wallet/model/transfer-errors";
 import { TxProgress } from "./tx-progress";
 import { useRequireVerification } from "../../security/use-require-verification";
 
-const ADDRESS_BOOK = [
-  { label: "交易所 A", address: "0x9b2e4d17c6a83f05e1b7d9c2a4f6e8b0d3c5a7e9" },
-  { label: "冷钱包", address: "0x1c3e5a7b9d2f4a6c8e0b1d3f5a7c9e2b4d6f8a0c" },
-];
+/**
+ * 地址簿。CRUD 是已知缺口（decisions/0009-known-gaps），所以这里是空的。
+ *
+ * **不能放示例地址**：转出现在会走真链，点一下「交易所 A」就是把真钱发给一个
+ * 谁都不拥有的地址，而转出无法撤销。入口保留，空态如实说明。
+ */
+const ADDRESS_BOOK: { label: string; address: string }[] = [];
 const EVM_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 
 function fill(template: string, values: Record<string, string>): string {
@@ -116,11 +117,24 @@ export function SendScreen({
     !isZero(amount) &&
     !insufficient &&
     !send.isPending;
-  const nativeSymbol = CHAINS[chain].nativeSymbol;
-  const feeText =
-    chain === "bsc"
-      ? `≈ 0.0003 ${nativeSymbol} (${formatUsd(0.19, locale)})`
-      : `≈ 0.0009 ${nativeSymbol} (${formatUsd(4.1, locale)})`;
+  // 预估要用真实的收款地址：ERC-20 转给未初始化的地址 gas 更高
+  const quoteRequest: SendRequest | undefined =
+    address && selected && addressValid
+      ? {
+          from: address,
+          to: to.trim(),
+          token: selected.token,
+          amount: selected.amount,
+        }
+      : undefined;
+  const quote = useTransferQuote(quoteRequest);
+  // Mock 账本（quote 为 null）和预估失败都显示"暂不可估"：编一个数字更糟——
+  // 手续费写小了，用户会以为余额够
+  const feeText = quote.data
+    ? formatMoney(quote.data.fee, locale)
+    : quote.isFetching
+      ? t("send.feeEstimating")
+      : t("send.feeUnavailable");
 
   const paste = async () => {
     const value = (await Clipboard.getStringAsync()).trim();
@@ -139,7 +153,11 @@ export function SendScreen({
           setTxId(record.id);
           toast(t("send.submitted"), "success");
         },
-        onError: () => toast(t("send.failed"), "error"),
+        onError: (error) => {
+          // "转出失败"把所有原因混成一件事；缺 gas 和余额不足要用户做的事完全不同
+          const copy = transferErrorCopy(error);
+          toast(fill(t(copy.key), copy.values ?? {}), "error");
+        },
       },
     );
   };
@@ -303,7 +321,12 @@ export function SendScreen({
                 amount: formatMoney(selected.amount, locale),
               })}
               error={insufficient ? t("transfer.insufficient") : undefined}
-              onMax={() => setText(toDecimalString(selected.amount, 6))}
+              onMax={() =>
+                // 原生币的"全部"必须扣掉手续费，否则这一笔必然失败
+                setText(
+                  toDecimalString(quote.data?.maxAmount ?? selected.amount, 6),
+                )
+              }
               maxLabel={t("common.max")}
               presets={[25, 50, 75, 100]}
               onPreset={(pct) =>
@@ -352,6 +375,16 @@ export function SendScreen({
         title={t("send.addressBook")}
         closeLabel={t("common.close")}
       >
+        {ADDRESS_BOOK.length === 0 ? (
+          <Body
+            fontSize={13}
+            color="$textMuted"
+            textAlign="center"
+            padding="$4"
+          >
+            {t("send.addressBookEmpty")}
+          </Body>
+        ) : null}
         {ADDRESS_BOOK.map((entry) => (
           <Row
             key={entry.address}

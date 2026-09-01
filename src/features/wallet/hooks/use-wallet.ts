@@ -48,6 +48,32 @@ export function useSendToken() {
   });
 }
 
+/**
+ * 链上手续费预估。
+ *
+ * queryKey 刻意不含金额：预估用 1 wei 询链（见 OnchainTransfers.quote），
+ * 结果与用户输入无关，跟着每次按键重查只是在撞节点限流。
+ */
+export function useTransferQuote(request: SendRequest | undefined) {
+  const { wallet } = useGateways();
+  return useQuery({
+    queryKey: [
+      "transfer-quote",
+      request?.token.chain,
+      request?.token.address,
+      request?.from,
+      // 收款地址也要进 key：给合约地址转账的 gas 比给普通地址高，换了收款人
+      // 还用旧报价，确认页显示的手续费就是错的
+      request?.to,
+    ],
+    queryFn: () => wallet.quoteTransfer(request as SendRequest),
+    enabled: Boolean(request),
+    staleTime: 15_000,
+    // 节点抖一下就把手续费显示成"不可估"太吓人，但也不能一直重试
+    retry: 1,
+  });
+}
+
 export function useSwitchAccount() {
   const { wallet, session } = useGateways();
   const queryClient = useQueryClient();
@@ -72,11 +98,11 @@ export function useWalletTransfer(id: string | undefined) {
     queryKey: ["wallet-transfer", id],
     queryFn: () => wallet.getTransaction(id as string),
     enabled: Boolean(id),
-    refetchInterval: (query) =>
-      query.state.data &&
-      (query.state.data.status === "confirmed" ||
-        query.state.data.status === "failed")
-        ? false
-        : 800,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      if (status === "confirmed" || status === "failed") return false;
+      // 已进入等待出块阶段就放慢：真链上出块要几秒，800ms 一次只是在撞节点限流
+      return status === "confirming" ? 2_500 : 800;
+    },
   });
 }

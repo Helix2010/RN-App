@@ -94,13 +94,9 @@ describe("TransferService with a local signer", () => {
   it("builds an ERC-20 transfer as a contract call, not a plain send", async () => {
     const { chain, broadcast } = fakeChain();
     const { signer, submitted } = localSigner();
-    const service = new TransferService({
-      chain,
-      signer: () => signer,
-      reason: "r",
-    });
+    const service = new TransferService({ chain, reason: "r" });
 
-    const result = await service.submit(request());
+    const result = await service.submit(request(), signer);
 
     expect(result).toEqual({ hash: "0xhash", nonce: 4 });
     const tx = submitted[0];
@@ -114,13 +110,12 @@ describe("TransferService with a local signer", () => {
   it("sends a native transfer straight to the recipient", async () => {
     const { chain } = fakeChain();
     const { signer, submitted } = localSigner();
-    const service = new TransferService({
-      chain,
-      signer: () => signer,
-      reason: "r",
-    });
+    const service = new TransferService({ chain, reason: "r" });
 
-    await service.submit(request({ tokenAddress: "native", amount: 5n }));
+    await service.submit(
+      request({ tokenAddress: "native", amount: 5n }),
+      signer,
+    );
 
     expect(submitted[0]?.to).toBe(TO);
     expect(submitted[0]?.value).toBe(5n);
@@ -130,11 +125,7 @@ describe("TransferService with a local signer", () => {
   it("fills every field the guard requires", async () => {
     const { chain } = fakeChain();
     const { signer, submitted } = localSigner();
-    await new TransferService({
-      chain,
-      signer: () => signer,
-      reason: "r",
-    }).submit(request());
+    await new TransferService({ chain, reason: "r" }).submit(request(), signer);
 
     expect(submitted[0]).toMatchObject({
       chainId: 56,
@@ -147,13 +138,9 @@ describe("TransferService with a local signer", () => {
   it("claims the nonce only after the broadcast succeeded", async () => {
     const { chain, noteNonceUsed } = fakeChain();
     const { signer } = localSigner();
-    const service = new TransferService({
-      chain,
-      signer: () => signer,
-      reason: "r",
-    });
+    const service = new TransferService({ chain, reason: "r" });
 
-    await service.submit(request());
+    await service.submit(request(), signer);
     expect(noteNonceUsed).toHaveBeenCalledWith(FROM, 4);
   });
 
@@ -161,13 +148,11 @@ describe("TransferService with a local signer", () => {
     const { chain, noteNonceUsed } = fakeChain();
     (chain.broadcast as jest.Mock).mockRejectedValue(new Error("node down"));
     const { signer } = localSigner();
-    const service = new TransferService({
-      chain,
-      signer: () => signer,
-      reason: "r",
-    });
+    const service = new TransferService({ chain, reason: "r" });
 
-    await expect(service.submit(request())).rejects.toThrow("node down");
+    await expect(service.submit(request(), signer)).rejects.toThrow(
+      "node down",
+    );
     expect(noteNonceUsed).not.toHaveBeenCalled();
   });
 });
@@ -176,14 +161,10 @@ describe("TransferService balance pre-checks", () => {
   it("names the token when its balance is short", async () => {
     const { chain } = fakeChain({ tokenBalance: 10n });
     const { signer } = localSigner();
-    const service = new TransferService({
-      chain,
-      signer: () => signer,
-      reason: "r",
-    });
+    const service = new TransferService({ chain, reason: "r" });
 
     const error = await service
-      .submit(request({ amount: 100n }))
+      .submit(request({ amount: 100n }), signer)
       .catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(InsufficientBalanceError);
@@ -194,13 +175,11 @@ describe("TransferService balance pre-checks", () => {
     // 最高频的用户困惑：有 USDT 但没有 BNB
     const { chain } = fakeChain({ nativeBalance: 0n, tokenBalance: 1_000n });
     const { signer } = localSigner();
-    const service = new TransferService({
-      chain,
-      signer: () => signer,
-      reason: "r",
-    });
+    const service = new TransferService({ chain, reason: "r" });
 
-    const error = await service.submit(request()).catch((e: unknown) => e);
+    const error = await service
+      .submit(request(), signer)
+      .catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(InsufficientGasError);
     expect((error as InsufficientGasError).nativeSymbol).toBe("BNB");
@@ -210,14 +189,10 @@ describe("TransferService balance pre-checks", () => {
     // 原生币转账时金额和手续费出自同一个余额
     const { chain } = fakeChain({ nativeBalance: 30_000n * 1_000_000_000n });
     const { signer } = localSigner();
-    const service = new TransferService({
-      chain,
-      signer: () => signer,
-      reason: "r",
-    });
+    const service = new TransferService({ chain, reason: "r" });
 
     await expect(
-      service.submit(request({ tokenAddress: "native", amount: 1n })),
+      service.submit(request({ tokenAddress: "native", amount: 1n }), signer),
     ).rejects.toBeInstanceOf(InsufficientBalanceError);
   });
 
@@ -225,13 +200,9 @@ describe("TransferService balance pre-checks", () => {
     // estimateGas 在余额不足时 revert，报文是合约内部话，不能给用户看
     const { chain } = fakeChain({ nativeBalance: 0n });
     const { signer } = localSigner();
-    const service = new TransferService({
-      chain,
-      signer: () => signer,
-      reason: "r",
-    });
+    const service = new TransferService({ chain, reason: "r" });
 
-    await service.submit(request()).catch(() => undefined);
+    await service.submit(request(), signer).catch(() => undefined);
     // 估算发生在预检之前是允许的（要拿手续费数字），但预检必须拦在签名之前
     expect(chain.getNextNonce).not.toHaveBeenCalled();
   });
@@ -241,13 +212,9 @@ describe("TransferService with an external wallet", () => {
   it("hands over the intent without nonce or fees", async () => {
     const { chain } = fakeChain();
     const { signer, submitted } = externalSigner();
-    const service = new TransferService({
-      chain,
-      signer: () => signer,
-      reason: "r",
-    });
+    const service = new TransferService({ chain, reason: "r" });
 
-    const result = await service.submit(request());
+    const result = await service.submit(request(), signer);
 
     expect(result).toEqual({ hash: "0xwallethash" });
     expect(submitted[0]?.nonce).toBeUndefined();
@@ -277,13 +244,12 @@ describe("TransferService serialisation", () => {
         return broadcast("0xraw");
       },
     };
-    const service = new TransferService({
-      chain,
-      signer: () => signer,
-      reason: "r",
-    });
+    const service = new TransferService({ chain, reason: "r" });
 
-    await Promise.all([service.submit(request()), service.submit(request())]);
+    await Promise.all([
+      service.submit(request(), signer),
+      service.submit(request(), signer),
+    ]);
 
     expect(maxInFlight).toBe(1);
   });
@@ -294,15 +260,11 @@ describe("TransferService serialisation", () => {
     (chain.broadcast as jest.Mock)
       .mockRejectedValueOnce(new Error("node down"))
       .mockResolvedValueOnce("0xsecond");
-    const service = new TransferService({
-      chain,
-      signer: () => signer,
-      reason: "r",
-    });
+    const service = new TransferService({ chain, reason: "r" });
 
     const [first, second] = await Promise.allSettled([
-      service.submit(request()),
-      service.submit(request()),
+      service.submit(request(), signer),
+      service.submit(request(), signer),
     ]);
 
     expect(first.status).toBe("rejected");
@@ -313,12 +275,7 @@ describe("TransferService serialisation", () => {
 describe("TransferService fee helpers", () => {
   it("quotes the fee so the UI can warn before the user signs", async () => {
     const { chain } = fakeChain();
-    const { signer } = localSigner();
-    const service = new TransferService({
-      chain,
-      signer: () => signer,
-      reason: "r",
-    });
+    const service = new TransferService({ chain, reason: "r" });
 
     await expect(service.estimateFee(request())).resolves.toBe(
       30_000n * 1_000_000_000n,
@@ -327,12 +284,7 @@ describe("TransferService fee helpers", () => {
 
   it("subtracts the fee from a native max-amount, or the send always fails", async () => {
     const { chain } = fakeChain({ nativeBalance: 100_000n * 1_000_000_000n });
-    const { signer } = localSigner();
-    const service = new TransferService({
-      chain,
-      signer: () => signer,
-      reason: "r",
-    });
+    const service = new TransferService({ chain, reason: "r" });
 
     await expect(
       service.maxNativeAmount(request({ tokenAddress: "native" })),
@@ -341,12 +293,7 @@ describe("TransferService fee helpers", () => {
 
   it("reports zero rather than a negative max when the fee exceeds the balance", async () => {
     const { chain } = fakeChain({ nativeBalance: 1n });
-    const { signer } = localSigner();
-    const service = new TransferService({
-      chain,
-      signer: () => signer,
-      reason: "r",
-    });
+    const service = new TransferService({ chain, reason: "r" });
 
     await expect(
       service.maxNativeAmount(request({ tokenAddress: "native" })),

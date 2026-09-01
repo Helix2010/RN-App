@@ -172,6 +172,7 @@ const zhCN = {
   "tx.submitted": "已提交",
   "tx.confirmed": "已确认",
   "tx.failed": "失败",
+  "tx.reverted": "交易在链上被回滚，网络费已消耗",
   "tx.minimize": "最小化，继续浏览",
   "receive.title": "收款",
   "receive.copy": "复制地址",
@@ -192,6 +193,7 @@ const zhCN = {
   "send.addressPlaceholder": "粘贴或扫描地址",
   "send.paste": "粘贴",
   "send.addressBook": "地址簿",
+  "send.addressBookEmpty": "还没有保存的地址",
   "send.addressValid": "{chain} 地址格式校验通过",
   "send.addressInvalid": "地址格式不正确",
   "send.network": "网络",
@@ -206,6 +208,20 @@ const zhCN = {
   "send.confirmTitle": "确认转出",
   "send.submitted": "已提交转出",
   "send.failed": "转出失败",
+  "send.feeEstimating": "估算中…",
+  "send.feeUnavailable": "暂不可估",
+  // 失败原因必须分开讲：最高频的困惑是"我有 USDT，为什么转不了"，
+  // 答案是缺原生币付手续费，而不是余额不足
+  "send.error.gas": "网络费要用 {symbol} 支付，余额不足。请先充入少量后重试。",
+  "send.error.balance": "{symbol} 余额不足",
+  "send.error.network": "连不上链上节点，请检查网络后重试",
+  "send.error.node": "节点拒绝了这笔交易，请稍后重试",
+  "send.error.tokenMismatch":
+    "这个代币的合约信息与已知记录不符，已阻止转出。请联系客服核实。",
+  "send.error.rejected": "已取消，这笔转出没有发出",
+  "send.error.authFailed": "身份验证未通过，这笔转出没有发出",
+  "send.error.timeout": "钱包没有响应。请打开钱包 App 确认这笔请求",
+  "send.error.unsafe": "交易参数不完整，已阻止签名。这笔转出没有发出",
   "predict.title": "预测市场",
   "predict.topUp": "去充值",
   "predict.sort.volume": "成交量",
@@ -925,6 +941,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "tx.submitted": "Submitted",
   "tx.confirmed": "Confirmed",
   "tx.failed": "Failed",
+  "tx.reverted": "Reverted on-chain — the network fee was still spent",
   "tx.minimize": "Minimize and keep browsing",
   "receive.title": "Receive",
   "receive.copy": "Copy address",
@@ -947,6 +964,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "send.addressPlaceholder": "Paste or scan an address",
   "send.paste": "Paste",
   "send.addressBook": "Address book",
+  "send.addressBookEmpty": "No saved addresses yet",
   "send.addressValid": "Valid {chain} address",
   "send.addressInvalid": "Invalid address format",
   "send.network": "Network",
@@ -961,6 +979,23 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "send.confirmTitle": "Confirm send",
   "send.submitted": "Send submitted",
   "send.failed": "Send failed",
+  "send.feeEstimating": "Estimating…",
+  "send.feeUnavailable": "Estimate unavailable",
+  "send.error.gas":
+    "The network fee is paid in {symbol} and your balance is too low. Top up a little and retry.",
+  "send.error.balance": "Insufficient {symbol} balance",
+  "send.error.network":
+    "Cannot reach a chain node. Check your connection and retry.",
+  "send.error.node":
+    "The node rejected this transaction. Please try again later.",
+  "send.error.tokenMismatch":
+    "This token's contract details do not match our records, so the send was blocked. Please contact support.",
+  "send.error.rejected": "Cancelled — nothing was sent",
+  "send.error.authFailed": "Verification failed — nothing was sent",
+  "send.error.timeout":
+    "The wallet did not respond. Open your wallet app to confirm.",
+  "send.error.unsafe":
+    "The transaction was incomplete and signing was blocked. Nothing was sent.",
   "predict.title": "Predict",
   "predict.topUp": "Top up",
   "predict.sort.volume": "Volume",

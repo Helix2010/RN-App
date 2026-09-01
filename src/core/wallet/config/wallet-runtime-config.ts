@@ -82,13 +82,37 @@ function withTrustedChainIds(networks: WalletNetwork[]): WalletNetwork[] {
   });
 }
 
+/**
+ * 只保留 https 的 RPC 端点。
+ *
+ * 服务端已经校验并过滤过两遍，这里是第三层——理由和 chainId 断言一样：
+ * "必须是 https" 是客户端自己就能判断的协议事实，不需要任何配置知识。
+ * 明文 RPC 的后果不只是泄露用户查询的每个地址和余额：中间人还能返回伪造的
+ * 余额和回执，让界面显示一笔从未发生的转账已确认。
+ *
+ * 端点被全部丢掉时那条链的链上功能自然不可用（`rpcUrlsFor` 返回空），
+ * 这是一个已定义的安全状态，不需要额外处理。
+ */
+function withHttpsEndpointsOnly(networks: WalletNetwork[]): WalletNetwork[] {
+  return networks.map((network) => {
+    const secure = network.rpcUrls.filter((url) =>
+      url.trim().toLowerCase().startsWith("https://"),
+    );
+    if (secure.length !== network.rpcUrls.length)
+      console.warn(
+        `[wallet] 丢弃 ${network.id} 的非 https RPC 端点：明文 RPC 可被中间人伪造余额与回执`,
+      );
+    return { ...network, rpcUrls: secure };
+  });
+}
+
 export function applyDeliveredWalletConfig(config: {
   walletConnectProjectId: string;
   chains?: ChainId[];
   networks?: WalletNetwork[];
 }): void {
   const trustedNetworks = config.networks
-    ? withTrustedChainIds(config.networks)
+    ? withHttpsEndpointsOnly(withTrustedChainIds(config.networks))
     : undefined;
   const chains =
     trustedNetworks?.map((network) => network.id) ??

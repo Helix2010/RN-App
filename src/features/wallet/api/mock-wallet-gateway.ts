@@ -355,6 +355,11 @@ export class MockWalletGateway implements WalletGateway {
     return tx ? { ...tx } : null;
   }
 
+  /** Mock 账本没有链上手续费，如实返回 null，让界面显示"暂不可估"。 */
+  async quoteTransfer(): Promise<null> {
+    return null;
+  }
+
   async listTransfers(address: string): Promise<WalletTransfer[]> {
     const state = await this.load();
     return state.transfers.filter(

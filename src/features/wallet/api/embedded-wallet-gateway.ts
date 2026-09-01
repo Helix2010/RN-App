@@ -9,10 +9,15 @@ import type { Money } from "../../../core/money/money";
 import { EmbeddedSigner } from "../../../core/wallet/signer/embedded-signer";
 import type { WalletSigner } from "../../../core/wallet/signer/types";
 import type { KeystoreVault } from "../../../core/wallet/vault/keystore-vault";
+import {
+  trustedTokens,
+  verifyAgainstAllowlist,
+} from "../../../core/wallet/config/token-allowlist";
 import type { WalletConnectorId } from "../../session/model/session";
 import type {
   SendRequest,
   TokenBalance,
+  TransferQuote,
   WalletAccount,
   WalletConnector,
   WalletTransfer,
@@ -22,6 +27,19 @@ import {
   WalletProvisioningUnsupportedError,
   type WalletGateway,
 } from "./gateway";
+
+/**
+ * 代币的下发元数据与客户端已知事实不符。
+ *
+ * 单独一个类型是因为它必须和"余额不足"彻底分开：这是配置错误或篡改的信号，
+ * 用户重试多少次都不会好，界面要如实说"这个代币的信息核对不上"。
+ */
+export class TokenMetadataMismatchError extends Error {
+  constructor(readonly symbol: string) {
+    super(`token metadata does not match the known contract: ${symbol}`);
+    this.name = "TokenMetadataMismatchError";
+  }
+}
 
 const REGISTRY_KEY = "foundation.wallet.accounts.v1";
 const DEFAULT_CHAINS: ChainId[] = ["bsc", "eth", "base"];
@@ -70,11 +88,24 @@ type Registry = {
   meta: Record<string, AccountMeta>;
 };
 
+/**
+ * 真实链上的转出。注入了并且那条链有 RPC 端点时才用它，否则回落到 Mock 账本——
+ * 服务端有没有下发端点本身就是灰度开关。
+ */
+export type OnchainTransferPort = {
+  available: (chain: ChainId) => boolean;
+  send: (request: SendRequest, signer: WalletSigner) => Promise<WalletTransfer>;
+  quote: (request: SendRequest) => Promise<TransferQuote>;
+  listTransfers: (address: string) => WalletTransfer[];
+  getTransaction: (id: string) => Promise<Tx | null>;
+};
+
 type EmbeddedWalletGatewayDeps = {
   vault: KeystoreVault;
   chainData: WalletChainData;
   storage: KeyValueStorage;
   external?: ExternalWalletConnector;
+  onchain?: OnchainTransferPort;
   /**
    * 仅用于演示：给新开通的地址铺一份 Mock 余额，让 Mock 业务面还能被浏览。
    * 真实链数据接入后应直接删掉这个注入。
@@ -265,24 +296,48 @@ export class EmbeddedWalletGateway implements WalletGateway {
     return [...embedded, ...external];
   }
 
-  getBalances(address: string, chain?: ChainId): Promise<TokenBalance[]> {
-    return this.deps.chainData.getBalances(address, chain);
+  async getBalances(address: string, chain?: ChainId): Promise<TokenBalance[]> {
+    const balances = await this.deps.chainData.getBalances(address, chain);
+    // 代币目录（含 verified 标记）由服务端下发，服务端被攻破时它可以把攻击者的
+    // 合约标成"已验证"。所以 verified 只能由客户端那份表授予，元数据不符的丢掉。
+    return trustedTokens(balances);
   }
 
   adjustBalance(address: string, token: TokenRef, delta: Money): Promise<void> {
     return this.deps.chainData.adjustBalance(address, token, delta);
   }
 
-  send(request: SendRequest): Promise<WalletTransfer> {
+  async send(request: SendRequest): Promise<WalletTransfer> {
+    // 纵深防御：余额列表已经滤过一遍，但代币也可能从别处进来（深链、将来的
+    // 目录推送）。decimals 不符时这笔转出的金额会差 10ⁿ 倍，必须挡在签名之前。
+    const verdict = verifyAgainstAllowlist(request.token);
+    if (verdict.status === "mismatch")
+      throw new TokenMetadataMismatchError(request.token.symbol);
+    const onchain = this.deps.onchain;
+    // 那条链没下发 RPC 就走 Mock：不猜端点，也不让用户以为转了真钱
+    if (onchain?.available(request.token.chain))
+      return onchain.send(request, await this.signerFor(request.from));
     return this.deps.chainData.send(request);
   }
 
-  getTransaction(id: string): Promise<Tx | null> {
+  async getTransaction(id: string): Promise<Tx | null> {
+    // 链上交易的 id 是 txHash，只有 onchain 那边认得；查不到再问 Mock
+    const onchain = await this.deps.onchain?.getTransaction(id);
+    if (onchain) return onchain;
     return this.deps.chainData.getTransaction(id);
   }
 
-  listTransfers(address: string): Promise<WalletTransfer[]> {
-    return this.deps.chainData.listTransfers(address);
+  async quoteTransfer(request: SendRequest): Promise<TransferQuote | null> {
+    const onchain = this.deps.onchain;
+    if (!onchain?.available(request.token.chain)) return null;
+    return onchain.quote(request);
+  }
+
+  async listTransfers(address: string): Promise<WalletTransfer[]> {
+    // 链上转账只在内存里，Mock 账本不认识；不合并的话用户转完账回列表会发现记录没了
+    const onchain = this.deps.onchain?.listTransfers(address) ?? [];
+    const ledger = await this.deps.chainData.listTransfers(address);
+    return [...onchain, ...ledger];
   }
 
   // ---- 内部 ----

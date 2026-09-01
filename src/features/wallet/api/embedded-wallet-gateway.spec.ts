@@ -10,15 +10,75 @@ import {
 } from "./gateway";
 import {
   EmbeddedWalletGateway,
+  TokenMetadataMismatchError,
   type ExternalWalletConnector,
+  type OnchainTransferPort,
 } from "./embedded-wallet-gateway";
+import type { ChainId } from "../../../core/gateways/types";
+import { money } from "../../../core/money/money";
+import type { WalletSigner } from "../../../core/wallet/signer/types";
+import type { SendRequest } from "../model/wallet";
 
 const PHRASE =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 const ADDRESS = "0x9858EfFD232B4033E47d90003D41EC34EcaEda94";
 const EXTERNAL = "0x3f4A8C21b7d94E0a1F6c5d2e8b9A7c3D4e5F9a2C";
 
-function setup(options?: { external?: ExternalWalletConnector }) {
+function fakeOnchain(available: ChainId[]) {
+  const sent: { request: SendRequest; signer: WalletSigner }[] = [];
+  const port: OnchainTransferPort = {
+    available: (chain) => available.includes(chain),
+    send: async (request, signer) => {
+      sent.push({ request, signer });
+      return {
+        id: "0xonchain",
+        kind: "send",
+        status: "submitted",
+        hash: "0xonchain",
+        token: request.token,
+        amount: request.amount,
+        counterparty: request.to,
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      };
+    },
+    quote: async () => ({
+      fee: money(21_000n, 18, "BNB"),
+      maxAmount: null,
+    }),
+    getTransaction: async (id) =>
+      id === "0xonchain"
+        ? {
+            id,
+            status: "confirmed" as const,
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          }
+        : null,
+    listTransfers: () => [],
+  };
+  return { port, sent };
+}
+
+function sendRequest(chain: ChainId): SendRequest {
+  return {
+    from: ADDRESS,
+    to: "0x000000000000000000000000000000000000dEaD",
+    token: {
+      chain,
+      address: "native",
+      symbol: "BNB",
+      name: "BNB",
+      decimals: 18,
+      logoColor: "#F0B90B",
+      verified: true,
+    },
+    amount: money(1n, 18, "BNB"),
+  };
+}
+
+function setup(options?: {
+  external?: ExternalWalletConnector;
+  onchain?: OnchainTransferPort;
+}) {
   const storage = memoryStorage();
   const vault = new KeystoreVault({
     storage: memoryStorage(),
@@ -32,6 +92,7 @@ function setup(options?: { external?: ExternalWalletConnector }) {
     chainData,
     storage,
     external: options?.external,
+    onchain: options?.onchain,
     seedDemoBalances: async (address) => {
       seeded.push(address);
     },
@@ -276,5 +337,147 @@ describe("EmbeddedWalletGateway", () => {
     await gateway.getBalances(account.address);
     expect(spy).toHaveBeenCalledWith(account.address, undefined);
     expect(await gateway.listChains()).not.toHaveLength(0);
+  });
+});
+
+describe("EmbeddedWalletGateway on-chain routing", () => {
+  it("sends on-chain for a chain that has endpoints, with a signer for that account", async () => {
+    const { port, sent } = fakeOnchain(["bsc"]);
+    const { gateway, chainData } = setup({ onchain: port });
+    const ledger = jest.spyOn(chainData, "send");
+    const { account } = await gateway.createWallet();
+
+    const record = await gateway.send({
+      ...sendRequest("bsc"),
+      from: account.address,
+    });
+
+    expect(record.hash).toBe("0xonchain");
+    // 签名器必须是这个账户的：拿错账户签出来的交易发不出去
+    expect(sent[0]?.signer.address.toLowerCase()).toBe(
+      account.address.toLowerCase(),
+    );
+    expect(ledger).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the mock ledger for a chain with no endpoints", async () => {
+    // 不猜端点，也不让用户以为转了真钱
+    const { port, sent } = fakeOnchain(["bsc"]);
+    const { gateway, chainData } = setup({ onchain: port });
+    const ledger = jest.spyOn(chainData, "send");
+    const { account } = await gateway.createWallet();
+
+    // Mock 账本里这个新账户没有 ETH，会拒绝——这正好说明这笔走的是账本
+    await gateway
+      .send({ ...sendRequest("eth"), from: account.address })
+      .catch(() => undefined);
+
+    expect(sent).toHaveLength(0);
+    expect(ledger).toHaveBeenCalled();
+  });
+
+  it("asks the chain about a hash it submitted, and the ledger about everything else", async () => {
+    const { port } = fakeOnchain(["bsc"]);
+    const { gateway, chainData } = setup({ onchain: port });
+    const ledger = jest.spyOn(chainData, "getTransaction");
+
+    expect((await gateway.getTransaction("0xonchain"))?.status).toBe(
+      "confirmed",
+    );
+    expect(ledger).not.toHaveBeenCalled();
+
+    await gateway.getTransaction("tx_1");
+    expect(ledger).toHaveBeenCalledWith("tx_1");
+  });
+
+  it("quotes a fee only for chains that are actually on-chain", async () => {
+    const { port } = fakeOnchain(["bsc"]);
+    const { gateway } = setup({ onchain: port });
+
+    expect(await gateway.quoteTransfer(sendRequest("bsc"))).not.toBeNull();
+    // Mock 账本给不出手续费，如实返回 null，界面显示"暂不可估"
+    expect(await gateway.quoteTransfer(sendRequest("eth"))).toBeNull();
+  });
+
+  it("merges on-chain sends into the history the ledger does not know about", async () => {
+    const { port } = fakeOnchain(["bsc"]);
+    const onchainRecord = {
+      id: "0xonchain",
+      kind: "send" as const,
+      status: "submitted" as const,
+      hash: "0xonchain",
+      token: sendRequest("bsc").token,
+      amount: money(1n, 18, "BNB"),
+      counterparty: "0x000000000000000000000000000000000000dEaD",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    port.listTransfers = () => [onchainRecord];
+    const { gateway } = setup({ onchain: port });
+    const { account } = await gateway.createWallet();
+
+    // 不合并的话，用户转完账回到列表会以为这笔没发生
+    expect(await gateway.listTransfers(account.address)).toContainEqual(
+      onchainRecord,
+    );
+  });
+
+  it("keeps using the mock ledger when no on-chain port is wired at all", async () => {
+    const { gateway } = setup();
+    const { account } = await gateway.createWallet();
+    await expect(gateway.quoteTransfer(sendRequest("bsc"))).resolves.toBeNull();
+    expect(await gateway.listTransfers(account.address)).toEqual([]);
+  });
+});
+
+describe("EmbeddedWalletGateway token trust", () => {
+  const FAKE_USDT = "0x000000000000000000000000000000000000beef";
+  const REAL_USDT = "0x55d398326f99059ff775485246999027b3197955";
+
+  it("strips a verified flag the chain data claimed for an unknown contract", async () => {
+    const { gateway, chainData } = setup();
+    jest.spyOn(chainData, "getBalances").mockResolvedValue([
+      {
+        token: {
+          chain: "bsc",
+          address: FAKE_USDT,
+          symbol: "USDT",
+          name: "USDT",
+          decimals: 18,
+          logoColor: "#26A17B",
+          verified: true,
+        },
+        amount: money(1n, 18, "USDT"),
+        usdValue: 1,
+        change24hPct: 0,
+      },
+    ]);
+
+    const [held] = await gateway.getBalances(ADDRESS);
+
+    // 下发的 verified 一律不采纳，只有客户端那份表能授予
+    expect(held?.token.verified).toBe(false);
+  });
+
+  it("refuses to send a token whose decimals contradict the known contract", async () => {
+    // 金额会差 10ⁿ 倍，必须挡在签名之前
+    const { port } = fakeOnchain(["bsc"]);
+    const { gateway } = setup({ onchain: port });
+    const { account } = await gateway.createWallet();
+
+    await expect(
+      gateway.send({
+        ...sendRequest("bsc"),
+        from: account.address,
+        token: {
+          chain: "bsc",
+          address: REAL_USDT,
+          symbol: "USDT",
+          name: "USDT",
+          decimals: 6,
+          logoColor: "#26A17B",
+          verified: true,
+        },
+      }),
+    ).rejects.toBeInstanceOf(TokenMetadataMismatchError);
   });
 });

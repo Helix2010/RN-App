@@ -37,6 +37,17 @@ export type SendRequest = {
   amount: Money;
 };
 
+/**
+ * 转出前的链上预估。只有真链能给出，Mock 返回 null——宁可界面上说"暂不可估"，
+ * 也不要编一个数字：手续费写错会让用户以为余额够。
+ */
+export type TransferQuote = {
+  /** 这笔转账要付的手续费，以链的原生币计价 */
+  fee: Money;
+  /** 原生币"全部转出"的上限（已扣手续费）；ERC-20 转账为 null */
+  maxAmount: Money | null;
+};
+
 export type WalletTransfer = Tx & {
   kind: "send" | "receive";
   token: TokenRef;

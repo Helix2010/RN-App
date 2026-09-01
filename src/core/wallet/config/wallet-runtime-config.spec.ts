@@ -178,3 +178,48 @@ describe("wallet runtime config", () => {
     );
   });
 });
+
+describe("delivered rpc endpoints", () => {
+  it("drops a cleartext endpoint and keeps the https ones", () => {
+    // 明文 RPC 不只泄露地址和余额：中间人还能伪造余额与回执，
+    // 让界面显示一笔从未发生的转账已确认
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    applyDeliveredWalletConfig({
+      walletConnectProjectId: "p",
+      networks: [
+        {
+          id: "bsc",
+          chainId: 56,
+          rpcUrls: ["http://cheap.example", "https://good.example"],
+          explorerUrl: "https://bscscan.com",
+          testnet: false,
+        },
+      ],
+    });
+
+    expect(rpcUrlsFor("bsc")).toEqual(["https://good.example"]);
+    // 静默丢弃是最坏的选项
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("leaves a chain with no usable endpoint rather than falling back to a public node", () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    applyDeliveredWalletConfig({
+      walletConnectProjectId: "p",
+      networks: [
+        {
+          id: "bsc",
+          chainId: 56,
+          rpcUrls: ["http://cheap.example"],
+          explorerUrl: "https://bscscan.com",
+          testnet: false,
+        },
+      ],
+    });
+
+    // 空端点是一个已定义的安全状态：那条链的链上功能不可用
+    expect(rpcUrlsFor("bsc")).toEqual([]);
+    warn.mockRestore();
+  });
+});

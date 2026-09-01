@@ -1,4 +1,4 @@
-import type { ChainId } from "../../gateways/types";
+import type { ChainId, TokenRef } from "../../gateways/types";
 
 /**
  * 客户端认可的主流代币合约地址。
@@ -75,4 +75,32 @@ export function verifyAgainstAllowlist(token: {
 /** 供测试与管理端提示：某条链上有哪些被客户端背书的合约地址。 */
 export function allowlistedAddresses(chain: ChainId): string[] {
   return Object.keys(ALLOWLIST[chain] ?? {});
+}
+
+/**
+ * 代币进入界面前的唯一入口。
+ *
+ * 两件事都必须在这里做，不能留给各个界面自己判断：
+ * 1. **重写 `verified`**——下发的这个字段一律不采纳，只有上面那份表能授予；
+ * 2. **丢掉 `mismatch` 的代币**。decimals 不符会让显示金额差 10ⁿ 倍，显示一个
+ *    错的数字比不显示更危险；这属于配置错误或篡改，同时留一条 warning。
+ */
+export function trustedTokens<T extends { token: TokenRef }>(items: T[]): T[] {
+  const trusted: T[] = [];
+  for (const item of items) {
+    const verdict = verifyAgainstAllowlist(item.token);
+    if (verdict.status === "mismatch") {
+      console.warn(
+        `[wallet] 丢弃 ${item.token.chain} 上的 ${item.token.address}：` +
+          `下发元数据 ${item.token.symbol}/${item.token.decimals} 与已知的 ` +
+          `${verdict.expected.symbol}/${verdict.expected.decimals} 不符`,
+      );
+      continue;
+    }
+    trusted.push({
+      ...item,
+      token: { ...item.token, verified: verdict.status === "verified" },
+    });
+  }
+  return trusted;
 }
