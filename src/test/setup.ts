@@ -1,4 +1,7 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
+import { useMockRuntime } from "../core/mock/mock-runtime";
+import { FIXTURE_NOW } from "../features/predict/fixtures/events";
+
 // AsyncStorage 在 Jest 下没有原生模块，使用官方内存实现。
 jest.mock("@react-native-async-storage/async-storage", () =>
   require("@react-native-async-storage/async-storage/jest/async-storage-mock"),
@@ -31,5 +34,14 @@ jest.mock("expo-clipboard", () => ({
   setStringAsync: jest.fn(async () => true),
   getStringAsync: jest.fn(async () => ""),
 }));
+
+// Mock 世界的"现在"锚定到夹具日期：夹具里的市场截止时间是绝对日期，
+// 真实时间一过 2026-08-31 就会把 ev-btc-120k 之类的事件过滤掉，
+// 让所有渲染 Mock 数据的测试随日历漂移失败。单个用例仍可自行覆盖 clockOffsetMs。
+beforeEach(() => {
+  useMockRuntime
+    .getState()
+    .set({ clockOffsetMs: new Date(FIXTURE_NOW).getTime() - Date.now() });
+});
 
 export {};
