@@ -1,5 +1,6 @@
 import {
   allowlistedAddresses,
+  trustedTokens,
   verifyAgainstAllowlist,
 } from "./token-allowlist";
 
@@ -107,5 +108,91 @@ describe("verifyAgainstAllowlist", () => {
     for (const chain of ["bsc", "eth", "base"] as const)
       for (const address of allowlistedAddresses(chain))
         expect(address).toBe(address.toLowerCase());
+  });
+});
+
+describe("trustedTokens", () => {
+  function balance(overrides: {
+    address: string;
+    symbol: string;
+    decimals: number;
+    verified: boolean;
+  }) {
+    return {
+      token: {
+        chain: "bsc" as const,
+        address: overrides.address,
+        symbol: overrides.symbol,
+        name: overrides.symbol,
+        decimals: overrides.decimals,
+        logoColor: "#26A17B",
+        verified: overrides.verified,
+      },
+      amount: {
+        raw: "1",
+        decimals: overrides.decimals,
+        symbol: overrides.symbol,
+      },
+      usdValue: 1,
+      change24hPct: 0,
+    };
+  }
+
+  it("never lets a delivered verified flag stand on its own", () => {
+    // 服务端被攻破时它可以把攻击者的合约标成"已验证"
+    const [token] = trustedTokens([
+      balance({
+        address: "0x000000000000000000000000000000000000beef",
+        symbol: "USDT",
+        decimals: 18,
+        verified: true,
+      }),
+    ]);
+
+    expect(token?.token.verified).toBe(false);
+  });
+
+  it("grants verified only from its own table", () => {
+    const [token] = trustedTokens([
+      balance({
+        address: "0x55d398326f99059ff775485246999027b3197955",
+        symbol: "USDT",
+        decimals: 18,
+        verified: false,
+      }),
+    ]);
+
+    expect(token?.token.verified).toBe(true);
+  });
+
+  it("drops a known contract whose decimals were changed", () => {
+    // decimals 错会让显示金额差 10ⁿ 倍；显示一个错的数字比不显示更危险
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const result = trustedTokens([
+      balance({
+        address: "0x55d398326f99059ff775485246999027b3197955",
+        symbol: "USDT",
+        decimals: 6,
+        verified: false,
+      }),
+    ]);
+
+    expect(result).toHaveLength(0);
+    // 静默丢弃是最坏的选项
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("keeps the native coin, which has no contract to vouch for", () => {
+    const [token] = trustedTokens([
+      balance({
+        address: "native",
+        symbol: "BNB",
+        decimals: 18,
+        verified: false,
+      }),
+    ]);
+
+    expect(token?.token.verified).toBe(true);
   });
 });

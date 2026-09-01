@@ -9,6 +9,10 @@ import type { Money } from "../../../core/money/money";
 import { EmbeddedSigner } from "../../../core/wallet/signer/embedded-signer";
 import type { WalletSigner } from "../../../core/wallet/signer/types";
 import type { KeystoreVault } from "../../../core/wallet/vault/keystore-vault";
+import {
+  trustedTokens,
+  verifyAgainstAllowlist,
+} from "../../../core/wallet/config/token-allowlist";
 import type { WalletConnectorId } from "../../session/model/session";
 import type {
   SendRequest,
@@ -23,6 +27,19 @@ import {
   WalletProvisioningUnsupportedError,
   type WalletGateway,
 } from "./gateway";
+
+/**
+ * 代币的下发元数据与客户端已知事实不符。
+ *
+ * 单独一个类型是因为它必须和"余额不足"彻底分开：这是配置错误或篡改的信号，
+ * 用户重试多少次都不会好，界面要如实说"这个代币的信息核对不上"。
+ */
+export class TokenMetadataMismatchError extends Error {
+  constructor(readonly symbol: string) {
+    super(`token metadata does not match the known contract: ${symbol}`);
+    this.name = "TokenMetadataMismatchError";
+  }
+}
 
 const REGISTRY_KEY = "foundation.wallet.accounts.v1";
 const DEFAULT_CHAINS: ChainId[] = ["bsc", "eth", "base"];
@@ -279,8 +296,11 @@ export class EmbeddedWalletGateway implements WalletGateway {
     return [...embedded, ...external];
   }
 
-  getBalances(address: string, chain?: ChainId): Promise<TokenBalance[]> {
-    return this.deps.chainData.getBalances(address, chain);
+  async getBalances(address: string, chain?: ChainId): Promise<TokenBalance[]> {
+    const balances = await this.deps.chainData.getBalances(address, chain);
+    // 代币目录（含 verified 标记）由服务端下发，服务端被攻破时它可以把攻击者的
+    // 合约标成"已验证"。所以 verified 只能由客户端那份表授予，元数据不符的丢掉。
+    return trustedTokens(balances);
   }
 
   adjustBalance(address: string, token: TokenRef, delta: Money): Promise<void> {
@@ -288,6 +308,11 @@ export class EmbeddedWalletGateway implements WalletGateway {
   }
 
   async send(request: SendRequest): Promise<WalletTransfer> {
+    // 纵深防御：余额列表已经滤过一遍，但代币也可能从别处进来（深链、将来的
+    // 目录推送）。decimals 不符时这笔转出的金额会差 10ⁿ 倍，必须挡在签名之前。
+    const verdict = verifyAgainstAllowlist(request.token);
+    if (verdict.status === "mismatch")
+      throw new TokenMetadataMismatchError(request.token.symbol);
     const onchain = this.deps.onchain;
     // 那条链没下发 RPC 就走 Mock：不猜端点，也不让用户以为转了真钱
     if (onchain?.available(request.token.chain))

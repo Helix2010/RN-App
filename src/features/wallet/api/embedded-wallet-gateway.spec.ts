@@ -10,6 +10,7 @@ import {
 } from "./gateway";
 import {
   EmbeddedWalletGateway,
+  TokenMetadataMismatchError,
   type ExternalWalletConnector,
   type OnchainTransferPort,
 } from "./embedded-wallet-gateway";
@@ -425,5 +426,58 @@ describe("EmbeddedWalletGateway on-chain routing", () => {
     const { account } = await gateway.createWallet();
     await expect(gateway.quoteTransfer(sendRequest("bsc"))).resolves.toBeNull();
     expect(await gateway.listTransfers(account.address)).toEqual([]);
+  });
+});
+
+describe("EmbeddedWalletGateway token trust", () => {
+  const FAKE_USDT = "0x000000000000000000000000000000000000beef";
+  const REAL_USDT = "0x55d398326f99059ff775485246999027b3197955";
+
+  it("strips a verified flag the chain data claimed for an unknown contract", async () => {
+    const { gateway, chainData } = setup();
+    jest.spyOn(chainData, "getBalances").mockResolvedValue([
+      {
+        token: {
+          chain: "bsc",
+          address: FAKE_USDT,
+          symbol: "USDT",
+          name: "USDT",
+          decimals: 18,
+          logoColor: "#26A17B",
+          verified: true,
+        },
+        amount: money(1n, 18, "USDT"),
+        usdValue: 1,
+        change24hPct: 0,
+      },
+    ]);
+
+    const [held] = await gateway.getBalances(ADDRESS);
+
+    // 下发的 verified 一律不采纳，只有客户端那份表能授予
+    expect(held?.token.verified).toBe(false);
+  });
+
+  it("refuses to send a token whose decimals contradict the known contract", async () => {
+    // 金额会差 10ⁿ 倍，必须挡在签名之前
+    const { port } = fakeOnchain(["bsc"]);
+    const { gateway } = setup({ onchain: port });
+    const { account } = await gateway.createWallet();
+
+    await expect(
+      gateway.send({
+        ...sendRequest("bsc"),
+        from: account.address,
+        token: {
+          chain: "bsc",
+          address: REAL_USDT,
+          symbol: "USDT",
+          name: "USDT",
+          decimals: 6,
+          logoColor: "#26A17B",
+          verified: true,
+        },
+      }),
+    ).rejects.toBeInstanceOf(TokenMetadataMismatchError);
   });
 });

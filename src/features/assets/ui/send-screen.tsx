@@ -47,10 +47,13 @@ import { transferErrorCopy } from "../../wallet/model/transfer-errors";
 import { TxProgress } from "./tx-progress";
 import { useRequireVerification } from "../../security/use-require-verification";
 
-const ADDRESS_BOOK = [
-  { label: "交易所 A", address: "0x9b2e4d17c6a83f05e1b7d9c2a4f6e8b0d3c5a7e9" },
-  { label: "冷钱包", address: "0x1c3e5a7b9d2f4a6c8e0b1d3f5a7c9e2b4d6f8a0c" },
-];
+/**
+ * 地址簿。CRUD 是已知缺口（decisions/0009-known-gaps），所以这里是空的。
+ *
+ * **不能放示例地址**：转出现在会走真链，点一下「交易所 A」就是把真钱发给一个
+ * 谁都不拥有的地址，而转出无法撤销。入口保留，空态如实说明。
+ */
+const ADDRESS_BOOK: { label: string; address: string }[] = [];
 const EVM_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 
 function fill(template: string, values: Record<string, string>): string {
@@ -372,6 +375,16 @@ export function SendScreen({
         title={t("send.addressBook")}
         closeLabel={t("common.close")}
       >
+        {ADDRESS_BOOK.length === 0 ? (
+          <Body
+            fontSize={13}
+            color="$textMuted"
+            textAlign="center"
+            padding="$4"
+          >
+            {t("send.addressBookEmpty")}
+          </Body>
+        ) : null}
         {ADDRESS_BOOK.map((entry) => (
           <Row
             key={entry.address}

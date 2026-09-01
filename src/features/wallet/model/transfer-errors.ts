@@ -43,6 +43,8 @@ export function transferErrorCopy(error: unknown): TransferErrorCopy {
     return { key: "send.error.rejected" };
   if (name === "WalletConnectTimeoutError")
     return { key: "send.error.timeout" };
+  if (name === "TokenMetadataMismatchError")
+    return { key: "send.error.tokenMismatch" };
   // 缺字段的交易被本地守卫拦下了。用户无法自救，但必须知道钱没有动。
   if (name === "UnsignableTransactionError")
     return { key: "send.error.unsafe" };

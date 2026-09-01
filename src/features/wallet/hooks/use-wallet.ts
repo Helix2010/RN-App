@@ -62,6 +62,9 @@ export function useTransferQuote(request: SendRequest | undefined) {
       request?.token.chain,
       request?.token.address,
       request?.from,
+      // 收款地址也要进 key：给合约地址转账的 gas 比给普通地址高，换了收款人
+      // 还用旧报价，确认页显示的手续费就是错的
+      request?.to,
     ],
     queryFn: () => wallet.quoteTransfer(request as SendRequest),
     enabled: Boolean(request),
