@@ -15,6 +15,8 @@ type WalletNetwork = {
   chainId: number;
   rpcUrls: string[];
   explorerUrl: string;
+  /** 测试链。App 里要显式提示，别让用户当成主网用 */
+  testnet: boolean;
 };
 
 type DeliveredWalletConfig = {
@@ -28,6 +30,15 @@ const FALLBACK_CHAIN_IDS: Record<ChainId, number> = {
   eth: 1,
   bsc: 56,
   base: 8453,
+  "op-sepolia": 11155420,
+};
+
+/** 测试链：币无价值，界面上要和主网区分。服务端下发这个标记。 */
+const FALLBACK_TESTNETS: Record<ChainId, boolean> = {
+  eth: false,
+  bsc: false,
+  base: false,
+  "op-sepolia": true,
 };
 
 function fallbackNetworks(chains: ChainId[]): WalletNetwork[] {
@@ -36,6 +47,7 @@ function fallbackNetworks(chains: ChainId[]): WalletNetwork[] {
     chainId: FALLBACK_CHAIN_IDS[id],
     rpcUrls: [],
     explorerUrl: CHAINS[id].explorerUrl,
+    testnet: FALLBACK_TESTNETS[id],
   }));
 }
 
@@ -94,6 +106,7 @@ function networkFor(chain: ChainId): WalletNetwork {
       chainId: FALLBACK_CHAIN_IDS[chain],
       rpcUrls: [],
       explorerUrl: CHAINS[chain].explorerUrl,
+      testnet: FALLBACK_TESTNETS[chain],
     }
   );
 }

@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+/** 链 id 的唯一枚举来源，避免 schema 里散落多份。 */
+const chainIdSchema = z.enum(["bsc", "eth", "base", "op-sepolia"]);
+
 const color = z
   .string()
   .regex(/^(#[0-9a-f]{6}|rgba?\(.+\))$/i, "Expected a safe color value");
@@ -138,16 +141,18 @@ export const bootstrapSchema = z.object({
   wallet: z
     .object({
       walletConnectProjectId: z.string(),
-      chains: z.array(z.enum(["bsc", "eth", "base"])).min(1),
+      chains: z.array(chainIdSchema).min(1),
       // 端点按租户下发；老服务端没有这段时用 chains 推默认值，
       // 不能因为版本落后就让整个 bootstrap 解析失败
       networks: z
         .array(
           z.object({
-            id: z.enum(["bsc", "eth", "base"]),
+            id: chainIdSchema,
             chainId: z.number().int().positive(),
             rpcUrls: z.array(z.url()),
             explorerUrl: z.url(),
+            // 老服务端不下发这个标记，缺省按主网处理
+            testnet: z.boolean().default(false),
           }),
         )
         .optional(),

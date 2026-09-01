@@ -1,3 +1,4 @@
+import type { ChainId } from "../core/gateways/types";
 export type RootStackParamList = {
   AppShell: undefined;
   Profile: undefined;
@@ -8,10 +9,10 @@ export type RootStackParamList = {
   PredictSettlement: { marketId: string };
   Leaderboard: undefined;
   Positions: undefined;
-  DexToken: { chain: "bsc" | "eth" | "base"; address: string };
+  DexToken: { chain: ChainId; address: string };
   Swap:
     | {
-        chain?: "bsc" | "eth" | "base";
+        chain?: ChainId;
         sellAddress?: string;
         buyAddress?: string;
       }
@@ -24,7 +25,7 @@ export type RootStackParamList = {
   WalletBackup: { phrase?: string } | undefined;
   Transfer: { direction?: "deposit" | "withdraw"; amount?: string } | undefined;
   AccountDetail: { kind: "predict" | "wallet" };
-  Send: { chain?: "bsc" | "eth" | "base" } | undefined;
+  Send: { chain?: ChainId } | undefined;
   NotificationSettings: undefined;
   About: undefined;
   SecurityCenter: undefined;

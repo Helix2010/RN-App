@@ -20,7 +20,8 @@ export type Tx = {
   updatedAt: string;
 };
 
-export type ChainId = "bsc" | "eth" | "base";
+/** `op-sepolia` 是测试链：币无价值，界面上必须和主网区分开。 */
+export type ChainId = "bsc" | "eth" | "base" | "op-sepolia";
 
 export type Chain = {
   id: ChainId;
@@ -50,6 +51,15 @@ export const CHAINS: Record<ChainId, Chain> = {
     nativeDecimals: 18,
     color: "#627EEA",
     explorerUrl: "https://etherscan.io",
+  },
+  "op-sepolia": {
+    id: "op-sepolia",
+    name: "OP Sepolia",
+    shortName: "OP Sep",
+    nativeSymbol: "ETH",
+    nativeDecimals: 18,
+    color: "#FF0420",
+    explorerUrl: "https://sepolia-optimism.etherscan.io",
   },
   base: {
     id: "base",

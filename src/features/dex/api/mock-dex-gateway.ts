@@ -54,9 +54,14 @@ type State = {
 
 const KEY = "foundation.mock-state.dex.v1";
 const QUOTE_TTL_MS = 12_000;
-const ROUTERS: Record<
-  ChainId,
-  { name: string; address: string; wrapped: string }
+/** 演示数据里按链取路由器地址；测试链没有路由器，取到空字符串。 */
+function routerAddress(chain: ChainId): string {
+  return ROUTERS[chain]?.address ?? "";
+}
+
+// Partial：测试链上没有真实流动性，兑换直接不支持，别编一个假路由器出来
+const ROUTERS: Partial<
+  Record<ChainId, { name: string; address: string; wrapped: string }>
 > = {
   bsc: {
     name: "PancakeSwap V3",
@@ -124,7 +129,7 @@ export class MockDexGateway implements DexGateway {
         id: nextId("apr"),
         chain: "bsc",
         token: usdt,
-        spender: { name: "PancakeSwap Router", address: ROUTERS.bsc.address },
+        spender: { name: "PancakeSwap Router", address: routerAddress("bsc") },
         allowance: null,
         approvedAt: "2026-08-12T09:00:00Z",
         lastUsedAt: "2026-08-30T04:10:00Z",
@@ -145,7 +150,7 @@ export class MockDexGateway implements DexGateway {
         id: nextId("apr"),
         chain: "base",
         token: aero,
-        spender: { name: "Aerodrome Router", address: ROUTERS.base.address },
+        spender: { name: "Aerodrome Router", address: routerAddress("base") },
         allowance: fromDecimal("120", 18, "AERO"),
         approvedAt: "2026-08-28T15:00:00Z",
       },
@@ -392,6 +397,7 @@ export class MockDexGateway implements DexGateway {
         request.slippageBps ?? (priceImpactPct > 1 ? 100 : 50);
       const minReceived = sub(amountOut, scaleBps(amountOut, slippageBps));
       const router = ROUTERS[request.chain];
+      if (!router) throw new Error(`swap is not available on ${request.chain}`);
       const native = request.sellToken.address === "native";
       const route = native
         ? [request.sellToken.symbol, router.wrapped, request.buyToken.symbol]
