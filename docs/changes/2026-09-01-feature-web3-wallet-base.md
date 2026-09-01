@@ -175,6 +175,15 @@ WalletConnect（Reown）的 **projectId**：在 https://dashboard.reown.com 建�
 - **设备验证**（模拟器）：停在助记词页时 uiautomator 能读到 12 个词（页面确实在显示），但 `adb exec-out screencap` 返回**全黑**（15KB 纯黑 PNG）；返回上一页后同样的命令拿到 121KB 正常内容 —— 保护生效且正确释放 ✅
 - iOS 未验证（iOS 只能拦截截图事件，无法像 Android 的 `FLAG_SECURE` 那样阻止抓屏）。
 
+## 依赖对齐修正
+
+CI 的 `check-expo-doctor` 抓到两个真问题（本地 `pnpm check` 不覆盖，已修）：
+
+- `@walletconnect/react-native-compat` 的 peer 依赖 `@react-native-community/netinfo` 只是传递依赖。pnpm 的严格 node_modules 布局下它不会被提到应用根目录，原生自动链接可能拿不到 —— 运行时才崩。改为按 SDK 版本直接安装（`12.0.1`）。
+- `react-native-get-random-values` 装成了 `2.0.0`，与 Expo SDK 57 期望的 `~1.11.0` 是大版本不匹配。改为 `^1.11.0`（polyfill 的用法不变）。
+
+修正后 `expo-doctor` 21/21 通过，`pnpm check` 48 suites / 244 例全绿，release 包重建并在设备上冷启动无错误。
+
 ## 剩余（P4 未做的部分）
 
 - `expo-secure-store` 的条目仍是 `requireAuthentication:false`：身份验证由 Vault 在应用内强制，而不是 Keystore 硬件强制。计划：设备已录入生物识别时改用 `requireAuthentication: true`，未录入时回退（否则把用户锁死）。
