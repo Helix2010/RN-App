@@ -99,11 +99,14 @@ describe("WalletConnectConnector", () => {
     expect(result).toEqual({ address: ADDRESS, chains: ["bsc", "eth"] });
 
     const namespaces = (client.connect as jest.Mock).mock.calls[0][0]
-      .requiredNamespaces.eip155;
+      .optionalNamespaces.eip155;
     // 链与 chainId 都来自下发的目录
     expect(namespaces.chains).toEqual(["eip155:56", "eip155:1"]);
     expect(namespaces.methods).toContain("personal_sign");
     expect(namespaces.methods).toContain("eth_signTypedData_v4");
+    expect(namespaces.methods).toContain("eth_sendTransaction");
+    // MetaMask 不支持它。声明成"钱包必须支持"会被拒绝配对
+    expect(namespaces.methods).not.toContain("eth_signTransaction");
     // 用 MetaMask 的深链把用户带过去
     expect(present).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -166,7 +169,7 @@ describe("WalletConnectConnector", () => {
   it("uses the transaction's own chain and hex-encodes amounts", async () => {
     const { connector, request } = setup();
     await connector.connect("metamask");
-    await connector.signer(ADDRESS).signTransaction(
+    await connector.signer(ADDRESS).submitTransaction(
       {
         chainId: 8453,
         to: "0x000000000000000000000000000000000000dEaD",
@@ -174,6 +177,9 @@ describe("WalletConnectConnector", () => {
         gasLimit: 21000n,
       },
       { reason: "r" },
+      async () => {
+        throw new Error("外部钱包自己广播，不该用到这个回调");
+      },
     );
     const call = request.mock.calls[0][0];
     expect(call.chainId).toBe("eip155:8453");

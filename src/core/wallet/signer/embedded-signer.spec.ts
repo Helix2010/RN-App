@@ -68,7 +68,8 @@ describe("EmbeddedSigner", () => {
 
   it("signs an EIP-1559 transaction whose recovered sender is its own address", async () => {
     const { signer } = await setup();
-    const signed = await signer.signTransaction(
+    let signed = "";
+    const hash = await signer.submitTransaction(
       {
         chainId: 56,
         to: "0x000000000000000000000000000000000000dEaD",
@@ -79,7 +80,13 @@ describe("EmbeddedSigner", () => {
         maxPriorityFeePerGas: 1_000_000_000n,
       },
       context,
+      // 签名器不碰网络：广播由调用方注入，这里顺手把原始交易捕获下来
+      async (raw) => {
+        signed = raw;
+        return "0xhash";
+      },
     );
+    expect(hash).toBe("0xhash");
     const parsed = Transaction.from(signed);
     expect(parsed.from).toBe(ADDRESS);
     expect(parsed.chainId).toBe(56n);
