@@ -28,7 +28,7 @@ const DEFAULT_CHAINS: ChainId[] = ["bsc", "eth", "base"];
 const DEFAULT_SIGN_REASON = "Confirm with your wallet";
 
 /** 链上数据来源。一期是 Mock 账本；接真链后换成 RPC / 索引器实现。 */
-export type WalletChainData = Pick<
+type WalletChainData = Pick<
   WalletGateway,
   | "listChains"
   | "listConnectors"
@@ -49,6 +49,11 @@ export type ExternalWalletConnector = {
   disconnect: (address: string) => Promise<void>;
   signer: (address: string) => WalletSigner;
   listConnectors?: () => Promise<WalletConnector[]>;
+  /**
+   * 恢复冷启动后仍有效的外部钱包会话。registry 会持久化外部账户，但连接器的
+   * 内存连接不会，不恢复就会在签名时报"未连接"。
+   */
+  restore?: () => Promise<{ address: string }[]>;
 };
 
 type AccountMeta = {
@@ -65,7 +70,7 @@ type Registry = {
   meta: Record<string, AccountMeta>;
 };
 
-export type EmbeddedWalletGatewayDeps = {
+type EmbeddedWalletGatewayDeps = {
   vault: KeystoreVault;
   chainData: WalletChainData;
   storage: KeyValueStorage;
@@ -228,9 +233,16 @@ export class EmbeddedWalletGateway implements WalletGateway {
       return new EmbeddedSigner(address, this.deps.vault);
     const registry = await this.readRegistry();
     const meta = registry.meta[address.toLowerCase()];
-    if (meta && meta.connector !== "embedded" && this.deps.external)
-      return this.deps.external.signer(address);
-    throw new Error("no signer is available for this account");
+    const external = this.deps.external;
+    if (!meta || meta.connector === "embedded" || !external)
+      throw new Error("no signer is available for this account");
+    try {
+      return external.signer(address);
+    } catch {
+      // 冷启动后内存里没有连接：先恢复一次再试，否则用户每次重启都要重新扫码
+      await external.restore?.();
+      return external.signer(address);
+    }
   }
 
   // ---- 链上数据（委托） ----

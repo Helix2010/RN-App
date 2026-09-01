@@ -47,6 +47,7 @@ function fakeExternal(): ExternalWalletConnector {
       label: "kenneth.eth",
     })),
     disconnect: jest.fn(async () => {}),
+    restore: jest.fn(async () => [{ address: EXTERNAL }]),
     listConnectors: async () => [
       {
         id: "walletconnect" as const,
@@ -230,6 +231,32 @@ describe("EmbeddedWalletGateway", () => {
       "walletconnect",
     ]);
     expect(accounts.filter((item) => item.current)).toHaveLength(1);
+  });
+
+  it("restores a cold-started external session instead of failing to sign", async () => {
+    const external = fakeExternal();
+    // 模拟冷启动：registry 里还有外部账户，但连接器内存里没有连接
+    let connected = false;
+    external.signer = jest.fn((address: string) => {
+      if (!connected) throw new Error("wallet is not connected");
+      return {
+        address,
+        signMessage: async () => "0xrestored",
+        signTypedData: async () => "0xrestored",
+        signTransaction: async () => "0xrestored",
+      };
+    });
+    external.restore = jest.fn(async () => {
+      connected = true;
+      return [{ address: EXTERNAL }];
+    });
+    const { gateway } = setup({ external });
+    await gateway.connect("walletconnect");
+
+    await expect(gateway.signMessage(EXTERNAL, "hi")).resolves.toBe(
+      "0xrestored",
+    );
+    expect(external.restore).toHaveBeenCalled();
   });
 
   it("refuses to sign for an account it does not know", async () => {

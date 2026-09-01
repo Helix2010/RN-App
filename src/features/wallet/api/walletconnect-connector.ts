@@ -18,18 +18,6 @@ import type { ExternalWalletConnector } from "./embedded-wallet-gateway";
  * 便于单测注入假实现，也便于以后换 SDK。
  */
 
-export const EVM_CHAIN_IDS: Record<ChainId, number> = {
-  eth: 1,
-  bsc: 56,
-  base: 8453,
-};
-
-const CHAIN_BY_EIP155: Record<number, ChainId> = {
-  1: "eth",
-  56: "bsc",
-  8453: "base",
-};
-
 /** 各钱包的深链前缀；用户点了哪个就直接唤起对应 App。 */
 const WALLET_LINKS: Partial<Record<WalletConnectorId, string>> = {
   metamask: "metamask://wc?uri=",
@@ -37,7 +25,7 @@ const WALLET_LINKS: Partial<Record<WalletConnectorId, string>> = {
   trust: "trust://wc?uri=",
 };
 
-export type SessionNamespace = {
+type SessionNamespace = {
   accounts: string[];
   chains?: string[];
 };
@@ -76,7 +64,11 @@ export type WalletConnectDeps = {
     connector: WalletConnectorId;
     deepLink?: string;
   }) => Promise<void>;
-  chains?: ChainId[];
+  /**
+   * 服务端下发的链目录（id + EIP-155 chainId）。**不要在这里硬编码 chainId** ——
+   * 服务端已经是它的唯一真相源，两份映射一旦不一致，签名会打到错误的链上。
+   */
+  networks: () => { id: ChainId; chainId: number }[];
   /** 唤起外部钱包确认签名（Android 上需要把用户切过去） */
   openWallet?: (connector: WalletConnectorId) => Promise<void>;
   /**
@@ -109,6 +101,7 @@ type Connection = {
 
 export function parseAccounts(
   namespaces: Record<string, SessionNamespace>,
+  networks: { id: ChainId; chainId: number }[],
 ): { address: string; chains: ChainId[] } | null {
   const accounts = namespaces.eip155?.accounts ?? [];
   let address: string | null = null;
@@ -118,11 +111,14 @@ export function parseAccounts(
     const [namespace, rawChain, rawAddress] = account.split(":");
     if (namespace !== "eip155" || !rawAddress) continue;
     address ??= rawAddress;
-    const chain = CHAIN_BY_EIP155[Number(rawChain)];
+    const chain = networks.find(
+      (network) => network.chainId === Number(rawChain),
+    )?.id;
     if (chain && !chains.includes(chain)) chains.push(chain);
   }
   if (!address) return null;
-  return { address, chains: chains.length > 0 ? chains : ["bsc"] };
+  const fallback = networks[0]?.id ?? "bsc";
+  return { address, chains: chains.length > 0 ? chains : [fallback] };
 }
 
 export class WalletConnectConnector implements ExternalWalletConnector {
@@ -173,11 +169,11 @@ export class WalletConnectConnector implements ExternalWalletConnector {
     if (this.deps.available && !this.deps.available())
       throw new WalletConnectUnavailableError();
     const client = await this.deps.client();
-    const chains = this.deps.chains ?? (["bsc", "eth", "base"] as ChainId[]);
+    const networks = this.deps.networks();
     const { uri, approval } = await client.connect({
       requiredNamespaces: {
         eip155: {
-          chains: chains.map((chain) => `eip155:${EVM_CHAIN_IDS[chain]}`),
+          chains: networks.map((network) => `eip155:${network.chainId}`),
           methods: [
             "personal_sign",
             "eth_signTypedData_v4",
@@ -196,7 +192,7 @@ export class WalletConnectConnector implements ExternalWalletConnector {
       });
     }
     const session = await approval();
-    const parsed = parseAccounts(session.namespaces);
+    const parsed = parseAccounts(session.namespaces, networks);
     if (!parsed) throw new WalletConnectRejectedError("no account was shared");
     this.connections.set(parsed.address.toLowerCase(), {
       topic: session.topic,
@@ -229,8 +225,9 @@ export class WalletConnectConnector implements ExternalWalletConnector {
   async restore(): Promise<{ address: string; chains: ChainId[] }[]> {
     const client = await this.deps.client();
     const restored: { address: string; chains: ChainId[] }[] = [];
+    const networks = this.deps.networks();
     for (const session of client.session.getAll()) {
-      const parsed = parseAccounts(session.namespaces);
+      const parsed = parseAccounts(session.namespaces, networks);
       if (!parsed) continue;
       this.connections.set(parsed.address.toLowerCase(), {
         topic: session.topic,
@@ -255,8 +252,13 @@ class WalletConnectSigner implements WalletSigner {
   }
 
   private chainRef(chainId?: number): string {
-    const fallback = EVM_CHAIN_IDS[this.connection.chains[0] ?? "bsc"];
-    return `eip155:${chainId ?? fallback}`;
+    if (chainId !== undefined) return `eip155:${chainId}`;
+    const networks = this.deps.networks();
+    const preferred = this.connection.chains[0];
+    const fallback =
+      networks.find((network) => network.id === preferred)?.chainId ??
+      networks[0]?.chainId;
+    return `eip155:${fallback ?? 56}`;
   }
 
   private async send<T>(

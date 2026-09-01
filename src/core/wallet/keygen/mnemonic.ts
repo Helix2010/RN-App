@@ -16,7 +16,7 @@ import {
 /** BIP-44 EVM 账户路径前缀；`${EVM_ACCOUNT_PATH}/${index}` 是第 index 个地址。 */
 export const EVM_ACCOUNT_PATH = "m/44'/60'/0'/0";
 
-export type DerivedAccount = {
+type DerivedAccount = {
   address: string;
   privateKey: string;
   path: string | null;

@@ -27,4 +27,9 @@ export interface SessionGateway {
     signature: string,
   ): Promise<Session>;
   signOut(): Promise<void>;
+  /**
+   * 向服务端确认会话仍然有效。令牌被撤销或过期时返回 null，本地一并清除；
+   * 只是网络不通时保留本地会话（离线可用）。Mock 实现不需要它。
+   */
+  refresh?(): Promise<Session | null>;
 }

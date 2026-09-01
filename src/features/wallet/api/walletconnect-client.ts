@@ -1,9 +1,9 @@
 import { Linking } from "react-native";
 import {
-  enabledChains,
   isWalletConnectConfigured,
   onWalletConfigChange,
   walletConnectProjectId,
+  walletNetworks,
 } from "../../../core/wallet/config/wallet-runtime-config";
 import type { WalletConnectorId } from "../../session/model/session";
 import {
@@ -64,7 +64,12 @@ export function createWalletConnectConnector(options: {
       return clientPromise;
     },
     present: options.present,
-    chains: enabledChains(),
+    // 每次读一次：链目录随 bootstrap 变，不能在创建时定死
+    networks: () =>
+      walletNetworks().map((network) => ({
+        id: network.id,
+        chainId: network.chainId,
+      })),
     available: isWalletConnectConfigured,
     openWallet: async (connector) => {
       const link = walletDeepLink(connector);

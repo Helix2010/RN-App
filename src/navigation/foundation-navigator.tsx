@@ -19,6 +19,7 @@ import { WalletsScreen } from "../features/wallet/ui/wallets-screen";
 import { BackupScreen } from "../features/wallet/ui/backup-screen";
 import { ProfileScreen } from "../features/profile/profile-screen";
 import { ConnectWalletSheet } from "../features/session/ui/connect-wallet-sheet";
+import { SessionRevalidator } from "../features/session/ui/session-revalidator";
 import { WalletConnectSheet } from "../features/wallet/ui/walletconnect-sheet";
 import { WalletImportScreen } from "../features/wallet/ui/wallet-import-screen";
 import { WalletSetupScreen } from "../features/wallet/ui/wallet-setup-screen";
@@ -250,6 +251,7 @@ export function FoundationNavigator() {
         <Stack.Screen name="About" component={AboutScreen} />
         <Stack.Screen name="SecurityCenter" component={SecurityCenterScreen} />
       </Stack.Navigator>
+      <SessionRevalidator />
       <ConnectWalletSheet />
       <WalletConnectSheet />
     </NavigationContainer>
