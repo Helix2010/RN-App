@@ -12,8 +12,14 @@ import { AppError } from "../network/app-error";
 
 const INSTALLATION_KEY = "foundation.installation-id.v1";
 const CREDENTIAL_KEY = "foundation.installation-credential.v1";
-const HEARTBEAT_KEY = "foundation.installation-heartbeat.v1";
+const LEGACY_HEARTBEAT_KEY = "foundation.installation-heartbeat.v1";
+const HEARTBEAT_KEY = "foundation.installation-heartbeat.v2";
 const HEARTBEAT_INTERVAL_MS = 30 * 60 * 1_000;
+
+const heartbeatRecordSchema = z.object({
+  at: z.number(),
+  fingerprint: z.string(),
+});
 
 const heartbeatResponseSchema = z.object({
   installationId: z.string(),
@@ -32,6 +38,71 @@ const pushResponseSchema = z.object({
   provider: z.enum(["fcm", "apns", "hms"]),
   updatedAt: z.string(),
 });
+
+type InstallationReport = {
+  installationId: string;
+  deviceSourceHash: string;
+  packageId: string;
+  otaChannel: string;
+  otaRevision: number | null;
+  localizationVersion: string;
+  brandingVersion: number | null;
+  locale: string;
+  theme: ThemePreference;
+  osVersion: string;
+  deviceClass: string;
+};
+
+function installationReport(
+  id: string,
+  sourceHash: string,
+  config: BootstrapConfig,
+  theme: ThemePreference,
+): InstallationReport {
+  return {
+    installationId: id,
+    deviceSourceHash: sourceHash,
+    packageId: Application.applicationId ?? appRuntime.applicationId,
+    otaChannel: appRuntime.otaChannel,
+    otaRevision: config.update.ota.revision ?? null,
+    localizationVersion: config.localization.messagesVersion,
+    brandingVersion: config.branding?.version ?? null,
+    locale: config.localization.selectedLocale,
+    theme,
+    osVersion: String(Platform.Version),
+    deviceClass: Platform.OS === "android" ? "android-phone" : "ios-device",
+  };
+}
+
+/**
+ * 心跳节流指纹：原生构建身份（版本 / Build / runtime / 渠道）+ 上报的全部元数据。
+ * 任一字段变化（覆盖安装、OTA、切语言、切主题…）都跳过 30 分钟节流立即上报，
+ * 这样管理端的设备信息不会滞后一个心跳周期。
+ */
+export function heartbeatFingerprint(report: InstallationReport): string {
+  const { installationId: _id, deviceSourceHash: _hash, ...reported } = report;
+  return JSON.stringify({
+    version: appRuntime.version,
+    buildNumber: appRuntime.buildNumber,
+    runtimeVersion: appRuntime.runtimeVersion,
+    distributionChannel: appRuntime.distributionChannel,
+    ...reported,
+  });
+}
+
+async function readHeartbeatRecord(): Promise<{
+  at: number;
+  fingerprint: string;
+} | null> {
+  try {
+    const raw = await AsyncStorage.getItem(HEARTBEAT_KEY);
+    if (!raw) return null;
+    const parsed = heartbeatRecordSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
 
 async function installationId(): Promise<string> {
   const current = await SecureStore.getItemAsync(INSTALLATION_KEY);
@@ -63,32 +134,28 @@ export async function syncInstallationHeartbeat(
   config: BootstrapConfig,
   theme: ThemePreference,
 ): Promise<void> {
-  const last = Number(await AsyncStorage.getItem(HEARTBEAT_KEY));
   const storedCredential = await SecureStore.getItemAsync(CREDENTIAL_KEY);
+  const id = await installationId();
+  const report = installationReport(
+    id,
+    await deviceSourceHash(),
+    config,
+    theme,
+  );
+  const fingerprint = heartbeatFingerprint(report);
+  const last = await readHeartbeatRecord();
   if (
     storedCredential &&
-    Number.isFinite(last) &&
-    Date.now() - last < HEARTBEAT_INTERVAL_MS
+    last &&
+    last.fingerprint === fingerprint &&
+    Date.now() - last.at < HEARTBEAT_INTERVAL_MS
   )
     return;
-  const id = await installationId();
   let credential = storedCredential;
   if (!credential) {
     const registration = await apiClient.post(
       "/v1/mobile/installations/register",
-      {
-        installationId: id,
-        deviceSourceHash: await deviceSourceHash(),
-        packageId: Application.applicationId ?? appRuntime.applicationId,
-        otaChannel: appRuntime.otaChannel,
-        otaRevision: config.update.ota.revision ?? null,
-        localizationVersion: config.localization.messagesVersion,
-        brandingVersion: config.branding?.version ?? null,
-        locale: config.localization.selectedLocale,
-        theme,
-        osVersion: String(Platform.Version),
-        deviceClass: Platform.OS === "android" ? "android-phone" : "ios-device",
-      },
+      report,
       z.object({
         installationId: z.string(),
         installationCredential: z.string(),
@@ -107,19 +174,7 @@ export async function syncInstallationHeartbeat(
   try {
     response = await apiClient.post(
       "/v1/mobile/installations/heartbeat",
-      {
-        installationId: id,
-        deviceSourceHash: await deviceSourceHash(),
-        packageId: Application.applicationId ?? appRuntime.applicationId,
-        otaChannel: appRuntime.otaChannel,
-        otaRevision: config.update.ota.revision ?? null,
-        localizationVersion: config.localization.messagesVersion,
-        brandingVersion: config.branding?.version ?? null,
-        locale: config.localization.selectedLocale,
-        theme,
-        osVersion: String(Platform.Version),
-        deviceClass: Platform.OS === "android" ? "android-phone" : "ios-device",
-      },
+      report,
       heartbeatResponseSchema,
       { headers: { Authorization: `Installation ${credential}` } },
     );
@@ -139,7 +194,11 @@ export async function syncInstallationHeartbeat(
       },
     );
   }
-  await AsyncStorage.setItem(HEARTBEAT_KEY, String(Date.now()));
+  await AsyncStorage.setItem(
+    HEARTBEAT_KEY,
+    JSON.stringify({ at: Date.now(), fingerprint }),
+  );
+  await AsyncStorage.removeItem(LEGACY_HEARTBEAT_KEY).catch(() => {});
 }
 
 export async function registerPushTokenIfAuthorized(
