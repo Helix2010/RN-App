@@ -1,4 +1,5 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { useState } from "react";
 import { Linking } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../app/runtime-context";
@@ -30,7 +31,8 @@ export function NotificationSettingsScreen({
   navigation,
 }: NativeStackScreenProps<RootStackParamList, "NotificationSettings">) {
   const insets = useSafeAreaInsets();
-  const { config, notificationStatus, t } = useFoundationRuntime();
+  const { config, notificationStatus, enableUpdateNotifications, t } =
+    useFoundationRuntime();
   const theme = useTheme();
   const session = useSession();
   const address = session.data?.address ?? "guest";
@@ -40,6 +42,16 @@ export function NotificationSettingsScreen({
   );
   const patch = useAccountPreferences((state) => state.patch);
   const denied = notificationStatus === "denied";
+  // 按需申请：第一次点先弹系统权限框；仍被拒绝（含永久拒绝）再引导去系统设置。
+  const [permissionRequested, setPermissionRequested] = useState(false);
+  const requestPermission = async (): Promise<void> => {
+    if (permissionRequested) {
+      await Linking.openSettings();
+      return;
+    }
+    setPermissionRequested(true);
+    await enableUpdateNotifications();
+  };
 
   const row = (
     key: NotificationKey,
@@ -106,9 +118,12 @@ export function NotificationSettingsScreen({
                 fontSize={12}
                 fontWeight="800"
                 color="$primary"
-                onPress={() => void Linking.openSettings()}
+                onPress={() => void requestPermission()}
+                testID="notif-permission-action"
               >
-                {t("notif.openSettings")}
+                {permissionRequested
+                  ? t("notif.openSettings")
+                  : t("notif.enable")}
               </InlineText>
             </Row>
           ) : null}

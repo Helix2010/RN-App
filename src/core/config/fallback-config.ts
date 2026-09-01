@@ -484,6 +484,7 @@ const zhCN = {
     "影响价格涨跌、K 线、兑换价格影响的颜色。预测市场的 Yes / No 固定为绿 / 红，不受此项影响。",
   "notif.permissionDenied": "系统通知权限已关闭，以下开关不会生效",
   "notif.openSettings": "去开启",
+  "notif.enable": "开启通知",
   "notif.section.trading": "交易",
   "notif.section.predict": "预测",
   "notif.section.dex": "兑换与行情",
@@ -1188,6 +1189,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "notif.permissionDenied":
     "Notifications are off in system settings; these switches won't take effect",
   "notif.openSettings": "Open settings",
+  "notif.enable": "Enable notifications",
   "notif.section.trading": "Trading",
   "notif.section.predict": "Predict",
   "notif.section.dex": "Swap & markets",

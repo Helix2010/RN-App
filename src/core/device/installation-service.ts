@@ -17,7 +17,9 @@ const HEARTBEAT_INTERVAL_MS = 30 * 60 * 1_000;
 
 const heartbeatResponseSchema = z.object({
   installationId: z.string(),
-  deviceGrouping: z.enum(["available", "disabled"]),
+  // RN-Server dropped deviceGrouping in d8ff86d; keep it optional so older
+  // and newer servers both satisfy the mobile contract.
+  deviceGrouping: z.enum(["available", "disabled"]).optional(),
   heartbeatIntervalSeconds: z.number(),
   receivedAt: z.string(),
   credentialRotated: z.boolean().optional(),
@@ -180,7 +182,8 @@ export async function registerPushTokenIfAuthorized(
       { headers: { Authorization: `Installation ${credential}` } },
     );
     return "registered";
-  } catch {
+  } catch (error) {
+    if (__DEV__) console.warn("[push] token registration unavailable", error);
     return "unavailable";
   }
 }

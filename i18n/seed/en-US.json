@@ -206,6 +206,7 @@
     "nav.predict": "Predict",
     "nav.swap": "Swap",
     "notif.dnd": "Do not disturb",
+    "notif.enable": "Enable notifications",
     "notif.openSettings": "Open settings",
     "notif.orderCancelled": "Order cancelled",
     "notif.orderCancelled.hint": "Cancelled by heartbeat timeout or market close",

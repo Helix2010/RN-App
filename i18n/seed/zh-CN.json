@@ -206,6 +206,7 @@
     "nav.predict": "预测",
     "nav.swap": "兑换",
     "notif.dnd": "免打扰时段",
+    "notif.enable": "开启通知",
     "notif.openSettings": "去开启",
     "notif.orderCancelled": "挂单被撤销",
     "notif.orderCancelled.hint": "心跳超时或市场截止导致的撤单",
