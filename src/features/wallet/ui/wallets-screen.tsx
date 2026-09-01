@@ -84,7 +84,8 @@ export function WalletsScreen({
   // 界面没变化，以为自己没点上。useAsyncAction 让进行中和失败提示成为默认行为。
   const { run: saveLabel, pending: renaming } = useAsyncAction(
     async () => {
-      if (!address || !label.trim()) return;
+      // 返回 false：没改成任何东西时不要弹"已更新显示名"
+      if (!address || !label.trim()) return false;
       await wallet.rename(address, label.trim());
       void queryClient.invalidateQueries({ queryKey: ["wallet-accounts"] });
       rename.current?.dismiss();
@@ -96,7 +97,7 @@ export function WalletsScreen({
   );
   const { run: onDisconnect, pending: disconnecting } = useAsyncAction(
     async () => {
-      if (!address) return;
+      if (!address) return false;
       await wallet.disconnect(address);
       void queryClient.invalidateQueries({ queryKey: ["wallet-accounts"] });
       disconnect.current?.dismiss();
@@ -256,6 +257,7 @@ export function WalletsScreen({
         />
         <ActionButton
           onPress={() => saveLabel()}
+          disabled={!label.trim()}
           loading={renaming}
           loadingLabel={t("common.saving")}
           testID="wallets-rename-save"

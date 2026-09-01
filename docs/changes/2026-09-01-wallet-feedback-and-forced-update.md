@@ -85,3 +85,47 @@ App 端的强更 UI 本来就是对的（forced 时不渲染「稍后再说」�
 - 三个仓库的 GitHub Actions 均 success，web4 已部署
 
 **注意 `<queries>` 改的是原生 manifest，必须重新打包，OTA 覆盖不了。** 其余 JS 改动可以走 OTA。
+
+## Review 与死代码清理（同日）
+
+通读三批改动 + 全量未引用导出扫描。查出**三个真缺陷**，其中一个是我自己在第三批引入的。
+
+### 1. 假成功提示（第三批引入）
+
+`useAsyncAction` 在 action resolve 后无条件弹成功提示，而 `saveLabel` 里有守卫
+`if (!address || !label.trim()) return;`——名字为空时点保存，什么都没改却提示"已更新显示名"。
+第一批手写的版本反而没这个问题（先 return 再 toast）。
+
+改法两层：hook 支持 action 返回 `false` 表示"守卫拦下了，别报成功"，同时把空名字的保存
+按钮置灰（本来就该有——点了什么都不发生也是一种"点了没反应"）。
+
+### 2. 只装了 OKX 独立钱包 App 的用户被误标"未安装"
+
+`probeLink` 只探测第一个候选 scheme，而 OKX 有两个 App（`okex://main` 交易所主 App、
+`okxwallet://main` 独立钱包）。改成探测所有候选，任一命中即视为已安装。
+
+### 3. 勾过的强制升级开关会残留到下一次发布
+
+管理端打开「上传 APK」表单时只重置了成功态，`mandatory` 保留上次的值。勾了强制但没发成功、
+关掉表单再打开，开关还是勾着——版本号残留在输入框里是看得见的，checkbox 不是，而后果是所有
+低版本用户被锁。现在每次打开表单都从关闭开始。撤销修复后回归测试确实会失败（验过判别力）。
+
+### 死代码
+
+- 删 `resetWalletConnectClient`（我加的测试后门，没有任何测试用它）
+- 收回 `WalletConnectTimeoutError`、`connectorOf` 的导出（只在模块内使用；上层是按 message
+  匹配 `/timeout/i` 分类的，没人 import 这个类）
+- 删 RN-Admin 的 `WalletNetworkSection` 类型（无人引用）
+
+扫描报告的其余未引用导出都是既有代码（`update-service` 的类型、`test/mocks/reanimated` 的
+jest mock 等），不在本次范围。
+
+### 顺带
+
+- backup 备份验证也统一到 `useAsyncAction` / `ActionButton`，不再手写 pending 状态——新基础
+  设施要真的成为默认写法，而不是只用在改过的那两处。
+- `onPairingDismissed` 注册的监听器不取消订阅：`createGateways` 由 `useMemo` 在整个 App
+  生命周期只跑一次，且 `cancelConnect` 幂等。加了注释说明这个约束，免得以后有人把
+  `createGateways` 挪进每次渲染的路径。
+
+验证：RN-App 55 suites / 282 tests，RN-Admin 8 files / 46 tests + build，RN-Server 全绿。

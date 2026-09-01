@@ -89,7 +89,7 @@ export class WalletConnectUnavailableError extends Error {
   }
 }
 
-export class WalletConnectTimeoutError extends Error {
+class WalletConnectTimeoutError extends Error {
   constructor() {
     // message 里必须带 timeout：上层按它区分"用户拒绝"和"等太久"
     super("wallet approval timeout");

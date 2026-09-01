@@ -73,6 +73,22 @@ describe("useAsyncAction", () => {
     });
   });
 
+  it("stays quiet when the action's guard skipped the work", async () => {
+    // 回归：action 里 `if (!x) return` 会让 hook 报"已完成"，其实什么都没做
+    const { result } = await renderHook(() =>
+      useAsyncAction(async () => false as const, {
+        failureMessage: "失败",
+        successMessage: "已保存",
+      }),
+    );
+
+    await act(async () => {
+      result.current.run();
+    });
+
+    expect(messages()).not.toContain("已保存");
+  });
+
   it("only announces success when asked to", async () => {
     const { result } = await renderHook(() =>
       useAsyncAction(async () => {}, {

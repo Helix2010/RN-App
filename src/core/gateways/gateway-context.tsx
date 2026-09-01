@@ -68,6 +68,8 @@ function createGateways(storage: KeyValueStorage): Gateways {
         ),
       ),
   });
+  // 不取消订阅：createGateways 由 useMemo 在整个 App 生命周期里只跑一次，
+  // 而 cancelConnect 是幂等的，万一 memo 被丢弃重算也只是多调一次空操作
   onPairingDismissed(() => external.cancelConnect());
   const wallet = new EmbeddedWalletGateway({
     vault,
