@@ -76,16 +76,69 @@ describe("ChainClient balances", () => {
 });
 
 describe("ChainClient nonce", () => {
+  /** pending / latest 各自的取值 */
+  function nonceStub(pending: string, latest: string) {
+    return stubRpc({
+      eth_getTransactionCount: (params: unknown[]) =>
+        params[1] === "pending" ? pending : latest,
+    });
+  }
+
   it("asks for the pending count so two quick sends do not collide", async () => {
-    const { rpc, calls } = stubRpc({ eth_getTransactionCount: "0x5" });
+    const { rpc, calls } = nonceStub("0x5", "0x4");
 
     await expect(new ChainClient(rpc).getNextNonce(ADDRESS)).resolves.toBe(5);
-    expect(calls[0]?.params[1]).toBe("pending");
+    expect(calls.map((call) => call.params[1])).toEqual(
+      expect.arrayContaining(["pending", "latest"]),
+    );
+  });
+
+  it("refuses a pending nonce far ahead of the confirmed count", async () => {
+    // 前面有空洞的交易永远不上链；采纳了这个值，之后每一笔都会卡在它后面
+    const { rpc } = nonceStub("0x64", "0x4"); // 100 vs 4
+
+    await expect(new ChainClient(rpc).getNextNonce(ADDRESS)).rejects.toThrow(
+      /inconsistent nonce/,
+    );
+  });
+
+  it("refuses a pending nonce below the confirmed count", async () => {
+    const { rpc } = nonceStub("0x3", "0x4");
+
+    await expect(new ChainClient(rpc).getNextNonce(ADDRESS)).rejects.toThrow(
+      /inconsistent nonce/,
+    );
+  });
+
+  it("does not let one bad node answer poison the local floor", async () => {
+    // 本地下限只由真正用掉的 nonce 抬高；节点的值再大也只影响这一次
+    let answers = { pending: "0x64", latest: "0x4" };
+    const { rpc } = stubRpc({
+      eth_getTransactionCount: (params: unknown[]) =>
+        params[1] === "pending" ? answers.pending : answers.latest,
+    });
+    const client = new ChainClient(rpc);
+    await expect(client.getNextNonce(ADDRESS)).rejects.toThrow();
+
+    // 同一个 client，节点恢复正常：应得到 5，而不是被之前的 100 卡住
+    answers = { pending: "0x5", latest: "0x5" };
+    await expect(client.getNextNonce(ADDRESS)).resolves.toBe(5);
+  });
+
+  it("rejects a quantity the node did not encode as hex", async () => {
+    const { rpc } = stubRpc({ eth_getBalance: "1000" });
+    await expect(
+      new ChainClient(rpc).getNativeBalance(ADDRESS),
+    ).rejects.toMatchObject({ name: "RpcError" });
+    const empty = stubRpc({ eth_getBalance: "0x" });
+    await expect(
+      new ChainClient(empty.rpc).getNativeBalance(ADDRESS),
+    ).rejects.toMatchObject({ name: "RpcError" });
   });
 
   it("refuses a nonce lower than one it already handed out", async () => {
     // 被篡改或落后的节点报一个更小的 nonce，会让用户签出重放旧交易的签名
-    const { rpc } = stubRpc({ eth_getTransactionCount: "0x2" });
+    const { rpc } = nonceStub("0x2", "0x2");
     const client = new ChainClient(rpc);
     client.noteNonceUsed(ADDRESS, 8);
 
@@ -94,7 +147,7 @@ describe("ChainClient nonce", () => {
 
   it("tracks each address separately", async () => {
     const other = "0x000000000000000000000000000000000000dEaD";
-    const { rpc } = stubRpc({ eth_getTransactionCount: "0x1" });
+    const { rpc } = nonceStub("0x1", "0x1");
     const client = new ChainClient(rpc);
     client.noteNonceUsed(ADDRESS, 20);
 
@@ -181,7 +234,11 @@ describe("ChainClient gas and receipts", () => {
 
   it("tells a chain revert apart from a transaction still in flight", async () => {
     const reverted = stubRpc({
-      eth_getTransactionReceipt: { status: "0x0", blockNumber: "0x10" },
+      eth_getTransactionReceipt: {
+        transactionHash: "0xhash",
+        status: "0x0",
+        blockNumber: "0x10",
+      },
     });
     await expect(
       new ChainClient(reverted.rpc).getReceipt("0xhash"),
@@ -193,7 +250,11 @@ describe("ChainClient gas and receipts", () => {
     ).resolves.toBeNull();
 
     const ok = stubRpc({
-      eth_getTransactionReceipt: { status: "0x1", blockNumber: "0x11" },
+      eth_getTransactionReceipt: {
+        transactionHash: "0xHASH",
+        status: "0x01",
+        blockNumber: "0x11",
+      },
     });
     await expect(new ChainClient(ok.rpc).getReceipt("0xhash")).resolves.toEqual(
       {
@@ -201,6 +262,22 @@ describe("ChainClient gas and receipts", () => {
         blockNumber: 17,
       },
     );
+  });
+
+  it("ignores a receipt that belongs to a different transaction", async () => {
+    // 节点把别的交易的回执塞回来，界面会把一笔没发生的转账显示成已确认
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const { rpc } = stubRpc({
+      eth_getTransactionReceipt: {
+        transactionHash: "0xother",
+        status: "0x1",
+        blockNumber: "0x11",
+      },
+    });
+
+    await expect(new ChainClient(rpc).getReceipt("0xhash")).resolves.toBeNull();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it("encodes an ERC-20 transfer with the standard selector", async () => {

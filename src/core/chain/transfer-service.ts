@@ -19,6 +19,27 @@ import { ChainClient } from "./chain-client";
 /** `native` 是原生币的哨兵值，和 TokenRef 里的约定一致。 */
 const NATIVE = "native";
 
+/**
+ * 一笔转账能用的 gas 上限。
+ *
+ * 原生币转账固定 21000，普通 ERC-20 约 35k～65k，带手续费 / 反射逻辑的代币也在
+ * 200k 以内。估算值超过这个数，说明合约在 `transfer` 里做了不该做的事——恶意代币
+ * 可以把 transfer 写成烧光调用方提供的全部 gas，用户的原生币就全成了手续费。
+ * 这个上限和手续费红线是两道不同的防线：一道管单价，一道管用量。
+ */
+const TRANSFER_GAS_CEILING = 500_000n;
+
+/** 合约在转账里消耗的 gas 异常。这不是网络问题，重试不会好。 */
+export class TransferGasAnomalyError extends Error {
+  constructor(
+    readonly tokenSymbol: string,
+    readonly estimated: bigint,
+  ) {
+    super(`transfer of ${tokenSymbol} would need ${estimated} gas`);
+    this.name = "TransferGasAnomalyError";
+  }
+}
+
 export class InsufficientBalanceError extends Error {
   constructor(
     readonly symbol: string,
@@ -150,6 +171,8 @@ export class TransferService {
       }),
       this.deps.chain.getFeeData(),
     ]);
+    if (gasLimit > TRANSFER_GAS_CEILING)
+      throw new TransferGasAnomalyError(request.tokenSymbol, gasLimit);
     return { gasLimit, ...fee };
   }
 

@@ -2,6 +2,7 @@ import { RpcError, RpcUnavailableError } from "../../../core/chain/rpc-client";
 import {
   InsufficientBalanceError,
   InsufficientGasError,
+  TransferGasAnomalyError,
 } from "../../../core/chain/transfer-service";
 import {
   WalletAuthRequiredError,
@@ -27,6 +28,11 @@ export function transferErrorCopy(error: unknown): TransferErrorCopy {
     return { key: "send.error.gas", values: { symbol: error.nativeSymbol } };
   if (error instanceof InsufficientBalanceError)
     return { key: "send.error.balance", values: { symbol: error.symbol } };
+  if (error instanceof TransferGasAnomalyError)
+    return {
+      key: "send.error.gasAnomaly",
+      values: { symbol: error.tokenSymbol },
+    };
   if (error instanceof RpcUnavailableError)
     return { key: "send.error.network" };
   // 节点接受了请求但拒绝了这笔交易（revert / nonce 太低 / gas 过低）。

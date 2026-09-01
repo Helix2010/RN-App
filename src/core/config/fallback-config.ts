@@ -196,6 +196,8 @@ const zhCN = {
   "send.addressBookEmpty": "还没有保存的地址",
   "send.addressValid": "{chain} 地址格式校验通过",
   "send.addressInvalid": "地址格式不正确",
+  "send.addressChecksum": "地址大小写校验和不正确，可能抄错了一个字符",
+  "send.addressIsContract": "这是该代币自己的合约地址，转入的资产会永久丢失",
   "send.network": "网络",
   "send.amount": "数量",
   "send.balance": "余额 {amount}",
@@ -214,6 +216,8 @@ const zhCN = {
   // 答案是缺原生币付手续费，而不是余额不足
   "send.error.gas": "网络费要用 {symbol} 支付，余额不足。请先充入少量后重试。",
   "send.error.balance": "{symbol} 余额不足",
+  "send.error.gasAnomaly":
+    "{symbol} 的转账消耗异常，已阻止。这个代币合约可能有问题，请勿继续尝试。",
   "send.error.network": "连不上链上节点，请检查网络后重试",
   "send.error.node": "节点拒绝了这笔交易，请稍后重试",
   "send.error.tokenMismatch":
@@ -969,6 +973,10 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "send.addressBookEmpty": "No saved addresses yet",
   "send.addressValid": "Valid {chain} address",
   "send.addressInvalid": "Invalid address format",
+  "send.addressChecksum":
+    "Address checksum does not match — a character may have been mistyped",
+  "send.addressIsContract":
+    "This is the token's own contract address. Anything sent there is lost for good.",
   "send.network": "Network",
   "send.amount": "Amount",
   "send.balance": "Balance {amount}",
@@ -986,6 +994,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "send.error.gas":
     "The network fee is paid in {symbol} and your balance is too low. Top up a little and retry.",
   "send.error.balance": "Insufficient {symbol} balance",
+  "send.error.gasAnomaly":
+    "Sending {symbol} would use an abnormal amount of gas, so it was blocked. The token contract may be malicious.",
   "send.error.network":
     "Cannot reach a chain node. Check your connection and retry.",
   "send.error.node":

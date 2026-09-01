@@ -162,3 +162,66 @@ describe("SendScreen failure reasons", () => {
     expect(screen.queryByText(runtime.t("send.failed"))).toBeNull();
   });
 });
+
+describe("SendScreen recipient validation", () => {
+  async function typeAddress(value: string) {
+    const gateways = createTestGateways();
+    await signIn(gateways);
+    gateways.wallet.getBalances = jest.fn(async () => [
+      balance({ address: USDT_BSC, symbol: "USDT", verified: true }),
+    ]);
+    const rendered = await renderWithProviders(
+      <SendScreen onBack={jest.fn()} initialChain="bsc" />,
+      { gateways },
+    );
+    void fireEvent.changeText(await screen.findByTestId("send-address"), value);
+    void fireEvent.changeText(await screen.findByTestId("send-amount"), "1");
+    return rendered;
+  }
+
+  it("calls out a mixed-case address whose checksum is wrong, instead of 'invalid format'", async () => {
+    // 几乎总是手抄错了一个字符；说"格式不对"会让用户去改格式
+    const tampered = RECIPIENT.slice(0, -2) + "A4";
+    const { runtime } = await typeAddress(tampered);
+
+    await waitFor(() =>
+      expect(screen.getByText(runtime.t("send.addressChecksum"))).toBeTruthy(),
+    );
+    expect(screen.queryByText(runtime.t("send.addressInvalid"))).toBeNull();
+    // 注意：不能用"点了之后确认页不出现"来断言——bottom-sheet 的 jest mock 会始终
+    // 渲染 sheet 的子树。Tamagui 的 disabled 落到宿主上是 pointerEvents=none，
+    // 真机上就是这个属性在拦点击。
+    const submit = screen.getByTestId("send-submit");
+    expect(submit.props["aria-disabled"]).toBe(true);
+    expect(submit.props.pointerEvents).toBe("none");
+  });
+
+  it("refuses to send a token to its own contract address", async () => {
+    // 转给代币合约本身 = 永久丢失
+    const { runtime } = await typeAddress(USDT_BSC);
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(runtime.t("send.addressIsContract")),
+      ).toBeTruthy(),
+    );
+    // 注意：不能用"点了之后确认页不出现"来断言——bottom-sheet 的 jest mock 会始终
+    // 渲染 sheet 的子树。Tamagui 的 disabled 落到宿主上是 pointerEvents=none，
+    // 真机上就是这个属性在拦点击。
+    const submit = screen.getByTestId("send-submit");
+    expect(submit.props["aria-disabled"]).toBe(true);
+    expect(submit.props.pointerEvents).toBe("none");
+  });
+
+  it("still accepts an all-lowercase address, which carries no checksum", async () => {
+    const { runtime } = await typeAddress(RECIPIENT.toLowerCase());
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          runtime.t("send.addressValid").replace("{chain}", "BNB Smart Chain"),
+        ),
+      ).toBeTruthy(),
+    );
+  });
+});

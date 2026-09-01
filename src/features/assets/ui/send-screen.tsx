@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import { CHAINS, type ChainId } from "../../../core/gateways/types";
+import { classifyEvmAddress } from "../../../core/wallet/address";
 import { evmChainIdOf } from "../../../core/wallet/config/wallet-runtime-config";
 import {
   compare,
@@ -54,7 +55,6 @@ import { useRequireVerification } from "../../security/use-require-verification"
  * 谁都不拥有的地址，而转出无法撤销。入口保留，空态如实说明。
  */
 const ADDRESS_BOOK: { label: string; address: string }[] = [];
-const EVM_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 
 /** A-05 转出：地址（粘贴 / 地址簿）→ 网络与币种联动 → 数量 → 确认层 → 三段进度。 */
 export function SendScreen({
@@ -93,7 +93,24 @@ export function SendScreen({
   const insufficient = Boolean(
     selected && amount && compare(amount, selected.amount) > 0,
   );
-  const addressValid = EVM_ADDRESS.test(to.trim());
+  const addressVerdict = classifyEvmAddress(to);
+  // 把代币转给代币合约本身 = 永久丢失，这是最常见的一类不可逆误操作
+  const addressIsTokenContract = Boolean(
+    selected &&
+    selected.token.address !== "native" &&
+    to.trim().toLowerCase() === selected.token.address.toLowerCase(),
+  );
+  const addressValid = addressVerdict === "valid" && !addressIsTokenContract;
+  const addressError =
+    to.length === 0
+      ? undefined
+      : addressVerdict === "invalid"
+        ? t("send.addressInvalid")
+        : addressVerdict === "checksum"
+          ? t("send.addressChecksum")
+          : addressIsTokenContract
+            ? t("send.addressIsContract")
+            : undefined;
   const bookHit = ADDRESS_BOOK.find(
     (entry) => entry.address.toLowerCase() === to.trim().toLowerCase(),
   );
@@ -191,11 +208,7 @@ export function SendScreen({
               autoCorrect={false}
               accessibilityLabel={t("send.address")}
               testID="send-address"
-              error={
-                to.length > 0 && !addressValid
-                  ? t("send.addressInvalid")
-                  : undefined
-              }
+              error={addressError}
               trailing={
                 <Row gap="$2">
                   <Stack

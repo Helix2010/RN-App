@@ -2,6 +2,7 @@ import { ChainClient } from "./chain-client";
 import {
   InsufficientBalanceError,
   InsufficientGasError,
+  TransferGasAnomalyError,
   TransferService,
   type TransferRequest,
 } from "./transfer-service";
@@ -205,6 +206,33 @@ describe("TransferService balance pre-checks", () => {
     await service.submit(request(), signer).catch(() => undefined);
     // 估算发生在预检之前是允许的（要拿手续费数字），但预检必须拦在签名之前
     expect(chain.getNextNonce).not.toHaveBeenCalled();
+  });
+});
+
+describe("TransferService gas ceiling", () => {
+  it("refuses a token whose transfer would burn an absurd amount of gas", async () => {
+    // 恶意代币可以把 transfer 写成烧光调用方给的全部 gas，原生币就全成了手续费
+    const { chain } = fakeChain({ gasLimit: 2_000_000n });
+    const { signer } = localSigner();
+    const service = new TransferService({ chain, reason: "r" });
+
+    const error = await service
+      .submit(request(), signer)
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(TransferGasAnomalyError);
+    expect(chain.getNextNonce).not.toHaveBeenCalled();
+  });
+
+  it("lets a fee-on-transfer token through", async () => {
+    // 带反射 / 手续费逻辑的代币要 150k～200k，是正常范围
+    const { chain } = fakeChain({ gasLimit: 200_000n });
+    const { signer } = localSigner();
+    const service = new TransferService({ chain, reason: "r" });
+
+    await expect(service.submit(request(), signer)).resolves.toMatchObject({
+      hash: "0xhash",
+    });
   });
 });
 

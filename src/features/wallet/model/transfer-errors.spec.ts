@@ -2,6 +2,7 @@ import { RpcError, RpcUnavailableError } from "../../../core/chain/rpc-client";
 import {
   InsufficientBalanceError,
   InsufficientGasError,
+  TransferGasAnomalyError,
 } from "../../../core/chain/transfer-service";
 import { UnsignableTransactionError } from "../../../core/wallet/signer/transaction-guard";
 import {
@@ -22,6 +23,12 @@ describe("transferErrorCopy", () => {
     expect(
       transferErrorCopy(new InsufficientBalanceError("USDT", 100n, 1n)),
     ).toEqual({ key: "send.error.balance", values: { symbol: "USDT" } });
+  });
+
+  it("names the token whose transfer would burn absurd gas", () => {
+    expect(
+      transferErrorCopy(new TransferGasAnomalyError("SCAM", 2_000_000n)),
+    ).toEqual({ key: "send.error.gasAnomaly", values: { symbol: "SCAM" } });
   });
 
   it("separates 'cannot reach any node' from 'the node refused this transaction'", () => {
