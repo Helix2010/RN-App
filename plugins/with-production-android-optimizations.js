@@ -63,6 +63,14 @@ function withProductionAndroidOptimizations(config) {
       "true",
     );
     setGradleProperty(result.modResults, "expo.useLegacyPackaging", "true");
+    // Release builds run KSP + R8 across every autolinked module; the Expo
+    // template default (-Xmx2048m -XX:MaxMetaspaceSize=512m) dies with
+    // "OutOfMemoryError: Metaspace" in the ksp task.
+    setGradleProperty(
+      result.modResults,
+      "org.gradle.jvmargs",
+      "-Xmx4096m -XX:MaxMetaspaceSize=1024m",
+    );
     return result;
   });
 }

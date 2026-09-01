@@ -39,7 +39,10 @@ const otaChannel =
   (distributionChannel === "development" || distributionChannel === "staging"
     ? distributionChannel
     : "production");
-const updatesUrl = process.env.EXPO_UPDATES_URL;
+// An empty EXPO_UPDATES_URL (e.g. from a local .env file) must behave like
+// "unset", otherwise the tenant OTA manifest URL is skipped and release
+// builds ship with updates disabled.
+const updatesUrl = process.env.EXPO_UPDATES_URL || undefined;
 const codeSigningCertificate =
   process.env.EXPO_UPDATES_CODE_SIGNING_CERTIFICATE;
 const codeSigningKeyId = process.env.EXPO_UPDATES_CODE_SIGNING_KEY_ID ?? "main";

@@ -29,3 +29,12 @@
 - `pnpm check`：format / lint / typecheck / api / config / i18n 全部通过；jest 164 例中 163 通过，唯一失败的 `predict/ui/market-list-screen.spec.tsx`（找不到 `event-ev-btc-120k`）在干净 main `fb4bcb1` 上同样失败，为既有问题，本次未处理。
 - Android 模拟器 `rn_smoke` 打线上 `api.anyfun.win`：冷启动后 `app_installations` 出现该设备记录（服务端修复部署后）。
 - 未验证：真实 FCM token 上报与投递（构建缺 `google-services.json`、服务端缺 FCM 凭证）；iOS。
+
+## 追加：1.2.4 / build 18 首个带 FCM 的直装包（2026-09-01）
+
+- `tenants/anyfun/tenant.json`：1.2.3 / 17 → 1.2.4 / 18。
+- `plugins/with-production-android-optimizations.js`：release 构建的 KSP + R8 在 Expo 模板默认 `-Xmx2048m -XX:MaxMetaspaceSize=512m` 下报 `OutOfMemoryError: Metaspace`，改为 `-Xmx4096m -XX:MaxMetaspaceSize=1024m`（通过插件写入 gradle.properties，不受 `prebuild --clean` 影响）。
+- `app.config.ts`：`EXPO_UPDATES_URL` 为空串（本地 `.env.local` 常见）时视为未设置；否则 `??` 会把 OTA URL 置空、release 包 `updates.enabled=false`，被 `build-android-release.mjs` 的内嵌配置校验正确拦下。
+- 构建：`ANDROID_HOME=~/android-sdk GOOGLE_SERVICES_JSON=<secret 路径> pnpm android:release anyfun` → `artifacts/anyfun-1.2.4-build18-release.apk`（sha256 `c652b41b…`）。**签名仍是 Expo 模板 debug keystore**（仓库无 release 签名配置），发布前需决定签名方案。
+- 验证：模拟器（google_apis 镜像）安装后冷启动，线上 `app_push_tokens` 出现 `fcm / production / granted`；服务端 `PUSH_DISPATCH_ENABLED=true` + FCM 凭证已配置。
+- 已知小问题：心跳 30 分钟节流不区分版本，覆盖安装后 `app_installations` 的 `app_version` 要到下一次心跳才更新；建议把 `appVersion/buildNumber` 纳入节流键。
