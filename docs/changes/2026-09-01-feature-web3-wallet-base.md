@@ -243,3 +243,9 @@ CI 的 `check-expo-doctor` 抓到两个真问题（本地 `pnpm check` 不覆盖
 ### 验证
 
 `pnpm check` 50 suites / 254 例全绿（新增：外部钱包冷启动恢复、会话吊销后失效各一组）。
+
+### CI 红了一次：我自己写的测试在和 GC 赛跑
+
+第 3 条的测试直接断言 `queryClient.getQueryData(["session"])`，本地全绿、CI 挂（`Received: undefined`）。原因是测试用的 QueryClient 是 `gcTime: 0`：`setQueryData` 建出来的缓存项**没有任何观察者**，会被立刻回收，断言读到的是被回收后的 `undefined`——本地够快能在回收前读到，CI 慢一点就读不到。
+
+改成挂一个真正消费 `useSession()` 的探针组件、断言渲染结果，而不是戳缓存内部。顺着这条又发现实现本身有个丢写：重校验拿到 `null` 时只 `setQueryData(null)`，如果此时会话查询自己的 `get()` 还在飞，它落地后会把旧会话写回来，用户看起来还是登录态。网关在 401 时已经清了本地存储，所以让 session 查询一起失效重取即可——最终状态由网关（唯一真相）决定。

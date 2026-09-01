@@ -31,10 +31,9 @@ export function useSessionRevalidation(): void {
     const revalidate = (): void => {
       void session.refresh?.().then((next) => {
         queryClient.setQueryData(sessionQueryKey, next);
-        if (next === null)
-          void queryClient.invalidateQueries({
-            predicate: (query) => query.queryKey[0] !== "session",
-          });
+        // 令牌没了：网关已经清掉本地存储，连 session 一起失效重取，
+        // 否则一个还在飞的 get() 落地后会把旧会话写回来
+        if (next === null) void queryClient.invalidateQueries();
       });
     };
     // 挂载时就在前台，不必再看 AppState；之后只在回到前台时重校验
