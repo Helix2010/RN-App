@@ -1,7 +1,7 @@
-import * as Clipboard from "expo-clipboard";
 import { useEffect, useRef } from "react";
 import QRCode from "react-native-qrcode-svg";
 import { useFoundationRuntime } from "../../../app/runtime-context";
+import { copyToClipboard } from "../../../core/ui/copy-to-clipboard";
 import {
   AppIcon,
   Body,
@@ -10,7 +10,6 @@ import {
   SectionTitle,
   Sheet,
   Stack,
-  toast,
   useTheme,
   type SheetHandle,
 } from "../../../design-system";
@@ -44,8 +43,10 @@ export function WalletConnectSheet() {
 
   const copy = async () => {
     if (!uri) return;
-    await Clipboard.setStringAsync(uri);
-    toast(t("walletconnect.copied"), "success");
+    await copyToClipboard(uri, {
+      success: t("walletconnect.copied"),
+      failure: t("common.copyFailed"),
+    });
   };
 
   return (

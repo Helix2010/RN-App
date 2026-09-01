@@ -1,4 +1,3 @@
-import * as Clipboard from "expo-clipboard";
 import { forwardRef, useImperativeHandle, useRef } from "react";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import { shortenAddress } from "../../../core/i18n/format";
@@ -20,6 +19,7 @@ import {
   useSwitchAccount,
   useWalletAccounts,
 } from "../../wallet/hooks/use-wallet";
+import { copyToClipboard } from "../../../core/ui/copy-to-clipboard";
 import { useSession, useSignOut } from "../hooks/use-session";
 import { requestAuth } from "../model/auth-sheet-store";
 
@@ -38,10 +38,11 @@ export const AccountSheet = forwardRef<SheetHandle, { onClosed?: () => void }>(
       dismiss: () => sheet.current?.dismiss(),
     }));
 
-    const copy = async (value: string) => {
-      await Clipboard.setStringAsync(value);
-      toast(t("account.copied"), "success");
-    };
+    const copy = (value: string) =>
+      copyToClipboard(value, {
+        success: t("account.copied"),
+        failure: t("common.copyFailed"),
+      });
 
     return (
       <Sheet

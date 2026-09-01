@@ -306,6 +306,8 @@ export function ProfileScreen({
                 toast(t("account.disconnected"), "info");
                 navigation.popToTop();
               },
+              // 失败不能只是把按钮变回可点：用户不知道刚才那次没成功
+              onError: () => toast(t("account.disconnectFailed"), "error"),
             })
           }
           testID="profile-logout-confirm"

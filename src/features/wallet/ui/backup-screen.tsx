@@ -5,6 +5,7 @@ import * as Clipboard from "expo-clipboard";
 import { useEffect, useMemo, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
+import { copyToClipboard } from "../../../core/ui/copy-to-clipboard";
 import { useGateways } from "../../../core/gateways/gateway-context";
 import { useScreenProtect } from "../../../core/security/screen-protect";
 import {
@@ -131,9 +132,12 @@ export function BackupScreen({
 
   const copy = async () => {
     if (!phrase) return;
-    await Clipboard.setStringAsync(phrase);
-    toast(t("backup.copied"), "success");
-    setTimeout(() => void Clipboard.setStringAsync(""), 60_000);
+    await copyToClipboard(phrase, {
+      success: t("backup.copied"),
+      failure: t("common.copyFailed"),
+    });
+    // 助记词不能一直躺在剪贴板里
+    setTimeout(() => void Clipboard.setStringAsync("").catch(() => {}), 60_000);
   };
   const verify = async () => {
     if (marking) return;

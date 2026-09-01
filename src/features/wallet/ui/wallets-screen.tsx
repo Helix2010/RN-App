@@ -1,13 +1,14 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useQueryClient } from "@tanstack/react-query";
-import * as Clipboard from "expo-clipboard";
 import { useRef, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import { useGateways } from "../../../core/gateways/gateway-context";
+import { copyToClipboard } from "../../../core/ui/copy-to-clipboard";
 import { shortenAddress } from "../../../core/i18n/format";
 import { explorerAddressUrl } from "../../../core/wallet/config/wallet-runtime-config";
 import {
+  ActionButton,
   AppIcon,
   Badge,
   Body,
@@ -25,6 +26,7 @@ import {
   Stack,
   TextField,
   toast,
+  useAsyncAction,
 } from "../../../design-system";
 import type { RootStackParamList } from "../../../navigation/types";
 import { SRow } from "../../profile/profile-screen";
@@ -78,28 +80,23 @@ export function WalletsScreen({
       onError: () => toast(t("wallets.switchFailed"), "error"),
     });
   };
-  // 这三个操作以前失败是彻底静默的（void promise 把异常丢了），
-  // 用户只看到界面没变化，以为自己没点上
-  const [renaming, setRenaming] = useState(false);
-  const [disconnecting, setDisconnecting] = useState(false);
-  const saveLabel = async () => {
-    if (!address || !label.trim() || renaming) return;
-    setRenaming(true);
-    try {
+  // 这几个操作以前失败是彻底静默的（void promise 把异常丢了），用户只看到
+  // 界面没变化，以为自己没点上。useAsyncAction 让进行中和失败提示成为默认行为。
+  const { run: saveLabel, pending: renaming } = useAsyncAction(
+    async () => {
+      if (!address || !label.trim()) return;
       await wallet.rename(address, label.trim());
       void queryClient.invalidateQueries({ queryKey: ["wallet-accounts"] });
       rename.current?.dismiss();
-      toast(t("wallets.renamed"), "success");
-    } catch {
-      toast(t("wallets.renameFailed"), "error");
-    } finally {
-      setRenaming(false);
-    }
-  };
-  const onDisconnect = async () => {
-    if (!address || disconnecting) return;
-    setDisconnecting(true);
-    try {
+    },
+    {
+      failureMessage: t("wallets.renameFailed"),
+      successMessage: t("wallets.renamed"),
+    },
+  );
+  const { run: onDisconnect, pending: disconnecting } = useAsyncAction(
+    async () => {
+      if (!address) return;
       await wallet.disconnect(address);
       void queryClient.invalidateQueries({ queryKey: ["wallet-accounts"] });
       disconnect.current?.dismiss();
@@ -109,12 +106,9 @@ export function WalletsScreen({
         queryClient.setQueryData(["session"], null);
         navigation.popToTop();
       }
-    } catch {
-      toast(t("wallets.disconnectFailed"), "error");
-    } finally {
-      setDisconnecting(false);
-    }
-  };
+    },
+    { failureMessage: t("wallets.disconnectFailed") },
+  );
 
   return (
     <Page>
@@ -183,9 +177,10 @@ export function WalletsScreen({
                   icon="content-copy"
                   title={t("wallets.copy")}
                   onPress={() =>
-                    void Clipboard.setStringAsync(address).then(() =>
-                      toast(t("receive.copied"), "success"),
-                    )
+                    void copyToClipboard(address, {
+                      success: t("receive.copied"),
+                      failure: t("common.copyFailed"),
+                    })
                   }
                   testID="wallets-copy"
                 />
@@ -205,12 +200,16 @@ export function WalletsScreen({
                   onPress={() =>
                     // 以前这里硬编码了 bscscan，不管账户在哪条链；
                     // 现在用服务端下发的浏览器地址 + 该账户的首条链
-                    void Clipboard.setStringAsync(
+                    void copyToClipboard(
                       explorerAddressUrl(
                         current?.chains[0] ?? "bsc",
                         current?.address ?? address,
                       ),
-                    ).then(() => toast(t("receive.copied"), "success"))
+                      {
+                        success: t("receive.copied"),
+                        failure: t("common.copyFailed"),
+                      },
+                    )
                   }
                   testID="wallets-explorer"
                 />
@@ -255,13 +254,14 @@ export function WalletsScreen({
           accessibilityLabel={t("wallets.rename")}
           testID="wallets-rename-input"
         />
-        <PrimaryButton
-          onPress={() => void saveLabel()}
-          disabled={renaming}
+        <ActionButton
+          onPress={() => saveLabel()}
+          loading={renaming}
+          loadingLabel={t("common.saving")}
           testID="wallets-rename-save"
         >
-          {renaming ? t("common.saving") : t("common.save")}
-        </PrimaryButton>
+          {t("common.save")}
+        </ActionButton>
       </Sheet>
       <Sheet
         ref={disconnect}
@@ -269,14 +269,15 @@ export function WalletsScreen({
         closeLabel={t("common.close")}
         locked={disconnecting}
       >
-        <PrimaryButton
+        <ActionButton
           backgroundColor="$danger"
-          onPress={() => void onDisconnect()}
-          disabled={disconnecting}
+          onPress={() => onDisconnect()}
+          loading={disconnecting}
+          loadingLabel={t("common.processing")}
           testID="wallets-disconnect-confirm"
         >
-          {disconnecting ? t("common.processing") : t("wallets.disconnect")}
-        </PrimaryButton>
+          {t("wallets.disconnect")}
+        </ActionButton>
         <SecondaryButton
           onPress={() => disconnect.current?.dismiss()}
           disabled={disconnecting}

@@ -447,6 +447,39 @@ export const SecondaryButton = styled(Button, {
   disabledStyle: { opacity: 0.45 },
 });
 
+/**
+ * 会自己表达"进行中"的按钮。
+ *
+ * Tamagui 的 Button 没有 `loading`，于是项目里每个异步按钮都在手写
+ * `disabled={pending}` 加文案切换——漏掉就成了"点了没反应"。这里把它变成一个
+ * prop：loading 时自动禁用、显示转圈、可选换文案。
+ */
+export function ActionButton({
+  loading,
+  loadingLabel,
+  disabled,
+  icon,
+  children,
+  ...rest
+}: ComponentProps<typeof PrimaryButton> & {
+  loading?: boolean;
+  loadingLabel?: string;
+}) {
+  return (
+    <PrimaryButton
+      {...rest}
+      disabled={disabled || loading}
+      accessibilityState={{
+        busy: Boolean(loading),
+        disabled: Boolean(disabled || loading),
+      }}
+      icon={loading ? <Spinner size="small" color="$onPrimary" /> : icon}
+    >
+      {loading && loadingLabel ? loadingLabel : children}
+    </PrimaryButton>
+  );
+}
+
 export const Badge = styled(XStack, {
   alignSelf: "flex-start",
   alignItems: "center",
