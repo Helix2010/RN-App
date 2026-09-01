@@ -4,8 +4,6 @@ import {
   type Theme as NavigationTheme,
 } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { BackHandler } from "react-native";
-import { useEffect } from "react";
 import { useTheme } from "tamagui";
 import { useFoundationRuntime } from "../app/runtime-context";
 import { AppShellScreen } from "../features/foundation/app-shell-screen";
@@ -37,7 +35,7 @@ import { ApprovalsScreen } from "../features/dex/ui/approvals-screen";
 import { TOKENS } from "../features/wallet/fixtures/wallet";
 import type { TokenRef } from "../core/gateways/types";
 import type { RootStackParamList } from "./types";
-import { resolveSystemBack } from "./system-back";
+import { useSystemBackHandler } from "./use-system-back";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -63,25 +61,15 @@ export function FoundationNavigator() {
     },
   };
 
-  useEffect(() => {
-    const subscription = BackHandler.addEventListener(
-      "hardwareBackPress",
-      () => {
-        const route = navigationRef.getCurrentRoute();
-        const action = resolveSystemBack(
-          route?.name,
-          navigationRef.canGoBack(),
-          false,
-        );
-        if (action === "navigate") {
-          navigationRef.goBack();
-          return true;
-        }
-        return action === "consume";
-      },
-    );
-    return () => subscription.remove();
-  }, [config.update.decision, navigationRef]);
+  useSystemBackHandler({
+    // 强制升级时吞掉返回键。这里以前硬编码 false，`resolveSystemBack` 的
+    // updateLocked 分支从来没被调用过——强更弹窗顶住返回键全靠原生 Modal 的
+    // onRequestClose 是空实现，换个实现方式就会被无声绕过。
+    updateLocked: config.update.decision === "required",
+    getRouteName: () => navigationRef.getCurrentRoute()?.name,
+    canGoBack: () => navigationRef.canGoBack(),
+    goBack: () => navigationRef.goBack(),
+  });
 
   return (
     <NavigationContainer ref={navigationRef} theme={navigationTheme}>
