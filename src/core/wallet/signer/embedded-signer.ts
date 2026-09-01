@@ -15,6 +15,9 @@ import type {
  * 只有"消息总线 + RNG"能力的 WASM 沙箱（逆向 E-018）。
  */
 export class EmbeddedSigner implements WalletSigner {
+  /** 本地签名：nonce 与手续费都得由链层查好填进来 */
+  readonly managesOwnFees = false;
+
   constructor(
     readonly address: string,
     private readonly vault: KeystoreVault,

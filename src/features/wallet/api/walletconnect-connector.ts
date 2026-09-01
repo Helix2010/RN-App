@@ -317,6 +317,9 @@ export class WalletConnectConnector implements ExternalWalletConnector {
 }
 
 class WalletConnectSigner implements WalletSigner {
+  /** 钱包 App 自己算 nonce 与手续费，我们不该猜 */
+  readonly managesOwnFees = true;
+
   constructor(
     private readonly connection: Connection,
     private readonly deps: WalletConnectDeps,

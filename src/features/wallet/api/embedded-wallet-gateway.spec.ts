@@ -60,6 +60,7 @@ function fakeExternal(): ExternalWalletConnector {
     ],
     signer: jest.fn((address: string) => ({
       address,
+      managesOwnFees: true,
       signMessage: async () => "0xexternal",
       signTypedData: async () => "0xexternal",
       submitTransaction: async () => "0xexternal",
@@ -242,6 +243,7 @@ describe("EmbeddedWalletGateway", () => {
       if (!connected) throw new Error("wallet is not connected");
       return {
         address,
+        managesOwnFees: true,
         signMessage: async () => "0xrestored",
         signTypedData: async () => "0xrestored",
         submitTransaction: async () => "0xrestored",

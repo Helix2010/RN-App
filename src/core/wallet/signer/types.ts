@@ -23,6 +23,13 @@ export type EvmTransactionRequest = {
 
 export interface WalletSigner {
   readonly address: string;
+  /**
+   * 这个签名器是否自己管 nonce 与手续费。
+   *
+   * 外部钱包（`eth_sendTransaction`）自己算，替它查 nonce 和 gas 既浪费三次 RPC，
+   * 也可能和它自己的取值冲突。内置钱包相反——它什么都不知道，全靠链层准备。
+   */
+  readonly managesOwnFees: boolean;
   /** EIP-191 personal_sign，SIWE 登录用它 */
   signMessage(message: string, context: SignRequestContext): Promise<string>;
   /** EIP-712 结构化签名（下单 / 授权） */

@@ -1,0 +1,218 @@
+import type { SignRequestContext, WalletSigner } from "../wallet/signer/types";
+import { assertLocallySignable } from "../wallet/signer/transaction-guard";
+import { ChainClient } from "./chain-client";
+
+/**
+ * 一笔链上转出的完整编排：预检 → 构造 → 校验 → 签名提交 → nonce 记账。
+ *
+ * 三条刻意的设计：
+ *
+ * 1. **同一地址串行**。两笔并发会拿到同一个 nonce，后一笔要么替换前一笔、要么
+ *    一直卡着。排队比事后解释便宜。
+ * 2. **余额自己比，不靠节点报错**。`eth_estimateGas` 在余额不足时 revert，报文是
+ *    `execution reverted: BEP20: transfer amount exceeds balance` 这种合约内部话，
+ *    不能给用户看。所以先比余额，给出人话，够了才去估 gas。
+ * 3. **手续费只为本地签名准备**。外部钱包自己算 nonce 和 gas（`managesOwnFees`），
+ *    替它准备既浪费三次 RPC，也可能和它自己的取值冲突。
+ */
+
+/** `native` 是原生币的哨兵值，和 TokenRef 里的约定一致。 */
+const NATIVE = "native";
+
+export class InsufficientBalanceError extends Error {
+  constructor(
+    readonly symbol: string,
+    readonly required: bigint,
+    readonly available: bigint,
+  ) {
+    super(`insufficient ${symbol}`);
+    this.name = "InsufficientBalanceError";
+  }
+}
+
+/**
+ * 有代币但没有原生币付手续费。
+ *
+ * 单独一个类型是因为它是这类 App 最高频的用户困惑："我有 USDT，为什么转不了"。
+ * UI 必须能把它和"余额不足"分开讲。
+ */
+export class InsufficientGasError extends Error {
+  constructor(
+    readonly nativeSymbol: string,
+    readonly required: bigint,
+    readonly available: bigint,
+  ) {
+    super(`insufficient ${nativeSymbol} for gas`);
+    this.name = "InsufficientGasError";
+  }
+}
+
+export type TransferRequest = {
+  from: string;
+  to: string;
+  chainId: number;
+  /** 合约地址，原生币传 `native` */
+  tokenAddress: string;
+  tokenSymbol: string;
+  nativeSymbol: string;
+  /** 最小单位（wei / token 的最小精度） */
+  amount: bigint;
+};
+
+export type SubmittedTransfer = {
+  hash: string;
+  /** 本地签名时用掉的 nonce；外部钱包返回 undefined（它自己决定） */
+  nonce?: number;
+};
+
+type TransferDeps = {
+  chain: ChainClient;
+  signer: (address: string) => WalletSigner;
+  /** 展示在系统验证弹窗 / 外部钱包里的说明，已 i18n */
+  reason: string;
+};
+
+export class TransferService {
+  /** 每个地址一条队列：同时只允许一笔在途，避免 nonce 相撞 */
+  private readonly queues = new Map<string, Promise<unknown>>();
+
+  constructor(private readonly deps: TransferDeps) {}
+
+  async submit(request: TransferRequest): Promise<SubmittedTransfer> {
+    return this.serialize(request.from, () => this.run(request));
+  }
+
+  /** 估算这笔转账要花多少原生币做手续费，供 UI 在输入阶段就提示。 */
+  async estimateFee(request: TransferRequest): Promise<bigint> {
+    const { gasLimit, maxFeePerGas } = await this.quoteGas(request);
+    return gasLimit * maxFeePerGas;
+  }
+
+  /**
+   * 原生币"全部转出"的上限：余额减去手续费。
+   * 不减就是必然失败，而用户会反复重试。
+   */
+  async maxNativeAmount(request: TransferRequest): Promise<bigint> {
+    const balance = await this.deps.chain.getNativeBalance(request.from);
+    const fee = await this.estimateFee({ ...request, amount: 1n });
+    return balance > fee ? balance - fee : 0n;
+  }
+
+  private serialize<T>(address: string, task: () => Promise<T>): Promise<T> {
+    const key = address.toLowerCase();
+    const previous = this.queues.get(key) ?? Promise.resolve();
+    // 前一笔失败不该堵住后一笔，所以 catch 掉再接
+    const next = previous.catch(() => undefined).then(task);
+    this.queues.set(
+      key,
+      next.catch(() => undefined),
+    );
+    return next;
+  }
+
+  private isNative(request: TransferRequest): boolean {
+    return request.tokenAddress === NATIVE;
+  }
+
+  private callData(request: TransferRequest): {
+    to: string;
+    value?: bigint;
+    data?: string;
+  } {
+    if (this.isNative(request))
+      return { to: request.to, value: request.amount };
+    return {
+      // ERC-20 转账是调合约，收款地址在 calldata 里
+      to: request.tokenAddress,
+      value: 0n,
+      data: ChainClient.transferData(request.to, request.amount),
+    };
+  }
+
+  private async quoteGas(request: TransferRequest): Promise<{
+    gasLimit: bigint;
+    maxFeePerGas: bigint;
+    maxPriorityFeePerGas: bigint;
+  }> {
+    const target = this.callData(request);
+    const [gasLimit, fee] = await Promise.all([
+      this.deps.chain.estimateGas({
+        from: request.from,
+        to: target.to,
+        value: target.value,
+        data: target.data,
+      }),
+      this.deps.chain.getFeeData(),
+    ]);
+    return { gasLimit, ...fee };
+  }
+
+  private async assertFunded(
+    request: TransferRequest,
+    feeCost: bigint,
+  ): Promise<void> {
+    const native = await this.deps.chain.getNativeBalance(request.from);
+    if (this.isNative(request)) {
+      // 原生币转账：金额和手续费出自同一个余额
+      const required = request.amount + feeCost;
+      if (native < required)
+        throw new InsufficientBalanceError(
+          request.tokenSymbol,
+          required,
+          native,
+        );
+      return;
+    }
+    if (native < feeCost)
+      throw new InsufficientGasError(request.nativeSymbol, feeCost, native);
+    const balances = await this.deps.chain.getTokenBalances(request.from, [
+      request.tokenAddress,
+    ]);
+    const held = balances.get(request.tokenAddress.toLowerCase()) ?? 0n;
+    if (held < request.amount)
+      throw new InsufficientBalanceError(
+        request.tokenSymbol,
+        request.amount,
+        held,
+      );
+  }
+
+  private async run(request: TransferRequest): Promise<SubmittedTransfer> {
+    const signer = this.deps.signer(request.from);
+    const target = this.callData(request);
+    const context: SignRequestContext = { reason: this.deps.reason };
+
+    if (signer.managesOwnFees) {
+      // 钱包自己算 nonce 与手续费；我们只交出意图
+      const hash = await signer.submitTransaction(
+        { chainId: request.chainId, from: request.from, ...target },
+        context,
+        async () => {
+          throw new Error("external wallet broadcasts on its own");
+        },
+      );
+      return { hash };
+    }
+
+    const gas = await this.quoteGas(request);
+    await this.assertFunded(request, gas.gasLimit * gas.maxFeePerGas);
+    const nonce = await this.deps.chain.getNextNonce(request.from);
+    const transaction = {
+      chainId: request.chainId,
+      from: request.from,
+      ...target,
+      nonce,
+      gasLimit: gas.gasLimit,
+      maxFeePerGas: gas.maxFeePerGas,
+      maxPriorityFeePerGas: gas.maxPriorityFeePerGas,
+    };
+    // 最后一道：ethers 缺字段不报错，会签出 nonce=0 的废交易
+    assertLocallySignable(transaction);
+    const hash = await signer.submitTransaction(transaction, context, (raw) =>
+      this.deps.chain.broadcast(raw),
+    );
+    // 广播成功才占用这个 nonce；失败时留给下一笔重用
+    this.deps.chain.noteNonceUsed(request.from, nonce);
+    return { hash, nonce };
+  }
+}
