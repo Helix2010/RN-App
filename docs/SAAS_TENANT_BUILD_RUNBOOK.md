@@ -21,6 +21,15 @@ tenants/<tenant-slug>/tenant.json
 
 `app.config.ts`、`eas.json`、CI workflow 和命令行不得复制租户域名、包名、applicationId、版本或 Build。构建环境只选择租户 slug；签名证书、`google-services.json`、OTA 私钥和推送凭证只能使用 Secret。
 
+机器级构建输入统一放在 git 忽略的 `.env.local`（模板见 `.env.example`），不写进 tenant.json，也不在命令行传：
+
+```text
+ANDROID_HOME=/home/<user>/android-sdk
+GOOGLE_SERVICES_JSON=/home/<user>/fy/secrets/<slug>/google-services.json
+```
+
+`pnpm android:release <slug>` 会读取这两项；缺少 `GOOGLE_SERVICES_JSON` 时构建直接失败，只有明确传 `--no-push` 才允许出无推送的包。服务端推送凭证（FCM 服务账号、APNs 密钥）只放部署机的 `.env`，见 RN-Server `deploy/web4/README.md`。
+
 ## 2. 新增租户
 
 1. 创建 `tenants/<slug>/tenant.json`。

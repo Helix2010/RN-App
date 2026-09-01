@@ -38,3 +38,34 @@ test("release build keeps the production tenant configuration together", () => {
     applicationId: "dex-mobile",
   });
 });
+
+test("release build fails fast when the push config file is missing", () => {
+  const result = spawnSync(process.execPath, [script, "anyfun"], {
+    env: {
+      ...process.env,
+      ANDROID_HOME: process.cwd(),
+      GOOGLE_SERVICES_JSON: resolve(
+        process.cwd(),
+        "missing-google-services.json",
+      ),
+    },
+    encoding: "utf8",
+  });
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain(
+    "GOOGLE_SERVICES_JSON points to a missing file",
+  );
+});
+
+test("release build refuses to silently ship without push", () => {
+  const result = spawnSync(process.execPath, [script, "anyfun"], {
+    env: {
+      ...process.env,
+      ANDROID_HOME: process.cwd(),
+      GOOGLE_SERVICES_JSON: "",
+    },
+    encoding: "utf8",
+  });
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain("GOOGLE_SERVICES_JSON is required");
+});

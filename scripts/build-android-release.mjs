@@ -1,9 +1,31 @@
-import { copyFileSync, mkdirSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { readTenantConfig, tenantEnvironment } from "./tenant-config.mjs";
 
 const projectRoot = process.cwd();
+
+// Machine-level build inputs live in the git-ignored .env.local (or .env), so a
+// release needs no command-line environment: `pnpm android:release <slug>`.
+// Expo already reads these files for app.config; this loads the same values
+// for the Gradle step. Existing process.env values win, like Expo's loader.
+const MACHINE_ENV_KEYS = [
+  "ANDROID_HOME",
+  "ANDROID_SDK_ROOT",
+  "JAVA_HOME",
+  "GOOGLE_SERVICES_JSON",
+];
+for (const file of [".env.local", ".env"]) {
+  const path = resolve(projectRoot, file);
+  if (!existsSync(path)) continue;
+  for (const line of readFileSync(path, "utf8").split(/\r?\n/)) {
+    const match = /^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*?)\s*$/.exec(line);
+    if (!match || !MACHINE_ENV_KEYS.includes(match[1])) continue;
+    const value = match[2].replace(/^(['"])(.*)\1$/, "$2");
+    if (value !== "" && process.env[match[1]] === undefined)
+      process.env[match[1]] = value;
+  }
+}
 const tenantSlug =
   process.argv.slice(2).find((value) => !value.startsWith("--")) ??
   process.env.EXPO_PUBLIC_TENANT;
@@ -42,6 +64,24 @@ if (process.argv.includes("--check-env")) {
     }),
   );
   process.exit(0);
+}
+
+const sdkRoot = env.ANDROID_HOME ?? env.ANDROID_SDK_ROOT;
+if (!sdkRoot || !existsSync(sdkRoot)) {
+  throw new Error(
+    "ANDROID_HOME must point at an installed Android SDK; set it in .env.local",
+  );
+}
+env.ANDROID_HOME = sdkRoot;
+if (env.GOOGLE_SERVICES_JSON) {
+  if (!existsSync(env.GOOGLE_SERVICES_JSON))
+    throw new Error(
+      `GOOGLE_SERVICES_JSON points to a missing file: ${env.GOOGLE_SERVICES_JSON}`,
+    );
+} else if (!process.argv.includes("--no-push")) {
+  throw new Error(
+    "GOOGLE_SERVICES_JSON is required so the release can register for push; set it in .env.local or pass --no-push to build without FCM on purpose",
+  );
 }
 
 const run = (command, args, options = {}) => {
