@@ -18,7 +18,7 @@ export const PROTECTED_FLOWS = [
   "wallet-key-import",
 ] as const;
 
-export type ProtectedFlow = (typeof PROTECTED_FLOWS)[number];
+type ProtectedFlow = (typeof PROTECTED_FLOWS)[number];
 
 /**
  * 进入页面时加保护，离开时释放。

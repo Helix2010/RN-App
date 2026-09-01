@@ -1,5 +1,4 @@
 import {
-  EVM_CHAIN_IDS,
   WalletConnectConnector,
   WalletConnectRejectedError,
   WalletConnectUnavailableError,
@@ -10,6 +9,11 @@ import {
 } from "./walletconnect-connector";
 
 const ADDRESS = "0x3f4A8C21b7d94E0a1F6c5d2e8b9A7c3D4e5F9a2C";
+/** 由服务端下发的链目录；连接器不再自己硬编码 chainId */
+const NETWORKS = [
+  { id: "bsc" as const, chainId: 56 },
+  { id: "eth" as const, chainId: 1 },
+];
 
 function session(overrides?: Partial<ConnectedSession>): ConnectedSession {
   return {
@@ -46,7 +50,7 @@ function setup(options?: {
     client: async () => client,
     present,
     openWallet,
-    chains: ["bsc", "eth"],
+    networks: () => NETWORKS,
     available: options?.available,
   };
   return {
@@ -60,24 +64,27 @@ function setup(options?: {
 
 describe("parseAccounts", () => {
   it("reads the address and every supported chain from CAIP-10 accounts", () => {
-    expect(parseAccounts(session().namespaces)).toEqual({
+    expect(parseAccounts(session().namespaces, NETWORKS)).toEqual({
       address: ADDRESS,
       chains: ["bsc", "eth"],
     });
   });
 
   it("ignores unknown namespaces and chains", () => {
-    const parsed = parseAccounts({
-      eip155: { accounts: [`eip155:999:${ADDRESS}`] },
-      solana: { accounts: ["solana:mainnet:abc"] },
-    });
+    const parsed = parseAccounts(
+      {
+        eip155: { accounts: [`eip155:999:${ADDRESS}`] },
+        solana: { accounts: ["solana:mainnet:abc"] },
+      },
+      NETWORKS,
+    );
     // 地址仍然可用，但没有一条我们支持的链 => 回退到默认链
     expect(parsed).toEqual({ address: ADDRESS, chains: ["bsc"] });
   });
 
   it("returns null when no account was shared", () => {
-    expect(parseAccounts({})).toBeNull();
-    expect(parseAccounts({ eip155: { accounts: [] } })).toBeNull();
+    expect(parseAccounts({}, NETWORKS)).toBeNull();
+    expect(parseAccounts({ eip155: { accounts: [] } }, NETWORKS)).toBeNull();
   });
 });
 
@@ -89,10 +96,8 @@ describe("WalletConnectConnector", () => {
 
     const namespaces = (client.connect as jest.Mock).mock.calls[0][0]
       .requiredNamespaces.eip155;
-    expect(namespaces.chains).toEqual([
-      `eip155:${EVM_CHAIN_IDS.bsc}`,
-      `eip155:${EVM_CHAIN_IDS.eth}`,
-    ]);
+    // 链与 chainId 都来自下发的目录
+    expect(namespaces.chains).toEqual(["eip155:56", "eip155:1"]);
     expect(namespaces.methods).toContain("personal_sign");
     expect(namespaces.methods).toContain("eth_signTypedData_v4");
     // 用 MetaMask 的深链把用户带过去
@@ -123,7 +128,7 @@ describe("WalletConnectConnector", () => {
     const call = request.mock.calls[0][0];
     expect(call).toMatchObject({
       topic: "topic-1",
-      chainId: `eip155:${EVM_CHAIN_IDS.bsc}`,
+      chainId: "eip155:56",
     });
     expect(call.request.method).toBe("personal_sign");
     // personal_sign 的参数是 [hex(data), address]

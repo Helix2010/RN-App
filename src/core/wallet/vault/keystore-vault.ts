@@ -2,7 +2,7 @@ import { gcm } from "@noble/ciphers/aes.js";
 import { hkdf } from "@noble/hashes/hkdf.js";
 import { scrypt } from "@noble/hashes/scrypt.js";
 import { sha256 } from "@noble/hashes/sha2.js";
-import { getAddress, randomBytes } from "ethers";
+import { randomBytes } from "ethers";
 import type { KeyValueStorage } from "../../gateways/types";
 import {
   accountFromPrivateKey,
@@ -32,10 +32,10 @@ const HKDF_INFO = new TextEncoder().encode("foundation.wallet.entry.v1");
 const DEFAULT_UNLOCK_TTL_MS = 5 * 60 * 1_000;
 const SCRYPT_PARAMS = { N: 2 ** 15, r: 8, p: 1, dkLen: 32 } as const;
 
-export type VaultEntryKind = "mnemonic" | "private-key";
+type VaultEntryKind = "mnemonic" | "private-key";
 
 /** 对外可见的条目元数据 —— 不含任何密钥материал。 */
-export type VaultEntry = {
+type VaultEntry = {
   address: string;
   kind: VaultEntryKind;
   /** mnemonic 条目的 BIP-44 路径；私钥导入为 null */
@@ -84,7 +84,7 @@ function wipe(bytes: Uint8Array): void {
   bytes.fill(0);
 }
 
-export type KeystoreVaultDeps = {
+type KeystoreVaultDeps = {
   storage: KeyValueStorage;
   secureStore: SecureStorePort;
   authenticate: AuthenticatePort;
@@ -325,7 +325,7 @@ function pathIndex(path: string | null): number {
  * WK 已是 32 字节高熵随机值，密钥分离用 HKDF 即足够；scrypt 只在用户设置了
  * 钱包口令（低熵输入）时参与，用于抗离线暴力破解。
  */
-export function deriveEntryKey(
+function deriveEntryKey(
   wrapKey: Uint8Array,
   salt: Uint8Array,
   passphrase?: string,
@@ -343,8 +343,4 @@ export function deriveEntryKey(
     wipe(ikm);
     wipe(stretched);
   }
-}
-
-export function checksumAddress(address: string): string {
-  return getAddress(address);
 }

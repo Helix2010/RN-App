@@ -9,7 +9,7 @@ import { CHAINS, type ChainId } from "../../gateways/types";
  * 它的功能标为不可用。
  */
 
-export type WalletNetwork = {
+type WalletNetwork = {
   id: ChainId;
   /** EIP-155 chain id，签名与 WalletConnect namespace 都用它 */
   chainId: number;
@@ -17,7 +17,7 @@ export type WalletNetwork = {
   explorerUrl: string;
 };
 
-export type DeliveredWalletConfig = {
+type DeliveredWalletConfig = {
   walletConnectProjectId: string;
   chains: ChainId[];
   networks: WalletNetwork[];
@@ -79,7 +79,7 @@ export function isWalletConnectConfigured(): boolean {
   return walletConnectProjectId() !== null;
 }
 
-export function enabledChains(): ChainId[] {
+function enabledChains(): ChainId[] {
   return delivered?.chains ?? ["bsc", "eth", "base"];
 }
 
@@ -87,7 +87,7 @@ export function walletNetworks(): WalletNetwork[] {
   return delivered?.networks ?? fallbackNetworks(enabledChains());
 }
 
-export function networkFor(chain: ChainId): WalletNetwork {
+function networkFor(chain: ChainId): WalletNetwork {
   return (
     walletNetworks().find((network) => network.id === chain) ?? {
       id: chain,
@@ -95,16 +95,6 @@ export function networkFor(chain: ChainId): WalletNetwork {
       rpcUrls: [],
       explorerUrl: CHAINS[chain].explorerUrl,
     }
-  );
-}
-
-export function evmChainId(chain: ChainId): number {
-  return networkFor(chain).chainId;
-}
-
-export function chainForEvmId(chainId: number): ChainId | null {
-  return (
-    walletNetworks().find((network) => network.chainId === chainId)?.id ?? null
   );
 }
 

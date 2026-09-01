@@ -27,7 +27,3 @@ export function presentWalletConnectUri(
 ): void {
   useWalletConnectPairing.getState().present({ uri, connector });
 }
-
-export function dismissWalletConnectUri(): void {
-  useWalletConnectPairing.getState().dismiss();
-}

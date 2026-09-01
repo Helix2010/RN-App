@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { appRuntime } from "../../../core/network/api-client";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { AppState } from "react-native";
 import { useGateways } from "../../../core/gateways/gateway-context";
 import type { SignInChallenge } from "../api/gateway";
 import type { Session, WalletConnectorId } from "../model/session";
@@ -16,6 +17,33 @@ export function useSession() {
     queryFn: () => session.get(),
     staleTime: Infinity,
   });
+}
+
+/**
+ * 回到前台时向服务端确认会话。没有这一步，服务端撤销了令牌，App 仍会一直
+ * 显示已登录到本地过期为止。
+ */
+export function useSessionRevalidation(): void {
+  const { session } = useGateways();
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (!session.refresh) return;
+    const revalidate = (): void => {
+      void session.refresh?.().then((next) => {
+        queryClient.setQueryData(sessionQueryKey, next);
+        if (next === null)
+          void queryClient.invalidateQueries({
+            predicate: (query) => query.queryKey[0] !== "session",
+          });
+      });
+    };
+    // 挂载时就在前台，不必再看 AppState；之后只在回到前台时重校验
+    revalidate();
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") revalidate();
+    });
+    return () => subscription.remove();
+  }, [queryClient, session]);
 }
 
 export function useSignOut() {

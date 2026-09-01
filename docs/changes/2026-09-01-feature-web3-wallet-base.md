@@ -207,7 +207,7 @@ CI 的 `check-expo-doctor` 抓到两个真问题（本地 `pnpm check` 不覆盖
 ### 技术影响
 
 - 服务端 `normalizeWallet` 改为输出 `{walletConnectProjectId, chains, networks:[{id, chainId, rpcUrls, explorerUrl}]}`。`chainId` 来自平台目录、**不允许租户改写**（改错会让签名打到错链）；端点可改。`chains` 保留在 payload 里给只认旧结构的客户端。
-- App 新增 `src/core/wallet/config/wallet-runtime-config.ts`：下发配置的唯一持有处，暴露 `walletConnectProjectId / enabledChains / networkFor / evmChainId / chainForEvmId / explorerAddressUrl / rpcUrlsFor` 与 `onWalletConfigChange`（projectId 变化时丢弃已建的 WalletConnect 客户端）。原来放在 `walletconnect-client.ts` 里的 holder 搬走了——RPC 与浏览器地址不属于 WalletConnect 范畴。
+- App 新增 `src/core/wallet/config/wallet-runtime-config.ts`：下发配置的唯一持有处，暴露 `walletConnectProjectId / isWalletConnectConfigured / walletNetworks / explorerAddressUrl / rpcUrlsFor` 与 `onWalletConfigChange`（projectId 变化时丢弃已建的 WalletConnect 客户端）。原来放在 `walletconnect-client.ts` 里的 holder 搬走了——RPC 与浏览器地址不属于 WalletConnect 范畴。
 - 修掉硬编码的 bscscan：改用 `explorerAddressUrl(current.chains[0], current.address)`。
 - `CHAINS` 保留为**展示元数据**（名称 / 符号 / 精度 / 颜色），端点一律来自服务端。
 
@@ -221,3 +221,25 @@ CI 的 `check-expo-doctor` 抓到两个真问题（本地 `pnpm check` 不覆盖
 ### 关于 RPC 的一个必须说清的边界
 
 下发给客户端的 RPC 地址**按定义就是公开的**——任何人都能从包里或抓包拿到。所以：租户要么用可以公开的端点（按域名限制来源、或带速率限制的 key），要么让 RN-Server 代理 RPC。**绝不要把 bearer 类密钥拼在 rpcUrl 里**。当前默认值用的是各链的公共端点（BSC dataseed / publicnode / base mainnet），能跑但有速率限制，正式上线应换成租户自己的服务商。
+
+## P4 Review 与死代码清理（本次）
+
+把整个钱包底座通读一遍并跑了一次全量未引用导出扫描。除了删死代码，查出**三个真缺陷**——都不是风格问题，是用户会撞上的行为问题。
+
+### 三个真缺陷
+
+1. **chainId 有两个真相来源。** `walletconnect-connector.ts` 里自己留了一份 `EVM_CHAIN_IDS` / `CHAIN_BY_EIP155` 硬编码表，而服务端已经在下发 `networks[].chainId`。两份不一致时，WalletConnect namespace 里请求的链和签名时用的链会对不上，表现是"连上了但签名被钱包拒绝"，而且只在租户改过链配置的环境里复现。改法：连接器改为注入 `networks: () => {id, chainId}[]`，从下发目录解析，两张硬编码表删掉。
+2. **外部钱包冷启动后签不了名。** `ExternalWalletConnector.restore()` 写了但没人调用——WalletConnect 会话本身在 SDK 侧持久化，可是进程重启后内存里没有连接对象，`signerFor` 直接抛错。用户每次重启 App 都得重新扫码。改法：`signerFor` 捕获首次失败后 `await external.restore?.()` 再试一次。
+3. **被吊销的会话仍然是登录态。** `HttpSessionGateway.refresh()` 写了但没人调用。服务端把 `wallet_session` 删掉之后，App 侧只要不重启就一直显示已登录，直到下一次带 token 的请求失败。改法：新增 `useSessionRevalidation()` + `SessionRevalidator`（挂在导航器里，不渲染任何东西），挂载时以及每次回到前台各校验一次。
+
+写第 3 条的测试时又发现自己引入的一个 bug：挂载时的那次校验被 `AppState.currentState !== "active"` 挡掉了（测试环境里 currentState 不是 "active"）。挂载本身就发生在前台，这个判断是多余的，删掉。
+
+### 死代码
+
+删除：`checksumAddress`（vault 里的私有副本，`mnemonic.ts` 已经出 EIP-55 地址）、`dismissWalletConnectUri`（sheet 直接用 store 的 `dismiss`）、`evmChainId` / `chainForEvmId`（连接器改注入后无人调用）、`EVM_CHAIN_IDS` / `CHAIN_BY_EIP155`。收回 11 个只在模块内使用的导出（`DerivedAccount`、`deriveEntryKey`、`ProtectedFlow`、`SessionNamespace`、`enabledChains`、`networkFor`、`WalletChainData`、`EmbeddedWalletGatewayDeps` 等）——导出即契约，跨模块可见的符号越少，改动面越小。
+
+保留：`app-lock.ts` 的 `LockDecisionInput`、`use-require-verification.ts` 的 `VerificationRequest`、`use-session.ts` 的 `LoginStep` 三个现存未引用导出不属于本次范围，未改动。
+
+### 验证
+
+`pnpm check` 50 suites / 254 例全绿（新增：外部钱包冷启动恢复、会话吊销后失效各一组）。

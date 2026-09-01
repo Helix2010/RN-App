@@ -1,15 +1,12 @@
 import {
   applyDeliveredWalletConfig,
-  chainForEvmId,
-  enabledChains,
-  evmChainId,
   explorerAddressUrl,
   isWalletConnectConfigured,
-  networkFor,
   onWalletConfigChange,
   resetDeliveredWalletConfig,
   rpcUrlsFor,
   walletConnectProjectId,
+  walletNetworks,
 } from "./wallet-runtime-config";
 
 const ADDRESS = "0x9858EfFD232B4033E47d90003D41EC34EcaEda94";
@@ -34,8 +31,14 @@ describe("wallet runtime config", () => {
   });
 
   it("falls back to platform chain metadata before anything is delivered", () => {
-    expect(enabledChains()).toEqual(["bsc", "eth", "base"]);
-    expect(evmChainId("base")).toBe(8453);
+    expect(walletNetworks().map((network) => network.id)).toEqual([
+      "bsc",
+      "eth",
+      "base",
+    ]);
+    expect(
+      walletNetworks().find((network) => network.id === "base")?.chainId,
+    ).toBe(8453);
     // 没下发 RPC 时必须是空的：不该猜端点
     expect(rpcUrlsFor("bsc")).toEqual([]);
     expect(explorerAddressUrl("eth", ADDRESS)).toBe(
@@ -55,13 +58,11 @@ describe("wallet runtime config", () => {
         },
       ],
     });
-    expect(enabledChains()).toEqual(["bsc"]);
+    expect(walletNetworks().map((network) => network.id)).toEqual(["bsc"]);
     expect(rpcUrlsFor("bsc")).toEqual(["https://rpc.tenant.example/bsc"]);
     expect(explorerAddressUrl("bsc", ADDRESS)).toBe(
       `https://explorer.tenant.example/address/${ADDRESS}`,
     );
-    expect(chainForEvmId(56)).toBe("bsc");
-    expect(chainForEvmId(999)).toBeNull();
   });
 
   it("derives networks from chains when an older server omits them", () => {
@@ -69,8 +70,11 @@ describe("wallet runtime config", () => {
       walletConnectProjectId: "pid",
       chains: ["eth", "base"],
     });
-    expect(enabledChains()).toEqual(["eth", "base"]);
-    expect(networkFor("eth")).toEqual({
+    expect(walletNetworks().map((network) => network.id)).toEqual([
+      "eth",
+      "base",
+    ]);
+    expect(walletNetworks().find((network) => network.id === "eth")).toEqual({
       id: "eth",
       chainId: 1,
       rpcUrls: [],
@@ -123,6 +127,5 @@ describe("wallet runtime config", () => {
     expect(explorerAddressUrl("base", ADDRESS)).toBe(
       `https://basescan.org/address/${ADDRESS}`,
     );
-    expect(evmChainId("base")).toBe(8453);
   });
 });
