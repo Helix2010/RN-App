@@ -55,6 +55,7 @@ describe("wallet runtime config", () => {
           chainId: 56,
           rpcUrls: ["https://rpc.tenant.example/bsc"],
           explorerUrl: "https://explorer.tenant.example",
+          testnet: false,
         },
       ],
     });
@@ -79,7 +80,25 @@ describe("wallet runtime config", () => {
       chainId: 1,
       rpcUrls: [],
       explorerUrl: "https://etherscan.io",
+      testnet: false,
     });
+  });
+
+  it("keeps the testnet flag for a delivered test chain", () => {
+    applyDeliveredWalletConfig({
+      walletConnectProjectId: "pid",
+      chains: ["bsc", "op-sepolia"],
+    });
+
+    expect(walletNetworks().find((n) => n.id === "op-sepolia")).toEqual({
+      id: "op-sepolia",
+      chainId: 11155420,
+      rpcUrls: [],
+      explorerUrl: "https://sepolia-optimism.etherscan.io",
+      // 老服务端不下发 testnet 时，客户端也要认得出这是测试链
+      testnet: true,
+    });
+    expect(walletNetworks().find((n) => n.id === "bsc")?.testnet).toBe(false);
   });
 
   it("notifies subscribers only when something actually changed", () => {
@@ -120,6 +139,7 @@ describe("wallet runtime config", () => {
           chainId: 56,
           rpcUrls: [],
           explorerUrl: "https://bscscan.com",
+          testnet: false,
         },
       ],
     });
