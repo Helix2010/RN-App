@@ -120,3 +120,32 @@ export function useWalletTransfer(id: string | undefined, initial?: Tx) {
     },
   });
 }
+
+/** 最近转出过的地址（去重、按时间倒序、最多 5 条），供转出页快速选择。 */
+export type RecentRecipient = { address: string; lastUsedAt: string };
+
+export function useRecentRecipients(address: string | undefined) {
+  const { wallet } = useGateways();
+  return useQuery({
+    queryKey: ["wallet-recent-recipients", address],
+    queryFn: async (): Promise<RecentRecipient[]> => {
+      const transfers = await wallet.listTransfers(address as string);
+      const seen = new Map<string, RecentRecipient>();
+      for (const transfer of transfers) {
+        if (transfer.kind !== "send") continue;
+        const key = transfer.counterparty.toLowerCase();
+        const known = seen.get(key);
+        if (!known || known.lastUsedAt < transfer.updatedAt)
+          seen.set(key, {
+            address: transfer.counterparty,
+            lastUsedAt: transfer.updatedAt,
+          });
+      }
+      return [...seen.values()]
+        .sort((a, b) => (a.lastUsedAt < b.lastUsedAt ? 1 : -1))
+        .slice(0, 5);
+    },
+    enabled: Boolean(address),
+    staleTime: 15_000,
+  });
+}

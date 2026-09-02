@@ -1,5 +1,6 @@
 import { fromDecimal } from "../../../core/money/money";
-import { screen, waitFor } from "@testing-library/react-native";
+import { fireEvent, screen, waitFor } from "@testing-library/react-native";
+import { CHAINS } from "../../../core/gateways/types";
 import {
   createTestGateways,
   renderWithProviders,
@@ -111,5 +112,46 @@ describe("AssetsScreen per-chain availability and pricing", () => {
       expect(screen.getByTestId("assets-partial")).toBeTruthy(),
     );
     expect(screen.getByText("—")).toBeTruthy();
+  });
+});
+
+describe("AssetsScreen chain information", () => {
+  const holding = (chain: "bsc" | "eth", symbol: string) => ({
+    token: {
+      chain,
+      address: `0x${symbol.toLowerCase().padEnd(40, "0")}`,
+      symbol,
+      name: symbol,
+      decimals: 18,
+      displayDecimals: 2,
+      logoColor: "#26A17B",
+      verified: false,
+    },
+    amount: fromDecimal("12", 18, symbol),
+    usdValue: 12,
+    change24hPct: 0,
+  });
+
+  it("labels each holding with its chain and filters the list by chain", async () => {
+    const gateways = createTestGateways();
+    await signIn(gateways);
+    gateways.wallet.getBalances = jest.fn(async () => ({
+      items: [holding("bsc", "AAA"), holding("eth", "BBB")],
+      unavailable: [],
+    }));
+
+    await renderAssets({ gateways, modules: { predict: false } });
+
+    // 每一行都带链徽标 + 链全名：同一个符号在两条链上是两个资产
+    await screen.findByTestId("chain-badge-bsc");
+    expect(screen.getByTestId("chain-badge-eth")).toBeTruthy();
+    expect(screen.getAllByText(CHAINS.eth.name).length).toBeGreaterThan(1);
+
+    // 链筛选的第一个匹配是筛选条里的按钮（在列表上方）
+    void fireEvent.press(screen.getAllByText(CHAINS.eth.name)[0]!);
+
+    await waitFor(() => expect(screen.queryByText("AAA")).toBeNull());
+    expect(screen.getByText("BBB")).toBeTruthy();
+    expect(screen.queryByTestId("chain-badge-bsc")).toBeNull();
   });
 });

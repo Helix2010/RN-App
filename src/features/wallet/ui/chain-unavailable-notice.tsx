@@ -5,7 +5,6 @@ import {
   AppIcon,
   InlineText,
   Row,
-  SecondaryButton,
   Stack,
   useTheme,
 } from "../../../design-system";
@@ -44,9 +43,16 @@ export function ChainUnavailableNotice({
             })}
           </InlineText>
           {onRetry ? (
-            <SecondaryButton onPress={onRetry} size="$2">
-              {t("assets.balanceUnavailable.retry")}
-            </SecondaryButton>
+            <Stack
+              onPress={onRetry}
+              padding="$1.5"
+              borderRadius={999}
+              accessibilityRole="button"
+              accessibilityLabel={t("assets.balanceUnavailable.retry")}
+              testID={`chain-unavailable-retry-${failure.chain}`}
+            >
+              <AppIcon name="refresh" size={18} colorToken="warning" />
+            </Stack>
           ) : null}
         </Row>
       ))}

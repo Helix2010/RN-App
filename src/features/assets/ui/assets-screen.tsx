@@ -1,3 +1,8 @@
+import {
+  enabledChains,
+  isTestnetChain,
+} from "../../../core/wallet/config/wallet-runtime-config";
+import { CHAINS, type ChainId } from "../../../core/gateways/types";
 import { ChainUnavailableNotice } from "../../wallet/ui/chain-unavailable-notice";
 import { useRef, useState } from "react";
 import {
@@ -13,7 +18,6 @@ import { toApproxNumber } from "../../../core/money/money";
 import {
   AmountText,
   AppIcon,
-  type AppIconName,
   Body,
   Card,
   Content,
@@ -25,11 +29,13 @@ import {
   PrimaryButton,
   Row,
   SectionTitle,
-  type SheetHandle,
+  SegmentedControl,
   Sheet,
   SkeletonBlock,
   Stack,
   Switch,
+  type AppIconName,
+  type SheetHandle,
 } from "../../../design-system";
 import { useSession } from "../../session/hooks/use-session";
 import { requestAuth } from "../../session/model/auth-sheet-store";
@@ -56,6 +62,7 @@ export function AssetsScreen({
   const overview = useAssetsOverview(address, config.modules.predict);
   const [hideSmall, setHideSmall] = useState(false);
   const [visible, setVisible] = useState(true);
+  const [pickedChain, setPickedChain] = useState<ChainId | "all">("all");
   const receive = useRef<SheetHandle>(null);
   const transfer = useRef<SheetHandle>(null);
 
@@ -81,9 +88,15 @@ export function AssetsScreen({
   }
 
   const data = overview.data;
+  // 链筛选只列租户启用的链；选中的链被关掉后回到"全部"
+  const chains = enabledChains();
+  const chainFilter =
+    pickedChain === "all" || chains.includes(pickedChain) ? pickedChain : "all";
   const holdings = (data?.holdings ?? []).filter(
-    // 没有估值的币不算"小额"：不知道值多少，不能替用户藏起来
-    (item) => !hideSmall || item.usdValue === null || item.usdValue >= 1,
+    (item) =>
+      (chainFilter === "all" || item.token.chain === chainFilter) &&
+      // 没有估值的币不算"小额"：不知道值多少，不能替用户藏起来
+      (!hideSmall || item.usdValue === null || item.usdValue >= 1),
   );
   const predictUsdc: TokenBalance | null = data?.predict
     ? {
@@ -312,6 +325,22 @@ export function AssetsScreen({
                 />
               </Row>
             </Row>
+            {chains.length > 1 ? (
+              <SegmentedControl
+                value={chainFilter}
+                options={[
+                  { value: "all" as const, label: t("assets.allChains") },
+                  ...chains.map((id) => ({
+                    value: id,
+                    label: isTestnetChain(id)
+                      ? `${CHAINS[id].name} · ${t("send.testnetTag")}`
+                      : CHAINS[id].name,
+                  })),
+                ]}
+                onChange={setPickedChain}
+                accessibilityLabel={t("assets.allChains")}
+              />
+            ) : null}
             {data ? (
               <>
                 <ChainUnavailableNotice
@@ -336,7 +365,7 @@ export function AssetsScreen({
                     key={`${item.token.chain}:${item.token.address}`}
                     item={item}
                     account={t("assets.wallet")}
-                    note={item.token.chain.toUpperCase()}
+                    note={CHAINS[item.token.chain].name}
                     locale={locale}
                     visible={visible}
                   />
@@ -453,18 +482,7 @@ export function HoldingRow({
       onPress={onPress}
       accessibilityRole={onPress ? "button" : undefined}
     >
-      <Stack
-        width={36}
-        height={36}
-        borderRadius={18}
-        alignItems="center"
-        justifyContent="center"
-        style={{ backgroundColor: item.token.logoColor }}
-      >
-        <InlineText color="white" fontWeight="900">
-          {item.token.symbol[0]}
-        </InlineText>
-      </Stack>
+      <TokenAvatar token={item.token} size={36} />
       <Stack flex={1}>
         <SectionTitle fontSize={15}>{item.token.symbol}</SectionTitle>
         <Body fontSize={12}>{[account, note].filter(Boolean).join(" · ")}</Body>
@@ -490,5 +508,54 @@ export function HoldingRow({
         </Body>
       </Stack>
     </Row>
+  );
+}
+
+/**
+ * 币种头像：底色是目录里的 logoColor，右下角叠一个链徽标（链的品牌色 + 首字母），
+ * 让用户一眼知道这个币在哪条链上——同一个 USDC 在 eth 和 op-sepolia 上是两个资产。
+ */
+export function TokenAvatar({
+  token,
+  size,
+}: {
+  token: { symbol: string; logoColor: string; chain: ChainId };
+  size: number;
+}) {
+  const badge = Math.round(size * 0.42);
+  return (
+    <Stack width={size} height={size}>
+      <Stack
+        width={size}
+        height={size}
+        borderRadius={size / 2}
+        alignItems="center"
+        justifyContent="center"
+        style={{ backgroundColor: token.logoColor }}
+      >
+        <InlineText color="white" fontWeight="900" fontSize={size * 0.42}>
+          {token.symbol[0]}
+        </InlineText>
+      </Stack>
+      <Stack
+        position="absolute"
+        right={-2}
+        bottom={-2}
+        width={badge}
+        height={badge}
+        borderRadius={badge / 2}
+        borderWidth={2}
+        borderColor="$background"
+        alignItems="center"
+        justifyContent="center"
+        style={{ backgroundColor: CHAINS[token.chain].color }}
+        accessibilityLabel={CHAINS[token.chain].name}
+        testID={`chain-badge-${token.chain}`}
+      >
+        <InlineText color="white" fontWeight="900" fontSize={badge * 0.55}>
+          {CHAINS[token.chain].name[0]}
+        </InlineText>
+      </Stack>
+    </Stack>
   );
 }

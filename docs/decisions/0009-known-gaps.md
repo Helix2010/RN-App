@@ -5,14 +5,14 @@
 
 ## 保留的 Gateway 扩展点（当前无调用方）
 
-| 方法 | 为什么保留 | 何时接上 |
-| --- | --- | --- |
-| `PredictGateway.subscribeMarkets` | 设计要求价格实时跳动；当前用 `usePredictEvents` / `useOrderBook` 轮询代替 | 接真实 CLOB WebSocket 时 |
-| `PredictGateway.getFeeBps` | 费率一期由事件对象携带；真实服务端费率是市场级 > 分类级 > 统一级三层 | 接真实费率接口时 |
-| `PredictGateway.getPnl` | 持仓页盈亏曲线（设计稿未画图表，仅汇总数字） | 增加盈亏走势图时 |
-| `WalletGateway.listTransfers` | 钱包交易记录列表（个人中心"交易记录"当前是占位） | 做 A 组交易记录页时 |
-| `DexGateway.searchTokens` | 首页 / 行情搜索框（当前搜索框不可输入） | 做搜索页时 |
-| `DexGateway.needsApproval` | 报价已带 `needsApproval`；真实链上查询需要独立调用 | 接真实链上读时 |
+| 方法                              | 为什么保留                                                                                       | 何时接上                 |
+| --------------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------ |
+| `PredictGateway.subscribeMarkets` | 设计要求价格实时跳动；当前用 `usePredictEvents` / `useOrderBook` 轮询代替                        | 接真实 CLOB WebSocket 时 |
+| `PredictGateway.getFeeBps`        | 费率一期由事件对象携带；真实服务端费率是市场级 > 分类级 > 统一级三层                             | 接真实费率接口时         |
+| `PredictGateway.getPnl`           | 持仓页盈亏曲线（设计稿未画图表，仅汇总数字）                                                     | 增加盈亏走势图时         |
+| `WalletGateway.listTransfers`     | 转出页"最近转出"已在用它（2026-09-02）；完整的交易记录列表（个人中心"交易记录"当前是占位）仍待做 | 做 A 组交易记录页时      |
+| `DexGateway.searchTokens`         | 首页 / 行情搜索框（当前搜索框不可输入）                                                          | 做搜索页时               |
+| `DexGateway.needsApproval`        | 报价已带 `needsApproval`；真实链上查询需要独立调用                                               | 接真实链上读时           |
 
 ## 设计稿已画、本轮未实现
 
@@ -23,7 +23,7 @@
 
 ## 设计稿只定义了入口、未详画的页面（当前点击 toast 占位）
 
-转账地址簿 CRUD、登录会话列表、登录记录、消息中心、帮助与客服、邀请返佣、用户协议 / 隐私政策（WebView）、更新日志、交易记录、创建 / 导入钱包全屏流程（L-04 只画了备份一步）。
+转账地址簿 CRUD（转出页现以"最近转出"——本地址转出过的地址——代替；扫码在 ADR 0010）、登录会话列表、登录记录、消息中心、帮助与客服、邀请返佣、用户协议 / 隐私政策（WebView）、更新日志、交易记录、创建 / 导入钱包全屏流程（L-04 只画了备份一步）。
 
 ## 测试形态
 

@@ -4,15 +4,16 @@ import {
   renderWithProviders,
   signIn,
 } from "../../../test/harness";
-import { SendScreen } from "./send-screen";
+import { SendScreen, recipientFromText } from "./send-screen";
 import type { Gateways } from "../../../core/gateways/gateway-context";
-import type { TokenBalance } from "../../wallet/model/wallet";
+import type { TokenBalance, WalletTransfer } from "../../wallet/model/wallet";
 import { InsufficientGasError } from "../../../core/chain/transfer-service";
 import { CHAINS } from "../../../core/gateways/types";
 import { withWallet } from "../../../test/wallet-config";
 import { fromDecimal, money } from "../../../core/money/money";
 import { ToastHost } from "../../../design-system";
 import * as LocalAuthentication from "expo-local-authentication";
+import * as Clipboard from "expo-clipboard";
 
 /** 网关返回的是按链分好的快照；测试里没有不可用的链 */
 const snapshot = (items: TokenBalance[]) => ({ items, unavailable: [] });
@@ -587,5 +588,166 @@ describe("SendScreen chain switch", () => {
     });
 
     expect(screen.getByTestId("send-no-chain")).toBeTruthy();
+  });
+});
+
+describe("SendScreen token picker", () => {
+  const USDC_ETH = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
+  const twoChains = () => {
+    const usdc = balance({ address: USDC_ETH, symbol: "USDC", verified: true });
+    return snapshot([
+      balance({ address: USDT_BSC, symbol: "USDT", verified: true }),
+      { ...usdc, token: { ...usdc.token, chain: "eth" as const } },
+    ]);
+  };
+
+  it("starts on the first token of the initial chain and shows which chain it lives on", async () => {
+    const gateways = createTestGateways();
+    await signIn(gateways);
+    gateways.wallet.getBalances = jest.fn(async () => twoChains());
+
+    await renderWithProviders(
+      <SendScreen onBack={jest.fn()} initialChain="bsc" />,
+      { gateways },
+    );
+
+    const picker = await screen.findByTestId("send-token-picker");
+    await waitFor(() => expect(picker).toHaveTextContent(/USDT/));
+    // 同一个 USDC 在两条链上是两个资产，选中的币必须带链名
+    expect(picker).toHaveTextContent(new RegExp(CHAINS.bsc.name));
+  });
+
+  it("switches the chain along with a token picked from another chain", async () => {
+    const gateways = createTestGateways();
+    await signIn(gateways);
+    gateways.wallet.getBalances = jest.fn(async () => twoChains());
+
+    await renderWithProviders(
+      <SendScreen onBack={jest.fn()} initialChain="bsc" />,
+      { gateways },
+    );
+
+    void fireEvent.press(await screen.findByTestId("send-token-picker"));
+    void fireEvent.press(
+      await screen.findByTestId(`send-token-option-eth:${USDC_ETH}`),
+    );
+
+    const picker = screen.getByTestId("send-token-picker");
+    await waitFor(() => expect(picker).toHaveTextContent(/USDC/));
+    expect(picker).toHaveTextContent(new RegExp(CHAINS.eth.name));
+    // 链跟着币走：地址校验的提示也要说成 Ethereum 地址
+    void fireEvent.changeText(screen.getByTestId("send-address"), RECIPIENT);
+    expect(screen.getByText(new RegExp(`^${CHAINS.eth.name} `))).toBeTruthy();
+  });
+});
+
+describe("SendScreen recipient actions", () => {
+  async function renderForm(prepare?: (gateways: Gateways) => void) {
+    const gateways = createTestGateways();
+    await signIn(gateways);
+    gateways.wallet.getBalances = jest.fn(async () =>
+      snapshot([
+        balance({ address: USDT_BSC, symbol: "USDT", verified: true }),
+      ]),
+    );
+    prepare?.(gateways);
+    await renderWithProviders(
+      <SendScreen onBack={jest.fn()} initialChain="bsc" />,
+      { gateways },
+    );
+    return gateways;
+  }
+
+  it("clears the address with one tap and hides the clear button when empty", async () => {
+    await renderForm();
+    expect(screen.queryByTestId("send-address-clear")).toBeNull();
+
+    void fireEvent.changeText(
+      await screen.findByTestId("send-address"),
+      RECIPIENT,
+    );
+    void fireEvent.press(await screen.findByTestId("send-address-clear"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("send-address")).toHaveProp("value", ""),
+    );
+    expect(screen.queryByTestId("send-address-clear")).toBeNull();
+  });
+
+  it("pastes the address out of an EIP-681 payment link", async () => {
+    // 收款方常常分享 ethereum:0x…@56 这类链接，整串粘进去会被判成格式错误
+    jest
+      .mocked(Clipboard.getStringAsync)
+      .mockResolvedValueOnce(`ethereum:${RECIPIENT}@56?value=1e18`);
+    await renderForm();
+
+    void fireEvent.press(await screen.findByTestId("send-address-paste"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("send-address")).toHaveProp("value", RECIPIENT),
+    );
+  });
+
+  it("offers recent recipients from past sends only and fills the field from one", async () => {
+    const OTHER = "0x000000000000000000000000000000000000dEaD";
+    const transfer = (
+      kind: "send" | "receive",
+      counterparty: string,
+      updatedAt: string,
+    ): WalletTransfer => ({
+      id: `${kind}-${counterparty}`,
+      status: "confirmed",
+      updatedAt,
+      kind,
+      counterparty,
+      token: balance({ address: USDT_BSC, symbol: "USDT", verified: true })
+        .token,
+      amount: money(1n, 18, "USDT"),
+    });
+    await renderForm((gateways) => {
+      gateways.wallet.listTransfers = jest.fn(async () => [
+        transfer("send", RECIPIENT, "2026-08-30T00:00:00Z"),
+        transfer("send", RECIPIENT.toLowerCase(), "2026-08-29T00:00:00Z"),
+        // 收款方不是"我转出过的地址"，不能出现在最近转出里
+        transfer("receive", OTHER, "2026-08-31T00:00:00Z"),
+      ]);
+    });
+
+    const recent = await screen.findByTestId(
+      `send-recent-${RECIPIENT.toLowerCase()}`,
+    );
+    // 同一地址不同大小写只算一条
+    expect(screen.getAllByTestId(/^send-recent-0x/)).toHaveLength(1);
+    expect(
+      screen.queryByTestId(`send-recent-${OTHER.toLowerCase()}`),
+    ).toBeNull();
+
+    void fireEvent.press(recent);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("send-address")).toHaveProp("value", RECIPIENT),
+    );
+    // 填好地址后建议列表让位给校验结果
+    expect(screen.queryByTestId("send-recents")).toBeNull();
+  });
+});
+
+describe("recipientFromText", () => {
+  it("returns a bare address untouched, trimmed", () => {
+    expect(recipientFromText(`  ${RECIPIENT}\n`)).toBe(RECIPIENT);
+  });
+
+  it("extracts the address from an EIP-681 link but ignores chain and value", () => {
+    // 换链、填金额都要用户自己确认，静默照做等于替用户做决定
+    expect(recipientFromText(`ethereum:${RECIPIENT}@56?value=1e18`)).toBe(
+      RECIPIENT,
+    );
+    expect(recipientFromText(`ethereum:pay-${RECIPIENT}`)).toBe(RECIPIENT);
+  });
+
+  it("hands anything else to the address validator as-is", () => {
+    expect(recipientFromText("ethereum:not-an-address")).toBe(
+      "ethereum:not-an-address",
+    );
   });
 });

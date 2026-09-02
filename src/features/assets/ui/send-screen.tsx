@@ -5,6 +5,7 @@ import * as Clipboard from "expo-clipboard";
 import {
   fill,
   formatTokenAmount,
+  formatUsd,
   shortenAddress,
 } from "../../../core/i18n/format";
 import { useRef, useState } from "react";
@@ -34,7 +35,6 @@ import {
 import {
   AmountInput,
   AppIcon,
-  Badge,
   Body,
   Content,
   DetailRow,
@@ -46,7 +46,6 @@ import {
   ScreenHeader,
   SecondaryButton,
   SectionTitle,
-  SegmentedControl,
   Sheet,
   type SheetHandle,
   Stack,
@@ -57,9 +56,11 @@ import {
 import { useSession } from "../../session/hooks/use-session";
 import {
   useSendToken,
+  useRecentRecipients,
   useTransferQuote,
   useWalletBalances,
   useWalletTransfer,
+  type RecentRecipient,
 } from "../../wallet/hooks/use-wallet";
 import type {
   SendRequest,
@@ -68,15 +69,11 @@ import type {
 } from "../../wallet/model/wallet";
 import { transferErrorCopy } from "../../wallet/model/transfer-errors";
 import { TxProgress } from "./tx-progress";
+import { TokenAvatar } from "./assets-screen";
 import { useRequireVerification } from "../../security/use-require-verification";
 
-/**
- * 地址簿。CRUD 是已知缺口（decisions/0009-known-gaps），所以这里是空的。
- *
- * **不能放示例地址**：转出现在会走真链，点一下「交易所 A」就是把真钱发给一个
- * 谁都不拥有的地址，而转出无法撤销。入口保留，空态如实说明。
- */
-const ADDRESS_BOOK: { label: string; address: string }[] = [];
+/** 最近转出列表最多显示几条（表单内联；更多的放进"最近转出"面板） */
+const INLINE_RECENTS = 3;
 
 /**
  * A-05 转出的入口：先决定在哪条链上。
@@ -172,25 +169,39 @@ function SendForm({
   const submitting = useRef(false);
   const confirm = useRef<SheetHandle>(null);
   const book = useRef<SheetHandle>(null);
+  const picker = useRef<SheetHandle>(null);
 
   const { wallet } = useGateways();
   // 这条链是真链还是演示账本：两者的确认页必须让用户分得清
   const onchain = wallet.sendsOnchain(chain);
-  const balances = useWalletBalances(address || undefined, chain);
+  // 选币面板要跨链列出所有资产，所以查全部启用的链；某条链失败在面板里按链单独提示
+  const balances = useWalletBalances(address || undefined);
+  const recents = useRecentRecipients(address || undefined);
   const send = useSendToken();
   const tx = useWalletTransfer(receipt?.record.id, receipt?.record);
   const external = Boolean(
     session.data && session.data.connector !== "embedded",
   );
   const testnet = isTestnetChain(chain);
+  // 链名后面带上测试网标记：它的币没有价值，和主网并排会被当成真资产
+  const chainLabel = (id: ChainId) =>
+    isTestnetChain(id)
+      ? `${CHAINS[id].name} · ${t("send.testnetTag")}`
+      : CHAINS[id].name;
   const tokens = (balances.data?.items ?? []).filter(
     (item) => !isZero(item.amount),
   );
   const chainUnavailable = balances.data?.unavailable ?? [];
+  // 选中的币决定链；还没选时取当前链上第一个有余额的币
   const selected: TokenBalance | undefined =
-    tokens.find(
-      (item) => `${item.token.chain}:${item.token.address}` === tokenKey,
-    ) ?? tokens[0];
+    tokens.find((item) => tokenKeyOf(item.token) === tokenKey) ??
+    tokens.find((item) => item.token.chain === chain);
+  const chooseToken = (item: TokenBalance) => {
+    setTokenKey(tokenKeyOf(item.token));
+    if (item.token.chain !== chain) onChainChange(item.token.chain);
+    setText("");
+    picker.current?.dismiss();
+  };
   const amount = selected
     ? fromDecimal(text || "0", selected.token.decimals, selected.token.symbol)
     : undefined;
@@ -215,9 +226,6 @@ function SendForm({
           : addressIsTokenContract
             ? t("send.addressIsContract")
             : undefined;
-  const bookHit = ADDRESS_BOOK.find(
-    (entry) => entry.address.toLowerCase() === to.trim().toLowerCase(),
-  );
   // 没有参考价的币 usd 是 null：大额阈值无从判断，转出一律要求验证
   const usd =
     selected && amount
@@ -274,7 +282,8 @@ function SendForm({
     !send.isPending;
 
   const paste = async () => {
-    const value = (await Clipboard.getStringAsync()).trim();
+    // 剪贴板里常常是 "ethereum:0x…" 这类收款链接，取出地址部分
+    const value = recipientFromText(await Clipboard.getStringAsync());
     if (value) setTo(value);
   };
 
@@ -351,6 +360,58 @@ function SendForm({
       <PageScroll>
         <Content paddingTop="$2" gap="$4">
           <Stack gap="$2">
+            <Body fontSize={12}>{t("transfer.token")}</Body>
+            <Row
+              alignItems="center"
+              gap="$3"
+              padding="$3"
+              borderRadius="$4"
+              backgroundColor="$surfaceVariant"
+              onPress={() => picker.current?.present()}
+              accessibilityRole="button"
+              accessibilityLabel={t("transfer.token")}
+              testID="send-token-picker"
+            >
+              {selected ? (
+                <>
+                  <TokenAvatar token={selected.token} size={36} />
+                  <Stack flex={1}>
+                    <SectionTitle fontSize={15}>
+                      {selected.token.symbol}
+                    </SectionTitle>
+                    <Body fontSize={12}>
+                      {chainLabel(selected.token.chain)}
+                    </Body>
+                  </Stack>
+                  <Stack alignItems="flex-end">
+                    <InlineText fontSize={11} color="$textMuted">
+                      {t("send.available")}
+                    </InlineText>
+                    <InlineText fontWeight="700">
+                      {formatTokenAmount(
+                        selected.amount,
+                        selected.token.displayDecimals,
+                        locale,
+                      )}
+                    </InlineText>
+                  </Stack>
+                </>
+              ) : (
+                <Body flex={1} color="$textMuted">
+                  {balances.isPending
+                    ? t("send.loadingBalances")
+                    : t("send.pickToken")}
+                </Body>
+              )}
+              <AppIcon name="chevron-down" size={20} colorToken="textMuted" />
+            </Row>
+            <ChainUnavailableNotice
+              failures={chainUnavailable}
+              onRetry={() => void balances.refetch()}
+            />
+          </Stack>
+
+          <Stack gap="$2">
             <Body fontSize={12}>{t("send.address")}</Body>
             <TextField
               value={to}
@@ -363,8 +424,23 @@ function SendForm({
               error={addressError}
               trailing={
                 <Row gap="$2">
+                  {to.length > 0 ? (
+                    <Stack
+                      onPress={() => setTo("")}
+                      accessibilityRole="button"
+                      accessibilityLabel={t("send.clear")}
+                      testID="send-address-clear"
+                    >
+                      <AppIcon
+                        name="close-circle"
+                        size={20}
+                        colorToken="textMuted"
+                      />
+                    </Stack>
+                  ) : null}
                   <Stack
                     onPress={() => void paste()}
+                    testID="send-address-paste"
                     accessibilityRole="button"
                     accessibilityLabel={t("send.paste")}
                   >
@@ -377,27 +453,16 @@ function SendForm({
                   <Stack
                     onPress={() => book.current?.present()}
                     accessibilityRole="button"
-                    accessibilityLabel={t("send.addressBook")}
+                    accessibilityLabel={t("send.recent")}
                     testID="send-address-book"
                   >
-                    <AppIcon
-                      name="book-account-outline"
-                      size={20}
-                      colorToken="primary"
-                    />
+                    <AppIcon name="history" size={20} colorToken="primary" />
                   </Stack>
                 </Row>
               }
             />
             {addressValid ? (
               <Row alignItems="center" gap="$2">
-                {bookHit ? (
-                  <Badge borderWidth={0} backgroundColor="$surfaceVariant">
-                    <InlineText fontSize={11} fontWeight="700" color="$primary">
-                      {bookHit.label}
-                    </InlineText>
-                  </Badge>
-                ) : null}
                 <Row alignItems="center" gap="$1">
                   <AppIcon name="check-circle" size={14} colorToken="success" />
                   <InlineText fontSize={12} color="$success">
@@ -408,77 +473,22 @@ function SendForm({
                 </Row>
               </Row>
             ) : null}
-          </Stack>
-
-          <Stack gap="$2">
-            <Body fontSize={12}>{t("send.network")}</Body>
-            <SegmentedControl
-              value={chain}
-              options={enabledChains().map((id) => ({
-                value: id,
-                // 测试链必须标出来：它的币没有价值，和主网并排会被当成真资产
-                label: isTestnetChain(id)
-                  ? `${CHAINS[id].name} · ${t("send.testnetTag")}`
-                  : CHAINS[id].name,
-              }))}
-              onChange={(next) => {
-                onChainChange(next);
-                setTokenKey(undefined);
-                setText("");
-              }}
-              accessibilityLabel={t("send.network")}
-            />
-            <ChainUnavailableNotice
-              failures={chainUnavailable}
-              onRetry={() => void balances.refetch()}
-            />
-          </Stack>
-
-          <Stack gap="$2">
-            <Body fontSize={12}>{t("transfer.token")}</Body>
-            <Row
-              gap="$2"
-              flexWrap="wrap"
-              accessibilityRole="radiogroup"
-              accessibilityLabel={t("transfer.token")}
-            >
-              {tokens.map((item) => {
-                const key = `${item.token.chain}:${item.token.address}`;
-                const active =
-                  selected &&
-                  key === `${selected.token.chain}:${selected.token.address}`;
-                return (
-                  <Row
-                    key={key}
-                    alignItems="center"
-                    gap="$2"
-                    paddingHorizontal="$3"
-                    paddingVertical="$2"
-                    borderRadius={999}
-                    backgroundColor={active ? "$primary" : "$surfaceVariant"}
-                    onPress={() => {
-                      setTokenKey(key);
-                      setText("");
-                    }}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected: Boolean(active) }}
-                  >
-                    <Stack
-                      width={18}
-                      height={18}
-                      borderRadius={9}
-                      style={{ backgroundColor: item.token.logoColor }}
-                    />
-                    <InlineText
-                      fontWeight="700"
-                      color={active ? "$onPrimary" : "$color"}
-                    >
-                      {item.token.symbol}
-                    </InlineText>
-                  </Row>
-                );
-              })}
-            </Row>
+            {to.length === 0 && (recents.data?.length ?? 0) > 0 ? (
+              <Stack gap="$1" testID="send-recents">
+                <InlineText fontSize={11} color="$textMuted">
+                  {t("send.recent")}
+                </InlineText>
+                {(recents.data ?? []).slice(0, INLINE_RECENTS).map((entry) => (
+                  <RecentRecipientRow
+                    key={entry.address}
+                    entry={entry}
+                    locale={locale}
+                    onPress={() => setTo(entry.address)}
+                    testID={`send-recent-${entry.address.toLowerCase()}`}
+                  />
+                ))}
+              </Stack>
+            ) : null}
           </Stack>
 
           {selected ? (
@@ -555,43 +565,108 @@ function SendForm({
         </Content>
       </PageScroll>
 
-      <Sheet
-        ref={book}
-        title={t("send.addressBook")}
-        closeLabel={t("common.close")}
-      >
-        {ADDRESS_BOOK.length === 0 ? (
+      <Sheet ref={book} title={t("send.recent")} closeLabel={t("common.close")}>
+        {(recents.data?.length ?? 0) === 0 ? (
           <Body
             fontSize={13}
             color="$textMuted"
             textAlign="center"
             padding="$4"
           >
-            {t("send.addressBookEmpty")}
+            {t("send.recentEmpty")}
           </Body>
         ) : null}
-        {ADDRESS_BOOK.map((entry) => (
-          <Row
+        {(recents.data ?? []).map((entry) => (
+          <RecentRecipientRow
             key={entry.address}
-            alignItems="center"
-            gap="$3"
-            padding="$3"
-            borderRadius="$4"
-            backgroundColor="$surfaceVariant"
+            entry={entry}
+            locale={locale}
             onPress={() => {
               setTo(entry.address);
               book.current?.dismiss();
             }}
-            accessibilityRole="button"
-            accessibilityLabel={entry.label}
-          >
-            <Stack flex={1}>
-              <SectionTitle fontSize={15}>{entry.label}</SectionTitle>
-              <Body fontSize={12}>{shortenAddress(entry.address, 10, 6)}</Body>
-            </Stack>
-            <AppIcon name="chevron-right" size={20} colorToken="textMuted" />
-          </Row>
+            testID={`send-recent-list-${entry.address.toLowerCase()}`}
+          />
         ))}
+      </Sheet>
+
+      <Sheet
+        ref={picker}
+        title={t("send.pickToken")}
+        closeLabel={t("common.close")}
+      >
+        {enabledChains().map((id) => {
+          const rows = tokens.filter((item) => item.token.chain === id);
+          const failure = chainUnavailable.filter((f) => f.chain === id);
+          return (
+            <Stack key={id} gap="$2">
+              <Row alignItems="center" gap="$2">
+                <Stack
+                  width={10}
+                  height={10}
+                  borderRadius={5}
+                  style={{ backgroundColor: CHAINS[id].color }}
+                />
+                <InlineText fontSize={12} fontWeight="700" color="$textMuted">
+                  {chainLabel(id)}
+                </InlineText>
+              </Row>
+              <ChainUnavailableNotice
+                failures={failure}
+                onRetry={() => void balances.refetch()}
+              />
+              {rows.length === 0 && failure.length === 0 ? (
+                <Body fontSize={12} color="$textMuted">
+                  {t("send.noBalanceOnChain")}
+                </Body>
+              ) : null}
+              {rows.map((item) => {
+                const active =
+                  selected !== undefined &&
+                  tokenKeyOf(item.token) === tokenKeyOf(selected.token);
+                return (
+                  <Row
+                    key={tokenKeyOf(item.token)}
+                    alignItems="center"
+                    gap="$3"
+                    padding="$3"
+                    borderRadius="$4"
+                    backgroundColor="$surfaceVariant"
+                    borderWidth={1}
+                    borderColor={active ? "$primary" : "$surfaceVariant"}
+                    onPress={() => chooseToken(item)}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: active }}
+                    accessibilityLabel={`${item.token.symbol} · ${CHAINS[id].name}`}
+                    testID={`send-token-option-${tokenKeyOf(item.token)}`}
+                  >
+                    <TokenAvatar token={item.token} size={32} />
+                    <Stack flex={1}>
+                      <SectionTitle fontSize={15}>
+                        {item.token.symbol}
+                      </SectionTitle>
+                      <Body fontSize={12}>{item.token.name}</Body>
+                    </Stack>
+                    <Stack alignItems="flex-end">
+                      <InlineText fontWeight="700">
+                        {formatTokenAmount(
+                          item.amount,
+                          item.token.displayDecimals,
+                          locale,
+                        )}
+                      </InlineText>
+                      <InlineText fontSize={11} color="$textMuted">
+                        {item.usdValue === null
+                          ? "—"
+                          : formatUsd(item.usdValue, locale)}
+                      </InlineText>
+                    </Stack>
+                  </Row>
+                );
+              })}
+            </Stack>
+          );
+        })}
       </Sheet>
 
       <Sheet
@@ -612,7 +687,6 @@ function SendForm({
             >
               <Body fontSize={12} color="$textMuted">
                 {t("send.address")}
-                {bookHit ? ` · ${bookHit.label}` : ""}
               </Body>
               <InlineText
                 fontSize={13}
@@ -709,5 +783,57 @@ function SendForm({
         ) : null}
       </Sheet>
     </Page>
+  );
+}
+
+function tokenKeyOf(token: { chain: ChainId; address: string }): string {
+  return `${token.chain}:${token.address}`;
+}
+
+/**
+ * 从粘贴/扫码得到的文本里取出收款地址。
+ *
+ * 接受纯地址和 EIP-681 收款链接（`ethereum:0x…@chainId?value=…`）。链接里的 chainId
+ * 与 value 这里不采纳：换链、填金额都要用户自己确认，静默照做等于替用户做决定。
+ * 其它内容原样返回，交给地址校验去报错——这里不猜。
+ */
+export function recipientFromText(text: string): string {
+  const trimmed = text.trim();
+  const match = /^ethereum:(?:pay-)?(0x[0-9a-fA-F]{40})/.exec(trimmed);
+  return match?.[1] ?? trimmed;
+}
+
+function RecentRecipientRow({
+  entry,
+  locale,
+  onPress,
+  testID,
+}: {
+  entry: RecentRecipient;
+  locale: string;
+  onPress: () => void;
+  testID: string;
+}) {
+  return (
+    <Row
+      alignItems="center"
+      gap="$3"
+      paddingHorizontal="$3"
+      paddingVertical="$2"
+      borderRadius="$4"
+      backgroundColor="$surfaceVariant"
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={entry.address}
+      testID={testID}
+    >
+      <AppIcon name="history" size={18} colorToken="textMuted" />
+      <InlineText flex={1} fontSize={13} fontWeight="600">
+        {shortenAddress(entry.address, 10, 6)}
+      </InlineText>
+      <InlineText fontSize={11} color="$textMuted">
+        {new Date(entry.lastUsedAt).toLocaleDateString(locale)}
+      </InlineText>
+    </Row>
   );
 }
