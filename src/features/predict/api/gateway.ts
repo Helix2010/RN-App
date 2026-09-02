@@ -22,9 +22,9 @@ import type {
 } from "../model/predict";
 
 /**
- * Predict 领域网关（行情 / 下单 / 持仓）：目前由 MockPredictGateway 实现，后续逐步接入
- * 真实平台。**账户（余额、转入、转出）不在这里**——它已经接真实平台，见
- * `account-gateway.ts`，没有 Mock 实现。
+ * Predict 领域网关（行情 / 下单 / 持仓）：生产由 `HttpPredictGateway` 接 pm-cup2026 平台
+ * （gamma / clob / data / relayer / clob-ws），`MockPredictGateway` 只给测试用。
+ * **账户（余额、转入、转出）不在这里**——见 `account-gateway.ts`，同样只有真实实现。
  * 所有读写都带 address（钱包地址 = 用户主体）；游客可调用无需 address 的方法。
  */
 export interface PredictGateway {
