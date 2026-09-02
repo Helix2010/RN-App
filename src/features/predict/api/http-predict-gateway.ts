@@ -5,6 +5,8 @@ import {
   fetchFeeRateBps,
   fetchOrderBook,
   fetchPriceHistory,
+  fetchTickSize,
+  type ClobOrderBook,
   type PriceHistoryInterval,
 } from "../../../core/predict-platform/clob-market";
 import {
@@ -12,6 +14,12 @@ import {
   fetchOpenOrders,
   type ClobOpenOrder,
 } from "../../../core/predict-platform/clob-orders";
+import {
+  ZERO_BYTES32,
+  conditionalTokens,
+  decodeUint,
+  negRiskAdapter,
+} from "../../../core/predict-platform/contracts";
 import {
   fetchActivity,
   fetchLeaderboard,
@@ -32,6 +40,15 @@ import {
   type GammaMarket,
   type GammaTag,
 } from "../../../core/predict-platform/gamma";
+import { computeOrderAmounts } from "../../../core/predict-platform/order-amounts";
+import {
+  postOrder,
+  signOrder,
+  type OrderType as ClobOrderType,
+} from "../../../core/predict-platform/orders";
+import { encodeMultiSend } from "../../../core/predict-platform/safe";
+import type { WalletGateway } from "../../wallet/api/gateway";
+import type { OnchainTransfers } from "../../wallet/api/onchain-transfers";
 import type {
   Activity,
   ActivityType,
@@ -64,8 +81,9 @@ import type { HttpPredictAccountGateway } from "./http-predict-account-gateway";
  * `Market.id` = conditionId，`PredictEvent.id` = gamma 事件 id，价格换成整数分，
  * 金额用 6 位 USDC 的 Money。
  *
- * 平台没有的能力（争议提交）如实抛 `PredictUnsupportedError`；还没接入的能力
- * （下单 / 领取 / 拆合 / WS 推送）同样抛出，不用演示数据顶上。
+ * 下单：EIP-712 Order（maker = Safe、signer = EOA）→ `POST /order`；金额换算是 user-dapp
+ * `orderAmounts.ts` 的逐行移植。领取 / 拆合：Safe 经 relayer 调 CTF（negRisk 走 adapter）。
+ * 平台没有的能力（争议提交）与还没接的能力（WS 推送）如实抛 `PredictUnsupportedError`。
  */
 
 export class PredictUnsupportedError extends Error {
@@ -78,7 +96,9 @@ export class PredictUnsupportedError extends Error {
   }
 }
 
+const SIGN_REASON = "predict.sign.reason";
 const USDC_DECIMALS = 6;
+const ONE_USDC = 1_000_000n;
 
 function cents(price: number | null): number {
   return price === null ? 0 : Math.round(price * 100);
@@ -158,15 +178,53 @@ type MarketRef = {
   negRisk: boolean;
 };
 
+/** 沿簿吃单的估算：市价买按预算吃卖单，卖出按份数吃买单 */
+function walkBook(
+  levels: { price: number; size: number }[],
+  input: { budgetUsdc?: number; shares?: number },
+): { shares: number; cost: number } {
+  let shares = 0;
+  let cost = 0;
+  for (const level of levels) {
+    if (input.budgetUsdc !== undefined) {
+      const remaining = input.budgetUsdc - cost;
+      if (remaining <= 0) break;
+      const take = Math.min(level.size, remaining / level.price);
+      shares += take;
+      cost += take * level.price;
+    } else {
+      const remaining = (input.shares ?? 0) - shares;
+      if (remaining <= 0) break;
+      const take = Math.min(level.size, remaining);
+      shares += take;
+      cost += take * level.price;
+    }
+  }
+  return { shares, cost };
+}
+
 export class HttpPredictGateway implements PredictGateway {
   /** conditionId → 代币 id 与事件（列表 / 详情读到就记下，订单簿与持仓靠它找代币） */
   private readonly markets = new Map<string, MarketRef>();
+  /** 本进程里经 relayer 完成的链上交易（领取 / 拆合），供 getTx */
+  private readonly txs = new Map<string, PredictTx>();
   private warnedSubscribe = false;
 
-  constructor(private readonly deps: { account: HttpPredictAccountGateway }) {}
+  constructor(
+    private readonly deps: {
+      account: HttpPredictAccountGateway;
+      wallet: WalletGateway;
+      onchain: OnchainTransfers;
+      now?: () => number;
+    },
+  ) {}
 
   private async service(): Promise<PredictServiceConfig> {
     return (await this.deps.account.platformContext()).service;
+  }
+
+  private nowIso(): string {
+    return new Date(this.deps.now?.() ?? Date.now()).toISOString();
   }
 
   // ---- 映射 ----
@@ -274,6 +332,10 @@ export class HttpPredictGateway implements PredictGateway {
     return ref;
   }
 
+  private tokenFor(ref: MarketRef, outcome: Outcome): string {
+    return outcome === "yes" ? ref.yesTokenId : ref.noTokenId;
+  }
+
   private mapPosition(position: PlatformPosition): Position {
     const outcome = outcomeOf(position.outcomeIndex, position.outcome);
     const closed = position.marketClosed ?? false;
@@ -352,6 +414,23 @@ export class HttpPredictGateway implements PredictGateway {
     };
   }
 
+  private mapBook(marketId: string, book: ClobOrderBook): OrderBook {
+    const stamp = Number(book.timestamp ?? 0);
+    const updatedAt =
+      stamp > 1e12 ? new Date(stamp).toISOString() : iso(stamp || 0);
+    const level = (item: { price: number; size: number }) => ({
+      priceCents: cents(item.price),
+      shares: item.size,
+    });
+    return {
+      marketId,
+      bids: book.bids.map(level),
+      asks: book.asks.map(level),
+      tickCents: (book.tick_size ?? 0.01) * 100,
+      updatedAt,
+    };
+  }
+
   // ---- 公开行情 ----
 
   async listTags(): Promise<Tag[]> {
@@ -395,21 +474,10 @@ export class HttpPredictGateway implements PredictGateway {
   async getOrderBook(marketId: string): Promise<OrderBook> {
     const service = await this.service();
     const ref = await this.marketRef(marketId);
-    const book = await fetchOrderBook(service, ref.yesTokenId);
-    const stamp = Number(book.timestamp ?? 0);
-    const updatedAt =
-      stamp > 1e12 ? new Date(stamp).toISOString() : iso(stamp || 0);
-    const level = (item: { price: number; size: number }) => ({
-      priceCents: cents(item.price),
-      shares: item.size,
-    });
-    return {
+    return this.mapBook(
       marketId,
-      bids: book.bids.map(level),
-      asks: book.asks.map(level),
-      tickCents: (book.tick_size ?? 0.01) * 100,
-      updatedAt,
-    };
+      await fetchOrderBook(service, ref.yesTokenId),
+    );
   }
 
   async getPriceHistory(
@@ -426,7 +494,7 @@ export class HttpPredictGateway implements PredictGateway {
     const since =
       windowSeconds === null
         ? 0
-        : Math.floor(Date.now() / 1000) - windowSeconds;
+        : Math.floor((this.deps.now?.() ?? Date.now()) / 1000) - windowSeconds;
     return points
       .filter((point) => point.t >= since)
       .map((point) => ({ t: iso(point.t), priceCents: cents(point.p) }));
@@ -458,7 +526,7 @@ export class HttpPredictGateway implements PredictGateway {
     if (!market)
       throw new Error(`market ${marketId} is unknown to the platform`);
     const adj = market.adjudication;
-    const event: GammaEvent = {
+    const event = {
       id: market.eventSlug ?? "",
       closed: market.closed ?? null,
       markets: [market],
@@ -480,26 +548,194 @@ export class HttpPredictGateway implements PredictGateway {
     };
   }
 
-  // ---- 订单 ----
+  // ---- 下单 ----
+
+  /**
+   * 把我们的下单请求换成平台口径：市价 = FAK、限价 = GTC / GTD；
+   * 市价买价取买一（卖一）、市价卖价取卖一（买一）（`orderbookPricing.ts:28-31`）；
+   * BUY 的 size 是 USDC 预算，SELL 的 size 是份数（`orderAmounts.ts`）。
+   */
+  private async draft(
+    address: string,
+    request: PlaceOrderRequest,
+  ): Promise<{
+    ctx: Awaited<ReturnType<HttpPredictAccountGateway["tradingContext"]>>;
+    ref: MarketRef;
+    tokenId: string;
+    orderType: ClobOrderType;
+    price: number;
+    size: number;
+    feeRateBps: number;
+    tickSize: number | undefined;
+    book: ClobOrderBook;
+  }> {
+    const ctx = await this.deps.account.tradingContext(address);
+    const ref = await this.marketRef(request.marketId);
+    const tokenId = this.tokenFor(ref, request.outcome);
+    const orderType: ClobOrderType =
+      request.type === "market" ? "FAK" : request.tif === "GTD" ? "GTD" : "GTC";
+    const [book, feeRateBps, tickSize] = await Promise.all([
+      fetchOrderBook(ctx.service, tokenId),
+      fetchFeeRateBps(ctx.service, tokenId),
+      orderType === "FAK" ? fetchTickSize(ctx.service, tokenId) : undefined,
+    ]);
+    let price: number;
+    if (request.type === "market") {
+      const best =
+        request.side === "buy"
+          ? book.asks.reduce<number | null>(
+              (min, level) =>
+                min === null || level.price < min ? level.price : min,
+              null,
+            )
+          : book.bids.reduce<number | null>(
+              (max, level) =>
+                max === null || level.price > max ? level.price : max,
+              null,
+            );
+      if (best === null)
+        throw new Error(
+          request.side === "buy"
+            ? "no asks on the book to buy from"
+            : "no bids on the book to sell into",
+        );
+      price = best;
+    } else {
+      if (!request.priceCents || request.priceCents <= 0)
+        throw new Error("a limit order needs a price");
+      price = request.priceCents / 100;
+    }
+    let size: number;
+    if (request.side === "buy") {
+      if (request.type === "market") {
+        if (!request.amount) throw new Error("a market buy needs an amount");
+        size = Number(request.amount.raw) / Number(ONE_USDC);
+      } else {
+        if (!request.shares || request.shares <= 0)
+          throw new Error("a limit buy needs a share count");
+        size = request.shares * price;
+      }
+    } else {
+      if (!request.shares || request.shares <= 0)
+        throw new Error("a sell needs a share count");
+      size = request.shares;
+    }
+    return {
+      ctx,
+      ref,
+      tokenId,
+      orderType,
+      price,
+      size,
+      feeRateBps,
+      tickSize,
+      book,
+    };
+  }
 
   async previewOrder(
-    _address: string,
-    _request: PlaceOrderRequest,
+    address: string,
+    request: PlaceOrderRequest,
   ): Promise<OrderPreview> {
-    throw new PredictUnsupportedError(
-      "orders",
-      "order placement is not wired to the platform yet",
+    const { book, feeRateBps, price, size } = await this.draft(
+      address,
+      request,
     );
+    // 沿簿估算：市价单吃对手盘；限价单按限价（吃不到就是挂着，估算按挂单价）
+    const filled =
+      request.type === "market"
+        ? request.side === "buy"
+          ? walkBook(book.asks, { budgetUsdc: size })
+          : walkBook(book.bids, { shares: size })
+        : request.side === "buy"
+          ? { shares: size / price, cost: size }
+          : { shares: size, cost: size * price };
+    const shares = Math.floor(filled.shares * 100) / 100;
+    const cost = usdc(filled.cost);
+    const fee = usdc((filled.cost * feeRateBps) / 10_000);
+    const payout = usdc(shares);
+    const costNumber = filled.cost;
+    return {
+      estimatedShares: shares,
+      avgPriceCents: shares > 0 ? Math.round((filled.cost / shares) * 100) : 0,
+      fee,
+      cost,
+      potentialPayout: payout,
+      potentialReturnPct:
+        costNumber > 0 ? ((shares - costNumber) / costNumber) * 100 : 0,
+    };
   }
 
   async placeOrder(
-    _address: string,
-    _request: PlaceOrderRequest,
+    address: string,
+    request: PlaceOrderRequest,
   ): Promise<OrderResult> {
-    throw new PredictUnsupportedError(
-      "orders",
-      "order placement is not wired to the platform yet",
+    const { ctx, ref, tokenId, orderType, price, size, feeRateBps, tickSize } =
+      await this.draft(address, request);
+    const side = request.side === "buy" ? "BUY" : "SELL";
+    const { makerAmount, takerAmount } = computeOrderAmounts({
+      side,
+      orderType,
+      price,
+      size,
+      tickSize,
+    });
+    if (makerAmount <= 0n || takerAmount <= 0n)
+      throw new Error("the order is too small for the market precision");
+    const expirationSeconds =
+      orderType === "GTD" && request.expiresAt
+        ? Math.floor(new Date(request.expiresAt).getTime() / 1000)
+        : 0;
+    const signer = await this.deps.wallet.signerFor(address);
+    const signed = await signOrder(
+      {
+        chainId: ctx.chainId,
+        exchange: ref.negRisk
+          ? ctx.contracts.negRiskExchange
+          : ctx.contracts.ctfExchange,
+        scopeId: ctx.service.scopeId,
+        safe: ctx.safe,
+        tokenId,
+        side,
+        makerAmount,
+        takerAmount,
+        feeRateBps,
+        orderType,
+        expirationSeconds,
+      },
+      signer,
+      { reason: SIGN_REASON },
     );
+    const response = await postOrder(
+      ctx.service,
+      { credentials: ctx.clob, address },
+      signed,
+      orderType,
+    );
+    // 平台按十进制返回成交量（handlers.go:181-182）：BUY 的 taking 是份数、making 是 USDC；SELL 反之
+    const making = Number(response.makingAmount ?? "0");
+    const taking = Number(response.takingAmount ?? "0");
+    const filledShares = side === "BUY" ? taking : making;
+    const filledUsdc = side === "BUY" ? making : taking;
+    const requestedShares =
+      Number(side === "BUY" ? takerAmount : makerAmount) / Number(ONE_USDC);
+    const status: OrderResult["status"] =
+      response.status === "delayed"
+        ? "delayed"
+        : filledShares <= 0
+          ? "open"
+          : filledShares + 1e-6 >= requestedShares
+            ? "filled"
+            : "partial";
+    return {
+      orderId: response.orderID,
+      status,
+      filledShares,
+      avgPriceCents:
+        filledShares > 0 ? Math.round((filledUsdc / filledShares) * 100) : 0,
+      fee: usdc((filledUsdc * feeRateBps) / 10_000),
+      cost: usdc(filledUsdc),
+    };
   }
 
   async listOpenOrders(address: string, marketId?: string): Promise<Order[]> {
@@ -559,18 +795,133 @@ export class HttpPredictGateway implements PredictGateway {
     return points.map((point) => ({ t: iso(point.t), pnlUsd: point.p }));
   }
 
-  async redeem(_address: string, _positionIds: string[]): Promise<PredictTx> {
-    throw new PredictUnsupportedError(
-      "redeem",
-      "redeeming is not wired to the platform yet",
-    );
+  private recordTx(hash: string, kind: PredictTx["kind"]): PredictTx {
+    // relayer 已等到 STATE_MINED / CONFIRMED，才拿得到 hash
+    const tx: PredictTx = {
+      id: hash,
+      kind,
+      status: "confirmed",
+      hash,
+      updatedAt: this.nowIso(),
+    };
+    this.txs.set(hash, tx);
+    return tx;
   }
 
-  async splitOrMerge(): Promise<PredictTx> {
-    throw new PredictUnsupportedError(
-      "split-merge",
-      "split / merge is not wired to the platform yet",
+  /**
+   * 领取已结算仓位：同一 conditionId 合并一条调用（`redeemBatch.ts:108-200`）。
+   * 普通市场 `CTF.redeemPositions(USDW, 0x0, conditionId, indexSets)`，negRisk 市场
+   * `NegRiskAdapter.redeemPositions(conditionId, [yes, no])`，金额取链上 ERC1155 余额；
+   * 一笔 MultiSend 经 relayer 提交。
+   */
+  async redeem(address: string, positionIds: string[]): Promise<PredictTx> {
+    const ctx = await this.deps.account.tradingContext(address);
+    const chain = ctx.service.chain;
+    type Group = {
+      ref: MarketRef;
+      indexSets: Set<bigint>;
+      amounts: [bigint, bigint];
+    };
+    const groups = new Map<string, Group>();
+    for (const id of positionIds) {
+      const [conditionId, tokenId] = id.split(":");
+      if (!conditionId || !tokenId)
+        throw new Error(`position ${id} is not <conditionId>:<tokenId>`);
+      const ref = await this.marketRef(conditionId);
+      const outcome: Outcome =
+        tokenId === ref.yesTokenId
+          ? "yes"
+          : tokenId === ref.noTokenId
+            ? "no"
+            : (() => {
+                throw new Error(
+                  `token ${tokenId} does not belong to ${conditionId}`,
+                );
+              })();
+      const balance = decodeUint(
+        await this.deps.onchain.readContract(
+          chain,
+          ctx.contracts.ctf,
+          conditionalTokens.encodeFunctionData("balanceOf", [
+            ctx.safe,
+            BigInt(tokenId),
+          ]),
+        ),
+      );
+      if (balance <= 0n) continue;
+      const group = groups.get(conditionId) ?? {
+        ref,
+        indexSets: new Set<bigint>(),
+        amounts: [0n, 0n] as [bigint, bigint],
+      };
+      group.indexSets.add(outcome === "yes" ? 1n : 2n);
+      group.amounts[outcome === "yes" ? 0 : 1] += balance;
+      groups.set(conditionId, group);
+    }
+    if (groups.size === 0)
+      throw new Error("none of the selected positions holds redeemable tokens");
+    const ops = [...groups.values()].map((group) =>
+      group.ref.negRisk
+        ? {
+            to: ctx.contracts.negRiskAdapter,
+            data: negRiskAdapter.encodeFunctionData("redeemPositions", [
+              group.ref.conditionId,
+              group.amounts,
+            ]),
+          }
+        : {
+            to: ctx.contracts.ctf,
+            data: conditionalTokens.encodeFunctionData("redeemPositions", [
+              ctx.contracts.usdw,
+              ZERO_BYTES32,
+              group.ref.conditionId,
+              [...group.indexSets].sort((a, b) => (a < b ? -1 : 1)),
+            ]),
+          },
     );
+    const hash = await this.deps.account.relaySafe(address, {
+      to: ctx.contracts.multiSend,
+      data: encodeMultiSend(ops),
+      operation: 1,
+    });
+    return this.recordTx(hash, "redeem");
+  }
+
+  /** 拆分 / 合并：直接调 CTF（negRisk 走 adapter），一笔 SafeTx（`useSplitMerge.ts:201-295`） */
+  async splitOrMerge(
+    address: string,
+    marketId: string,
+    direction: "split" | "merge",
+    amount: Money,
+  ): Promise<PredictTx> {
+    const ctx = await this.deps.account.tradingContext(address);
+    const ref = await this.marketRef(marketId);
+    if (amount.decimals !== USDC_DECIMALS)
+      throw new Error(
+        `split / merge amount must be ${USDC_DECIMALS}-decimal USDC`,
+      );
+    const raw = BigInt(amount.raw);
+    if (raw <= 0n) throw new Error("split / merge amount must be positive");
+    const call = ref.negRisk
+      ? {
+          to: ctx.contracts.negRiskAdapter,
+          data: negRiskAdapter.encodeFunctionData(
+            direction === "split" ? "splitPosition" : "mergePositions",
+            [ref.conditionId, raw],
+          ),
+        }
+      : {
+          to: ctx.contracts.ctf,
+          data: conditionalTokens.encodeFunctionData(
+            direction === "split" ? "splitPosition" : "mergePositions",
+            [ctx.contracts.usdw, ZERO_BYTES32, ref.conditionId, [1n, 2n], raw],
+          ),
+        };
+    const hash = await this.deps.account.relaySafe(address, {
+      ...call,
+      operation: 0,
+    });
+    return this.recordTx(hash, direction);
   }
 
   async submitDispute(): Promise<PredictTx> {
@@ -580,8 +931,8 @@ export class HttpPredictGateway implements PredictGateway {
     );
   }
 
-  async getTx(_id: string): Promise<PredictTx | null> {
-    return null;
+  async getTx(id: string): Promise<PredictTx | null> {
+    return this.txs.get(id) ?? null;
   }
 
   async getLeaderboard(

@@ -1,6 +1,13 @@
-import { getAddress } from "ethers";
+import { Wallet, getAddress } from "ethers";
 import { fromDecimal } from "../../../core/money/money";
+import {
+  conditionalTokens,
+  negRiskAdapter,
+} from "../../../core/predict-platform/contracts";
 import { setPlatformFetch } from "../../../core/predict-platform/tenant-client";
+import type { WalletSigner } from "../../../core/wallet/signer/types";
+import type { WalletGateway } from "../../wallet/api/gateway";
+import type { OnchainTransfers } from "../../wallet/api/onchain-transfers";
 import type { HttpPredictAccountGateway } from "./http-predict-account-gateway";
 import {
   HttpPredictGateway,
@@ -59,9 +66,10 @@ function platform() {
   };
   setPlatformFetch(async (input, init) => {
     const url = new URL(String(input));
+    const method = (init?.method ?? "GET").toUpperCase();
     seen.push({
       url,
-      method: (init?.method ?? "GET").toUpperCase(),
+      method,
       headers: (init?.headers ?? {}) as Record<string, string>,
     });
     const host = url.host.split(".")[0];
@@ -95,6 +103,23 @@ function platform() {
           timestamp: "1800000000000",
         });
       if (path.startsWith("/fee-rate/")) return json({ base_fee: 20 });
+      if (path === "/tick-size") return json({ minimum_tick_size: "0.01" });
+      if (path === "/order" && method === "POST") {
+        const body = JSON.parse(String(init?.body)) as {
+          order: { makerAmount: string; takerAmount: string };
+        };
+        return json({
+          success: true,
+          errorMsg: "",
+          orderID: "o-new",
+          // 全部成交：BUY 的 taking 是份数、making 是 USDC（十进制字符串）
+          takingAmount: String(Number(body.order.takerAmount) / 1e6),
+          makingAmount: String(Number(body.order.makerAmount) / 1e6),
+          status: "matched",
+          transactionsHashes: [`0x${"cd".repeat(32)}`],
+          tradeIDs: ["t-1"],
+        });
+      }
       if (path === "/price-history")
         return json({
           history: [
@@ -191,20 +216,70 @@ function platform() {
   return seen;
 }
 
+const CONTRACTS = {
+  usdw: getAddress(`0x${"01".repeat(20)}`),
+  usdcUnderlying: getAddress(`0x${"02".repeat(20)}`),
+  usdwWrapper: getAddress(`0x${"03".repeat(20)}`),
+  multiSend: getAddress(`0x${"04".repeat(20)}`),
+  safeFactory: getAddress(`0x${"05".repeat(20)}`),
+  ctf: getAddress(`0x${"06".repeat(20)}`),
+  ctfExchange: getAddress(`0x${"07".repeat(20)}`),
+  negRiskAdapter: getAddress(`0x${"08".repeat(20)}`),
+  negRiskExchange: getAddress(`0x${"09".repeat(20)}`),
+  usdwDecimals: 6,
+  usdcDecimals: 6,
+};
+
 function build() {
   const seen = platform();
+  const wallet = Wallet.createRandom();
+  const relayed: { to: string; data: string; operation: number }[] = [];
   const account = {
-    platformContext: async () => ({ service, contracts: {} }),
+    platformContext: async () => ({ service, contracts: CONTRACTS }),
     tradingContext: async () => ({
       service,
-      contracts: {},
+      contracts: CONTRACTS,
       chainId: 11155420,
       safe: SAFE,
       jwt: "jwt",
       clob: { apiKey: "key", secret: "c2VjcmV0", passphrase: "pass" },
     }),
+    relaySafe: async (
+      _address: string,
+      call: { to: string; data: string; operation: number },
+    ) => {
+      relayed.push(call);
+      return `0x${"ab".repeat(32)}`;
+    },
   } as unknown as HttpPredictAccountGateway;
-  return { gateway: new HttpPredictGateway({ account }), seen };
+  const signer: WalletSigner = {
+    address: wallet.address,
+    managesOwnFees: false,
+    signMessage: (message) => wallet.signMessage(message),
+    signTypedData: (domain, types, value) =>
+      wallet.signTypedData(domain, types, value),
+    submitTransaction: async () => {
+      throw new Error("not used");
+    },
+  };
+  const walletGateway = {
+    signerFor: async () => signer,
+  } as unknown as WalletGateway;
+  // 链上 ERC1155 余额：Safe 手里每个代币 5 份
+  const onchain = {
+    readContract: async () => `0x${5_000_000n.toString(16).padStart(64, "0")}`,
+  } as unknown as OnchainTransfers;
+  return {
+    gateway: new HttpPredictGateway({
+      account,
+      wallet: walletGateway,
+      onchain,
+      now: () => 1_800_000_000_000,
+    }),
+    seen,
+    relayed,
+    wallet,
+  };
 }
 
 afterEach(() => setPlatformFetch(null));
@@ -320,13 +395,126 @@ describe("HttpPredictGateway", () => {
     await expect(gateway.submitDispute()).rejects.toBeInstanceOf(
       PredictUnsupportedError,
     );
-    await expect(
-      gateway.placeOrder(EOA, {
-        marketId: CONDITION,
-        outcome: "yes",
-        side: "buy",
-        type: "market",
-      }),
-    ).rejects.toBeInstanceOf(PredictUnsupportedError);
+  });
+
+  it("places a market buy as a FAK order: best ask, tick-aligned amounts, Safe as maker, L2 headers", async () => {
+    const { gateway, seen, wallet } = build();
+    const result = await gateway.placeOrder(EOA, {
+      marketId: CONDITION,
+      outcome: "yes",
+      side: "buy",
+      type: "market",
+      amount: fromDecimal("10", 6, "USDC"),
+    });
+    const post = seen.find(
+      (r) => r.url.pathname === "/order" && r.method === "POST",
+    );
+    expect(post?.headers.PRED_API_KEY).toBe("key");
+    expect(post?.headers.PRED_ADDRESS).toBe(EOA);
+    // 卖一 0.64 → 10 USDC 买到 15.62 份，maker = 0.64 × 15.62 = 9.9968
+    expect(result).toMatchObject({
+      orderId: "o-new",
+      status: "filled",
+      filledShares: 15.62,
+      avgPriceCents: 64,
+    });
+    expect(result.cost).toEqual(fromDecimal("9.9968", 6, "USDC"));
+    // 手续费 20 bps
+    expect(result.fee).toEqual(fromDecimal("0.019994", 6, "USDC"));
+    // 订单的 signer 是钱包地址（EOA），maker 是 Safe
+    const sentBody = JSON.parse(
+      String((post as unknown as { body?: string }).body ?? "{}"),
+    ) as { order?: { signer?: string; maker?: string } };
+    if (sentBody.order) {
+      expect(sentBody.order.signer).toBe(wallet.address);
+      expect(sentBody.order.maker).toBe(SAFE);
+    }
+  });
+
+  it("previews a market buy by walking the asks and a sell by walking the bids", async () => {
+    const { gateway } = build();
+    const buy = await gateway.previewOrder(EOA, {
+      marketId: CONDITION,
+      outcome: "yes",
+      side: "buy",
+      type: "market",
+      amount: fromDecimal("10", 6, "USDC"),
+    });
+    expect(buy.estimatedShares).toBe(15.62);
+    expect(buy.avgPriceCents).toBe(64);
+    expect(buy.potentialPayout).toEqual(fromDecimal("15.62", 6, "USDC"));
+    const sell = await gateway.previewOrder(EOA, {
+      marketId: CONDITION,
+      outcome: "yes",
+      side: "sell",
+      type: "market",
+      shares: 20,
+    });
+    // 买一 0.60 只有 150.5 份，20 份全吃得到
+    expect(sell.estimatedShares).toBe(20);
+    expect(sell.cost).toEqual(fromDecimal("12", 6, "USDC"));
+  });
+
+  it("redeems settled positions with one MultiSend of CTF.redeemPositions per condition", async () => {
+    const { gateway, relayed } = build();
+    const tx = await gateway.redeem(EOA, [
+      `${CONDITION}:111`,
+      `${CONDITION}:222`,
+    ]);
+    expect(tx.kind).toBe("redeem");
+    expect(tx.status).toBe("confirmed");
+    expect(relayed).toHaveLength(1);
+    expect(relayed[0]?.to).toBe(CONTRACTS.multiSend);
+    expect(relayed[0]?.operation).toBe(1);
+    const expected = conditionalTokens.encodeFunctionData("redeemPositions", [
+      CONTRACTS.usdw,
+      `0x${"00".repeat(32)}`,
+      CONDITION,
+      [1n, 2n],
+    ]);
+    expect(relayed[0]?.data).toContain(expected.slice(2));
+    expect(await gateway.getTx(tx.id)).toEqual(tx);
+  });
+
+  it("splits and merges through a direct Safe call to the CTF (operation 0)", async () => {
+    const { gateway, relayed } = build();
+    await gateway.splitOrMerge(
+      EOA,
+      CONDITION,
+      "split",
+      fromDecimal("3", 6, "USDC"),
+    );
+    await gateway.splitOrMerge(
+      EOA,
+      CONDITION,
+      "merge",
+      fromDecimal("1", 6, "USDC"),
+    );
+    expect(relayed.map((call) => [call.to, call.operation])).toEqual([
+      [CONTRACTS.ctf, 0],
+      [CONTRACTS.ctf, 0],
+    ]);
+    expect(relayed[0]?.data).toBe(
+      conditionalTokens.encodeFunctionData("splitPosition", [
+        CONTRACTS.usdw,
+        `0x${"00".repeat(32)}`,
+        CONDITION,
+        [1n, 2n],
+        3_000_000n,
+      ]),
+    );
+    expect(relayed[1]?.data).toBe(
+      conditionalTokens.encodeFunctionData("mergePositions", [
+        CONTRACTS.usdw,
+        `0x${"00".repeat(32)}`,
+        CONDITION,
+        [1n, 2n],
+        1_000_000n,
+      ]),
+    );
+    // negRisk 的编码器也要能用
+    expect(
+      negRiskAdapter.encodeFunctionData("splitPosition", [CONDITION, 1n]),
+    ).toMatch(/^0x/);
   });
 });

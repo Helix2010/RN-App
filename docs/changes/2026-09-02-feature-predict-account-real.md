@@ -43,7 +43,8 @@ App 里的预测账户余额、存入 / 取出此前全是 `MockPredictGateway` 
 - `HttpPredictGateway`：`Market.id` = conditionId、事件 id = gamma id、价格换整数分、金额 6 位 USDC；展示价按网页版规则（mid → ask → bid → 最新成交，缺就 null 不编 0.5）；持仓 / 活动按 Safe 地址查；我的挂单走 L2、"未完成"判据同网页版；撤单 `DELETE /order`。
 - 生产接线从 `MockPredictGateway` 切到 `HttpPredictGateway`（Mock 只剩测试用）；市场列表默认标签改为平台给的第一个标签（原来写死 `hot`）。
 - 模型：平台不给的字段改为可空 / 可选并在界面保护——持有人数、排行榜胜率、争议保证金；活动类型加 `CONVERSION` / `MAKER_REBATE`。
-- **未接**：下单（EIP-712 Order 签名 + `POST /order`）、领取、拆合、WS 推送；平台网页没有争议提交入口。这些方法抛 `PredictUnsupportedError`。
+- **写侧（同日稍后落地）**：下单——EIP-712 Order（domain `Prediction Market Protocol` v1，verifyingContract 按 negRisk 选 exchange；maker = Safe、signer = EOA、signatureType 2、salt 随机 uint32、GTD 才带 expiration），金额换算是 user-dapp `orderAmounts.ts` 的逐行移植（`order-amounts.ts` + 契约测试），市价单 = FAK 取对手盘最优价并按 tick 向上对齐，`POST /order` 带 L2 头（path + body），响应 `success=false` 抛 `OrderRejectedError`，成交量按 BUY taking = 份数 / SELL making = 份数换算成 filled / partial / open；预览沿簿估算并按 `/fee-rate` 的 bps 估手续费。领取——同 conditionId 合并一条 `CTF.redeemPositions`（negRisk 走 adapter 的 `redeemPositions(conditionId, amounts)`），数量以链上 ERC1155 余额为准，MultiSend 经 relayer。拆合——直接 SafeTx 调 CTF / adapter（operation 0）。账户网关新增 `relaySafe` / `tradingContext` / `platformContext` 供复用。
+- **未接**：WS 推送（`subscribeMarkets` 空实现并 warning）；平台网页没有争议提交入口，`submitDispute` 抛 `PredictUnsupportedError`。
 
 ## 不做的事
 

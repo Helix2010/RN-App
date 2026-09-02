@@ -99,7 +99,11 @@ function createGateways(storage: KeyValueStorage): Gateways {
     storage,
   });
   // 行情 / 持仓 / 订单同样直连平台；还没接的能力如实抛错，没有演示数据
-  const predict = new HttpPredictGateway({ account: predictAccount });
+  const predict = new HttpPredictGateway({
+    account: predictAccount,
+    wallet,
+    onchain,
+  });
   const dex = new MockDexGateway(storage, wallet);
   const assets = new AssetsOverviewGateway(wallet, predictAccount);
   return {

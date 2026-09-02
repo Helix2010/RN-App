@@ -424,9 +424,31 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
     safe: string,
     to: string,
     data: string,
+    operation: 0 | 1 = 1,
   ): Promise<string> {
     return this.serialForSafe(safe, () =>
-      this.relaySafeTxNow(ctx, auth, signer, safe, to, data),
+      this.relaySafeTxNow(ctx, auth, signer, safe, to, data, operation),
+    );
+  }
+
+  /**
+   * 供行情 / 持仓网关用：以已启用账户的 Safe 发一笔 relayer 交易并等到终态，返回 txHash。
+   * operation 1 = MultiSend（delegatecall），0 = 直接调用目标合约（拆合走这条，`useSplitMerge.ts:201`）。
+   */
+  async relaySafe(
+    address: string,
+    call: { to: string; data: string; operation: 0 | 1 },
+  ): Promise<string> {
+    const { ctx, jwt, safe } = await this.enabledContext(address);
+    const signer = await this.deps.wallet.signerFor(address);
+    return this.relaySafeTx(
+      ctx,
+      { service: ctx.service, token: jwt },
+      signer,
+      safe,
+      call.to,
+      call.data,
+      call.operation,
     );
   }
 
@@ -437,12 +459,13 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
     safe: string,
     to: string,
     data: string,
+    operation: 0 | 1,
   ): Promise<string> {
     const nonce = await safeNonce(auth, safe);
     const typed = safeTxTypedData(evmChainIdOf(ctx.service.chain), safe, {
       to,
       data,
-      operation: 1,
+      operation,
       nonce,
     });
     const signature = await signer.signTypedData(
@@ -458,7 +481,7 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
       data,
       nonce,
       signature,
-      signatureParams: safeTxSignatureParams(1),
+      signatureParams: safeTxSignatureParams(operation),
     });
     const record = await waitForRelayed(auth, id, { sleep: this.deps.sleep });
     if (!record.transactionHash)

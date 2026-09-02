@@ -312,7 +312,7 @@ src/features/predict/model/predict.ts   PredictTx 加 claimableAt / requestId；
 
 ## 5. 待办
 
-实现状态（2026-09-02）：阶段 1–5（服务端下发、管理端、App 平台客户端、账户网关、启用 / 划转界面）已落地，见 `docs/changes/2026-09-02-feature-predict-account-real.md`。阶段 6 读侧已落地（`HttpPredictGateway`：标签、事件列表 / 详情、订单簿、价格历史、费率、结算状态、持仓 / 已平仓、活动、盈亏、排行榜、我的挂单、撤单；事实见 §2.9），生产接线已从 `MockPredictGateway` 切到它；**下单（签名 + 提交）、领取、拆合、WS 推送还没接**，对应方法抛 `PredictUnsupportedError`，不用演示数据顶上。
+实现状态（2026-09-02）：阶段 1–5（服务端下发、管理端、App 平台客户端、账户网关、启用 / 划转界面）已落地，见 `docs/changes/2026-09-02-feature-predict-account-real.md`。阶段 6 读侧已落地（`HttpPredictGateway`：标签、事件列表 / 详情、订单簿、价格历史、费率、结算状态、持仓 / 已平仓、活动、盈亏、排行榜、我的挂单、撤单；事实见 §2.9），生产接线已从 `MockPredictGateway` 切到它。写侧也已落地：下单（EIP-712 Order 签名，maker = Safe / signer = EOA，金额换算逐行移植 `orderAmounts.ts`，市价 = FAK 取对手盘最优价，`POST /order` 带 L2 头）、领取（同 conditionId 合并一条 `redeemPositions`，链上 ERC1155 余额为准，MultiSend 经 relayer）、拆合（直接 SafeTx 调 CTF / adapter，operation 0）。**只剩 WS 推送没接**（`subscribeMarkets` 为空实现并留 warning，界面只有拉取到的数据）；争议提交平台没有入口，抛 `PredictUnsupportedError`。
 
 对照 §3.3 / §3.4 / §3.7 逐条核对（2026-09-02 晚）后补齐的偏差，均有 spec：
 

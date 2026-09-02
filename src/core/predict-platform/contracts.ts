@@ -24,7 +24,22 @@ export const usdWrapper = new Interface([
 export const conditionalTokens = new Interface([
   "function setApprovalForAll(address operator, bool approved)",
   "function isApprovedForAll(address owner, address operator) view returns (bool)",
+  // ERC1155 余额：领取前核对 Safe 手里确实有这份仓位（`useRedeemBatch.ts` balanceOfBatch）
+  "function balanceOf(address account, uint256 id) view returns (uint256)",
+  // 领取 / 拆分 / 合并（`lib/redeemBatch.ts:108-200`、`hooks/useSplitMerge.ts:30-50`）
+  "function redeemPositions(address collateralToken, bytes32 parentCollectionId, bytes32 conditionId, uint256[] indexSets)",
+  "function splitPosition(address collateralToken, bytes32 parentCollectionId, bytes32 conditionId, uint256[] partition, uint256 amount)",
+  "function mergePositions(address collateralToken, bytes32 parentCollectionId, bytes32 conditionId, uint256[] partition, uint256 amount)",
 ]);
+
+/** negRisk 市场走 adapter（`useRedeem.ts` NEG_RISK_ADAPTER_ABI、`useSplitMerge.ts:55-80`） */
+export const negRiskAdapter = new Interface([
+  "function redeemPositions(bytes32 conditionId, uint256[] amounts)",
+  "function splitPosition(bytes32 conditionId, uint256 amount)",
+  "function mergePositions(bytes32 conditionId, uint256 amount)",
+]);
+
+export const ZERO_BYTES32 = `0x${"00".repeat(32)}`;
 
 export const MAX_UINT256 = (1n << 256n) - 1n;
 export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
