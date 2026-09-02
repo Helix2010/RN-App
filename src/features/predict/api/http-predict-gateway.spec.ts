@@ -517,4 +517,112 @@ describe("HttpPredictGateway", () => {
       negRiskAdapter.encodeFunctionData("splitPosition", [CONDITION, 1n]),
     ).toMatch(/^0x/);
   });
+
+  it("subscribes the YES token on the market channel and maps book / price_change events", async () => {
+    type FakeSock = {
+      url: string;
+      sent: string[];
+      onopen: ((e: unknown) => void) | null;
+      onmessage: ((e: { data: unknown }) => void) | null;
+      onclose: ((e: unknown) => void) | null;
+      onerror: ((e: unknown) => void) | null;
+      readyState: number;
+      send(d: string): void;
+      close(): void;
+    };
+    const sockets: FakeSock[] = [];
+    const seenMarkets = platform();
+    const account = {
+      platformContext: async () => ({ service, contracts: CONTRACTS }),
+    } as unknown as HttpPredictAccountGateway;
+    const gateway = new HttpPredictGateway({
+      account,
+      wallet: {} as WalletGateway,
+      onchain: {} as OnchainTransfers,
+      createSocket: (url) => {
+        const socket = {
+          url,
+          sent: [] as string[],
+          onopen: null,
+          onmessage: null,
+          onclose: null,
+          onerror: null,
+          readyState: 0,
+          send(d: string) {
+            this.sent.push(d);
+          },
+          close() {
+            this.readyState = 3;
+          },
+        };
+        sockets.push(socket);
+        return socket;
+      },
+    });
+    const events: unknown[] = [];
+    const stop = gateway.subscribeMarkets([CONDITION], (event) =>
+      events.push(event),
+    );
+    // 市场 → 代币解析是异步的（走 /markets/information）
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(
+      seenMarkets.some((r) => r.url.pathname === "/markets/information"),
+    ).toBe(true);
+    const socket = sockets[0]!;
+    expect(socket.url).toBe("wss://clob-ws.predict.prax1s.xyz/ws/market");
+    socket.readyState = 1;
+    socket.onopen?.({});
+    expect(JSON.parse(socket.sent[0] ?? "{}")).toEqual({
+      assets_ids: ["111"],
+      type: "market",
+      custom_feature_enabled: true,
+      initial_dump: true,
+      level: 2,
+    });
+    socket.onmessage?.({
+      data: JSON.stringify({
+        event_type: "book",
+        asset_id: "111",
+        data: {
+          asset_id: "111",
+          bids: [{ price: "0.60", size: "1" }],
+          asks: [{ price: "0.64", size: "2" }],
+          tick_size: "0.01",
+          timestamp: "1800000000000",
+        },
+      }),
+    });
+    socket.onmessage?.({
+      data: JSON.stringify({
+        event_type: "price_change",
+        market: CONDITION,
+        price_changes: [
+          {
+            asset_id: "111",
+            price: "0.63",
+            size: "1",
+            side: "BUY",
+            best_bid: "0.61",
+            best_ask: "0.63",
+          },
+        ],
+      }),
+    });
+    expect(events).toEqual([
+      {
+        type: "book",
+        book: {
+          marketId: CONDITION,
+          bids: [{ priceCents: 60, shares: 1 }],
+          asks: [{ priceCents: 64, shares: 2 }],
+          tickCents: 1,
+          updatedAt: "2027-01-15T08:00:00.000Z",
+        },
+      },
+      { type: "price_change", marketId: CONDITION, yesPriceCents: 62 },
+    ]);
+    stop();
+    expect(socket.readyState).toBe(3);
+  });
 });

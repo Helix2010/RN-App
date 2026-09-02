@@ -46,7 +46,12 @@ import {
   signOrder,
   type OrderType as ClobOrderType,
 } from "../../../core/predict-platform/orders";
+import {
+  MarketWsClient,
+  type SocketLike,
+} from "../../../core/predict-platform/market-ws";
 import { encodeMultiSend } from "../../../core/predict-platform/safe";
+import { platformHosts } from "../../../core/predict-platform/tenant-client";
 import type { WalletGateway } from "../../wallet/api/gateway";
 import type { OnchainTransfers } from "../../wallet/api/onchain-transfers";
 import type {
@@ -208,7 +213,9 @@ export class HttpPredictGateway implements PredictGateway {
   private readonly markets = new Map<string, MarketRef>();
   /** 本进程里经 relayer 完成的链上交易（领取 / 拆合），供 getTx */
   private readonly txs = new Map<string, PredictTx>();
-  private warnedSubscribe = false;
+  /** 行情 WS 连接：第一次订阅时按租户域名建，所有市场共用 */
+  private ws: MarketWsClient | null = null;
+  private wsUrl: string | null = null;
 
   constructor(
     private readonly deps: {
@@ -216,6 +223,8 @@ export class HttpPredictGateway implements PredictGateway {
       wallet: WalletGateway;
       onchain: OnchainTransfers;
       now?: () => number;
+      /** 仅供测试替换 WebSocket */
+      createSocket?: (url: string) => SocketLike;
     },
   ) {}
 
@@ -500,18 +509,66 @@ export class HttpPredictGateway implements PredictGateway {
       .map((point) => ({ t: iso(point.t), priceCents: cents(point.p) }));
   }
 
+  /**
+   * 行情推送：订阅每个市场 YES 代币的深度频道（level 2）。`book` → 整本簿，
+   * `price_change` → 按买一卖一中间价换成 YES 价格（与列表展示价同一规则）。
+   * 市场 → 代币的解析是异步的，取消函数在解析完成前后都有效。
+   */
   subscribeMarkets(
-    _marketIds: string[],
-    _onEvent: (event: MarketEvent) => void,
+    marketIds: string[],
+    onEvent: (event: MarketEvent) => void,
   ): Unsubscribe {
-    // WS 推送在下一阶段接入（§2.9 WS 行情）；在此之前界面只有拉取到的数据，不模拟推送
-    if (!this.warnedSubscribe) {
-      this.warnedSubscribe = true;
-      console.warn(
-        "[predict] market WebSocket is not wired yet; no live updates",
-      );
-    }
-    return () => {};
+    let cancelled = false;
+    let stop: (() => void) | null = null;
+    void (async () => {
+      const service = await this.service();
+      const refs = await Promise.all(marketIds.map((id) => this.marketRef(id)));
+      if (cancelled) return;
+      const byToken = new Map(refs.map((ref) => [ref.yesTokenId, ref]));
+      // 平台关联（域名）变了就换连接；旧连接由剩余订阅者取消时自行断开
+      const url = `${platformHosts(service.domain).clobWs}/ws/market`;
+      if (!this.ws || this.wsUrl !== url) {
+        this.ws = new MarketWsClient({
+          url,
+          createSocket: this.deps.createSocket,
+        });
+        this.wsUrl = url;
+      }
+      stop = this.ws.subscribe([...byToken.keys()], 2, (event) => {
+        const ref = byToken.get(event.assetId);
+        if (!ref) return;
+        if (event.kind === "book") {
+          onEvent({
+            type: "book",
+            book: this.mapBook(ref.conditionId, {
+              market: ref.conditionId,
+              asset_id: event.assetId,
+              bids: event.book.bids,
+              asks: event.book.asks,
+              tick_size: event.book.tick_size,
+              timestamp: event.book.timestamp,
+            }),
+          });
+          return;
+        }
+        const mid =
+          event.bestBid !== null && event.bestAsk !== null
+            ? (event.bestBid + event.bestAsk) / 2
+            : (event.bestAsk ?? event.bestBid ?? event.price);
+        if (mid === null) return;
+        onEvent({
+          type: "price_change",
+          marketId: ref.conditionId,
+          yesPriceCents: cents(mid),
+        });
+      });
+    })().catch((error: unknown) =>
+      console.warn("[predict] market subscription failed", error),
+    );
+    return () => {
+      cancelled = true;
+      stop?.();
+    };
   }
 
   async getFeeBps(marketId: string): Promise<number> {

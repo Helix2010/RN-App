@@ -44,7 +44,8 @@ App 里的预测账户余额、存入 / 取出此前全是 `MockPredictGateway` 
 - 生产接线从 `MockPredictGateway` 切到 `HttpPredictGateway`（Mock 只剩测试用）；市场列表默认标签改为平台给的第一个标签（原来写死 `hot`）。
 - 模型：平台不给的字段改为可空 / 可选并在界面保护——持有人数、排行榜胜率、争议保证金；活动类型加 `CONVERSION` / `MAKER_REBATE`。
 - **写侧（同日稍后落地）**：下单——EIP-712 Order（domain `Prediction Market Protocol` v1，verifyingContract 按 negRisk 选 exchange；maker = Safe、signer = EOA、signatureType 2、salt 随机 uint32、GTD 才带 expiration），金额换算是 user-dapp `orderAmounts.ts` 的逐行移植（`order-amounts.ts` + 契约测试），市价单 = FAK 取对手盘最优价并按 tick 向上对齐，`POST /order` 带 L2 头（path + body），响应 `success=false` 抛 `OrderRejectedError`，成交量按 BUY taking = 份数 / SELL making = 份数换算成 filled / partial / open；预览沿簿估算并按 `/fee-rate` 的 bps 估手续费。领取——同 conditionId 合并一条 `CTF.redeemPositions`（negRisk 走 adapter 的 `redeemPositions(conditionId, amounts)`），数量以链上 ERC1155 余额为准，MultiSend 经 relayer。拆合——直接 SafeTx 调 CTF / adapter（operation 0）。账户网关新增 `relaySafe` / `tradingContext` / `platformContext` 供复用。
-- **未接**：WS 推送（`subscribeMarkets` 空实现并 warning）；平台网页没有争议提交入口，`submitDispute` 抛 `PredictUnsupportedError`。
+- **WS 推送**：`core/predict-platform/market-ws.ts` 接 `wss://clob-ws.{domain}/ws/market`，协议照 `wsservice/market_channel.go` 与 user-dapp `lib/ws/polymarket.ts`——首帧 `{assets_ids, type:"market", custom_feature_enabled:true, initial_dump:true, level}`、增量 `{operation, assets_ids, level}`、每 10 秒文本 `PING`、断线 1s → 30s 指数退避（握手成功即归零）并重发全部订阅；`book`（初始 dump 在 `data` 里）与 `price_change` 映射成 `PredictGateway.subscribeMarkets` 的事件，没有订阅者时不建连接、最后一个取消即断开。假 socket 的 spec 覆盖订阅帧、映射、心跳与重连。
+- **未接**：平台网页没有争议提交入口，`submitDispute` 抛 `PredictUnsupportedError`。
 
 ## 不做的事
 
@@ -54,7 +55,7 @@ App 里的预测账户余额、存入 / 取出此前全是 `MockPredictGateway` 
 ## 运维记录
 
 - 2026-09-03 直接写库（web4，用户授权）：anyfun（100000001）`services.predict` 指向 `predict.prax1s.xyz` / `0xfb05…454a` / op-sepolia，op-sepolia 目录加 USDW（`0x790e…6098`，6 位），`tokens` 锚点 +1；`modules.predict` 保持 false。线上 bootstrap 已核实 `wallet.tokens` 含 USDW、`services` 仍空。
-- 打开 `modules.predict` 前先发带阶段 6 代码的新版 App（现网 1.2.7 老包会显示 Mock 预测市场）。
+- 同日稍后按用户要求直接把 `modules.predict` 置 true（版本号守卫 UPDATE）；现网 1.2.7 老包在新包发出前会显示 Mock 预测市场。已核实币种下发只看 `chain_token_catalog` 自身的 enabled 与链开关（RN-Server `internal/api/tokens.go` 不读 `modules.predict`）。
 
 ## 验证
 
