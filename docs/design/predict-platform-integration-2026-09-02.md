@@ -1,6 +1,6 @@
 # 接入 pm-cup2026 预测市场平台：登录与资金转入 / 转出分析
 
-- 状态：分析（2026-09-02），待产品决策后立项
+- 状态：已决策（见 §6，2026-09-02），待立项开工。全部改动为纯 JS，不引入原生依赖，可随 OTA 发布
 - 对象：`~/fy/work/pm-cup2026`（`apps/user-dapp` C 端 + `services/gamma|clob|data|relayer|faucet`），dev 环境 `https://predict.prax1s.xyz`
 - 关联：ADR 0007（Gateway 双实现，预留 `createGateways(bootstrap.services)`）、`wallet-onchain-security-2026-09-01.md`、`AGENTS.md` 正式场景开发原则
 - 依据：源码追读（三路）+ dev 环境实测（公开接口、一次性密钥完整登录、链上合约参数）
@@ -54,6 +54,8 @@ POST {gamma}/auth/refresh   Authorization: Bearer   → { token }
 | Safe 授权               | 交易所能动 Safe 里的 USDW / CTF      | relayer 转发一笔 MultiSend：`USDW.approve × 4` + `CTF.setApprovalForAll × 3`                                                                                                                                     | 链上                 |
 
 L2 签名：`base64(HMAC-SHA256(base64url解码(secret), ts + METHOD + path + body))`，时钟容差 ±30 秒，先取 `GET {clob}/time`。
+
+**clob-service 不看域名**：它没有租户中间件，租户身份只在建 API key 时由 `PRED_SCOPE_ID` 绑进密钥。这个头对平台是可选的，对我们是必填——漏了会得到一把不属于任何租户的密钥。
 
 ### 2.4 代理钱包（Safe）
 
@@ -127,7 +129,13 @@ RN-Server 新增下发（严格 schema，缺则模块不可用，不写默认）
 }
 ```
 
-`chain` 必须是本租户启用的链，且 `public-info.chainId` 与之相符，否则 App 拒绝启用预测模块并留痕（同 `PROTOCOL` 断言的做法）。管理端「预测市场」页只有这两个字段加开关。
+`chain` 必须是本租户启用的链，且 `public-info.chainId` 与之相符，否则 App 拒绝启用预测模块并留痕（同 `PROTOCOL` 断言的做法）。
+
+三端规则：
+
+- 服务端：`modules.predict = true` 时 `services.predict` 必须完整合法，否则 bootstrap 返回 503（与代币目录、零条链的处理一致）；`modules.predict = false` 时不下发 `services.predict`。
+- 管理端「预测市场」页：开关 + 域名 + 链三项，加一个「测试连接」按钮——服务端去请求 `https://gamma-api.{domain}/public-info`（带 `X-Tenant-Domain`），回显 chainId、scopeId、品牌名，并校验 chainId 与所选链一致；不通过就不让保存。
+- App：schema 严格；`domain` 只接受主机名（不含协议、端口、路径）。
 
 ### 3.3 App 侧新增模块
 
@@ -144,18 +152,22 @@ src/features/predict/api/http-predict-gateway.ts
 src/features/predict/model/predict.ts     PredictTx 加 claimableAt / requestId；新增 PendingWithdrawal
 ```
 
+HMAC-SHA256、keccak、ABI 编码都用已有依赖（`@noble/hashes`、ethers），不新增原生模块。
+
 凭证存放：gamma JWT、CLOB 三元组、Safe 地址 → `expo-secure-store`，按 `tenantDomain + address` 作键；切换账户 / 登出即清；CLOB 密钥按私钥对待，下单超过大额阈值走现有 `useRequireVerification`。
 
 ### 3.4 用户流程
 
-**启用预测交易（一次性，进入预测模块或首次划转时触发）**
+**游客**：未登录也能浏览行情与市场——这些都是公开接口，只需要 `X-Tenant-Domain`，不需要任何凭证。
+
+**启用预测交易（一次性，已登录用户进入预测市场模块时触发，见 §6）**
 
 1. 签 `LoginMessage` → JWT。
 2. `deployed` 查 Safe；未部署 → 签 `CreateProxy` → relayer 部署（免 gas）。
 3. 签 `ClobAuth` → 拿 CLOB 密钥。
 4. 签一笔 SafeTx MultiSend 做 7 个授权（免 gas）。
 
-内置钱包 4 次签名落在同一个 5 分钟解锁窗口里，只弹一次生物验证；外部钱包每次都要在钱包里确认，和网页版一致。步骤要可断点续做：每步完成写本地状态，重进按 `deployed` / allowance 实查对齐，不信本地缓存。
+内置钱包 4 次签名落在同一个 5 分钟解锁窗口里，只弹一次生物验证；外部钱包（WalletConnect）每次都要在钱包里确认 `eth_signTypedData_v4`，和网页版一致，转入的两笔交易走 `eth_sendTransaction`。步骤要可断点续做：每步完成写本地状态，重进按 `deployed` / allowance 实查对齐，不信本地缓存。
 
 **转入**
 
@@ -167,7 +179,7 @@ src/features/predict/model/predict.ts     PredictTx 加 claimableAt / requestId�
 **转出**
 
 - 方向"预测账户 → 钱包"，目标固定显示登录地址，不可改（平台合约如此）。
-- 提交 = 阶段 A；成功后进入"解锁中"，显示 `claimableAt` 倒计时（dev 60 秒，主网可能到天）。
+- 提交 = 阶段 A；成功后进入"解锁中"，显示 `claimableAt` 倒计时（dev 60 秒，主网当前 2 小时）。
 - 划转页多一个"待领取"列表（data-service `unwrap-requests`），到期出现"领取"按钮 = 阶段 B。
 - 文案必须说清"先解锁再到账"，不能写成一笔转账。
 
@@ -180,11 +192,50 @@ src/features/predict/model/predict.ts     PredictTx 加 claimableAt / requestId�
 - 转入需要用户持有原生币；主网上这是真钱，要在划转页提前提示，不能到签名时才失败。
 - 平台 JWT 私钥 `gamma-jwt-private.pem` 就放在仓库根目录：是他们的事，但联调时别把这个文件带进任何日志或文档。
 
+### 3.6 联调环境（dev）
+
+| 项         | 值                                                                                                                                                                                   |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 平台租户   | prax1s（平台 tenant 100000000），域名 `predict.prax1s.xyz`；我们这边用 anyfun（RN-Server 100000001）配 `services.predict.domain = predict.prax1s.xyz`                                |
+| 链         | OP Sepolia 11155420，anyfun 已启用                                                                                                                                                   |
+| 测试 USDC  | 平台的 `USDC_UNDERLYING`（`0x2eA6…c3AD`，6 位）**有公开的 `mint(address,uint256)`，任何地址都能给自己铸**（2026-09-02 eth_call 实测）。联调时用脚本给测试地址铸 USDC，不需要找平台要 |
+| 测试 gas   | 任意 OP Sepolia 水龙头；或平台 faucet（JWT，每人一次 0.001 TETH，条件是 Safe 已部署）。转入两笔交易大约要几万 gas，0.001 TETH 够用                                                   |
+| 转出延迟   | wrapper 链上 60 秒，最小 0.001 USDW                                                                                                                                                  |
+| 平台侧前提 | relayer 白名单里要有 `USDC_UNDERLYING`（§7 待办 1）                                                                                                                                  |
+
+验收清单（一条链跑通即视为登录 + 转入 / 转出完成）：
+
+1. 已登录用户进入预测模块 → 四步启用一次完成；杀 App 重进不再弹签名；换钱包地址重新触发。
+2. 划转页转入 1 USDC：首次两笔（approve、wrap），第二次一笔；Safe 的 USDW 余额 +1，EOA 的 USDC −1。
+3. 转出 0.5 USDW：阶段 A 成功后出现"解锁中"，60 秒后"领取"可点；领取后 EOA 的 USDC +0.5，待领取列表清空。
+4. 转出 0.0001 USDW：低于最小额，提交前就被拦下，文案说明最小额。
+5. gas 不足时：转入按钮前置提示，不进入签名。
+6. 断网 / relayer 返回 `STATE_FAILED`：界面显示失败原因，不静默重试。
+7. `X-Tenant-Domain` 断言：所有请求录制成夹具，测试逐条检查该头存在。
+
+### 3.7 失败与边界
+
+| 场景                                                     | 处理                                                                |
+| -------------------------------------------------------- | ------------------------------------------------------------------- |
+| JWT 过期或 `sub` ≠ 当前地址                              | 先 `refresh`，失败则重走登录签名；切换钱包地址时清掉全部预测凭证    |
+| nonce 用过 / 过期（`40101`）                             | 重取 nonce 再签，不复用旧签名                                       |
+| `scopeId` 与租户不符（`40305`）                          | 视为配置错误，停用模块并留痕，不重试                                |
+| `public-info.chainId` ≠ `services.predict.chain`         | 同上                                                                |
+| relayer 拒绝：白名单 / `from` 不符 / scopeId 不符（403） | 显示平台返回的原因，提示联系平台；不重试                            |
+| relayer `STATE_FAILED` / `STATE_INVALID`                 | 该笔作废；重新取 Safe nonce 再发起，不重发同一 nonce                |
+| 同一 Safe 多笔 SafeTx                                    | 串行：每笔发起前实时取 `nonce`，前一笔没到 `STATE_MINED` 不发下一笔 |
+| L2 时钟偏差（±30 秒）                                    | 每次签名前用 `GET {clob}/time` 校准，不信本机时钟                   |
+| CLOB 密钥被平台吊销                                      | L2 请求 401 → 重走 `ClobAuth` 换新密钥                              |
+| 转出金额低于 `minUnwrapUsdw`                             | 提交前拦截                                                          |
+| 转入时原生币不够 gas                                     | 签名前拦截，走现有 `InsufficientGasError` 文案                      |
+| 转出发起成功但 App 被杀                                  | 待领取列表来自 data-service，重进即恢复；不依赖本地状态             |
+
 ## 4. 工作量（单人，App 为主）
 
 | 阶段 | 内容                                                                                                   | 估时   |
 | ---- | ------------------------------------------------------------------------------------------------------ | ------ |
-| 1    | 三端 `services.predict` 下发 + 管理端页面 + schema                                                     | 1–2 天 |
+| 0    | 平台侧准备：确认租户域名、relayer 白名单加 `USDC_UNDERLYING`、给测试地址铸 USDC                        | 半天   |
+| 1    | 三端 `services.predict` 下发 + 管理端页面（含测试连接）+ schema                                        | 1–2 天 |
 | 2    | `predict-platform` client：租户头、public-info、登录 / 刷新、relayer、Safe/MultiSend 编码、ClobAuth/L2 | 4–5 天 |
 | 3    | 链层任意合约调用 + 转入（A/B）+ faucet                                                                 | 2–3 天 |
 | 4    | 转出两阶段 + 待领取列表 + 模型改动 + 划转页改造                                                        | 3–4 天 |
@@ -221,14 +272,15 @@ App 的钱包地址就是预测平台里的 EOA，这个理解是对的。但平
 
 ## 6. 决策记录（2026-09-02）
 
-| 问题                 | 决定                                                                                                                                                                                                                                                    |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 先接哪条链           | **先调通测试网（OP Sepolia，dev 环境 predict.prax1s.xyz）**；主网接入后续做。Monad（143）这条链本身已按用户要求预先加进三端目录（`docs/changes/2026-09-02-feature-monad-chain.md`），届时只需租户在管理端勾选                                           |
-| 直连还是经 RN-Server | **直连平台，不经 RN-Server**；RN-Server 只下发 `services.predict { domain, chain }`                                                                                                                                                                     |
-| 启用流程的时机       | **进入预测市场模块时**进入授权流程（已登录的钱包地址作为 EOA）；未登录用户进模块先走现有登录 sheet，登录后接着跑四步                                                                                                                                    |
-| 主网 `unwrapDelay`   | 主网当前 7200 秒。**App 不配置这个值，也不经 RN-Server 下发**：发起解包时直接用链上事件返回的 `claimableAt`，展示前再读一次 `wrapper.unwrapDelay()`；平台改了参数 App 自动跟上，两边永远一致。RN-Server 只下发 `services.predict`。（建议，待用户确认） |
+| 问题                 | 决定                                                                                                                                                                                                                                |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 先接哪条链           | **先调通测试网（OP Sepolia，dev 环境 predict.prax1s.xyz）**；主网接入后续做。Monad（143）这条链本身已按用户要求预先加进三端目录（`docs/changes/2026-09-02-feature-monad-chain.md`），届时只需租户在管理端勾选                       |
+| 直连还是经 RN-Server | **直连平台，不经 RN-Server**；RN-Server 只下发 `services.predict { domain, chain }`                                                                                                                                                 |
+| 启用流程的时机       | **进入预测市场模块时**进入授权流程（已登录的钱包地址作为 EOA）；未登录用户进模块先走现有登录 sheet，登录后接着跑四步                                                                                                                |
+| 主网 `unwrapDelay`   | 主网当前 7200 秒。**App 不配置这个值，也不经 RN-Server 下发**：发起解包时直接用链上事件返回的 `claimableAt`，展示前再读一次 `wrapper.unwrapDelay()`；平台改了参数 App 自动跟上，两边永远一致。RN-Server 只下发 `services.predict`。 |
 
 ## 7. 待办（不阻塞开工）
 
+0. 转入路径 B 要显示 EOA 里的 USDW：租户目录里加 USDW（`0x790e…6098`，6 位）这一条，管理端上币即可，不是代码改动。
 1. 让平台把 `USDC_UNDERLYING` 加进 relayer 白名单（dev 与将来的主网各一次），否则转出第二阶段必败。
 2. 主网 `unwrapDelay` 目前 2 小时：用户不会盯两小时倒计时，主网接入时要做"可以领取了"的推送（走现有推送链路，由 App 在发起解包成功后向 RN-Server 登记一条定时提醒，或本地通知）。
