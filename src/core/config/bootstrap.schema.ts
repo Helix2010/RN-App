@@ -9,11 +9,14 @@ const walletTokenSchema = z.object({
   // "native" 或 EIP-55 地址；合法性在 wallet-runtime-config 里断言
   address: z.string(),
   symbol: z.string().min(1).max(32),
-  name: z.string().max(128).default(""),
+  name: z.string().max(128),
   // 链上精度，协议事实；displayDecimals ≤ decimals 的关系同样在应用时断言
   decimals: z.number().int().min(0).max(36),
   displayDecimals: z.number().int().min(0).max(36),
-  logoColor: z.string().default(""),
+  // 头像底色，服务端写入时就要求必填且合法
+  logoColor: z
+    .string()
+    .regex(/^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/),
 });
 
 const color = z
@@ -150,54 +153,28 @@ export const bootstrapSchema = z.object({
     .refine((value) => value.predict || value.dex, {
       message: "At least one business module must be enabled",
     }),
-  /** 服务端下发的钱包参数：projectId 是客户端标识（非密钥），按租户下发免重打包 */
-  wallet: z
-    .object({
-      walletConnectProjectId: z.string(),
-      // 转出是否真的上链。老服务端不下发时按关处理——默认必须是"演示账本"
-      onchainSends: z.boolean().default(false),
-      chains: z.array(chainIdSchema).min(1),
-      // 端点按租户下发；老服务端没有这段时用 chains 推默认值，
-      // 不能因为版本落后就让整个 bootstrap 解析失败
-      networks: z
-        .array(
-          z.object({
-            id: chainIdSchema,
-            chainId: z.number().int().positive(),
-            rpcUrls: z.array(z.url()),
-            explorerUrl: z.url(),
-            // 老服务端不下发这个标记，缺省按主网处理
-            testnet: z.boolean().default(false),
-          }),
-        )
-        .optional(),
-      // 代币目录按租户下发（全局 + 租户覆盖，服务端已合并）。老服务端没有这段时
-      // 按空处理，不能因为版本落后就让整个 bootstrap 解析失败。
-      // 这里刻意没有 verified：它只能由客户端白名单授予（token-allowlist.ts）。
-      // 逐条解析：一条坏行（精度 37、App 还不认识的新链）只丢那一行并留痕，
-      // 不能让整份 bootstrap 失败——那会把品牌、文案、升级策略一起冻结在过期缓存里，
-      // 而代币行是运营可编辑、数量最多的一类
-      tokens: z
-        .array(z.unknown())
-        .transform((rows) =>
-          rows.flatMap((row) => {
-            const parsed = walletTokenSchema.safeParse(row);
-            if (parsed.success) return [parsed.data];
-            console.warn(
-              "[bootstrap] 丢弃一条无法解析的代币",
-              parsed.error.issues,
-            );
-            return [];
-          }),
-        )
-        .default([]),
-    })
-    .default({
-      walletConnectProjectId: "",
-      onchainSends: false,
-      chains: ["bsc", "eth", "base"],
-      tokens: [],
-    }),
+  /**
+   * 服务端下发的钱包参数：projectId 是客户端标识（非密钥），按租户下发免重打包。
+   * 全部必填、逐条严格：这段和服务端同步发布，任何一项不符都是整份 bootstrap
+   * 无效（运行时会继续用上一次成功的快照）。这里刻意没有 verified：它只能由
+   * 客户端白名单授予（token-allowlist.ts）。
+   */
+  wallet: z.object({
+    walletConnectProjectId: z.string(),
+    /** 转出是否真的上链；false 是显式的演示账本状态 */
+    onchainSends: z.boolean(),
+    networks: z.array(
+      z.object({
+        id: chainIdSchema,
+        chainId: z.number().int().positive(),
+        rpcUrls: z.array(z.url()),
+        explorerUrl: z.url(),
+        testnet: z.boolean(),
+      }),
+    ),
+    /** 代币目录（全局 + 租户覆盖，服务端已合并） */
+    tokens: z.array(walletTokenSchema),
+  }),
   features: z.object({
     updateCenter: z.boolean(),
     otaEnabled: z.boolean(),

@@ -184,6 +184,8 @@ const zhCN = {
   "receive.testnetNotice":
     "这是测试网地址，测试网资产没有真实价值；请勿向它转入主网资产。",
   "receive.tokenSeparator": "、",
+  "receive.noChain":
+    "当前账户没有可收款的网络：钱包批准的网络都未在本平台启用。",
   "send.title": "转出",
   "send.address": "收款地址",
   "send.tokenContract": "代币合约",
@@ -216,6 +218,7 @@ const zhCN = {
   "send.feeRequired": "手续费暂时无法估算，先不能转出。请稍后再试。",
   "send.demoLedger": "演示账本：这笔转出只记在本机，不会上链。",
   "send.testnetTag": "测试网",
+  "send.noChain": "当前没有启用的网络，暂时无法转出。",
   "send.testnetNotice": "这是测试网，转出的代币没有真实价值。",
   "send.confirmInWallet": "已跳转到钱包 App，请在那里确认后返回。",
   "send.error.feeChanged": "网络费在你确认后明显上涨，已停止签名。请重新确认。",
@@ -964,6 +967,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "receive.testnetNotice":
     "This is a testnet address. Testnet assets have no real value; do not send mainnet assets to it.",
   "receive.tokenSeparator": ", ",
+  "receive.noChain":
+    "No network to receive on: none of the networks this wallet approved is enabled on this platform.",
   "send.title": "Send",
   "send.address": "Recipient address",
   "send.tokenContract": "Token contract",
@@ -1001,6 +1006,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "send.demoLedger":
     "Demo ledger: this send is recorded on this device only and never reaches the chain.",
   "send.testnetTag": "Testnet",
+  "send.noChain": "No network is enabled right now, so nothing can be sent.",
   "send.testnetNotice":
     "This is a test network. Tokens sent here have no real value.",
   "send.confirmInWallet":
@@ -1679,35 +1685,11 @@ export function createFallbackConfig(locale: SupportedLocale): BootstrapConfig {
       dark,
     },
     modules: { predict: true, dex: true },
+    // 内置配置里没有租户，也就没有链、没有目录：钱包界面在收到下发前是空态
     wallet: {
       walletConnectProjectId: "",
       onchainSends: false,
-      chains: ["bsc", "eth", "base"],
-      // 端点留空：没连上服务端时不该猜 RPC，依赖它的功能应如实不可用
-      networks: [
-        {
-          id: "bsc",
-          chainId: 56,
-          rpcUrls: [],
-          explorerUrl: "https://bscscan.com",
-          testnet: false,
-        },
-        {
-          id: "eth",
-          chainId: 1,
-          rpcUrls: [],
-          explorerUrl: "https://etherscan.io",
-          testnet: false,
-        },
-        {
-          id: "base",
-          chainId: 8453,
-          rpcUrls: [],
-          explorerUrl: "https://basescan.org",
-          testnet: false,
-        },
-      ],
-      // 内嵌配置没有代币目录：演示账本靠夹具，真链上的目录只能来自服务端下发
+      networks: [],
       tokens: [],
     },
     branding: {

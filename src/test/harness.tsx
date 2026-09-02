@@ -1,3 +1,5 @@
+import { applyDeliveredWalletConfig } from "../core/wallet/config/wallet-runtime-config";
+import { tenantWallet } from "./wallet-config";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { NavigationContainer } from "@react-navigation/native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -58,6 +60,8 @@ function buildRuntime(options: HarnessOptions): RuntimeValue {
   const withModules: BootstrapConfig = {
     ...base,
     modules: { ...base.modules, ...options.modules },
+    // 测试租户默认启用三条主网、演示账本；要别的组合用 config 选项显式搭
+    wallet: tenantWallet(),
   };
   const config = options.config ? options.config(withModules) : withModules;
   return {
@@ -136,6 +140,8 @@ export async function renderWithProviders(
     );
   }
 
+  // 和运行时一样：租户的钱包段在渲染前生效，界面从它读链与目录
+  applyDeliveredWalletConfig(value.config.wallet);
   // RNTL 14 + React 19 的 render 是异步的，必须 await 后再用 `screen` 查询
   await render(ui, { wrapper: Wrapper, ...renderOptions });
   return { gateways: resolved, queryClient, runtime: value };

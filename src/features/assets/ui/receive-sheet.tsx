@@ -7,7 +7,6 @@ import { useFoundationRuntime } from "../../../app/runtime-context";
 import { CHAINS, type ChainId } from "../../../core/gateways/types";
 import {
   deliveredTokens,
-  enabledChains,
   isChainEnabled,
   isTestnetChain,
 } from "../../../core/wallet/config/wallet-runtime-config";
@@ -29,9 +28,8 @@ import {
 /**
  * A-04 收款：链 chip 只改提示文案，二维码内容为纯地址。
  *
- * 能选的链 = 账户支持的链 ∩ 租户启用的链；账户一条都对不上时退到租户启用的链
- * （EVM 地址在每条链上都一样，所以收款本身不受影响）。"支持的币种"读服务端下发的
- * 代币目录——它就是这条链上 App 会显示余额的那些币；老服务端没下发时只提原生币。
+ * 能选的链 = 账户支持的链 ∩ 租户启用的链，一条都没有就如实说明、不显示地址。
+ * "支持的币种"读服务端下发的代币目录——它就是这条链上 App 会显示余额的那些币。
  */
 export const ReceiveSheet = forwardRef<
   SheetHandle,
@@ -39,20 +37,33 @@ export const ReceiveSheet = forwardRef<
 >(function ReceiveSheet({ address, ens, chains }, ref) {
   const { t } = useFoundationRuntime();
   const theme = useTheme();
-  const supported = chains.filter(isChainEnabled);
-  const options = supported.length > 0 ? supported : enabledChains();
-  const [chain, setChain] = useState<ChainId>(options[0] ?? "bsc");
-  const chainName = CHAINS[chain].name;
-  const testnet = isTestnetChain(chain);
-  const symbols = deliveredTokens(chain).map((token) => token.symbol);
-  const tokens = (
-    symbols.length > 0 ? symbols : [CHAINS[chain].nativeSymbol]
-  ).join(t("receive.tokenSeparator"));
+  const options = chains.filter(isChainEnabled);
+  const [chain, setChain] = useState<ChainId | undefined>(options[0]);
 
   const copy = async () => {
     await Clipboard.setStringAsync(address);
     toast(t("receive.copied"), "success");
   };
+
+  if (chain === undefined)
+    return (
+      <Sheet
+        ref={ref}
+        title={t("receive.title")}
+        closeLabel={t("common.close")}
+        testID="receive-sheet"
+      >
+        <Body fontSize={12} testID="receive-no-chain">
+          {t("receive.noChain")}
+        </Body>
+      </Sheet>
+    );
+
+  const chainName = CHAINS[chain].name;
+  const testnet = isTestnetChain(chain);
+  const tokens = deliveredTokens(chain)
+    .map((token) => token.symbol)
+    .join(t("receive.tokenSeparator"));
 
   return (
     <Sheet

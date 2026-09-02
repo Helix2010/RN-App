@@ -27,18 +27,19 @@ onWalletConfigChange(() => {
 });
 
 /** 本 App 的身份：钱包里会显示它，批准后也按它回跳。 */
+/**
+ * 展示给对端钱包的应用身份，来自租户构建配置（tenant.json → app.config.ts）。
+ * 两项都是构建期必填：缺了或不合法就是构建坏了，抛错而不是换一个域名顶上。
+ */
 function appIdentity(): { url: string; native: string } {
   const extra = Constants.expoConfig?.extra as
     { apiBaseUrl?: string } | undefined;
   const scheme = Constants.expoConfig?.scheme;
-  const native = `${typeof scheme === "string" ? scheme : "anyfun"}://`;
-  let url = "https://anyfun.win";
-  try {
-    if (extra?.apiBaseUrl) url = new URL(extra.apiBaseUrl).origin;
-  } catch {
-    // 配置坏了不该让钱包连不上，用兜底域名
-  }
-  return { url, native };
+  if (typeof scheme !== "string" || scheme.length === 0)
+    throw new Error("app scheme is not configured for this tenant build");
+  if (!extra?.apiBaseUrl)
+    throw new Error("apiBaseUrl is not configured for this tenant build");
+  return { url: new URL(extra.apiBaseUrl).origin, native: `${scheme}://` };
 }
 
 async function createClient(appName: string): Promise<SignClientLike> {

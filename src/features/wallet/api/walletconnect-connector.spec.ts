@@ -84,8 +84,8 @@ describe("parseAccounts", () => {
       },
       NETWORKS,
     );
-    // 地址仍然可用，但没有一条我们支持的链 => 回退到默认链
-    expect(parsed).toEqual({ address: ADDRESS, chains: ["bsc"] });
+    // 地址仍然可用，但没有一条租户启用的链：就是空，不猜一条
+    expect(parsed).toEqual({ address: ADDRESS, chains: [] });
   });
 
   it("returns null when no account was shared", () => {

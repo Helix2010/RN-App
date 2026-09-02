@@ -1,3 +1,4 @@
+import { tenantWallet } from "../../../test/wallet-config";
 import { verifyMessage } from "ethers";
 import { memoryStorage } from "../../../core/gateways/types";
 import { deriveAccount } from "../../../core/wallet/keygen/mnemonic";
@@ -143,6 +144,9 @@ function fakeExternal(): ExternalWalletConnector {
     })),
   };
 }
+
+/** 测试租户：三条主网、演示账本、目录里只有原生币。要别的组合在用例里重新下发。 */
+beforeEach(() => applyDeliveredWalletConfig(tenantWallet()));
 
 describe("EmbeddedWalletGateway", () => {
   it("has no accounts and refuses to connect before a wallet is provisioned", async () => {
@@ -551,10 +555,7 @@ describe("EmbeddedWalletGateway native balances", () => {
 
   it("adds a native entry for a real chain the demo ledger knows nothing about", async () => {
     // 测试链默认不在启用列表里（回落值是三条主网），要像租户那样显式启用
-    applyDeliveredWalletConfig({
-      walletConnectProjectId: "p",
-      chains: ["bsc", "op-sepolia"],
-    });
+    applyDeliveredWalletConfig(tenantWallet({ chains: ["bsc", "op-sepolia"] }));
     // 测试链在演示账本里没有条目；没有这一条，真链能力在发送页根本不可达
     const { port } = fakeOnchain(["op-sepolia"]);
     port.nativeBalance = async () => 10n ** 18n;
@@ -613,11 +614,9 @@ describe("EmbeddedWalletGateway token balances", () => {
   };
 
   function deliver(tokens: DeliveredToken[]) {
-    applyDeliveredWalletConfig({
-      walletConnectProjectId: "p",
-      chains: ["bsc", "eth"],
-      tokens,
-    });
+    applyDeliveredWalletConfig(
+      tenantWallet({ chains: ["bsc", "eth"], tokens }),
+    );
   }
 
   /** 演示账本里的一条：地址全小写，和夹具一致。 */
@@ -709,19 +708,21 @@ describe("EmbeddedWalletGateway token balances", () => {
     warn.mockRestore();
   });
 
-  it("warns when a real chain has no catalogue at all", async () => {
-    // 老服务端、或服务端读库失败省略了 tokens：列表只剩原生币，要留痕
+  it("shows only the native coin when the catalogue lists nothing else on the chain", async () => {
+    // 目录里只有原生币是合法配置：不是"目录缺失"，也不需要留痕
     deliver([]);
     const { port } = fakeOnchain(["bsc"]);
+    port.nativeBalance = async () => 10n ** 18n;
     const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
     const { gateway, chainData } = setup({ onchain: port });
-    jest.spyOn(chainData, "getBalances").mockResolvedValue([]);
+    jest
+      .spyOn(chainData, "getBalances")
+      .mockResolvedValue([demo("bsc", USDT_BSC.toLowerCase(), "USDT")]);
 
-    await gateway.getBalances(ADDRESS, "bsc");
+    const list = await gateway.getBalances(ADDRESS, "bsc");
 
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining("目录里没有代币"),
-    );
+    expect(symbols(list)).toEqual(["BNB"]);
+    expect(warn).not.toHaveBeenCalled();
     warn.mockRestore();
   });
 
@@ -815,7 +816,7 @@ describe("EmbeddedWalletGateway chain switch", () => {
   afterEach(() => resetDeliveredWalletConfig());
 
   function enable(chains: ChainId[]) {
-    applyDeliveredWalletConfig({ walletConnectProjectId: "p", chains });
+    applyDeliveredWalletConfig(tenantWallet({ chains }));
   }
 
   function demoNative(chain: ChainId, symbol: string): TokenBalance {

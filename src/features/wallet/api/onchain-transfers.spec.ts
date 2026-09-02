@@ -26,6 +26,7 @@ function deliverBscRpc(
   applyDeliveredWalletConfig({
     walletConnectProjectId: "p",
     onchainSends,
+    tokens: [],
     networks: [
       {
         id: "bsc",

@@ -76,13 +76,52 @@ import { useRequireVerification } from "../../security/use-require-verification"
  */
 const ADDRESS_BOOK: { label: string; address: string }[] = [];
 
-/** A-05 转出：地址（粘贴 / 地址簿）→ 网络与币种联动 → 数量 → 确认层 → 三段进度。 */
+/**
+ * A-05 转出的入口：先决定在哪条链上。
+ *
+ * 入口指定的链必须是租户启用的——指定了一条关掉的链是调用方的 bug，直接抛错；
+ * 没指定就从第一条启用的链开始；一条启用的链都没有时如实呈现空态。
+ */
 export function SendScreen({
   onBack,
   initialChain,
 }: {
   onBack: () => void;
   initialChain?: ChainId;
+}) {
+  if (initialChain && !isChainEnabled(initialChain))
+    throw new Error(
+      `SendScreen opened on a chain this tenant has not enabled: ${initialChain}`,
+    );
+  const chain = initialChain ?? enabledChains()[0];
+  if (!chain) return <SendUnavailable onBack={onBack} />;
+  return <SendForm onBack={onBack} initialChain={chain} />;
+}
+
+function SendUnavailable({ onBack }: { onBack: () => void }) {
+  const insets = useSafeAreaInsets();
+  const { t } = useFoundationRuntime();
+  return (
+    <Page>
+      <Content paddingTop={insets.top + 8} gap="$4">
+        <ScreenHeader
+          title={t("send.title")}
+          onBack={onBack}
+          backLabel={t("action.back")}
+        />
+        <Body testID="send-no-chain">{t("send.noChain")}</Body>
+      </Content>
+    </Page>
+  );
+}
+
+/** A-05 转出：地址（粘贴 / 地址簿）→ 网络与币种联动 → 数量 → 确认层 → 三段进度。 */
+function SendForm({
+  onBack,
+  initialChain,
+}: {
+  onBack: () => void;
+  initialChain: ChainId;
 }) {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
@@ -91,12 +130,7 @@ export function SendScreen({
   const locale = config.localization.selectedLocale;
   const session = useSession();
   const address = session.data?.address ?? "";
-  // 链只能从租户启用的里挑：入口带来的链若已被关掉，落到第一条启用的链上
-  const [chain, setChain] = useState<ChainId>(() =>
-    initialChain && isChainEnabled(initialChain)
-      ? initialChain
-      : (enabledChains()[0] ?? "bsc"),
-  );
+  const [chain, setChain] = useState<ChainId>(initialChain);
   const [to, setTo] = useState("");
   const [tokenKey, setTokenKey] = useState<string | undefined>();
   const [text, setText] = useState("");

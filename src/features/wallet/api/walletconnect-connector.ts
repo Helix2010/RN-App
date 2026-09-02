@@ -7,6 +7,7 @@ import type {
 import type { WalletConnectorId } from "../../session/model/session";
 import type { WalletConnector } from "../model/wallet";
 import type { ExternalWalletConnector } from "./embedded-wallet-gateway";
+import { evmChainIdOf } from "../../../core/wallet/config/wallet-runtime-config";
 import { assertSubmittable } from "../../../core/wallet/signer/transaction-guard";
 import { pairingLinks } from "./wallet-deep-links";
 
@@ -132,8 +133,8 @@ export function parseAccounts(
     if (chain && !chains.includes(chain)) chains.push(chain);
   }
   if (!address) return null;
-  const fallback = networks[0]?.id ?? "bsc";
-  return { address, chains: chains.length > 0 ? chains : [fallback] };
+  // 钱包批准的链里没有一条是租户启用的：chains 就是空，签名时会因此拒绝
+  return { address, chains };
 }
 
 /** 从会话对端的自述名字认出钱包；认不出返回 null（走通用 WalletConnect）。 */
@@ -333,12 +334,12 @@ class WalletConnectSigner implements WalletSigner {
 
   private chainRef(chainId?: number): string {
     if (chainId !== undefined) return `eip155:${chainId}`;
-    const networks = this.deps.networks();
     const preferred = this.connection.chains[0];
-    const fallback =
-      networks.find((network) => network.id === preferred)?.chainId ??
-      networks[0]?.chainId;
-    return `eip155:${fallback ?? 56}`;
+    if (!preferred)
+      throw new Error(
+        "wallet session approved none of the chains this tenant enabled",
+      );
+    return `eip155:${evmChainIdOf(preferred)}`;
   }
 
   private async send<T>(

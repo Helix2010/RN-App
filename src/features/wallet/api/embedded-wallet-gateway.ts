@@ -18,6 +18,7 @@ import {
   enabledChains,
   isChainEnabled,
   nativeDisplayDecimals,
+  onchainSendsEnabled,
 } from "../../../core/wallet/config/wallet-runtime-config";
 import type { WalletConnectorId } from "../../session/model/session";
 import { referencePriceForSymbol } from "../fixtures/wallet";
@@ -60,6 +61,14 @@ export class ChainBalanceUnavailableError extends Error {
   constructor(readonly chain: ChainId) {
     super(`balances on ${chain} are unavailable right now`);
     this.name = "ChainBalanceUnavailableError";
+  }
+}
+
+/** 真链模式下这条链没有可用的 RPC 端点（下发的端点全被 https 断言丢掉）。 */
+export class ChainEndpointsUnavailableError extends Error {
+  constructor(readonly chain: ChainId) {
+    super(`chain ${chain} has no usable rpc endpoint`);
+    this.name = "ChainEndpointsUnavailableError";
   }
 }
 
@@ -113,7 +122,8 @@ type AccountMeta = {
   address: string;
   label: string;
   connector: WalletConnectorId;
-  chains: ChainId[];
+  /** 外部钱包会话里批准的链；内置钱包没有这个概念 */
+  chains?: ChainId[];
 };
 
 type Registry = {
@@ -123,8 +133,8 @@ type Registry = {
 };
 
 /**
- * 真实链上的转出。注入了并且那条链有 RPC 端点时才用它，否则回落到 Mock 账本——
- * 服务端有没有下发端点本身就是灰度开关。
+ * 真实链上的转出与余额。租户开了 `onchainSends` 的链一律走它：那条链没有可用端点
+ * 就是错误，不会换成 Mock 账本。没开的租户是显式的演示账本状态。
  */
 export type OnchainTransferPort = {
   available: (chain: ChainId) => boolean;
@@ -254,7 +264,7 @@ export class EmbeddedWalletGateway implements WalletGateway {
       address: existing?.address ?? address,
       label,
       connector: existing?.connector ?? "embedded",
-      chains: existing?.chains ?? enabledChains(),
+      chains: existing?.chains,
     };
     await this.writeRegistry(registry);
   }
@@ -368,16 +378,17 @@ export class EmbeddedWalletGateway implements WalletGateway {
     let result = [...list];
     const chains = chain ? [chain] : enabledChains();
     for (const id of chains) {
-      if (!onchain.available(id)) continue;
+      if (!onchain.available(id)) {
+        // 真链模式下没有端点就是错误，不能换成演示数字
+        if (onchainSendsEnabled()) throw new ChainEndpointsUnavailableError(id);
+        continue;
+      }
       // 下发的目录同样要过白名单：verified 只能由客户端授予，decimals 不符的丢掉
       const catalogue = trustedTokens(
         deliveredTokens(id)
           .filter((token) => token.address !== NATIVE_TOKEN_ADDRESS)
           .map((token) => ({ token: { ...token, verified: false } })),
       ).map((item) => item.token);
-      if (catalogue.length === 0)
-        // 老服务端、或服务端读库失败省略了 tokens：真链上会只剩原生币，要留痕
-        console.warn(`[wallet] ${id} 走真链但目录里没有代币，列表只剩原生币`);
       let fetched: Map<string, bigint>;
       try {
         fetched = await onchain.tokenBalances(
@@ -438,7 +449,11 @@ export class EmbeddedWalletGateway implements WalletGateway {
     const result = [...list];
     const chains = chain ? [chain] : enabledChains();
     for (const id of chains) {
-      if (!onchain.available(id)) continue;
+      if (!onchain.available(id)) {
+        // 真链模式下没有端点就是错误，不能换成演示数字
+        if (onchainSendsEnabled()) throw new ChainEndpointsUnavailableError(id);
+        continue;
+      }
       let raw: bigint;
       try {
         raw = await onchain.nativeBalance(id, address);
@@ -498,9 +513,11 @@ export class EmbeddedWalletGateway implements WalletGateway {
     if (verdict.status === "mismatch")
       throw new TokenMetadataMismatchError(request.token.symbol);
     const onchain = this.deps.onchain;
-    // 那条链没下发 RPC 就走 Mock：不猜端点，也不让用户以为转了真钱
     if (onchain?.available(request.token.chain))
       return onchain.send(request, await this.signerFor(request.from));
+    // 真链模式下没有端点就是错误：不猜端点，更不能悄悄改走演示账本
+    if (onchainSendsEnabled())
+      throw new ChainEndpointsUnavailableError(request.token.chain);
     return this.deps.chainData.send(request);
   }
 
@@ -525,7 +542,10 @@ export class EmbeddedWalletGateway implements WalletGateway {
     // 链上转账只在内存里，Mock 账本不认识；不合并的话用户转完账回列表会发现记录没了
     const onchain = this.deps.onchain?.listTransfers(address) ?? [];
     const ledger = await this.deps.chainData.listTransfers(address);
-    return [...onchain, ...ledger];
+    // 和余额一致：租户关掉的链，它上面的记录也不显示
+    return [...onchain, ...ledger].filter((item) =>
+      isChainEnabled(item.token.chain),
+    );
   }
 
   // ---- 内部 ----
@@ -543,7 +563,7 @@ export class EmbeddedWalletGateway implements WalletGateway {
       address,
       label: extra?.label ?? registry.meta[key]?.label ?? `Wallet ${count + 1}`,
       connector,
-      chains: extra?.chains ?? registry.meta[key]?.chains ?? enabledChains(),
+      chains: extra?.chains ?? registry.meta[key]?.chains,
     };
     registry.current = address;
     await this.writeRegistry(registry);

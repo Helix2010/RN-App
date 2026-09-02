@@ -102,54 +102,48 @@ describe("bootstrapSchema wallet tokens", () => {
     logoColor: "#26A17B",
   };
 
-  it("treats a missing catalogue as empty so an older server still parses", () => {
-    // 不能因为服务端版本落后就让整个 bootstrap 解析失败
+  it("rejects a wallet section that omits the catalogue or the networks", () => {
+    // 这段和服务端同步发布：缺一项就是整份 bootstrap 无效，运行时继续用上次的快照
+    const config = createFallbackConfig("zh-CN");
+    for (const wallet of [
+      { walletConnectProjectId: "", onchainSends: false, networks: [] },
+      { walletConnectProjectId: "", onchainSends: false, tokens: [] },
+      { walletConnectProjectId: "", networks: [], tokens: [] },
+    ]) {
+      expect(bootstrapSchema.safeParse({ ...config, wallet }).success).toBe(
+        false,
+      );
+    }
+  });
+
+  it("accepts the delivered token shape verbatim, with every field required", () => {
     const config = createFallbackConfig("zh-CN");
     const parsed = bootstrapSchema.safeParse({
       ...config,
-      wallet: { walletConnectProjectId: "", chains: ["bsc"] },
+      wallet: { ...config.wallet, tokens: [delivered] },
     });
     expect(parsed.success).toBe(true);
     if (!parsed.success) return;
-    expect(parsed.data.wallet.tokens).toEqual([]);
+    expect(parsed.data.wallet.tokens[0]).toEqual(delivered);
+
+    // name / logoColor 不是可省略的：服务端写入时就要求它们
+    for (const partial of [
+      { ...delivered, name: undefined },
+      { ...delivered, logoColor: undefined },
+      { ...delivered, logoColor: "" },
+      { ...delivered, logoColor: "red" },
+    ]) {
+      expect(
+        bootstrapSchema.safeParse({
+          ...config,
+          wallet: { ...config.wallet, tokens: [partial] },
+        }).success,
+      ).toBe(false);
+    }
   });
 
-  it("accepts the delivered token shape verbatim", () => {
-    const config = createFallbackConfig("zh-CN");
-    const parsed = bootstrapSchema.safeParse({
-      ...config,
-      wallet: {
-        ...config.wallet,
-        tokens: [
-          {
-            chain: "bsc",
-            address: "native",
-            symbol: "BNB",
-            decimals: 18,
-            displayDecimals: 4,
-          },
-          delivered,
-        ],
-      },
-    });
-    expect(parsed.success).toBe(true);
-    if (!parsed.success) return;
-    // name / logoColor 可省略，缺省为空串；verified 不在下发里
-    expect(parsed.data.wallet.tokens[0]).toEqual({
-      chain: "bsc",
-      address: "native",
-      symbol: "BNB",
-      name: "",
-      decimals: 18,
-      displayDecimals: 4,
-      logoColor: "",
-    });
-    expect(parsed.data.wallet.tokens[1]).toEqual(delivered);
-  });
-
-  it("drops a token outside the protocol range but keeps the rest of the bootstrap", () => {
-    // 一条坏行（或 App 还不认识的新链）不能把品牌、文案、升级策略一起冻结在过期缓存里
-    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+  it("rejects the whole bootstrap when a token is outside the protocol range", () => {
+    // 服务端在写入时就拒绝这些值；出现在下发里只能是数据坏了——不丢一行继续，整份拒绝
     const config = createFallbackConfig("zh-CN");
     const parseWith = (token: object) =>
       bootstrapSchema.safeParse({
@@ -162,11 +156,7 @@ describe("bootstrapSchema wallet tokens", () => {
       { ...delivered, symbol: "" },
       { ...delivered, chain: "polygon" },
     ]) {
-      const parsed = parseWith(bad);
-      expect(parsed.success).toBe(true);
-      expect(parsed.data?.wallet.tokens).toHaveLength(1);
+      expect(parseWith(bad).success).toBe(false);
     }
-    expect(warn).toHaveBeenCalled();
-    warn.mockRestore();
   });
 });

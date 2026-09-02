@@ -9,10 +9,7 @@ import type { Gateways } from "../../../core/gateways/gateway-context";
 import type { TokenBalance } from "../../wallet/model/wallet";
 import { InsufficientGasError } from "../../../core/chain/transfer-service";
 import { CHAINS } from "../../../core/gateways/types";
-import {
-  applyDeliveredWalletConfig,
-  resetDeliveredWalletConfig,
-} from "../../../core/wallet/config/wallet-runtime-config";
+import { withWallet } from "../../../test/wallet-config";
 import { fromDecimal, money } from "../../../core/money/money";
 import { ToastHost } from "../../../design-system";
 import * as LocalAuthentication from "expo-local-authentication";
@@ -529,24 +526,29 @@ describe("SendScreen display precision", () => {
 });
 
 describe("SendScreen chain switch", () => {
-  afterEach(() => resetDeliveredWalletConfig());
-
-  it("offers only the chains the tenant enabled, and lands on one of them", async () => {
-    // 入口带来的 bsc 已被租户关掉：选择器里不能有它，当前链要落到启用的那条
-    applyDeliveredWalletConfig({
-      walletConnectProjectId: "p",
-      chains: ["eth"],
-    });
+  it("offers only the chains the tenant enabled and starts on the first of them", async () => {
     const gateways = createTestGateways();
     await signIn(gateways);
     gateways.wallet.getBalances = jest.fn(async () => []);
 
-    await renderWithProviders(
-      <SendScreen onBack={jest.fn()} initialChain="bsc" />,
-      { gateways },
-    );
+    await renderWithProviders(<SendScreen onBack={jest.fn()} />, {
+      gateways,
+      config: (c) => withWallet(c, { chains: ["eth"] }),
+    });
 
     expect(screen.queryByText(CHAINS.bsc.name)).toBeNull();
     expect(screen.getAllByText(CHAINS.eth.name).length).toBeGreaterThan(0);
+  });
+
+  it("shows an empty state when the tenant enabled no chain at all", async () => {
+    const gateways = createTestGateways();
+    await signIn(gateways);
+
+    await renderWithProviders(<SendScreen onBack={jest.fn()} />, {
+      gateways,
+      config: (c) => withWallet(c, { chains: [] }),
+    });
+
+    expect(screen.getByTestId("send-no-chain")).toBeTruthy();
   });
 });

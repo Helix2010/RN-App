@@ -1,12 +1,16 @@
+import { tenantNetwork, tenantWallet } from "../../../test/wallet-config";
 import {
-  onchainSendsEnabled,
+  ChainNotEnabledError,
   applyDeliveredWalletConfig,
   deliveredTokens,
   enabledChains,
+  evmChainIdOf,
   explorerAddressUrl,
   isChainEnabled,
+  isTestnetChain,
   isWalletConnectConfigured,
   nativeDisplayDecimals,
+  onchainSendsEnabled,
   onWalletConfigChange,
   resetDeliveredWalletConfig,
   rpcUrlsFor,
@@ -16,412 +20,296 @@ import {
 } from "./wallet-runtime-config";
 
 const ADDRESS = "0x9858EfFD232B4033E47d90003D41EC34EcaEda94";
+const USDT_BSC = "0x55d398326f99059fF775485246999027B3197955";
 
-describe("wallet runtime config", () => {
-  beforeEach(() => resetDeliveredWalletConfig());
+function native(chain: "bsc" | "eth", displayDecimals = 4): DeliveredToken {
+  const symbol = chain === "bsc" ? "BNB" : "ETH";
+  return {
+    chain,
+    address: "native",
+    symbol,
+    name: symbol,
+    decimals: 18,
+    displayDecimals,
+    logoColor: "#000000",
+  };
+}
 
-  it("reports WalletConnect unavailable until the server delivers a project id", () => {
+const usdt: DeliveredToken = {
+  chain: "bsc",
+  address: USDT_BSC,
+  symbol: "USDT",
+  name: "Tether USD",
+  decimals: 18,
+  displayDecimals: 2,
+  logoColor: "#26A17B",
+};
+
+beforeEach(() => resetDeliveredWalletConfig());
+
+describe("wallet runtime config before anything is delivered", () => {
+  it("has no chains, no endpoints and no WalletConnect", () => {
+    // 没有租户就没有链：不存在"默认三条主网"这种东西
+    expect(enabledChains()).toEqual([]);
+    expect(walletNetworks()).toEqual([]);
+    expect(isChainEnabled("bsc")).toBe(false);
     expect(isWalletConnectConfigured()).toBe(false);
     expect(walletConnectProjectId()).toBeNull();
+    expect(onchainSendsEnabled()).toBe(false);
+    expect(deliveredTokens("bsc")).toEqual([]);
+  });
 
-    applyDeliveredWalletConfig({
-      walletConnectProjectId: "  abc  ",
-      chains: ["bsc"],
-    });
+  it("refuses to answer for a chain that is not enabled", () => {
+    // 问一条没启用的链是调用方的 bug，不是要兜住的状态
+    expect(() => rpcUrlsFor("bsc")).toThrow(ChainNotEnabledError);
+    expect(() => explorerAddressUrl("eth", ADDRESS)).toThrow(
+      ChainNotEnabledError,
+    );
+    expect(() => nativeDisplayDecimals("bsc")).toThrow(/no native entry/);
+  });
+
+  it("knows the protocol facts without any delivery", () => {
+    // chainId 与"是不是测试链"属于协议，不属于配置
+    expect(evmChainIdOf("base")).toBe(8453);
+    expect(isTestnetChain("op-sepolia")).toBe(true);
+    expect(isTestnetChain("eth")).toBe(false);
+  });
+});
+
+describe("delivered wallet config", () => {
+  it("treats a blank project id as not configured", () => {
+    applyDeliveredWalletConfig(
+      tenantWallet({ chains: ["bsc"], walletConnectProjectId: "  abc  " }),
+    );
     expect(walletConnectProjectId()).toBe("abc");
-    expect(isWalletConnectConfigured()).toBe(true);
 
-    // 空字符串等于没配，不能算可用
-    applyDeliveredWalletConfig({ walletConnectProjectId: "", chains: ["bsc"] });
+    applyDeliveredWalletConfig(
+      tenantWallet({ chains: ["bsc"], walletConnectProjectId: "" }),
+    );
     expect(isWalletConnectConfigured()).toBe(false);
   });
 
-  it("falls back to platform chain metadata before anything is delivered", () => {
-    expect(walletNetworks().map((network) => network.id)).toEqual([
-      "bsc",
-      "eth",
-      "base",
-    ]);
-    expect(
-      walletNetworks().find((network) => network.id === "base")?.chainId,
-    ).toBe(8453);
-    // 没下发 RPC 时必须是空的：不该猜端点
-    expect(rpcUrlsFor("bsc")).toEqual([]);
-    expect(explorerAddressUrl("eth", ADDRESS)).toBe(
-      `https://etherscan.io/address/${ADDRESS}`,
-    );
-  });
-
-  it("uses the delivered endpoints", () => {
+  it("uses exactly the delivered chains, endpoints and explorer", () => {
     applyDeliveredWalletConfig({
-      walletConnectProjectId: "pid",
+      ...tenantWallet({ chains: ["bsc"] }),
       networks: [
         {
-          id: "bsc",
-          chainId: 56,
-          rpcUrls: ["https://rpc.tenant.example/bsc"],
-          explorerUrl: "https://explorer.tenant.example",
-          testnet: false,
+          ...tenantNetwork("bsc", ["https://rpc.tenant.example/bsc"]),
+          explorerUrl: "https://scan.tenant.example",
         },
       ],
     });
-    expect(walletNetworks().map((network) => network.id)).toEqual(["bsc"]);
+
+    expect(enabledChains()).toEqual(["bsc"]);
     expect(rpcUrlsFor("bsc")).toEqual(["https://rpc.tenant.example/bsc"]);
     expect(explorerAddressUrl("bsc", ADDRESS)).toBe(
-      `https://explorer.tenant.example/address/${ADDRESS}`,
+      `https://scan.tenant.example/address/${ADDRESS}`,
     );
+    // 没下发的链就是没启用
+    expect(isChainEnabled("eth")).toBe(false);
+    expect(() => rpcUrlsFor("eth")).toThrow(ChainNotEnabledError);
   });
 
-  it("derives networks from chains when an older server omits them", () => {
-    applyDeliveredWalletConfig({
-      walletConnectProjectId: "pid",
-      chains: ["eth", "base"],
-    });
-    expect(walletNetworks().map((network) => network.id)).toEqual([
-      "eth",
-      "base",
-    ]);
-    expect(walletNetworks().find((network) => network.id === "eth")).toEqual({
-      id: "eth",
-      chainId: 1,
-      rpcUrls: [],
-      explorerUrl: "https://etherscan.io",
-      testnet: false,
-    });
+  it("follows the delivered networks, so a chain the tenant turned off disappears", () => {
+    applyDeliveredWalletConfig(tenantWallet({ chains: ["eth", "op-sepolia"] }));
+
+    expect(enabledChains()).toEqual(["eth", "op-sepolia"]);
+    expect(isChainEnabled("bsc")).toBe(false);
   });
 
   it("refuses a chain whose delivered chainId contradicts the protocol", () => {
-    // chainId 是 EIP-155 重放保护的输入。被篡改成另一条链的 id，用户签出的
-    // 交易就能在那条链上重放——所以宁可丢掉这条链，也不能拿它去签名。
+    // chainId 是重放保护的输入，被篡改就能在另一条链上重放签名
     const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
     applyDeliveredWalletConfig({
-      walletConnectProjectId: "pid",
-      networks: [
-        {
-          id: "bsc",
-          chainId: 1,
-          rpcUrls: ["https://rpc.attacker.example"],
-          explorerUrl: "https://bscscan.com",
-          testnet: false,
-        },
-        {
-          id: "eth",
-          chainId: 1,
-          rpcUrls: ["https://ethereum-rpc.publicnode.com"],
-          explorerUrl: "https://etherscan.io",
-          testnet: false,
-        },
-      ],
+      ...tenantWallet({ chains: ["bsc", "eth"] }),
+      networks: [{ ...tenantNetwork("bsc"), chainId: 1 }, tenantNetwork("eth")],
     });
 
-    expect(walletNetworks().map((network) => network.id)).toEqual(["eth"]);
-    expect(warn).toHaveBeenCalled();
+    expect(enabledChains()).toEqual(["eth"]);
+    expect(() => rpcUrlsFor("bsc")).toThrow(ChainNotEnabledError);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("chainId 1"));
     warn.mockRestore();
   });
 
-  it("keeps the testnet flag for a delivered test chain", () => {
+  it("refuses a chain whose delivered testnet flag contradicts the protocol", () => {
+    // 把测试链标成主网，用户会把测试币当真资产
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
     applyDeliveredWalletConfig({
-      walletConnectProjectId: "pid",
-      chains: ["bsc", "op-sepolia"],
+      ...tenantWallet({ chains: ["op-sepolia"] }),
+      networks: [{ ...tenantNetwork("op-sepolia"), testnet: false }],
     });
 
-    expect(walletNetworks().find((n) => n.id === "op-sepolia")).toEqual({
-      id: "op-sepolia",
-      chainId: 11155420,
-      rpcUrls: [],
-      explorerUrl: "https://sepolia-optimism.etherscan.io",
-      // 老服务端不下发 testnet 时，客户端也要认得出这是测试链
-      testnet: true,
-    });
-    expect(walletNetworks().find((n) => n.id === "bsc")?.testnet).toBe(false);
+    expect(enabledChains()).toEqual([]);
+    warn.mockRestore();
   });
 
   it("notifies subscribers only when something actually changed", () => {
     const listener = jest.fn();
-    const unsubscribe = onWalletConfigChange(listener);
-    applyDeliveredWalletConfig({
-      walletConnectProjectId: "pid",
-      chains: ["bsc"],
-    });
-    expect(listener).toHaveBeenCalledTimes(1);
+    onWalletConfigChange(listener);
 
-    applyDeliveredWalletConfig({
-      walletConnectProjectId: "pid",
-      chains: ["bsc"],
-    });
-    expect(listener).toHaveBeenCalledTimes(1);
-
-    applyDeliveredWalletConfig({
-      walletConnectProjectId: "other",
-      chains: ["bsc"],
-    });
-    expect(listener).toHaveBeenCalledTimes(2);
-
-    unsubscribe();
-    applyDeliveredWalletConfig({
-      walletConnectProjectId: "third",
-      chains: ["bsc"],
-    });
-    expect(listener).toHaveBeenCalledTimes(2);
-  });
-
-  it("keeps an unknown chain usable with platform defaults", () => {
-    applyDeliveredWalletConfig({
-      walletConnectProjectId: "pid",
-      networks: [
-        {
-          id: "bsc",
-          chainId: 56,
-          rpcUrls: [],
-          explorerUrl: "https://bscscan.com",
-          testnet: false,
-        },
-      ],
-    });
-    // base 没在下发列表里，仍要能拿到可用的展示地址而不是崩掉
-    expect(explorerAddressUrl("base", ADDRESS)).toBe(
-      `https://basescan.org/address/${ADDRESS}`,
+    applyDeliveredWalletConfig(
+      tenantWallet({ chains: ["bsc"], walletConnectProjectId: "a" }),
     );
+    applyDeliveredWalletConfig(
+      tenantWallet({ chains: ["bsc"], walletConnectProjectId: "a" }),
+    );
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    applyDeliveredWalletConfig(
+      tenantWallet({ chains: ["bsc"], walletConnectProjectId: "b" }),
+    );
+    expect(listener).toHaveBeenCalledTimes(2);
+
+    applyDeliveredWalletConfig(
+      tenantWallet({ chains: ["bsc", "eth"], walletConnectProjectId: "b" }),
+    );
+    expect(listener).toHaveBeenCalledTimes(3);
+
+    applyDeliveredWalletConfig(
+      tenantWallet({
+        chains: ["bsc", "eth"],
+        walletConnectProjectId: "b",
+        onchainSends: true,
+      }),
+    );
+    expect(listener).toHaveBeenCalledTimes(4);
   });
 });
 
 describe("delivered rpc endpoints", () => {
   it("drops a cleartext endpoint and keeps the https ones", () => {
-    // 明文 RPC 不只泄露地址和余额：中间人还能伪造余额与回执，
-    // 让界面显示一笔从未发生的转账已确认
+    // 明文 RPC 可被中间人伪造余额与回执
     const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
-    applyDeliveredWalletConfig({
-      walletConnectProjectId: "p",
-      networks: [
-        {
-          id: "bsc",
-          chainId: 56,
-          rpcUrls: ["http://cheap.example", "https://good.example"],
-          explorerUrl: "https://bscscan.com",
-          testnet: false,
-        },
-      ],
-    });
+    applyDeliveredWalletConfig(
+      tenantWallet({
+        chains: ["bsc"],
+        rpc: { bsc: ["http://rpc.example", "https://rpc.example"] },
+      }),
+    );
 
-    expect(rpcUrlsFor("bsc")).toEqual(["https://good.example"]);
-    // 静默丢弃是最坏的选项
-    expect(warn).toHaveBeenCalled();
+    expect(rpcUrlsFor("bsc")).toEqual(["https://rpc.example"]);
     warn.mockRestore();
   });
 
-  it("leaves a chain with no usable endpoint rather than falling back to a public node", () => {
+  it("leaves a chain with no usable endpoint rather than guessing a public node", () => {
     const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
-    applyDeliveredWalletConfig({
-      walletConnectProjectId: "p",
-      networks: [
-        {
-          id: "bsc",
-          chainId: 56,
-          rpcUrls: ["http://cheap.example"],
-          explorerUrl: "https://bscscan.com",
-          testnet: false,
-        },
-      ],
-    });
+    applyDeliveredWalletConfig(
+      tenantWallet({ chains: ["bsc"], rpc: { bsc: ["http://rpc.example"] } }),
+    );
 
-    // 空端点是一个已定义的安全状态：那条链的链上功能不可用
+    expect(isChainEnabled("bsc")).toBe(true);
     expect(rpcUrlsFor("bsc")).toEqual([]);
     warn.mockRestore();
   });
 });
 
 describe("onchainSendsEnabled", () => {
-  it("is off until the server delivers an explicit opt-in", () => {
+  it("is exactly the delivered switch", () => {
+    applyDeliveredWalletConfig(tenantWallet({ chains: ["bsc"] }));
     expect(onchainSendsEnabled()).toBe(false);
-    applyDeliveredWalletConfig({ walletConnectProjectId: "p" });
-    expect(onchainSendsEnabled()).toBe(false);
-    applyDeliveredWalletConfig({
-      walletConnectProjectId: "p",
-      onchainSends: true,
-    });
+    applyDeliveredWalletConfig(
+      tenantWallet({ chains: ["bsc"], onchainSends: true }),
+    );
     expect(onchainSendsEnabled()).toBe(true);
   });
 });
 
 describe("delivered token catalogue", () => {
-  const USDT = "0x55d398326f99059fF775485246999027B3197955";
-  const usdt: DeliveredToken = {
-    chain: "bsc",
-    address: USDT,
-    symbol: "USDT",
-    name: "Tether USD",
-    decimals: 18,
-    displayDecimals: 2,
-    logoColor: "#26A17B",
-  };
-  const deliver = (tokens: DeliveredToken[]) =>
-    applyDeliveredWalletConfig({ walletConnectProjectId: "p", tokens });
-
-  beforeEach(() => resetDeliveredWalletConfig());
-
-  it("is empty until the server delivers one", () => {
-    expect(deliveredTokens("bsc")).toEqual([]);
-    applyDeliveredWalletConfig({ walletConnectProjectId: "p" });
-    expect(deliveredTokens("bsc")).toEqual([]);
-    // 原生币的展示精度有平台兜底：手续费显示不能没有位数
-    expect(nativeDisplayDecimals("bsc")).toBe(4);
-  });
-
   it("keeps entries per chain and reads the native display precision from the catalogue", () => {
-    deliver([
-      {
-        chain: "bsc",
-        address: "native",
-        symbol: "BNB",
-        name: "BNB",
-        decimals: 18,
-        displayDecimals: 6,
-        logoColor: "#F0B90B",
-      },
-      usdt,
-      {
-        chain: "eth",
-        address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-        symbol: "USDC",
-        name: "USD Coin",
-        decimals: 6,
-        displayDecimals: 2,
-        logoColor: "#2775CA",
-      },
-    ]);
+    applyDeliveredWalletConfig({
+      ...tenantWallet({ chains: ["bsc", "eth"] }),
+      tokens: [native("bsc", 3), usdt, native("eth", 5)],
+    });
 
     expect(deliveredTokens("bsc").map((token) => token.symbol)).toEqual([
       "BNB",
       "USDT",
     ]);
-    expect(deliveredTokens("eth").map((token) => token.symbol)).toEqual([
-      "USDC",
-    ]);
-    expect(nativeDisplayDecimals("bsc")).toBe(6);
-    expect(nativeDisplayDecimals("eth")).toBe(4);
+    expect(nativeDisplayDecimals("bsc")).toBe(3);
+    expect(nativeDisplayDecimals("eth")).toBe(5);
   });
 
-  it("clamps a display precision that exceeds the on-chain precision", () => {
-    // 超过链上精度的位数是不存在的数字；截掉比拒绝整条更合适
-    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
-    deliver([{ ...usdt, decimals: 6, displayDecimals: 8 }]);
+  it("fails loudly when an enabled chain has no native entry", () => {
+    // 服务端保证启用的链一定有原生币条目；没有就是数据坏了，不能猜一个位数
+    applyDeliveredWalletConfig({
+      ...tenantWallet({ chains: ["bsc"] }),
+      tokens: [usdt],
+    });
+    expect(() => nativeDisplayDecimals("bsc")).toThrow(/no native entry/);
+  });
 
-    expect(deliveredTokens("bsc")[0]?.displayDecimals).toBe(6);
-    expect(warn).toHaveBeenCalled();
+  it("rejects an entry whose display precision exceeds the on-chain precision", () => {
+    // 服务端写入时就拒绝这种数据；出现在下发里只能是被改坏了——拒绝，不修
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    applyDeliveredWalletConfig(
+      tenantWallet({
+        chains: ["bsc"],
+        tokens: [native("bsc"), { ...usdt, decimals: 6, displayDecimals: 8 }],
+      }),
+    );
+
+    expect(deliveredTokens("bsc").map((token) => token.symbol)).toEqual([
+      "BNB",
+    ]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("USDT"));
     warn.mockRestore();
   });
 
-  it("drops an entry whose address is neither native nor a valid address, and warns", () => {
+  it("rejects an entry whose address is neither native nor a valid address", () => {
     const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
-    deliver([
-      // 大小写混合但校验和不对：几乎总是抄错了一个字符
-      { ...usdt, address: "0x55d398326f99059ff775485246999027B3197955" },
-      { ...usdt, address: "usdt" },
-      usdt,
-    ]);
-
-    expect(deliveredTokens("bsc").map((token) => token.address)).toEqual([
-      USDT,
-    ]);
-    // 静默丢弃是最坏的选项
-    expect(warn).toHaveBeenCalledTimes(2);
-    warn.mockRestore();
-  });
-
-  it("keeps the first of duplicate (chain, address) entries regardless of case", () => {
-    deliver([
-      usdt,
-      { ...usdt, address: USDT.toLowerCase(), displayDecimals: 4 },
-    ]);
+    applyDeliveredWalletConfig(
+      tenantWallet({
+        chains: ["bsc"],
+        tokens: [native("bsc"), { ...usdt, address: "0x1234" }],
+      }),
+    );
 
     expect(deliveredTokens("bsc")).toHaveLength(1);
-    expect(deliveredTokens("bsc")[0]?.displayDecimals).toBe(2);
+    warn.mockRestore();
   });
 
-  it("fills an empty logo colour with the chain colour", () => {
-    // 它直接落到 backgroundColor 上，空串没有意义
-    deliver([{ ...usdt, logoColor: "" }]);
-    expect(deliveredTokens("bsc")[0]?.logoColor).toBe("#F0B90B");
-  });
+  it("rejects a duplicate (chain, address) entry regardless of case", () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    applyDeliveredWalletConfig(
+      tenantWallet({
+        chains: ["bsc"],
+        tokens: [
+          usdt,
+          { ...usdt, address: USDT_BSC.toLowerCase(), displayDecimals: 6 },
+        ],
+      }),
+    );
 
-  it("does not rebuild the WalletConnect client when only the catalogue changed", () => {
-    // 监听者是 WalletConnect 客户端；改一个展示精度不该让它重建
-    const listener = jest.fn();
-    const unsubscribe = onWalletConfigChange(listener);
-    deliver([usdt]);
-    expect(listener).toHaveBeenCalledTimes(1);
-    deliver([{ ...usdt, displayDecimals: 4 }]);
-    expect(listener).toHaveBeenCalledTimes(1);
-    unsubscribe();
+    const usdts = deliveredTokens("bsc").filter(
+      (token) => token.symbol === "USDT",
+    );
+    expect(usdts).toHaveLength(1);
+    expect(usdts[0]?.displayDecimals).toBe(2);
+    warn.mockRestore();
   });
 
   it("stores contract addresses in EIP-55 form, whatever case the server sent", () => {
-    // 确认页会原样显示它：全小写会让用户失去校验和这道肉眼防线
-    deliver([{ ...usdt, address: usdt.address.toLowerCase() }]);
-    expect(deliveredTokens("bsc")[0]?.address).toBe(
-      "0x55d398326f99059fF775485246999027B3197955",
+    applyDeliveredWalletConfig(
+      tenantWallet({
+        chains: ["bsc"],
+        tokens: [{ ...usdt, address: USDT_BSC.toLowerCase() }],
+      }),
     );
-  });
-});
 
-describe("enabledChains", () => {
-  beforeEach(() => resetDeliveredWalletConfig());
-
-  it("falls back to the three mainnets before anything is delivered", () => {
-    expect(enabledChains()).toEqual(["bsc", "eth", "base"]);
-    expect(isChainEnabled("op-sepolia")).toBe(false);
+    expect(
+      deliveredTokens("bsc").find((token) => token.symbol === "USDT")?.address,
+    ).toBe(USDT_BSC);
   });
 
-  it("follows the delivered networks, so a chain the tenant turned off disappears", () => {
-    // 管理端勾掉的链服务端不再下发；界面列链只能以这里为准，不能遍历 CHAINS
-    applyDeliveredWalletConfig({
-      walletConnectProjectId: "p",
-      networks: [
-        {
-          id: "eth",
-          chainId: 1,
-          rpcUrls: ["https://eth.example"],
-          explorerUrl: "https://etherscan.io",
-          testnet: false,
-        },
-        {
-          id: "op-sepolia",
-          chainId: 11155420,
-          rpcUrls: ["https://op.example"],
-          explorerUrl: "https://sepolia-optimism.etherscan.io",
-          testnet: true,
-        },
-      ],
-    });
+  it("does not rebuild the WalletConnect client when only the catalogue changed", () => {
+    const listener = jest.fn();
+    applyDeliveredWalletConfig(tenantWallet({ chains: ["bsc"] }));
+    onWalletConfigChange(listener);
 
-    expect(enabledChains()).toEqual(["eth", "op-sepolia"]);
-    expect(isChainEnabled("bsc")).toBe(false);
-    expect(isChainEnabled("op-sepolia")).toBe(true);
-  });
+    applyDeliveredWalletConfig(
+      tenantWallet({ chains: ["bsc"], tokens: [usdt] }),
+    );
 
-  it("does not count a chain the chainId assertion rejected as enabled", () => {
-    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
-    applyDeliveredWalletConfig({
-      walletConnectProjectId: "p",
-      networks: [
-        {
-          id: "bsc",
-          chainId: 1,
-          rpcUrls: [],
-          explorerUrl: "https://bscscan.com",
-          testnet: false,
-        },
-        {
-          id: "eth",
-          chainId: 1,
-          rpcUrls: [],
-          explorerUrl: "https://etherscan.io",
-          testnet: false,
-        },
-      ],
-    });
-
-    expect(enabledChains()).toEqual(["eth"]);
-    warn.mockRestore();
+    expect(listener).not.toHaveBeenCalled();
   });
 });
