@@ -54,9 +54,14 @@ export function useSignOut() {
       const current = queryClient.getQueryData(sessionQueryKey) as
         { address?: string } | null | undefined;
       await session.signOut();
-      // 平台 JWT / CLOB 凭证跟着会话走：登出就丢掉，下次登录重新签
+      // 平台 JWT / CLOB 凭证跟着会话走：登出就丢掉，下次登录重新签。
+      // 钥匙串清理失败不能让登出停在半路（服务端会话已经没了）：记下来，会话照常清
       if (current?.address)
-        await predictAccount.forgetCredentials(current.address);
+        await predictAccount
+          .forgetCredentials(current.address)
+          .catch((error: unknown) =>
+            console.warn("[predict] forgetCredentials failed", error),
+          );
     },
     onSuccess: () => {
       queryClient.setQueryData(sessionQueryKey, null);

@@ -18,20 +18,15 @@ const multiSendInterface = new Interface([
   "function multiSend(bytes transactions)",
 ]);
 
-export type MultiSendOp = { to: string; data: string; value?: bigint };
+/** 内层调用只有 call（operation 0）且不带 value：relayer 两者都拒绝（`handler.go:701-720`） */
+export type MultiSendOp = { to: string; data: string };
 
 export function encodeMultiSend(ops: MultiSendOp[]): string {
   const packed = ops
     .map((op) =>
       solidityPacked(
         ["uint8", "address", "uint256", "uint256", "bytes"],
-        [
-          0,
-          getAddress(op.to),
-          op.value ?? 0n,
-          (op.data.length - 2) / 2,
-          op.data,
-        ],
+        [0, getAddress(op.to), 0n, (op.data.length - 2) / 2, op.data],
       ).slice(2),
     )
     .join("");

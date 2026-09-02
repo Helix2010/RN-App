@@ -24,7 +24,10 @@ describe("PredictEnableScreen", () => {
     );
     expect(await screen.findByTestId("predict-enable-step-login")).toBeTruthy();
     expect(screen.getByTestId("predict-enable-step-approve")).toBeTruthy();
-    void fireEvent.press(screen.getByTestId("predict-enable-run"));
+    // 协议列表（这里为空）拿到之前按钮不可用
+    const run = screen.getByTestId("predict-enable-run");
+    await waitFor(() => expect(run.props["aria-disabled"]).toBeFalsy());
+    void fireEvent.press(run);
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
     expect(account.calls).toContain("enable");
     expect(account.status.approved).toBe(true);
@@ -54,5 +57,45 @@ describe("PredictEnableScreen", () => {
     await waitFor(() => expect(run.props["aria-disabled"]).toBe(true));
     expect(screen.getByText(runtime.t("predict.enable.complete"))).toBeTruthy();
     expect(screen.getByText(runtime.t("common.done"))).toBeTruthy();
+  });
+
+  it("blocks enabling until the required platform agreements are accepted, then records them", async () => {
+    const { gateways, account } = await setup();
+    account.agreements_ = [
+      {
+        type: "terms",
+        titleTranslation: '{"en": "Terms", "zh": "条款"}',
+        version: "v1.1",
+        contentTranslation: '{"zh":"**重点**内容","en":"**Key** content"}',
+        required: true,
+        sortOrder: 0,
+      },
+      {
+        type: "privacy",
+        titleTranslation: '{"en": "Privacy", "zh": "隐私"}',
+        version: "v1.0",
+        externalUrl:
+          '{"zh":"https://example.com/cn","en":"https://example.com/en"}',
+        required: false,
+        sortOrder: 1,
+      },
+    ];
+    const onDone = jest.fn();
+    await renderWithProviders(
+      <PredictEnableScreen onBack={jest.fn()} onDone={onDone} />,
+      { gateways },
+    );
+    expect(await screen.findByText("条款")).toBeTruthy();
+    expect(screen.getByText("隐私")).toBeTruthy();
+    const run = screen.getByTestId("predict-enable-run");
+    await waitFor(() => expect(run.props["aria-disabled"]).toBe(true));
+    // 展开正文：去掉 ** 标记
+    void fireEvent.press(screen.getByTestId("predict-agreement-toggle-terms"));
+    expect(await screen.findByText("重点内容")).toBeTruthy();
+    void fireEvent.press(screen.getByTestId("predict-enable-agree"));
+    await waitFor(() => expect(run.props["aria-disabled"]).toBeFalsy());
+    void fireEvent.press(run);
+    await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(account.accepted).toEqual({ terms: "v1.1" }));
   });
 });

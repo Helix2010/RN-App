@@ -256,8 +256,28 @@ src/features/predict/model/predict.ts   PredictTx 加 claimableAt / requestId；
 
 实现状态（2026-09-02）：阶段 1–5（服务端下发、管理端、App 平台客户端、账户网关、启用 / 划转界面）已落地，见 `docs/changes/2026-09-02-feature-predict-account-real.md`；阶段 6（行情 / 下单 / 持仓）未开始。
 
+对照 §3.3 / §3.4 / §3.7 逐条核对（2026-09-02 晚）后补齐的偏差，均有 spec：
 
-1. 联调租户：RN-Server 新建 dev 租户 + dev App 包，关联 prax1s。
+| 设计条目                                            | 核对结果                                                                                                                                                                       | 落点                              |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------- |
+| §3.7 限流 429 指数退避最多 3 次                     | 原实现直接抛错 → 已改为 500 / 1000 / 2000 ms 三次重试后再抛                                                                                                                    | `tenant-client.ts`                |
+| §3.7 nonce 已核销（40101）重取再签                  | 原实现不重试 → 登录收到 401 + `40101`（`types.go:14`）重取 nonce 再签一次                                                                                                      | `auth.ts`                         |
+| §3.7 CLOB 密钥被吊销（401）重走 ClobAuth            | 原实现把 401 当普通错误 → L2 401（`middleware/auth.go:95`）丢掉本地密钥，启用状态回到"缺 CLOB 密钥"，由用户在引导页重签，不在读余额时替用户签名                                | `http-predict-account-gateway.ts` |
+| §3.3 重装后首次启动清预测凭证                       | 未实现 → 普通存储里的安装标记不在即清安全存储里的全部凭证                                                                                                                      | 同上                              |
+| §3.7 同一 Safe 多笔 SafeTx 串行                     | 未实现 → 按 Safe 排队，前一笔到终态才取下一笔 nonce                                                                                                                            | 同上                              |
+| §3.4 启用页展示平台协议（`GET {gamma}/agreements`） | 未实现 → 客户端 `agreements.ts`（字段按 `public_info.go:48-56`，多语言取法照 `pickTranslation.ts`，接受记录本机按 scopeId，`required` 版本不符即待接受）；引导页接入见变更记录 | `agreements.ts`                   |
+| §3.4 启用四次签名一个解锁窗口                       | 已满足：`keystore-vault.ts` `unlock()` 缓存 5 分钟                                                                                                                             | 无改动                            |
+| §3.7 `STATE_FAILED` 作废、重取 nonce 再发           | 已满足：每笔提交前实时取 nonce，失败原样抛出不重试                                                                                                                             | 无改动                            |
+
+深度评审（2026-09-02 晚，对照平台源码逐条核实）后修掉的实现缺陷：读不到的代币余额不再当 0（查询失败就是错误）；划转金额与输入精度改从平台代币的 `decimals` 取，不再写死 6，按比例取整走 bigint；`withdraw` 在读日志前先等我们自己的节点看到回执，不把节点落后误报成"没有事件"；待领取合并同时问 `claimed=false/true` 两个列表（data-service 按 `claimed` 精确筛，只问未领的话网页版领掉的那笔永远删不掉本机记录）；转入与报价受租户 `wallet.onchainSends` 门禁（`PredictChainUnavailableError`）；报价按 approve 费 + wrap 4 倍上界；配置错误（关联缺失、scopeId / chainId 不符、403、429）在 react-query 层不重试（`predictRetry`）；启用状态在进程内缓存，不再每次轮询都问 relayer `/deployed` 与 7 次 eth_call；登出时钥匙串清理失败不阻断登出；`services.predict` 缺失时资产页只把预测账户标为不可用；CLOB derive 只把 404 当"第一次"，其它错误原样抛；relayer 提交体去掉服务端不收的 `metadata`。
+
+平台侧的两个隐患（App 不能单方面解决，联调前先与平台确认）：
+
+- 登录 EIP-712 域名 `name: "PredictMarket"` 是 gamma 的配置项 `app_name`（`gamma-service/internal/config/config.go:90-91`，默认值 `:251`），**不在 `public-info` 里**。部署把它改掉，所有登录签名都会验签失败且 App 无从发现。要么平台在 `public-info` 暴露它，要么当作部署硬约束写进运维手册。
+- CLOB 密钥的 `secret`：网页版与 App 都按 base64url 解码（`user-dapp/src/lib/hmac.ts:23-33`），服务端按标准 base64 解（`clob-service/.../middleware/auth.go:54-58`），只在 secret 不含 `-` / `_` 时一致。
+- `USDC_UNDERLYING` / `USDW_WRAPPER` 不是服务端定义的合约名，只是 user-dapp 的查找键（`user-dapp/src/lib/contracts.ts:72-73`），要在平台管理端作为自定义合约行手工添加；缺了 App 报 `PredictPlatformContractMissingError`，不启用。
+
+1. 联调租户：RN-Server 新建 dev 租户 + dev App 包，关联 prax1s。库里目前只有 anyfun（100000001）有 App 包与 bootstrap 配置；`test` 租户（100000003）没有域名 / 包。写库脚本已备好（scratchpad `link-prax1s.sh`：给 anyfun 写 `services.predict` 指向 prax1s、目录加 USDW、`modules.predict` 保持 false），需运维在 web4 执行；开模块前先发新版 App，否则老包会显示 Mock 预测市场。
 2. 转入路径 B 要显示 EOA 的 USDW：租户目录上 USDW（`0x790e…6098`，6 位），管理端操作。
 3. 主网前：平台把 Monad 的 `USDC_UNDERLYING` 加进 relayer 白名单；确认主网限流按租户放宽。
 4. 主网 `unwrapDelay` 2 小时：做「可以领取了」提醒（现有推送链路登记定时提醒，或本地通知）。

@@ -1,5 +1,6 @@
 import type { ChainId } from "../../../core/gateways/types";
 import type { Money } from "../../../core/money/money";
+import type { PlatformAgreement } from "../../../core/predict-platform/agreements";
 import type { FaucetStatus } from "../../../core/predict-platform/faucet";
 import type { PredictTx } from "../model/predict";
 
@@ -68,10 +69,34 @@ export type PendingWithdrawal = {
 
 export type UnwrapTerms = { delaySeconds: number; minAmount: Money };
 
+/** 平台协议：全部 + 本机还没接受的必读项（`required` 且版本不符） */
+export type PredictAgreements = {
+  all: PlatformAgreement[];
+  pending: PlatformAgreement[];
+};
+
 export class PredictNotEnabledError extends Error {
   constructor(readonly status: PredictEnablement) {
     super("the prediction account is not enabled for this address");
     this.name = "PredictNotEnabledError";
+  }
+}
+
+/**
+ * 平台所在链在这个租户上不能发真实交易：租户处于演示账本状态（`wallet.onchainSends=false`）
+ * 或没有下发端点。转入是 EOA 付 gas 的真实交易，与钱包转出走同一道开关。
+ */
+export class PredictChainUnavailableError extends Error {
+  constructor(
+    readonly chain: ChainId,
+    readonly reason: "sends-disabled" | "no-endpoint",
+  ) {
+    super(
+      reason === "sends-disabled"
+        ? `on-chain sends are disabled for this tenant; cannot transact on ${chain}`
+        : `no rpc endpoint delivered for ${chain}`,
+    );
+    this.name = "PredictChainUnavailableError";
   }
 }
 
@@ -101,6 +126,9 @@ export interface PredictAccountGateway {
   /** 阶段 B：领取，USDC 回到 EOA */
   claimWithdrawal(address: string, requestId: string): Promise<PredictTx>;
   getTx(id: string): Promise<PredictTx | null>;
+  agreements(): Promise<PredictAgreements>;
+  /** 记下本机已接受这些协议的版本（与网页版一样只存本机） */
+  acceptAgreements(items: PlatformAgreement[]): Promise<void>;
   faucetStatus(address: string): Promise<FaucetStatus>;
   claimFaucet(address: string): Promise<void>;
   /** 登出 / 切换地址：丢掉这个地址在当前平台的凭证 */

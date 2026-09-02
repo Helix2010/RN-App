@@ -21,10 +21,11 @@ const transactionSchema = z.object({
   state: z.string(),
   errorMessage: z.string().optional(),
 });
-export type RelayerTransaction = z.infer<typeof transactionSchema>;
+type RelayerTransaction = z.infer<typeof transactionSchema>;
 
-export const FINAL_OK = new Set(["STATE_MINED", "STATE_CONFIRMED"]);
-export const FINAL_FAILED = new Set(["STATE_FAILED", "STATE_INVALID"]);
+/** 终态（`relayer-service/pkg/types/types.go:39-44`）：mined / confirmed 成功，failed / invalid 失败 */
+const FINAL_OK = new Set(["STATE_MINED", "STATE_CONFIRMED"]);
+const FINAL_FAILED = new Set(["STATE_FAILED", "STATE_INVALID"]);
 
 export class RelayerTransactionFailedError extends Error {
   constructor(
@@ -75,7 +76,8 @@ export async function safeNonce(auth: Auth, safe: string): Promise<bigint> {
   return BigInt(result.nonce);
 }
 
-export type SafeSubmission = {
+/** 与 `relayer-service/pkg/types/types.go` `SubmitRequest` 一致；网页版多发的 `metadata` 服务端不收，不发。 */
+type SafeSubmission = {
   from: string;
   to: string;
   proxyWallet: string;
@@ -83,7 +85,6 @@ export type SafeSubmission = {
   nonce: bigint;
   signature: string;
   signatureParams: Record<string, string>;
-  metadata: string;
 };
 
 export async function submitSafeTx(
@@ -108,7 +109,6 @@ export async function submitSafeTx(
       signature: submission.signature,
       signatureParams: submission.signatureParams,
       type: "SAFE",
-      metadata: submission.metadata,
     },
   });
   return result.transactionID;
@@ -145,7 +145,7 @@ export async function submitSafeCreate(
   return result.transactionID;
 }
 
-export async function relayedTransaction(
+async function relayedTransaction(
   auth: Auth,
   id: string,
 ): Promise<RelayerTransaction> {

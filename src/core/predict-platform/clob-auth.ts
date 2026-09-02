@@ -5,7 +5,11 @@ import { z } from "zod";
 import type { PredictServiceConfig } from "../config/bootstrap.schema";
 import type { SignRequestContext, WalletSigner } from "../wallet/signer/types";
 import { evmChainIdOf } from "../wallet/config/wallet-runtime-config";
-import { platformHosts, platformRequest } from "./tenant-client";
+import {
+  PlatformHttpError,
+  platformHosts,
+  platformRequest,
+} from "./tenant-client";
 
 /**
  * clob-service 的两层鉴权，与 user-dapp `lib/hmac.ts`、`useSetupSteps.ts:469-521` 一致：
@@ -132,8 +136,11 @@ export async function obtainClobCredentials(
       schema: credentialsSchema,
       headers,
     });
-  } catch {
-    // derive 只对已有密钥的地址成功；第一次要 create。其它错误由 create 再报一次
+  } catch (error) {
+    // derive 只对已有密钥的地址成功，第一次是 404（`clob-service/.../auth.go:213-242`）
+    // → 走 create。其它错误（410 已吊销、429、网络）原样抛出，不再多签一次
+    if (!(error instanceof PlatformHttpError) || error.status !== 404)
+      throw error;
   }
   return platformRequest({
     url: `${hosts.clob}/auth/api-key`,
@@ -193,7 +200,11 @@ const balanceAllowanceSchema = z.object({
 });
 export type BalanceAllowance = {
   balance: bigint;
-  /** 扣掉挂单冻结后的可用额度；平台没给时等于 balance */
+  /**
+   * 扣掉挂单冻结后的可用额度。平台把 `virtual_available` / `locked` 标成 omitempty，
+   * 恰好在余额管理器没有这个钱包的条目（没有挂单）时省略（`clob-service/.../handlers.go:2087-2124`），
+   * 所以缺省等于 balance、locked 为 0 是平台语义，不是兜底。
+   */
   available: bigint;
   locked: bigint;
 };

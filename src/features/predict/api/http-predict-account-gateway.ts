@@ -30,7 +30,14 @@ import {
   findUnwrapInitiated,
   usdWrapper,
 } from "../../../core/predict-platform/contracts";
+import {
+  AgreementAcceptanceStore,
+  fetchAgreements,
+  pendingAgreements,
+  type PlatformAgreement,
+} from "../../../core/predict-platform/agreements";
 import { PredictCredentialStore } from "../../../core/predict-platform/credentials";
+import { PlatformHttpError } from "../../../core/predict-platform/tenant-client";
 import { listUnwrapRequests } from "../../../core/predict-platform/data-service";
 import {
   claimFaucet,
@@ -58,11 +65,15 @@ import {
   safeTxTypedData,
 } from "../../../core/predict-platform/safe";
 import type { WalletSigner } from "../../../core/wallet/signer/types";
-import { evmChainIdOf } from "../../../core/wallet/config/wallet-runtime-config";
+import {
+  evmChainIdOf,
+  onchainSendsEnabled,
+} from "../../../core/wallet/config/wallet-runtime-config";
 import type { WalletGateway } from "../../wallet/api/gateway";
 import type { OnchainTransfers } from "../../wallet/api/onchain-transfers";
 import type { PredictTx } from "../model/predict";
 import {
+  PredictChainUnavailableError,
   PredictNotEnabledError,
   enablementComplete,
   type DepositAsset,
@@ -70,6 +81,7 @@ import {
   type EnablementStep,
   type PendingWithdrawal,
   type PredictAccountBalance,
+  type PredictAgreements,
   type PredictAccountGateway,
   type PredictEnablement,
   type PredictWalletFunds,
@@ -91,6 +103,13 @@ import {
 
 const SIGN_REASON = "predict.sign.reason";
 const PENDING_KEY_PREFIX = "foundation.predict.pending-withdrawals.v1";
+/**
+ * 普通存储里的"本次安装"标记。iOS 的 keychain 卸载后仍在，安全存储里的平台凭证会
+ * 跟着旧安装留下来；普通存储会被清空，所以标记不在 = 重装后首次启动 → 清掉凭证（§3.3）。
+ */
+const INSTALL_MARKER_KEY = "foundation.predict.credentials-install.v1";
+/** wrap 相对 approve 的 gas 倍数上界（approve ≈ 46k，wrap ≈ 120–180k，见 `contract-call-service.ts`） */
+const WRAP_GAS_MULTIPLE = 4n;
 const JWT_REFRESH_MARGIN_SECONDS = 300;
 
 type Context = {
@@ -104,11 +123,22 @@ type LocalPending = PendingWithdrawal & { safe: string };
 export class HttpPredictAccountGateway implements PredictAccountGateway {
   private context: Context | null = null;
   private readonly credentials: PredictCredentialStore;
+  private readonly acceptance: AgreementAcceptanceStore;
   /** 本次会话提交的链上交易：hash → 链 与快照，供 getTx 轮询 */
   private readonly submitted = new Map<
     string,
     { chain: PredictServiceConfig["chain"]; tx: PredictTx }
   >();
+  private installChecked: Promise<void> | null = null;
+  private readonly unsubscribe: () => void;
+  /**
+   * 本进程里已确认完整启用的地址 → Safe 地址。Safe 部署与授权都是单向的（不会撤销），
+   * 确认一次后就不必每次轮询都再问 relayer `/deployed` 和 7 次 eth_call（§3.5 的轮询预算）。
+   * 凭证被丢弃（登出 / 401 / 关联变化）时一起清。
+   */
+  private readonly enabled = new Map<string, string>();
+  /** 同一 Safe 的 SafeTx 串行：每笔前实时取 nonce，前一笔没到终态不发下一笔（§3.7） */
+  private readonly safeQueues = new Map<string, Promise<unknown>>();
 
   constructor(
     private readonly deps: {
@@ -121,17 +151,19 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
     },
   ) {
     this.credentials = deps.credentials;
+    this.acceptance = new AgreementAcceptanceStore(deps.storage);
     // 平台关联变了（换域名 / scopeId / 链，或关闭）：旧平台的凭证一律作废
-    onPredictServiceChange((next, previous) => {
+    this.unsubscribe = onPredictServiceChange((_next, previous) => {
       this.context = null;
+      this.enabled.clear();
       if (previous !== null) void this.credentials.clearAll();
-      void next;
     });
   }
 
   // ---- 平台上下文 ----
 
   private async contextFor(): Promise<Context> {
+    await this.ensureInstallMarker();
     const service = predictService();
     if (
       this.context &&
@@ -144,6 +176,29 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
     const next = { service, info, contracts: platformContracts(info) };
     this.context = next;
     return next;
+  }
+
+  private ensureInstallMarker(): Promise<void> {
+    if (!this.installChecked)
+      this.installChecked = (async () => {
+        const marker = await this.deps.storage.getItem(INSTALL_MARKER_KEY);
+        if (marker) return;
+        await this.credentials.clearAll();
+        await this.deps.storage.setItem(INSTALL_MARKER_KEY, "1");
+      })();
+    return this.installChecked;
+  }
+
+  /** 同一 Safe 上的操作排队执行；不同 Safe 互不影响。 */
+  private serialForSafe<T>(safe: string, task: () => Promise<T>): Promise<T> {
+    const key = safe.toLowerCase();
+    const previous = this.safeQueues.get(key) ?? Promise.resolve();
+    const run = previous.then(task, task);
+    this.safeQueues.set(
+      key,
+      run.catch(() => undefined),
+    );
+    return run;
   }
 
   private nowSeconds(): number {
@@ -356,28 +411,32 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
           ]),
         })),
       ]);
-      await this.relaySafeTx(
-        ctx,
-        auth,
-        signer,
-        safe.address,
-        multiSend,
-        data,
-        "approval",
-      );
+      await this.relaySafeTx(ctx, auth, signer, safe.address, multiSend, data);
     }
     return this.enablement(address);
   }
 
   /** 签一笔 SafeTx（MultiSend，delegatecall）并经 relayer 执行到终态；返回链上 txHash。 */
-  private async relaySafeTx(
+  private relaySafeTx(
     ctx: Context,
     auth: { service: PredictServiceConfig; token: string },
     signer: WalletSigner,
     safe: string,
     to: string,
     data: string,
-    metadata: string,
+  ): Promise<string> {
+    return this.serialForSafe(safe, () =>
+      this.relaySafeTxNow(ctx, auth, signer, safe, to, data),
+    );
+  }
+
+  private async relaySafeTxNow(
+    ctx: Context,
+    auth: { service: PredictServiceConfig; token: string },
+    signer: WalletSigner,
+    safe: string,
+    to: string,
+    data: string,
   ): Promise<string> {
     const nonce = await safeNonce(auth, safe);
     const typed = safeTxTypedData(evmChainIdOf(ctx.service.chain), safe, {
@@ -400,7 +459,6 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
       nonce,
       signature,
       signatureParams: safeTxSignatureParams(1),
-      metadata,
     });
     const record = await waitForRelayed(auth, id, { sleep: this.deps.sleep });
     if (!record.transactionHash)
@@ -417,16 +475,43 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
     >;
   }> {
     const ctx = await this.contextFor();
-    const status = await this.enablement(address);
-    if (!enablementComplete(status) || !status.safe)
-      throw new PredictNotEnabledError(status);
     const stored = await this.credentials.load(ctx.service, address);
-    if (!stored.jwt || !stored.clob) throw new PredictNotEnabledError(status);
+    const key = address.toLowerCase();
+    let safe = this.enabled.get(key);
+    if (!safe || !stored.jwt || !stored.clob) {
+      const status = await this.enablement(address);
+      if (!enablementComplete(status) || !status.safe)
+        throw new PredictNotEnabledError(status);
+      if (!stored.jwt || !stored.clob) throw new PredictNotEnabledError(status);
+      safe = status.safe.address;
+      this.enabled.set(key, safe);
+    }
     const jwt = await this.ensureJwt(ctx, address);
-    return { ctx, jwt, safe: status.safe.address, clob: stored.clob };
+    return { ctx, jwt, safe, clob: stored.clob };
   }
 
   // ---- 余额 ----
+
+  /**
+   * CLOB 密钥被吊销（L2 401，`middleware/auth.go`）：丢掉本地密钥，让启用状态回到
+   * "缺 CLOB 密钥"，由用户在引导页重走 ClobAuth（§3.7）。不在读余额时替用户签名。
+   */
+  private async withClob<T>(
+    ctx: Context,
+    address: string,
+    task: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await task();
+    } catch (error) {
+      if (error instanceof PlatformHttpError && error.status === 401) {
+        this.enabled.delete(address.toLowerCase());
+        await this.credentials.save(ctx.service, address, { clob: undefined });
+        throw new PredictNotEnabledError(await this.enablement(address));
+      }
+      throw error;
+    }
+  }
 
   async getBalance(address: string): Promise<PredictAccountBalance> {
     const { ctx, safe, clob } = await this.enabledContext(address);
@@ -436,7 +521,9 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
         ctx.contracts.usdw,
         erc20.encodeFunctionData("balanceOf", [safe]),
       ),
-      balanceAllowance(ctx.service, clob, address),
+      this.withClob(ctx, address, () =>
+        balanceAllowance(ctx.service, clob, address),
+      ),
     ]);
     return {
       chain: ctx.service.chain,
@@ -458,13 +545,17 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
       this.deps.onchain.nativeBalance(chain, address),
     ]);
     const native_ = CHAINS[chain];
+    // 读不到的合约不在结果里（`onchain-transfers.ts` tokenBalances）：那是查询失败，不是 0
+    const need = (contract: string): bigint => {
+      const value = tokens.get(contract.toLowerCase());
+      if (value === undefined)
+        throw new Error(`balance of ${contract} on ${chain} is unavailable`);
+      return value;
+    };
     return {
       chain,
-      usdc: this.usdc(
-        ctx,
-        tokens.get(ctx.contracts.usdcUnderlying.toLowerCase()) ?? 0n,
-      ),
-      usdw: this.usdw(ctx, tokens.get(ctx.contracts.usdw.toLowerCase()) ?? 0n),
+      usdc: this.usdc(ctx, need(ctx.contracts.usdcUnderlying)),
+      usdw: this.usdw(ctx, need(ctx.contracts.usdw)),
       native: money(native, native_.nativeDecimals, native_.nativeSymbol),
     };
   }
@@ -538,7 +629,9 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
   ): Promise<Money> {
     const { ctx, safe } = await this.enabledContext(address);
     const chain = ctx.service.chain;
-    // wrap 在 approve 之前估算会 revert（额度不足）；用 approve 的费用 × 步数给一个诚实的上界
+    this.assertChainUsable(chain);
+    // wrap 在 approve 之前估算会 revert（额度不足），只能估第一笔。approve ≈ 5 万 gas，
+    // wrap（转入金库 + 铸币）十几万，按 WRAP_GAS_MULTIPLE 倍给上界；USDW 路径只有一笔 transfer。
     const calls = this.depositCalls(ctx, address, safe, input);
     const first = calls[0];
     if (!first) throw new Error("deposit has no calls");
@@ -549,10 +642,16 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
       label: first.label,
     });
     const native = CHAINS[chain];
-    return money(
-      fee * BigInt(calls.length),
-      native.nativeDecimals,
-      native.nativeSymbol,
+    const total = input.asset === "USDC" ? fee + fee * WRAP_GAS_MULTIPLE : fee;
+    return money(total, native.nativeDecimals, native.nativeSymbol);
+  }
+
+  /** 转入是 EOA 付 gas 的真实交易，与钱包转出走同一道租户开关（`onchainSends`）。 */
+  private assertChainUsable(chain: PredictServiceConfig["chain"]): void {
+    if (this.deps.onchain.available(chain)) return;
+    throw new PredictChainUnavailableError(
+      chain,
+      onchainSendsEnabled() ? "no-endpoint" : "sends-disabled",
     );
   }
 
@@ -562,8 +661,9 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
     onStep?: (step: DepositStep) => void,
   ): Promise<PredictTx> {
     const { ctx, safe } = await this.enabledContext(address);
-    const signer = await this.deps.wallet.signerFor(address);
     const chain = ctx.service.chain;
+    this.assertChainUsable(chain);
+    const signer = await this.deps.wallet.signerFor(address);
     let lastHash = "";
     const calls = this.depositCalls(ctx, address, safe, input);
     for (const [index, call] of calls.entries()) {
@@ -665,8 +765,9 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
       safe,
       multiSend,
       data,
-      "initiate-unwrap",
     );
+    // relayer 说 mined 是它的节点看到了；我们的端点可能还落后几个块，先等回执再读日志
+    await this.waitReceipt(ctx.service.chain, hash, "initiate-unwrap");
     const logs = await this.deps.onchain.receiptLogs(ctx.service.chain, hash);
     const event = logs ? findUnwrapInitiated(logs, wrapper) : null;
     if (!event)
@@ -692,25 +793,28 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
 
   async listPendingWithdrawals(address: string): Promise<PendingWithdrawal[]> {
     const { ctx, safe } = await this.enabledContext(address);
-    const [platform, local] = await Promise.all([
-      listUnwrapRequests(ctx.service, safe),
+    // data-service 按 `claimed` 精确筛（`unwrap_requests.go:53-64`），未领 / 已领要分别问：
+    // 只问未领的话，在网页版领掉的那笔永远不会出现，本机的乐观记录就永远删不掉
+    const [open, claimed, local] = await Promise.all([
+      listUnwrapRequests(ctx.service, safe, { claimed: false }),
+      listUnwrapRequests(ctx.service, safe, { claimed: true }),
       this.localPending(safe),
     ]);
-    // 子图已索引的以平台为准；本机记录只补子图还没追上的那几笔，追上了就删
-    const platformIds = new Set(platform.map((item) => item.requestId));
+    // 子图已索引的以平台为准；本机记录只补子图还没追上的那几笔，追上了（不管领没领）就删
+    const platformIds = new Set(
+      [...open, ...claimed].map((item) => item.requestId),
+    );
     const remaining = local.filter((item) => !platformIds.has(item.requestId));
     if (remaining.length !== local.length)
       await this.saveLocalPending(safe, remaining);
-    const fromPlatform: PendingWithdrawal[] = platform
-      .filter((item) => !item.claimed)
-      .map((item) => ({
-        requestId: item.requestId,
-        amount: this.usdw(ctx, item.usdwAmount),
-        assetAmount: this.usdc(ctx, item.assetAmount),
-        claimableAt: new Date(Number(item.claimableAt) * 1000).toISOString(),
-        initTxHash: item.initTxHash,
-        source: "platform",
-      }));
+    const fromPlatform: PendingWithdrawal[] = open.map((item) => ({
+      requestId: item.requestId,
+      amount: this.usdw(ctx, item.usdwAmount),
+      assetAmount: this.usdc(ctx, item.assetAmount),
+      claimableAt: new Date(Number(item.claimableAt) * 1000).toISOString(),
+      initTxHash: item.initTxHash,
+      source: "platform",
+    }));
     return [...fromPlatform, ...remaining].sort((a, b) =>
       a.claimableAt.localeCompare(b.claimableAt),
     );
@@ -755,7 +859,6 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
       safe,
       multiSend,
       data,
-      "claim-unwrap",
     );
     const local = await this.localPending(safe);
     await this.saveLocalPending(
@@ -794,6 +897,22 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
     return next;
   }
 
+  // ---- 协议 ----
+
+  async agreements(): Promise<PredictAgreements> {
+    const ctx = await this.contextFor();
+    const [all, accepted] = await Promise.all([
+      fetchAgreements(ctx.service),
+      this.acceptance.load(ctx.service.scopeId),
+    ]);
+    return { all, pending: pendingAgreements(all, accepted) };
+  }
+
+  async acceptAgreements(items: PlatformAgreement[]): Promise<void> {
+    const ctx = await this.contextFor();
+    await this.acceptance.accept(ctx.service.scopeId, items);
+  }
+
   // ---- faucet ----
 
   async faucetStatus(address: string): Promise<FaucetStatus> {
@@ -809,7 +928,13 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
   }
 
   async forgetCredentials(address: string): Promise<void> {
+    this.enabled.delete(address.toLowerCase());
     if (!isPredictServiceConfigured()) return;
     await this.credentials.clear(predictService(), address);
+  }
+
+  /** 解除对平台关联变化的订阅（多实例的测试用；生产只有一个实例）。 */
+  dispose(): void {
+    this.unsubscribe();
   }
 }

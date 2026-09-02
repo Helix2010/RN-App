@@ -12,6 +12,7 @@ import {
   fromDecimal,
   isZero,
   money,
+  scaleBps,
   toDecimalString,
   type Money,
 } from "../../../core/money/money";
@@ -56,14 +57,13 @@ import { TxProgress } from "./tx-progress";
 
 export type TransferDirection = "deposit" | "withdraw";
 const DEPOSIT_ASSETS: DepositAsset[] = ["USDC", "USDW"];
-const USD_DECIMALS = 6;
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
 /** 解包等待时长，按秒 / 分 / 小时给人看。 */
-export function formatDelay(seconds: number, locale: string): string {
+function formatDelay(seconds: number, locale: string): string {
   const zh = locale === "zh-CN";
   if (seconds < 60) return zh ? `${seconds} 秒` : `${seconds}s`;
   const minutes = Math.round(seconds / 60);
@@ -226,20 +226,27 @@ export function TransferForm({
   const faucet = useFaucet(address, testnet && enabled === true);
 
   const symbol = direction === "deposit" ? asset : "USDW";
-  const amount = useMemo(
-    () => fromDecimal(text || "0", USD_DECIMALS, symbol),
-    [text, symbol],
-  );
+  // 来源余额是唯一的精度来源（平台 public-info 的 decimals 随 Money 带过来）；
+  // 它没到之前没有"金额"，也就不能提交
   const source: Money | undefined =
     direction === "deposit"
       ? asset === "USDC"
         ? funds.data?.usdc
         : funds.data?.usdw
       : balance.data?.available;
-  const insufficient = source ? compare(amount, source) > 0 : false;
+  const amount = useMemo(
+    () =>
+      source ? fromDecimal(text || "0", source.decimals, source.symbol) : null,
+    [text, source],
+  );
+  const insufficient = source && amount ? compare(amount, source) > 0 : false;
   const quote = useDepositQuote(
     address,
-    direction === "deposit" && enabled && !isZero(amount) && !insufficient
+    direction === "deposit" &&
+      enabled &&
+      amount &&
+      !isZero(amount) &&
+      !insufficient
       ? { asset, amount }
       : undefined,
   );
@@ -252,11 +259,13 @@ export function TransferForm({
   const belowMin =
     direction === "withdraw" &&
     terms.data !== undefined &&
+    amount !== null &&
     !isZero(amount) &&
     compare(amount, terms.data.minAmount) < 0;
   const busy = deposit.isPending || withdraw.isPending;
   const disabled =
     enabled !== true ||
+    amount === null ||
     isZero(amount) ||
     insufficient ||
     noGas ||
@@ -265,6 +274,7 @@ export function TransferForm({
     (direction === "deposit" && quote.data === undefined);
 
   const submit = async () => {
+    if (!amount) return;
     if (!(await requireVerification())) return;
     if (direction === "deposit") {
       setTxTitle(
@@ -350,7 +360,8 @@ export function TransferForm({
     direction === "deposit" ? walletLabel : t("assets.predictAccount");
   const toLabel =
     direction === "deposit" ? t("assets.predictAccount") : walletLabel;
-  const amountLabel = formatMoney(amount, locale);
+  const amountLabel =
+    amount && !isZero(amount) ? formatMoney(amount, locale) : symbol;
   const faucetAmount =
     chain && faucet.status.data
       ? formatMoney(
@@ -448,7 +459,8 @@ export function TransferForm({
         value={text}
         onChangeText={setText}
         symbol={symbol}
-        decimals={2}
+        // 输入精度跟平台代币精度走：wrapper 的最小取出额是 0.001 USDW，两位小数输不出来
+        decimals={source?.decimals ?? 6}
         helper={fill(
           direction === "deposit"
             ? t("transfer.walletAvailable")
@@ -456,22 +468,12 @@ export function TransferForm({
           { amount: source ? formatMoney(source, locale) : "—" },
         )}
         error={error}
-        onMax={() => setText(source ? toDecimalString(source, 2) : "")}
+        onMax={() => setText(source ? toDecimalString(source) : "")}
         maxLabel={t("common.max")}
         presets={[25, 50, 75, 100]}
+        // 按比例取整走 bigint（scaleBps），不经过浮点，也不会把 1.999 进位成 2.00 超过余额
         onPreset={(pct) =>
-          setText(
-            source
-              ? toDecimalString(
-                  fromDecimal(
-                    ((Number(toDecimalString(source)) * pct) / 100).toFixed(2),
-                    USD_DECIMALS,
-                    symbol,
-                  ),
-                  2,
-                )
-              : "",
-          )
+          setText(source ? toDecimalString(scaleBps(source, pct * 100)) : "")
         }
         accessibilityLabel={t("transfer.amount")}
         testID="transfer-amount"
@@ -569,7 +571,7 @@ export function TransferForm({
           direction === "deposit"
             ? t("transfer.confirmDeposit")
             : t("transfer.confirmWithdraw"),
-          { amount: isZero(amount) ? symbol : amountLabel },
+          { amount: amountLabel },
         )}
       </PrimaryButton>
       {deposit.step ? (

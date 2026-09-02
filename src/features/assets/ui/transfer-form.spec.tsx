@@ -181,7 +181,8 @@ describe("TransferForm", () => {
     };
     account.terms = {
       delaySeconds: 60,
-      minAmount: fromDecimal("1", 6, "USDW"),
+      // wrapper 的真实最小额（dev 实测 minUnwrapUsdw = 0.001）
+      minAmount: fromDecimal("0.001", 6, "USDW"),
     };
     const { runtime } = await renderWithProviders(
       form(address, { initialDirection: "withdraw" }),
@@ -189,12 +190,12 @@ describe("TransferForm", () => {
     );
     void fireEvent.changeText(
       await screen.findByTestId("transfer-amount"),
-      "0.5",
+      "0.0001",
     );
     await waitFor(() =>
       expect(
         screen.getByText(
-          runtime.t("transfer.minWithdraw").replace("{amount}", "1.00 USDW"),
+          runtime.t("transfer.minWithdraw").replace("{amount}", "0.001 USDW"),
         ),
       ).toBeTruthy(),
     );

@@ -5,6 +5,7 @@ import {
   platformHosts,
   platformRequest,
   setPlatformFetch,
+  setPlatformSleep,
 } from "./tenant-client";
 
 function respond(status: number, body: unknown): Response {
@@ -14,7 +15,10 @@ function respond(status: number, body: unknown): Response {
   });
 }
 
-afterEach(() => setPlatformFetch(null));
+afterEach(() => {
+  setPlatformFetch(null);
+  setPlatformSleep(null);
+});
 
 describe("platformHosts", () => {
   it("derives the six service hosts from the tenant domain over https/wss", () => {
@@ -71,6 +75,7 @@ describe("platformRequest", () => {
     expect(error).toBeInstanceOf(PlatformHttpError);
     expect((error as PlatformHttpError).code).toBe("scopeId mismatch");
 
+    setPlatformSleep(async () => {});
     setPlatformFetch(async () => respond(429, {}));
     await expect(
       platformRequest({
@@ -90,5 +95,43 @@ describe("platformRequest", () => {
         schema: z.object({ nonce: z.string() }),
       }),
     ).rejects.toMatchObject({ code: "MALFORMED_RESPONSE" });
+  });
+
+  it("backs off exponentially on 429 and gives up after three retries", async () => {
+    const delays: number[] = [];
+    setPlatformSleep(async (ms) => {
+      delays.push(ms);
+    });
+    let attempts = 0;
+    setPlatformFetch(async () => {
+      attempts += 1;
+      return respond(429, {});
+    });
+    await expect(
+      platformRequest({
+        url: "https://x",
+        tenantDomain: "d",
+        schema: z.unknown(),
+      }),
+    ).rejects.toBeInstanceOf(PlatformRateLimitedError);
+    expect(attempts).toBe(4);
+    expect(delays).toEqual([500, 1000, 2000]);
+  });
+
+  it("succeeds once the platform stops rate limiting", async () => {
+    setPlatformSleep(async () => {});
+    let attempts = 0;
+    setPlatformFetch(async () => {
+      attempts += 1;
+      return attempts < 3 ? respond(429, {}) : respond(200, { ok: true });
+    });
+    await expect(
+      platformRequest({
+        url: "https://x",
+        tenantDomain: "d",
+        schema: z.object({ ok: z.boolean() }),
+      }),
+    ).resolves.toEqual({ ok: true });
+    expect(attempts).toBe(3);
   });
 });

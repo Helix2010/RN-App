@@ -11,13 +11,18 @@ import {
   usdWrapper,
 } from "../../../core/predict-platform/contracts";
 import { PredictCredentialStore } from "../../../core/predict-platform/credentials";
+import { RelayerTransactionFailedError } from "../../../core/predict-platform/relayer";
 import { safeTxTypedData } from "../../../core/predict-platform/safe";
 import { setPlatformFetch } from "../../../core/predict-platform/tenant-client";
 import { memorySecureStore } from "../../../core/wallet/vault/ports";
 import type { WalletSigner } from "../../../core/wallet/signer/types";
 import type { WalletGateway } from "../../wallet/api/gateway";
 import type { OnchainTransfers } from "../../wallet/api/onchain-transfers";
-import { enablementComplete } from "./account-gateway";
+import {
+  PredictChainUnavailableError,
+  PredictNotEnabledError,
+  enablementComplete,
+} from "./account-gateway";
 import { HttpPredictAccountGateway } from "./http-predict-account-gateway";
 
 const DOMAIN = "predict.prax1s.xyz";
@@ -103,6 +108,10 @@ function platform() {
     requests: [] as Request[],
     unwraps: [] as Record<string, unknown>[],
     deriveKeyOk: false,
+    /** 置 true 后 L2 接口一律 401，模拟密钥被吊销 */
+    clobRevoked: false,
+    /** relayer `/transaction` 报出的终态 */
+    relayState: "STATE_MINED",
   };
   const json = (status: number, body: unknown) =>
     new Response(JSON.stringify(body), {
@@ -137,7 +146,16 @@ function platform() {
       if (path === "/submit") {
         state.submissions.push(body);
         if (body.type === "SAFE-CREATE") state.safeDeployed = true;
-        if (body.metadata === "approval") state.approved = true;
+        // 授权 MultiSend 里有 setApprovalForAll；执行后链上 allowance / isApprovedForAll 都为真
+        if (
+          body.type === "SAFE" &&
+          String(body.data).includes(
+            selector(conditionalTokens.getFunction("setApprovalForAll")).slice(
+              2,
+            ),
+          )
+        )
+          state.approved = true;
         const id = `tx-${state.submissions.length}`;
         return json(200, {
           transactionID: id,
@@ -151,7 +169,11 @@ function platform() {
         return json(200, {
           transactionID: id,
           transactionHash: `0x${index.toString(16).padStart(64, "0")}`,
-          state: "STATE_MINED",
+          state: state.relayState,
+          errorMessage:
+            state.relayState === "STATE_FAILED"
+              ? "execution reverted"
+              : undefined,
         });
       }
     }
@@ -169,6 +191,8 @@ function platform() {
           passphrase: "pass",
         });
       }
+      if (path === "/balance-allowance" && state.clobRevoked)
+        return json(401, { error: "invalid API key" });
       if (path === "/balance-allowance")
         return json(200, {
           balance: "1000000",
@@ -176,8 +200,13 @@ function platform() {
           locked: "200000",
         });
     }
-    if (host === "data-api" && path === "/unwrap-requests")
-      return json(200, { data: state.unwraps });
+    if (host === "data-api" && path === "/unwrap-requests") {
+      // 与 data-service 一致：按 claimed 精确筛（unwrap_requests.go:53-64）
+      const wantClaimed = url.searchParams.get("claimed") === "true";
+      return json(200, {
+        data: state.unwraps.filter((item) => item.claimed === wantClaimed),
+      });
+    }
     return json(404, { error: `no route for ${method} ${url.href}` });
   });
   return state;
@@ -188,6 +217,9 @@ function chain(platformState: ReturnType<typeof platform>) {
   const calls: { to: string; data: string; from: string }[] = [];
   const logs: { address: string; topics: string[]; data: string }[] = [];
   const onchain = {
+    available() {
+      return true;
+    },
     async readContract(_chain: string, _to: string, data: string) {
       const sel = data.slice(0, 10);
       if (sel === selector(erc20.getFunction("allowance")))
@@ -244,26 +276,35 @@ function signerFor(wallet: Wallet): WalletSigner {
   };
 }
 
-function build(options: { now?: () => number } = {}) {
-  const platformState = platform();
+function build(
+  options: {
+    now?: () => number;
+    credentials?: PredictCredentialStore;
+    storage?: ReturnType<typeof memoryStorage>;
+    /** 复用上一个实例的假平台（同一台"服务器"），否则每次都是全新的、未部署的平台 */
+    platform?: ReturnType<typeof platform>;
+  } = {},
+) {
+  const platformState = options.platform ?? platform();
   const wallet = new Wallet(
     "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d",
   );
   const link = chain(platformState);
-  const secure = memorySecureStore();
-  const credentials = new PredictCredentialStore(secure);
+  const credentials =
+    options.credentials ?? new PredictCredentialStore(memorySecureStore());
+  const storage = options.storage ?? memoryStorage();
   const gateway = new HttpPredictAccountGateway({
     wallet: {
       signerFor: async () => signerFor(wallet),
     } as unknown as WalletGateway,
     onchain: link.onchain,
     credentials,
-    storage: memoryStorage(),
+    storage,
     now: options.now ?? (() => NOW_SECONDS * 1000),
     sleep: async () => {},
   });
   applyDeliveredServices({ predict: service });
-  return { gateway, wallet, platformState, link, credentials };
+  return { gateway, wallet, platformState, link, credentials, storage };
 }
 
 afterEach(() => setPlatformFetch(null));
@@ -301,7 +342,11 @@ describe("HttpPredictAccountGateway", () => {
     expect(create?.type).toBe("SAFE-CREATE");
     expect(create?.to).toBe(FACTORY);
     expect(approval?.type).toBe("SAFE");
-    expect(approval?.metadata).toBe("approval");
+    // 服务端 SubmitRequest 没有 metadata 字段（types.go:57-67），不发；按内容认这笔是授权
+    expect(approval?.metadata).toBeUndefined();
+    expect(String(approval?.data)).toContain(
+      selector(conditionalTokens.getFunction("setApprovalForAll")).slice(2),
+    );
     expect(approval?.to).toBe(MULTI_SEND);
     expect(
       (approval?.signatureParams as Record<string, string>).operation,
@@ -391,6 +436,19 @@ describe("HttpPredictAccountGateway", () => {
     expect(tx.status).toBe("submitted");
     expect((await gateway.getTx(tx.id))?.status).toBe("confirmed");
 
+    // 第二次转入仍是两笔：授权按本次金额，不给 wrapper 无上限额度（§3.6 验收 2）
+    link.calls.length = 0;
+    await gateway.deposit(wallet.address, {
+      asset: "USDC",
+      amount: fromDecimal("1", 6, "USDC"),
+    });
+    expect(link.calls.map((call) => call.to)).toEqual([USDC, WRAPPER]);
+    const second = erc20.decodeFunctionData(
+      "approve",
+      link.calls[0]?.data ?? "",
+    );
+    expect(second[1]).toBe(1_000_000n);
+
     // USDW 直接一笔 transfer 到 Safe
     link.calls.length = 0;
     await gateway.deposit(wallet.address, {
@@ -408,8 +466,13 @@ describe("HttpPredictAccountGateway", () => {
       asset: "USDC",
       amount: fromDecimal("1", 6, "USDC"),
     });
-    // approve 的费用 × 两步
-    expect(BigInt(quote.raw)).toBe(2n * 21_000n * 1_000_000_000n);
+    // approve 的费用 + wrap 按 4 倍上界（wrap 转入金库 + 铸币，比 approve 贵得多）
+    expect(BigInt(quote.raw)).toBe(5n * 21_000n * 1_000_000_000n);
+    const usdwQuote = await gateway.quoteDeposit(wallet.address, {
+      asset: "USDW",
+      amount: fromDecimal("1", 6, "USDW"),
+    });
+    expect(BigInt(usdwQuote.raw)).toBe(21_000n * 1_000_000_000n);
   });
 
   it("withdraws in two phases: initiate-unwrap now, claim to the EOA once the delay has passed", async () => {
@@ -446,7 +509,9 @@ describe("HttpPredictAccountGateway", () => {
     expect(pending.assetAmount).toEqual(fromDecimal("15", 6, "USDC"));
     expect(new Date(pending.claimableAt).getTime()).toBe(claimableAt * 1000);
     const initiate = platformState.submissions.at(-1);
-    expect(initiate?.metadata).toBe("initiate-unwrap");
+    expect(String(initiate?.data)).toContain(
+      selector(usdWrapper.getFunction("initiateUnwrap")).slice(2),
+    );
     expect(initiate?.to).toBe(MULTI_SEND);
 
     // 子图还没索引：本机记录顶上；索引到了以平台为准
@@ -475,7 +540,9 @@ describe("HttpPredictAccountGateway", () => {
     const tx = await gateway.claimWithdrawal(wallet.address, "7");
     expect(tx.status).toBe("confirmed");
     const claim = platformState.submissions.at(-1);
-    expect(claim?.metadata).toBe("claim-unwrap");
+    expect(String(claim?.data)).toContain(
+      selector(usdWrapper.getFunction("claimUnwrap")).slice(2),
+    );
     // MultiSend 里第二段是 USDC.transfer(EOA, assetAmount)
     const transferData = erc20.encodeFunctionData("transfer", [
       wallet.address,
@@ -496,5 +563,175 @@ describe("HttpPredictAccountGateway", () => {
     // 新关联与平台 public-info 的 scopeId 对不上：任何需要平台的调用都被拒绝，不降级
     await expect(gateway.enablement(wallet.address)).rejects.toThrow(/scopeId/);
     await expect(gateway.enable(wallet.address)).rejects.toThrow(/scopeId/);
+  });
+
+  it("drops a revoked CLOB key and reports the account as needing that step again", async () => {
+    const { gateway, wallet, platformState, credentials } = build();
+    await gateway.enable(wallet.address);
+    platformState.clobRevoked = true;
+    const error = await gateway
+      .getBalance(wallet.address)
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(PredictNotEnabledError);
+    expect((error as PredictNotEnabledError).status.clobKey).toBe(false);
+    expect(
+      (await credentials.load(service, wallet.address)).clob,
+    ).toBeUndefined();
+    // 没有替用户签名：clob 只见过一次 create
+    expect(
+      platformState.requests.filter((r) => r.url.pathname === "/auth/api-key"),
+    ).toHaveLength(1);
+  });
+
+  it("wipes credentials left in the keychain by a previous installation", async () => {
+    const credentials = new PredictCredentialStore(memorySecureStore());
+    const first = build({ credentials });
+    await first.gateway.enable(first.wallet.address);
+    expect(
+      (await credentials.load(service, first.wallet.address)).jwt,
+    ).toBeDefined();
+    // 同一台机器、同一份安全存储，但普通存储是空的 = 重装后首次启动
+    const reinstalled = build({ credentials });
+    const status = await reinstalled.gateway.enablement(first.wallet.address);
+    expect(status.loggedIn).toBe(false);
+    expect(await credentials.load(service, first.wallet.address)).toEqual({});
+    // 普通存储里有标记 = 同一次安装，凭证保留
+    await reinstalled.gateway.enable(first.wallet.address);
+    const again = build({ credentials, storage: reinstalled.storage });
+    const kept = await again.gateway.enablement(first.wallet.address);
+    expect(kept.loggedIn).toBe(true);
+  });
+
+  it("serialises SafeTx submissions for the same Safe: nonce → submit → mined before the next nonce", async () => {
+    const { gateway, wallet, link, platformState } = build();
+    await gateway.enable(wallet.address);
+    const event = usdWrapper.encodeEventLog("UnwrapInitiated", [
+      SAFE,
+      1n,
+      USDC,
+      1_000_000n,
+      1_000_000n,
+      BigInt(NOW_SECONDS + 60),
+    ]);
+    link.logs.push({
+      address: WRAPPER,
+      topics: [...event.topics],
+      data: event.data,
+    });
+    const before = platformState.requests.length;
+    await Promise.all([
+      gateway.withdraw(wallet.address, fromDecimal("1", 6, "USDW")),
+      gateway.withdraw(wallet.address, fromDecimal("1", 6, "USDW")),
+    ]);
+    const relayer = platformState.requests
+      .slice(before)
+      .filter((r) => r.url.host.startsWith("relayer"))
+      .map((r) => r.url.pathname)
+      .filter((path) => path !== "/deployed");
+    expect(relayer).toEqual([
+      "/nonce",
+      "/submit",
+      "/transaction",
+      "/nonce",
+      "/submit",
+      "/transaction",
+    ]);
+  });
+
+  it("surfaces a relayer STATE_FAILED as a failure: no retry, no optimistic record (§3.6 验收 6)", async () => {
+    const { gateway, wallet, platformState } = build();
+    await gateway.enable(wallet.address);
+    platformState.relayState = "STATE_FAILED";
+    const submits = () =>
+      platformState.requests.filter((r) => r.url.pathname === "/submit").length;
+    const before = submits();
+    await expect(
+      gateway.withdraw(wallet.address, fromDecimal("1", 6, "USDW")),
+    ).rejects.toBeInstanceOf(RelayerTransactionFailedError);
+    expect(submits()).toBe(before + 1);
+    platformState.relayState = "STATE_MINED";
+    expect(await gateway.listPendingWithdrawals(wallet.address)).toEqual([]);
+  });
+
+  it("merges the optimistic record with the subgraph and drops it once indexed — even when claimed elsewhere (§3.6 验收 9/10)", async () => {
+    const { gateway, wallet, link, platformState } = build();
+    await gateway.enable(wallet.address);
+    const event = usdWrapper.encodeEventLog("UnwrapInitiated", [
+      SAFE,
+      9n,
+      USDC,
+      2_000_000n,
+      2_000_000n,
+      BigInt(NOW_SECONDS + 60),
+    ]);
+    link.logs.push({
+      address: WRAPPER,
+      topics: [...event.topics],
+      data: event.data,
+    });
+    const pending = await gateway.withdraw(
+      wallet.address,
+      fromDecimal("2", 6, "USDW"),
+    );
+    // 子图还没索引：本机记录顶上
+    expect(
+      (await gateway.listPendingWithdrawals(wallet.address)).map((item) => [
+        item.requestId,
+        item.source,
+      ]),
+    ).toEqual([["9", "local"]]);
+    // 网页版已经把它领走：子图只在 claimed=true 的列表里返回它 → 本机记录删除，列表为空
+    platformState.unwraps.push({
+      requestId: "9",
+      recipient: SAFE,
+      asset: USDC,
+      usdwAmount: "2000000",
+      assetAmount: "2000000",
+      claimableAt: String(NOW_SECONDS + 60),
+      claimed: true,
+      initTxHash: pending.initTxHash,
+      initTimestamp: String(NOW_SECONDS),
+    });
+    expect(await gateway.listPendingWithdrawals(wallet.address)).toEqual([]);
+    platformState.unwraps.length = 0;
+    expect(await gateway.listPendingWithdrawals(wallet.address)).toEqual([]);
+  });
+
+  it("asks for no signature on the warm path once enabled (§3.6 验收 1)", async () => {
+    const credentials = new PredictCredentialStore(memorySecureStore());
+    const first = build({ credentials });
+    await first.gateway.enable(first.wallet.address);
+    const again = build({
+      credentials,
+      storage: first.storage,
+      platform: first.platformState,
+    });
+    const spy = jest.spyOn(again.wallet, "signTypedData");
+    expect(
+      enablementComplete(await again.gateway.enablement(first.wallet.address)),
+    ).toBe(true);
+    await again.gateway.getBalance(first.wallet.address);
+    await again.gateway.enable(first.wallet.address);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("refuses to deposit when the tenant has not enabled on-chain sends for the platform chain", async () => {
+    const { gateway, wallet, link } = build();
+    await gateway.enable(wallet.address);
+    (link.onchain as unknown as { available: () => boolean }).available = () =>
+      false;
+    await expect(
+      gateway.quoteDeposit(wallet.address, {
+        asset: "USDC",
+        amount: fromDecimal("1", 6, "USDC"),
+      }),
+    ).rejects.toBeInstanceOf(PredictChainUnavailableError);
+    await expect(
+      gateway.deposit(wallet.address, {
+        asset: "USDC",
+        amount: fromDecimal("1", 6, "USDC"),
+      }),
+    ).rejects.toBeInstanceOf(PredictChainUnavailableError);
+    expect(link.calls).toEqual([]);
   });
 });

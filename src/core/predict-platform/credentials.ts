@@ -74,7 +74,10 @@ export class PredictCredentialStore {
       return Array.isArray(parsed)
         ? parsed.filter((item): item is string => typeof item === "string")
         : [];
-    } catch {
+    } catch (error) {
+      // 索引坏了就没法枚举安全存储里的凭证键：clearAll 只能清掉索引本身。
+      // 这是有安全后果的（§3.3 要求平台变化 / 登出 / 重装时清干净），所以要留痕
+      console.warn("[predict] credential index is corrupt", error);
       return [];
     }
   }

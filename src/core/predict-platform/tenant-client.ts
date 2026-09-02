@@ -10,6 +10,9 @@ import { AppError } from "../network/app-error";
  */
 
 const DEFAULT_TIMEOUT_MS = 15_000;
+/** 429 退避：指数，最多重试 3 次（设计 §3.7），之后把限流原样抛给界面 */
+const RATE_LIMIT_RETRIES = 3;
+const RATE_LIMIT_BASE_DELAY_MS = 500;
 
 export type PlatformHosts = {
   gamma: string;
@@ -70,6 +73,16 @@ export function setPlatformFetch(next: FetchLike | null): void {
   fetchImpl = next ?? ((...args) => globalThis.fetch(...args));
 }
 
+type SleepLike = (ms: number) => Promise<void>;
+const realSleep: SleepLike = (ms) =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+let sleepImpl: SleepLike = realSleep;
+
+/** 仅供测试替换退避等待。 */
+export function setPlatformSleep(next: SleepLike | null): void {
+  sleepImpl = next ?? realSleep;
+}
+
 function errorDetail(
   status: number,
   payload: unknown,
@@ -96,6 +109,22 @@ function errorDetail(
 export async function platformRequest<T>(
   request: PlatformRequest<T>,
 ): Promise<T> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await platformRequestOnce(request);
+    } catch (error) {
+      if (
+        !(error instanceof PlatformRateLimitedError) ||
+        attempt >= RATE_LIMIT_RETRIES ||
+        request.signal?.aborted
+      )
+        throw error;
+      await sleepImpl(RATE_LIMIT_BASE_DELAY_MS * 2 ** attempt);
+    }
+  }
+}
+
+async function platformRequestOnce<T>(request: PlatformRequest<T>): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(
     () => controller.abort("timeout"),

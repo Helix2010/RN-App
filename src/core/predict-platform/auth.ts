@@ -3,7 +3,11 @@ import { z } from "zod";
 import type { PredictServiceConfig } from "../config/bootstrap.schema";
 import type { SignRequestContext, WalletSigner } from "../wallet/signer/types";
 import { evmChainIdOf } from "../wallet/config/wallet-runtime-config";
-import { platformHosts, platformRequest } from "./tenant-client";
+import {
+  PlatformHttpError,
+  platformHosts,
+  platformRequest,
+} from "./tenant-client";
 
 /**
  * 平台登录：EIP-712 `LoginMessage` 换 gamma JWT（不是 SIWE）。
@@ -78,8 +82,32 @@ export async function fetchLoginNonce(
   });
 }
 
-/** 整个登录：取 nonce → 签 → 换 JWT。返回 JWT 与用的 scopeId。 */
+/** gamma 的 nonce 已核销 / 过期 / 不符（`types.go` ErrNonceInvalid） */
+const ERR_NONCE_INVALID = "40101";
+
+/**
+ * 整个登录：取 nonce → 签 → 换 JWT。
+ * nonce 在验签前就被核销（§2.2），登录返回 40101 时重取一次 nonce 再签，只重试一次。
+ */
 export async function loginWithSigner(
+  service: PredictServiceConfig,
+  signer: WalletSigner,
+  context: SignRequestContext,
+): Promise<string> {
+  try {
+    return await loginOnce(service, signer, context);
+  } catch (error) {
+    if (
+      error instanceof PlatformHttpError &&
+      error.status === 401 &&
+      error.code === ERR_NONCE_INVALID
+    )
+      return loginOnce(service, signer, context);
+    throw error;
+  }
+}
+
+async function loginOnce(
   service: PredictServiceConfig,
   signer: WalletSigner,
   context: SignRequestContext,

@@ -5,6 +5,7 @@ import {
   PredictNotEnabledError,
   type PredictAccountGateway,
 } from "../../predict/api/account-gateway";
+import { PredictServiceNotConfiguredError } from "../../../core/predict-platform/config";
 import type { WalletGateway } from "../../wallet/api/gateway";
 import type { AssetsGateway, AssetsOverview } from "./gateway";
 
@@ -65,7 +66,6 @@ export class AssetsOverviewGateway implements AssetsGateway {
       return {
         status: "enabled",
         chain: balance.chain,
-        safe: balance.safe,
         available: balance.available,
         lockedInOrders: balance.lockedInOrders,
         safeBalance: balance.safeBalance,
@@ -75,6 +75,8 @@ export class AssetsOverviewGateway implements AssetsGateway {
     } catch (error) {
       if (error instanceof PredictNotEnabledError)
         return { status: "not-enabled" };
+      // 模块开了但租户没配平台关联：预测账户不可用（null），钱包部分照常显示
+      if (error instanceof PredictServiceNotConfiguredError) return null;
       throw error;
     }
   }

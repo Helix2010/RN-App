@@ -180,7 +180,6 @@ export type ActivityType =
   | "MERGE"
   | "REDEEM"
   | "DEPOSIT"
-  | "WITHDRAW"
   | "DISPUTE_BOND"
   | "SETTLEMENT"
   | "FEE";

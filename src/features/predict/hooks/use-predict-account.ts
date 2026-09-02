@@ -2,6 +2,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useGateways } from "../../../core/gateways/gateway-context";
 import type { Money } from "../../../core/money/money";
+import type { PlatformAgreement } from "../../../core/predict-platform/agreements";
+import { PredictServiceNotConfiguredError } from "../../../core/predict-platform/config";
+import { PredictPlatformMismatchError } from "../../../core/predict-platform/public-info";
+import {
+  PlatformHttpError,
+  PlatformRateLimitedError,
+} from "../../../core/predict-platform/tenant-client";
 import {
   PredictNotEnabledError,
   type DepositAsset,
@@ -11,6 +18,20 @@ import {
 
 /** 与预测账户相关的查询键前缀：启用状态、余额、待领取、EOA 资金。 */
 export const PREDICT_ACCOUNT_KEY = "predict-account";
+
+/**
+ * 重试策略（设计 §3.7）：配置错误（关联缺失、scopeId / chainId 不符、平台租户过期 403）
+ * 与限流不重试——重试只会把错误配置打到别的租户上或撞限流；未启用是状态不是错误；
+ * 其它（网络抖动）最多再试一次。
+ */
+export function predictRetry(count: number, error: unknown): boolean {
+  if (error instanceof PredictNotEnabledError) return false;
+  if (error instanceof PredictServiceNotConfiguredError) return false;
+  if (error instanceof PredictPlatformMismatchError) return false;
+  if (error instanceof PlatformRateLimitedError) return false;
+  if (error instanceof PlatformHttpError && error.status === 403) return false;
+  return count < 1;
+}
 
 export function useInvalidatePredictAccount() {
   const queryClient = useQueryClient();
@@ -28,6 +49,7 @@ export function usePredictEnablement(address: string | undefined) {
     queryFn: () => predictAccount.enablement(address as string),
     enabled: Boolean(address),
     staleTime: 15_000,
+    retry: predictRetry,
   });
 }
 
@@ -54,8 +76,7 @@ export function usePredictAccountBalance(address: string | undefined) {
     queryFn: () => predictAccount.getBalance(address as string),
     enabled: Boolean(address),
     staleTime: 15_000,
-    retry: (count, error) =>
-      !(error instanceof PredictNotEnabledError) && count < 2,
+    retry: predictRetry,
   });
   return {
     ...query,
@@ -70,6 +91,7 @@ export function usePredictWalletFunds(address: string | undefined) {
     queryFn: () => predictAccount.walletFunds(address as string),
     enabled: Boolean(address),
     staleTime: 15_000,
+    retry: predictRetry,
   });
 }
 
@@ -80,6 +102,7 @@ export function useUnwrapTerms(enabled = true) {
     queryFn: () => predictAccount.unwrapTerms(),
     enabled,
     staleTime: 60_000,
+    retry: predictRetry,
   });
 }
 
@@ -103,6 +126,7 @@ export function useDepositQuote(
       ),
     enabled: Boolean(address && input),
     staleTime: 15_000,
+    retry: predictRetry,
   });
 }
 
@@ -142,8 +166,7 @@ export function usePendingWithdrawals(
     enabled: Boolean(address) && enabled,
     staleTime: 15_000,
     refetchInterval: 30_000,
-    retry: (count, error) =>
-      !(error instanceof PredictNotEnabledError) && count < 2,
+    retry: predictRetry,
   });
 }
 
@@ -167,6 +190,30 @@ export function usePredictAccountTx(id: string | undefined) {
       const status = query.state.data?.status;
       return status === "confirmed" || status === "failed" ? false : 3_000;
     },
+  });
+}
+
+export function usePlatformAgreements(enabled = true) {
+  const { predictAccount } = useGateways();
+  return useQuery({
+    queryKey: [PREDICT_ACCOUNT_KEY, "agreements"],
+    queryFn: () => predictAccount.agreements(),
+    enabled,
+    staleTime: 60_000,
+    retry: predictRetry,
+  });
+}
+
+export function useAcceptAgreements() {
+  const { predictAccount } = useGateways();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (items: PlatformAgreement[]) =>
+      predictAccount.acceptAgreements(items),
+    onSettled: () =>
+      void queryClient.invalidateQueries({
+        queryKey: [PREDICT_ACCOUNT_KEY, "agreements"],
+      }),
   });
 }
 

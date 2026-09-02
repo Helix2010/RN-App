@@ -18,7 +18,6 @@ export type AssetsOverview = {
     | {
         status: "enabled";
         chain: ChainId;
-        safe: string;
         usd: number;
         available: Money;
         lockedInOrders: Money;

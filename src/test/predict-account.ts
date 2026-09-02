@@ -1,4 +1,6 @@
 import { fromDecimal, money, type Money } from "../core/money/money";
+import type { PlatformAgreement } from "../core/predict-platform/agreements";
+import { pendingAgreements } from "../core/predict-platform/agreements";
 import type { FaucetStatus } from "../core/predict-platform/faucet";
 import {
   PredictNotEnabledError,
@@ -9,6 +11,7 @@ import {
   type PendingWithdrawal,
   type PredictAccountBalance,
   type PredictAccountGateway,
+  type PredictAgreements,
   type PredictEnablement,
   type PredictWalletFunds,
   type UnwrapTerms,
@@ -55,6 +58,8 @@ export class InMemoryPredictAccountGateway implements PredictAccountGateway {
     amountWei: "1000000000000000",
   };
   depositFee: Money = fromDecimal("0.0001", 18, "ETH");
+  agreements_: PlatformAgreement[] = [];
+  accepted: Record<string, string> = {};
   now = () => Date.now();
   readonly txs = new Map<string, PredictTx>();
   readonly calls: string[] = [];
@@ -229,6 +234,18 @@ export class InMemoryPredictAccountGateway implements PredictAccountGateway {
       return confirmed;
     }
     return tx;
+  }
+
+  async agreements(): Promise<PredictAgreements> {
+    return {
+      all: this.agreements_,
+      pending: pendingAgreements(this.agreements_, this.accepted),
+    };
+  }
+
+  async acceptAgreements(items: PlatformAgreement[]): Promise<void> {
+    this.calls.push(`accept:${items.map((item) => item.type).join(",")}`);
+    for (const item of items) this.accepted[item.type] = item.version;
   }
 
   async faucetStatus(): Promise<FaucetStatus> {
