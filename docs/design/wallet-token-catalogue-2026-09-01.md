@@ -169,8 +169,8 @@ CREATE TABLE IF NOT EXISTS chain_token_catalog (
 
 ### schema 与类型
 
-`bootstrap.schema.ts` 的 wallet 段加 `tokens`，**optional + 默认空数组**（老服务端不下发时按空
-处理，不能因为服务端版本落后就让整个 bootstrap 解析失败）。每条：
+`bootstrap.schema.ts` 的 wallet 段加 `tokens`，**必填、逐条严格**（这段和服务端同步发布；一条不合法
+就是整份 bootstrap 无效，运行时继续用上一次成功的快照——见安全设计文档"正式场景原则落地"）。每条：
 
 ```ts
 {
