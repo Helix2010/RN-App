@@ -40,7 +40,7 @@ App 里的预测账户余额、存入 / 取出此前全是 `MockPredictGateway` 
 事实先从平台源码提取写入设计文档 §2.9（gamma 事件 / 标签、clob 订单簿 / 历史 / 费率、data-service 持仓 / 活动 / 盈亏 / 排行榜、下单签名与提交、领取 / 拆合走 relayer），再实现：
 
 - `core/predict-platform/{gamma,clob-market,clob-orders,data-positions}.ts`：zod 严格解析（数值可能是字符串、`outcomes/clobTokenIds` 可能是 JSON 串、多语言是按语言分键的 JSON 串），查询参数照网页版（active、未 closed、排除 recurring、排序字段与方向、`is_carousel` 标签、`sizeThreshold=0` 等）。
-- `HttpPredictGateway`：`Market.id` = conditionId、事件 id = gamma id、价格换整数分、金额 6 位 USDC；展示价按网页版规则（mid → ask → bid → 最新成交，缺就 null 不编 0.5）；持仓 / 活动按 Safe 地址查；我的挂单走 L2、"未完成"判据同网页版；撤单 `DELETE /order`。
+- `HttpPredictGateway`：`Market.id` = conditionId、事件 id = gamma id、价格换整数分、金额 6 位 USDW（后经联调改正，见下）；展示价按网页版规则（mid → ask → bid → 最新成交，缺就 null 不编 0.5）；持仓 / 活动按 Safe 地址查；我的挂单走 L2、"未完成"判据同网页版；撤单 `DELETE /order`。
 - 生产接线从 `MockPredictGateway` 切到 `HttpPredictGateway`（Mock 只剩测试用）；市场列表默认标签改为平台给的第一个标签（原来写死 `hot`）。
 - 模型：平台不给的字段改为可空 / 可选并在界面保护——持有人数、排行榜胜率、争议保证金；活动类型加 `CONVERSION` / `MAKER_REBATE`。
 - **写侧（同日稍后落地）**：下单——EIP-712 Order（domain `Prediction Market Protocol` v1，verifyingContract 按 negRisk 选 exchange；maker = Safe、signer = EOA、signatureType 2、salt 随机 uint32、GTD 才带 expiration），金额换算是 user-dapp `orderAmounts.ts` 的逐行移植（`order-amounts.ts` + 契约测试），市价单 = FAK 取对手盘最优价并按 tick 向上对齐，`POST /order` 带 L2 头（path + body），响应 `success=false` 抛 `OrderRejectedError`，成交量按 BUY taking = 份数 / SELL making = 份数换算成 filled / partial / open；预览沿簿估算并按 `/fee-rate` 的 bps 估手续费。领取——同 conditionId 合并一条 `CTF.redeemPositions`（negRisk 走 adapter 的 `redeemPositions(conditionId, amounts)`），数量以链上 ERC1155 余额为准，MultiSend 经 relayer。拆合——直接 SafeTx 调 CTF / adapter（operation 0）。账户网关新增 `relaySafe` / `tradingContext` / `platformContext` 供复用。
@@ -57,6 +57,12 @@ App 里的预测账户余额、存入 / 取出此前全是 `MockPredictGateway` 
 - **首页热门写死 `tagId: "hot"`**：平台没有这个标签。改为不带标签、按成交量排序。
 
 WS 协议用 node `ws` 直连 prax1s 复核过：初始 dump 的 `timestamp` 是 ISO 串（原来按毫秒数解析会得到 1970，已改 `bookTimestamp`）、会来空的 `price_change` 与 `last_trade_price`（有簿价时忽略成交价，无簿价时用它兜住显示，同网页版回落顺序）、`PING`→`PONG`；gamma 的 0 / 1 价按网页版视为没数据。
+
+**账户流程联调（同日，模拟器建钱包 → SIWE → 启用）**：四步启用对 prax1s 跑通（登录签名、relayer 建 Safe、CLOB 密钥、relayer MultiSend 授权），协议列表与必读门禁正常。又修了三处：
+
+- **预测账户详情页崩溃**：`HttpPredictGateway` 把成交额 / 持仓市值 / 盈亏标成 `USDC`，账户余额是 `USDW`，下单页比较两者时 `Money` 断言不同币种直接抛错（Mock 时期两边都是 USDC 所以没暴露）。预测账户内一切金额统一为 USDW（抵押品），Mock 与 spec 同步。
+- **启用第一次跑完仍显示未启用**：relayer 报授权交易已上链后，App 读链的公共节点（Pocket）还没看到授权，`enable()` 立刻读到"未授权"却按成功返回，界面提示完成并退出，再进来还是"启用"。现在 relayer 报上链后轮询链上授权可见（最多 10 × 1.5 秒），看不到按失败抛错，与建 Safe 那步的校验一致。
+- **备份助记词页报重复 key**：12 词里同一个词出现两次是合法的，列表 key 改为带位置。
 
 联调环境事实：prax1s `public-info.chain.contracts` 已含 `USDW_WRAPPER` / `USDC_UNDERLYING`；测试 USDC（`0x2eA6…c3AD`）的 `mint(address,uint256)` 无权限限制，EOA 有少量 OP Sepolia ETH 即可自铸后联调转入 / 下单。
 

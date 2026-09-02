@@ -165,7 +165,8 @@ export const OrderSheet = forwardRef<
         item.status === "trading",
     )?.shares ?? 0;
   const shares = Number(sharesText) || 0;
-  const amount = fromDecimal(amountText || "0", 6, "USDC");
+  // 预测账户内的金额单位是 USDW（抵押品），与账户余额同单位
+  const amount = fromDecimal(amountText || "0", 6, "USDW");
   const request: PlaceOrderRequest | null = market
     ? side === "sell"
       ? { marketId: market.id, outcome, side, type: "market", shares }
@@ -239,7 +240,7 @@ export const OrderSheet = forwardRef<
       : type === "market"
         ? fill(t("predict.order.submitBuy"), {
             outcome: outcomeLabel(outcome),
-            amount: isZero(amount) ? "USDC" : formatMoney(amount, locale),
+            amount: isZero(amount) ? "USDW" : formatMoney(amount, locale),
           })
         : fill(t("predict.order.submitLimit"), {
             outcome: outcomeLabel(outcome),
@@ -372,7 +373,7 @@ export const OrderSheet = forwardRef<
         <AmountInput
           value={amountText}
           onChangeText={setAmountText}
-          symbol="USDC"
+          symbol="USDW"
           decimals={2}
           helper={fill(t("predict.order.available"), {
             amount: available ? formatMoney(available, locale) : "—",

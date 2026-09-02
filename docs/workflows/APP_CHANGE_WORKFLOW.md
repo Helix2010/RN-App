@@ -51,14 +51,14 @@ pnpm workflow:new bugfix wrong-token-decimals
 
 ## 4. 验证矩阵
 
-| 变更 | 最低验证 |
-| --- | --- |
-| 纯逻辑 | unit + typecheck + lint |
-| UI/组件 | 上述 + 交互测试 + light/dark + 字体放大 |
-| API | 上述 + OpenAPI pin + runtime schema + 超时/错误 |
-| 钱包/签名 | mock unit + 测试链/真机 + 拒签/切链/重入 |
-| 原生/权限 | iOS/Android Development Build |
-| OTA/升级 | embedded/OTA/rollback + full channel |
+| 变更      | 最低验证                                        |
+| --------- | ----------------------------------------------- |
+| 纯逻辑    | unit + typecheck + lint                         |
+| UI/组件   | 上述 + 交互测试 + light/dark + 字体放大         |
+| API       | 上述 + OpenAPI pin + runtime schema + 超时/错误 |
+| 钱包/签名 | mock unit + 测试链/真机 + 拒签/切链/重入        |
+| 原生/权限 | iOS/Android Development Build                   |
+| OTA/升级  | embedded/OTA/rollback + full channel            |
 
 `pnpm check` 是提交最低门禁。PR 必须如实区分 passed、failed、not run。
 

@@ -47,6 +47,7 @@ App 端的钱包底座已经把 `walletConnectProjectId`、启用的链、每条
   - `src/core/api.spec.ts` 两例走真实 zod：一例断言 `wallet` 与 `walletCatalog` 能活着穿过 schema——**去掉修复后这两例会失败**（已实测）；一例断言老服务端不下发这些字段时页面仍能加载。
   - `wallet-page.spec.tsx` 五例：未配置时的提示、平台默认标记、粘链接 + 明文 RPC 被拦且不发请求、启用新链并存自定义端点（chainId 来自目录、未改的链存空值）、最后一条链不可关 + 恢复默认。
   - `pages.spec.tsx` 一例：配置中心保存无关字段时 `wallet` 原样带回。注意这一例走的是被 mock 的 adminApi，**不经过 zod**，所以它只能保证页面不丢字段，真正守住剥字段那个 bug 的是 `api.spec.ts` 那两例。
+
 ### 线上实测（部署后，`api.anyfun.win` / `console.anyfun.win`）
 
 - `GET /v1/admin/app-config` 返回 `metadata.walletCatalog`（三条链带 chainId 与默认端点）和 `summary.wallet = {chains:[bsc,eth,base], walletConnectConfigured:false}`——当前租户确实还没填 Project ID。

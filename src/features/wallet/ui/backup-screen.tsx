@@ -198,7 +198,8 @@ export function BackupScreen({
               <Row flexWrap="wrap" gap="$2">
                 {words.map((word, index) => (
                   <Row
-                    key={word}
+                    // 助记词可能重复（12 词里同一个词出现两次是合法的），键要带位置
+                    key={`${index}-${word}`}
                     width="31%"
                     alignItems="center"
                     gap="$2"
@@ -262,11 +263,11 @@ export function BackupScreen({
                     {fill(t("backup.wordAt"), { n: index + 1 })}
                   </Body>
                   <Row gap="$2" flexWrap="wrap">
-                    {(options[index] ?? []).map((word) => {
+                    {(options[index] ?? []).map((word, optionIndex) => {
                       const selected = answers[index] === word;
                       return (
                         <Stack
-                          key={word}
+                          key={`${index}-${optionIndex}`}
                           paddingHorizontal="$3"
                           paddingVertical="$2"
                           borderRadius={999}

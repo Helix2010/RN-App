@@ -5,10 +5,12 @@
 ## 0. 目标与现状
 
 **要什么**：给 App 一个**真实**的 web3 钱包底座，支持
+
 1. **用户注册** = 应用内生成自托管钱包（无需任何外部 App，助记词 + 私钥在本机产生）；
 2. **外部钱包导入** = 两条：(a) 用助记词/私钥导入到本机保管；(b) 连接外部钱包 App（MetaMask/OKX/Trust）签名，私钥不进本应用。
 
 **现状（已就位的"缝"）**：
+
 - 会话层已是 SIWE 形态：`SessionGateway.challenge()` 造 SIWE 消息、`verify()` 用签名换 `Session`（`src/features/session/api/gateway.ts`）；一期是 Mock，只校验 `0x` 前缀。
 - 钱包层 `WalletGateway` 已定义 `connect/signMessage/send/getBalances/listConnectors…`（`src/features/wallet/api/gateway.ts`），一期是内存账本 Mock。
 - 连接器模型已含 `embedded | metamask | okx | trust | walletconnect`，分 `embedded/external` 两类。
@@ -23,25 +25,25 @@
 
 ## 1. 从 Robinhood 逆向里抄什么（每条→我们的对应实现）
 
-| Robinhood 做法（证据） | 安全属性 | 我们在 RN/Expo 的对应 |
-|---|---|---|
-| 种子/密钥在 **native trezor-crypto**（BIP-39 + secp256k1 + ed25519），Java 只是壳（E-005/E-012, EXP-D3） | 密钥不在通用 JS/Java 面 | 用**审计过的库**做 keygen/派生/签名，集中在一个 `signer` 模块（见 §3）。RN 里等价物：`@noble/curves`+`@scure/bip32`+`@scure/bip39`（同作者、被审计），或 `ethers v6` 自带的等价实现 |
-| 静止态：**Android Keystore（user-auth-required）+ 生物识别 + Tink/EncryptedSharedPreferences + SQLCipher**（E-011, F-005） | 落盘密文、解密需本人 | `expo-secure-store`（底层就是 Keystore/Keychain）存**包裹密钥**，生物识别用现有 `app-lock` 那套 `expo-local-authentication` 门控；助记词/私钥只存**密文**，明文永不落盘（见 §4） |
-| 每链签名隔离在 **能力沙箱 WASM（microgram）**，import 只有"消息总线 + 安全 RNG"，无网络/文件/eval（E-018/E-020, EXP-D5） | 单个签名器 bug 影响面最小 | 我们不上 WASM 沙箱（成本过高），但**复刻能力边界**：`signer` 模块是**唯一**能碰私钥的代码，无网络 import；业务层只经网关拿签名，永远看不到私钥（见 §3） |
-| 审计库 + **确定性 nonce**（RFC6979 / ed25519 RFC8032），无自研签名（E-020, EXP-D6） | 签名正确性 | 只用 `@noble/*` / `ethers` / `@solana/web3.js`，绝不自研；随机数走 `react-native-get-random-values`（CSPRNG，对应 Robinhood 的"secure RNG only"） |
-| 加固：**TLS 证书 pinning**（OkHttp CertificatePinner, E-007）、**Play Integrity + RootBeer 根检测**（E-013）、`allowBackup=false`、无 `debuggable`、无明文（E-002）、中央 **`ScreenProtectManager` 给敏感流加 `FLAG_SECURE`**（种子导出/转账/卡号/WebView, E-019/F-002） | 传输、设备、录屏防护 | §6：`expo-screen-capture` 复刻 ScreenProtect；`allowBackup=false` 已在 `app.config.ts`；RN-Server 证书 pinning；可选根/越狱与 Play Integrity 门控在签名前 |
-| 外部钱包经 **WalletConnect（`wc://` deeplink）+ 中央 DeeplinkResolver**（E-003） | 外部钱包不暴露私钥给本应用 | §5：Reown/WalletConnect v2，`wc://` 深链交给现有深链层（预测式返回那次已建原生深链） |
-| **无硬编码密钥/端点**；Firebase key 靠 package+SHA-1 限制（E-020, F-003） | 无泄露 | 助记词/私钥不进任何 bundle、日志、埋点；沿用 AGENTS 的"敏感信息不入日志/埋点/截图"红线 |
+| Robinhood 做法（证据）                                                                                                                                                                                                                                                   | 安全属性                   | 我们在 RN/Expo 的对应                                                                                                                                                               |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 种子/密钥在 **native trezor-crypto**（BIP-39 + secp256k1 + ed25519），Java 只是壳（E-005/E-012, EXP-D3）                                                                                                                                                                 | 密钥不在通用 JS/Java 面    | 用**审计过的库**做 keygen/派生/签名，集中在一个 `signer` 模块（见 §3）。RN 里等价物：`@noble/curves`+`@scure/bip32`+`@scure/bip39`（同作者、被审计），或 `ethers v6` 自带的等价实现 |
+| 静止态：**Android Keystore（user-auth-required）+ 生物识别 + Tink/EncryptedSharedPreferences + SQLCipher**（E-011, F-005）                                                                                                                                               | 落盘密文、解密需本人       | `expo-secure-store`（底层就是 Keystore/Keychain）存**包裹密钥**，生物识别用现有 `app-lock` 那套 `expo-local-authentication` 门控；助记词/私钥只存**密文**，明文永不落盘（见 §4）    |
+| 每链签名隔离在 **能力沙箱 WASM（microgram）**，import 只有"消息总线 + 安全 RNG"，无网络/文件/eval（E-018/E-020, EXP-D5）                                                                                                                                                 | 单个签名器 bug 影响面最小  | 我们不上 WASM 沙箱（成本过高），但**复刻能力边界**：`signer` 模块是**唯一**能碰私钥的代码，无网络 import；业务层只经网关拿签名，永远看不到私钥（见 §3）                             |
+| 审计库 + **确定性 nonce**（RFC6979 / ed25519 RFC8032），无自研签名（E-020, EXP-D6）                                                                                                                                                                                      | 签名正确性                 | 只用 `@noble/*` / `ethers` / `@solana/web3.js`，绝不自研；随机数走 `react-native-get-random-values`（CSPRNG，对应 Robinhood 的"secure RNG only"）                                   |
+| 加固：**TLS 证书 pinning**（OkHttp CertificatePinner, E-007）、**Play Integrity + RootBeer 根检测**（E-013）、`allowBackup=false`、无 `debuggable`、无明文（E-002）、中央 **`ScreenProtectManager` 给敏感流加 `FLAG_SECURE`**（种子导出/转账/卡号/WebView, E-019/F-002） | 传输、设备、录屏防护       | §6：`expo-screen-capture` 复刻 ScreenProtect；`allowBackup=false` 已在 `app.config.ts`；RN-Server 证书 pinning；可选根/越狱与 Play Integrity 门控在签名前                           |
+| 外部钱包经 **WalletConnect（`wc://` deeplink）+ 中央 DeeplinkResolver**（E-003）                                                                                                                                                                                         | 外部钱包不暴露私钥给本应用 | §5：Reown/WalletConnect v2，`wc://` 深链交给现有深链层（预测式返回那次已建原生深链）                                                                                                |
+| **无硬编码密钥/端点**；Firebase key 靠 package+SHA-1 限制（E-020, F-003）                                                                                                                                                                                                | 无泄露                     | 助记词/私钥不进任何 bundle、日志、埋点；沿用 AGENTS 的"敏感信息不入日志/埋点/截图"红线                                                                                              |
 
 一句话：Robinhood = **非托管 + native 密钥 + 沙箱签名 + 纵深防御**。我们照抄"非托管 + 隔离签名 + 纵深防御"，密钥实现用 RN 生态里被审计的纯 JS/原生桥库替代 native trezor-crypto。
 
 ## 2. 三种托管路径（对应用户的两个诉求）
 
-| 路径 | 诉求 | 私钥在哪 | 说明 |
-|---|---|---|---|
-| **A. 内置自托管钱包（注册）** | "用户注册" | 本机加密保管 | 应用内 `generateMnemonic()` → 派生 → 存密文。用户无需任何外部 App 就有钱包。默认新用户走这条 |
-| **B1. 导入到本机** | "外部钱包导入"(a) | 本机加密保管 | 用户输入助记词/私钥 → 校验 → 存进同一 Vault，之后与 A 无差别 |
-| **B2. 连接外部钱包** | "外部钱包导入"(b) | **永远在外部 App** | WalletConnect v2 连 MetaMask/OKX/Trust；我们只拿地址 + 让对方签名。最安全，但依赖用户已装外部钱包 |
+| 路径                          | 诉求              | 私钥在哪           | 说明                                                                                              |
+| ----------------------------- | ----------------- | ------------------ | ------------------------------------------------------------------------------------------------- |
+| **A. 内置自托管钱包（注册）** | "用户注册"        | 本机加密保管       | 应用内 `generateMnemonic()` → 派生 → 存密文。用户无需任何外部 App 就有钱包。默认新用户走这条      |
+| **B1. 导入到本机**            | "外部钱包导入"(a) | 本机加密保管       | 用户输入助记词/私钥 → 校验 → 存进同一 Vault，之后与 A 无差别                                      |
+| **B2. 连接外部钱包**          | "外部钱包导入"(b) | **永远在外部 App** | WalletConnect v2 连 MetaMask/OKX/Trust；我们只拿地址 + 让对方签名。最安全，但依赖用户已装外部钱包 |
 
 三条都产出同一个 `Session`（地址即身份），上层业务（Predict/DEX/资产）无感知差异——差异只在 `Signer` 的实现与 `connector` 字段。
 
@@ -71,15 +73,15 @@ src/core/wallet/
 
 ### 依赖选型（对齐 Robinhood 的"审计库 + CSPRNG"）
 
-| 用途 | 选 | 为什么 |
-|---|---|---|
-| 随机数 | `react-native-get-random-values` | Hermes 无 `crypto.getRandomValues`，必须首行 import 的 CSPRNG polyfill（= 逆向里的 secure RNG） |
-| 助记词/派生 | `@scure/bip39` + `@scure/bip32` | paulmillr 审计库，trezor-crypto 的 JS 对位 |
-| EVM 签名/交易/Provider | **`ethers v6`**（或 `viem`） | EVM 是当前唯一链集合；自带审计过的 secp256k1（RFC6979 确定性）、EIP-712、EIP-155 |
-| KDF（包裹密钥） | `react-native-quick-crypto` 的 scrypt | 原生 OpenSSL 后端，比纯 JS 快很多；给 Vault 加密用 |
-| 外部钱包 | `@reown/appkit`（WalletConnect v2 RN） | `wc://` 深链 + 会话，官方维护 |
-| 录屏防护 | `expo-screen-capture` | FLAG_SECURE（Android）/ 截屏拦截（iOS），复刻 ScreenProtectManager |
-| Solana（后续） | `@solana/web3.js` + ed25519 | 仅当链集合扩到 Solana 时引入 |
+| 用途                   | 选                                     | 为什么                                                                                          |
+| ---------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| 随机数                 | `react-native-get-random-values`       | Hermes 无 `crypto.getRandomValues`，必须首行 import 的 CSPRNG polyfill（= 逆向里的 secure RNG） |
+| 助记词/派生            | `@scure/bip39` + `@scure/bip32`        | paulmillr 审计库，trezor-crypto 的 JS 对位                                                      |
+| EVM 签名/交易/Provider | **`ethers v6`**（或 `viem`）           | EVM 是当前唯一链集合；自带审计过的 secp256k1（RFC6979 确定性）、EIP-712、EIP-155                |
+| KDF（包裹密钥）        | `react-native-quick-crypto` 的 scrypt  | 原生 OpenSSL 后端，比纯 JS 快很多；给 Vault 加密用                                              |
+| 外部钱包               | `@reown/appkit`（WalletConnect v2 RN） | `wc://` 深链 + 会话，官方维护                                                                   |
+| 录屏防护               | `expo-screen-capture`                  | FLAG_SECURE（Android）/ 截屏拦截（iOS），复刻 ScreenProtectManager                              |
+| Solana（后续）         | `@solana/web3.js` + ed25519            | 仅当链集合扩到 Solana 时引入                                                                    |
 
 > 都是 OTA 不可下发的原生/ABI 变更（`react-native-get-random-values`、`quick-crypto`、`reown`、`screen-capture` 含原生模块），必须走全量包，`runtimeVersion` 递增——已在 AGENTS/RUNBOOK 的红线内。
 
@@ -122,14 +124,14 @@ src/core/wallet/
 
 ## 8. 分期交付
 
-| 阶段 | 内容 | 产出 |
-|---|---|---|
-| **P0 密钥底座** | `keygen` + `KeystoreVault` + `EmbeddedSigner`；RNG polyfill；单测（派生向量、加解密、门控降级） | 能生成/导入/加密保管/签名，纯逻辑可测，不动 UI |
-| **P1 注册 + 导入（A/B1）** | 创建钱包流程页（助记词展示/校验/确认）、导入页（助记词/私钥）；`EmbeddedWalletGateway` 替换 Mock；`backup-screen` 接真 | 模拟器可注册/导入/备份/签名登录 |
-| **P2 真 SIWE** | RN-Server `auth/nonce`+`auth/verify` + `wallet_user` 表；`HttpSessionGateway`；`bootstrap.services.mode` 切 live | 地址登录端到端（内置钱包） |
-| **P3 外部钱包（B2）** | Reown AppKit + `wc://` resolver + `WalletConnectGateway` | 连 MetaMask/OKX/Trust 登录与签名 |
-| **P4 加固** | `expo-screen-capture` 敏感页、TLS pin、可选根检测/Play Integrity | 达到 Robinhood 同级纵深防御 |
-| **P5 多链签名（可选）** | 链集合扩 Solana/BTC 时再引 ed25519/UTXO 签名，signer 按链分派（对位 microgram 三签名器） | 按业务需要 |
+| 阶段                       | 内容                                                                                                                   | 产出                                           |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| **P0 密钥底座**            | `keygen` + `KeystoreVault` + `EmbeddedSigner`；RNG polyfill；单测（派生向量、加解密、门控降级）                        | 能生成/导入/加密保管/签名，纯逻辑可测，不动 UI |
+| **P1 注册 + 导入（A/B1）** | 创建钱包流程页（助记词展示/校验/确认）、导入页（助记词/私钥）；`EmbeddedWalletGateway` 替换 Mock；`backup-screen` 接真 | 模拟器可注册/导入/备份/签名登录                |
+| **P2 真 SIWE**             | RN-Server `auth/nonce`+`auth/verify` + `wallet_user` 表；`HttpSessionGateway`；`bootstrap.services.mode` 切 live       | 地址登录端到端（内置钱包）                     |
+| **P3 外部钱包（B2）**      | Reown AppKit + `wc://` resolver + `WalletConnectGateway`                                                               | 连 MetaMask/OKX/Trust 登录与签名               |
+| **P4 加固**                | `expo-screen-capture` 敏感页、TLS pin、可选根检测/Play Integrity                                                       | 达到 Robinhood 同级纵深防御                    |
+| **P5 多链签名（可选）**    | 链集合扩 Solana/BTC 时再引 ed25519/UTXO 签名，signer 按链分派（对位 microgram 三签名器）                               | 按业务需要                                     |
 
 每阶段都在 `rn_smoke` 模拟器验证；密钥/签名相关必须有确定性测试向量（BIP-39/BIP-44 官方向量、EIP-712 已知签名）。
 

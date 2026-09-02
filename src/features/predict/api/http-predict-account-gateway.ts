@@ -108,6 +108,10 @@ const PENDING_KEY_PREFIX = "foundation.predict.pending-withdrawals.v1";
  * 跟着旧安装留下来；普通存储会被清空，所以标记不在 = 重装后首次启动 → 清掉凭证（§3.3）。
  */
 const INSTALL_MARKER_KEY = "foundation.predict.credentials-install.v1";
+/** relayer 报已上链后等链上状态可见：最多 10 次 × 1.5 秒 */
+const CHAIN_VISIBILITY_ATTEMPTS = 10;
+const CHAIN_VISIBILITY_DELAY_MS = 1_500;
+
 /** wrap 相对 approve 的 gas 倍数上界（approve ≈ 46k，wrap ≈ 120–180k，见 `contract-call-service.ts`） */
 const WRAP_GAS_MULTIPLE = 4n;
 const JWT_REFRESH_MARGIN_SECONDS = 300;
@@ -412,8 +416,29 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
         })),
       ]);
       await this.relaySafeTx(ctx, auth, signer, safe.address, multiSend, data);
+      // relayer 报已上链后，App 读链的公共节点可能落后几秒；授权可见了才算启用完成，
+      // 否则这里会把刚启用的账户误报成"未授权"（模拟器联调实测）
+      await this.waitUntil(
+        () => this.approvalsPresent(ctx, safe.address),
+        "the relayer reported the approval transaction as mined but the approvals are still not visible on-chain",
+      );
     }
     return this.enablement(address);
+  }
+
+  /** 轮询直到链上状态可见（relayer 与 App 读链节点不是同一个）；超时按失败。 */
+  private async waitUntil(
+    check: () => Promise<boolean>,
+    failure: string,
+  ): Promise<void> {
+    const sleep =
+      this.deps.sleep ??
+      ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+    for (let attempt = 0; attempt < CHAIN_VISIBILITY_ATTEMPTS; attempt += 1) {
+      if (await check()) return;
+      await sleep(CHAIN_VISIBILITY_DELAY_MS);
+    }
+    throw new Error(failure);
   }
 
   /** 签一笔 SafeTx（MultiSend，delegatecall）并经 relayer 执行到终态；返回链上 txHash。 */

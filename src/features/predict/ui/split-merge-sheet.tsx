@@ -76,7 +76,8 @@ export const SplitMergeSheet = forwardRef<
       (item) => item.marketId === marketId && item.outcome === "no",
     )?.shares ?? 0;
   const mergeable = Math.floor(Math.min(yes, no));
-  const amount = fromDecimal(text || "0", 6, "USDC");
+  // 拆分 / 合并的抵押品是 USDW，与账户余额同单位
+  const amount = fromDecimal(text || "0", 6, "USDW");
   const available = balance.data?.available;
   const insufficient =
     direction === "split"
@@ -139,7 +140,7 @@ export const SplitMergeSheet = forwardRef<
             value={text}
             onChangeText={setText}
             symbol={
-              direction === "split" ? "USDC" : t("predict.order.shares.unit")
+              direction === "split" ? "USDW" : t("predict.order.shares.unit")
             }
             decimals={direction === "split" ? 2 : 0}
             helper={
@@ -175,7 +176,7 @@ export const SplitMergeSheet = forwardRef<
           >
             {direction === "split"
               ? fill(t("split.submitSplit"), {
-                  amount: isZero(amount) ? "USDC" : formatMoney(amount, locale),
+                  amount: isZero(amount) ? "USDW" : formatMoney(amount, locale),
                 })
               : fill(t("split.submitMerge"), { n: text || 0 })}
           </PrimaryButton>

@@ -103,7 +103,8 @@ export class PredictUnsupportedError extends Error {
 }
 
 const SIGN_REASON = "predict.sign.reason";
-const USDC_DECIMALS = 6;
+/** 预测账户内的一切金额（成交额、持仓市值、盈亏、活动）都是 USDW（抵押品，6 位）——与账户余额同一单位才能比较 */
+const USDW_DECIMALS = 6;
 const ONE_USDC = 1_000_000n;
 
 function cents(price: number): number {
@@ -151,8 +152,8 @@ function bookMidCents(book: OrderBook): number | null {
   return ask ?? bid;
 }
 
-function usdc(amount: number): Money {
-  return money(BigInt(Math.round(amount * 1_000_000)), USDC_DECIMALS, "USDC");
+function usdw(amount: number): Money {
+  return money(BigInt(Math.round(amount * 1_000_000)), USDW_DECIMALS, "USDW");
 }
 
 function iso(seconds: number): string {
@@ -405,9 +406,9 @@ export class HttpPredictGateway implements PredictGateway {
       shares: position.size,
       avgPriceCents: cents(position.avgPrice),
       curPriceCents: cents(position.curPrice),
-      value: usdc(position.currentValue),
-      costBasis: usdc(position.initialValue),
-      pnl: usdc(position.cashPnl),
+      value: usdw(position.currentValue),
+      costBasis: usdw(position.initialValue),
+      pnl: usdw(position.cashPnl),
       pnlPct: position.percentPnl,
       status,
       redeemable: position.redeemable ?? false,
@@ -424,7 +425,7 @@ export class HttpPredictGateway implements PredictGateway {
       type === "MERGE" ||
       type === "MAKER_REBATE" ||
       (type === "TRADE" && side === "SELL");
-    const amount = usdc(inflow ? item.usdcSize : -item.usdcSize);
+    const amount = usdw(inflow ? item.usdcSize : -item.usdcSize);
     return {
       id: item.id ?? `${item.type}:${item.timestamp}:${item.asset ?? index}`,
       type,
@@ -772,9 +773,9 @@ export class HttpPredictGateway implements PredictGateway {
           ? { shares: size / price, cost: size }
           : { shares: size, cost: size * price };
     const shares = Math.floor(filled.shares * 100) / 100;
-    const cost = usdc(filled.cost);
-    const fee = usdc((filled.cost * feeRateBps) / 10_000);
-    const payout = usdc(shares);
+    const cost = usdw(filled.cost);
+    const fee = usdw((filled.cost * feeRateBps) / 10_000);
+    const payout = usdw(shares);
     const costNumber = filled.cost;
     return {
       estimatedShares: shares,
@@ -854,8 +855,8 @@ export class HttpPredictGateway implements PredictGateway {
       filledShares,
       avgPriceCents:
         filledShares > 0 ? Math.round((filledUsdc / filledShares) * 100) : 0,
-      fee: usdc((filledUsdc * feeRateBps) / 10_000),
-      cost: usdc(filledUsdc),
+      fee: usdw((filledUsdc * feeRateBps) / 10_000),
+      cost: usdw(filledUsdc),
     };
   }
 
@@ -1017,9 +1018,9 @@ export class HttpPredictGateway implements PredictGateway {
   ): Promise<PredictTx> {
     const ctx = await this.deps.account.tradingContext(address);
     const ref = await this.marketRef(marketId);
-    if (amount.decimals !== USDC_DECIMALS)
+    if (amount.decimals !== USDW_DECIMALS)
       throw new Error(
-        `split / merge amount must be ${USDC_DECIMALS}-decimal USDC`,
+        `split / merge amount must be ${USDW_DECIMALS}-decimal USDW`,
       );
     const raw = BigInt(amount.raw);
     if (raw <= 0n) throw new Error("split / merge amount must be positive");

@@ -61,7 +61,7 @@ describe("MockPredictGateway", () => {
       outcome: "yes",
       side: "buy",
       type: "market",
-      amount: fromDecimal("100", 6, "USDC"),
+      amount: fromDecimal("100", 6, "USDW"),
     });
     expect(toDecimalString(preview.fee)).toBe("0.2");
     expect(preview.estimatedShares).toBeGreaterThan(150);
@@ -70,7 +70,7 @@ describe("MockPredictGateway", () => {
       outcome: "yes",
       side: "buy",
       type: "market",
-      amount: fromDecimal("100", 6, "USDC"),
+      amount: fromDecimal("100", 6, "USDW"),
     });
     expect(result.status).toBe("filled");
     const after = await gateway.getBalance(ADDRESS);
@@ -149,7 +149,7 @@ describe("MockPredictGateway", () => {
         outcome: "yes",
         side: "buy",
         type: "market",
-        amount: fromDecimal("10", 6, "USDC"),
+        amount: fromDecimal("10", 6, "USDW"),
       }),
     ).rejects.toThrow(/closed/);
   });
@@ -181,7 +181,7 @@ describe("MockPredictGateway", () => {
       ADDRESS,
       "m-fomc-25",
       "split",
-      fromDecimal("100", 6, "USDC"),
+      fromDecimal("100", 6, "USDW"),
     );
     const positions = await gateway.listPositions(ADDRESS);
     expect(
@@ -196,7 +196,7 @@ describe("MockPredictGateway", () => {
       ADDRESS,
       "m-fomc-25",
       "merge",
-      fromDecimal("100", 6, "USDC"),
+      fromDecimal("100", 6, "USDW"),
     );
     const after = await gateway.getBalance(ADDRESS);
     expect(toApproxNumber(after.available)).toBeCloseTo(
@@ -213,7 +213,7 @@ describe("MockPredictGateway", () => {
       outcome: "no",
       side: "buy",
       type: "market",
-      amount: fromDecimal("10", 6, "USDC"),
+      amount: fromDecimal("10", 6, "USDW"),
     });
     const second = new MockPredictGateway(storage);
     const positions = await second.listPositions(ADDRESS);
@@ -231,7 +231,7 @@ describe("MockPredictGateway", () => {
         outcome: "yes",
         side: "buy",
         type: "market",
-        amount: fromDecimal("100", 6, "USDC"),
+        amount: fromDecimal("100", 6, "USDW"),
       }),
     ).rejects.toMatchObject({ kind: "server" });
     useMockRuntime.getState().set({ failureRate: 0 });

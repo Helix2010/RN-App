@@ -49,15 +49,15 @@
 
 验证按风险分层：
 
-| 变更 | 最低验证 |
-| --- | --- |
-| 纯函数/模型 | 单元测试、typecheck、lint |
-| UI 组件 | 上述 + 交互测试 + light/dark/字体放大截图 |
-| 页面/导航 | 上述 + 状态矩阵 + 对应 E2E |
-| API | 上述 + client regenerate + contract test + 错误路径 |
-| 持久化 | migration 前后、进程重启、降级/回滚测试 |
-| 原生/权限/SDK | iOS/Android development build + 真机关键路径 |
-| 更新/启动 | embedded/OTA/回滚/离线/启动崩溃矩阵 |
+| 变更          | 最低验证                                            |
+| ------------- | --------------------------------------------------- |
+| 纯函数/模型   | 单元测试、typecheck、lint                           |
+| UI 组件       | 上述 + 交互测试 + light/dark/字体放大截图           |
+| 页面/导航     | 上述 + 状态矩阵 + 对应 E2E                          |
+| API           | 上述 + client regenerate + contract test + 错误路径 |
+| 持久化        | migration 前后、进程重启、降级/回滚测试             |
+| 原生/权限/SDK | iOS/Android development build + 真机关键路径        |
+| 更新/启动     | embedded/OTA/回滚/离线/启动崩溃矩阵                 |
 
 测试报告必须区分 passed、failed、not run；禁止把“代码看起来正确”写成“已验证”。
 

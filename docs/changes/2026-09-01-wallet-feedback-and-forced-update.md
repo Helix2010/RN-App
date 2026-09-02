@@ -13,6 +13,7 @@
 两处都栽在它上面：连接时唤起钱包（落到二维码，手机没法扫自己的屏幕），以及**签名时把用户切到钱包**（请求已经通过 relay 发出去，用户却被留在原地，App 干等到超时）。后者正是"其实已经操作了"的来源。
 
 改法两条腿：
+
 - 新增 config plugin `plugins/with-wallet-deep-links.js` 声明四个 package 与对应 scheme，让探测恢复真实；
 - **唤起动作不再依赖 `canOpenURL`**，直接 `openURL` 失败再退。`openURL` 走 startActivity，不受 package visibility 限制。即使以后漏声明某个钱包，唤起照样能成。
 
@@ -20,12 +21,12 @@
 
 代码里写 `okx://main/wc?uri=`。查 Reown 官方钱包注册表（用本租户 projectId 实时查的，钱包厂商自己提交的数据）：
 
-| 钱包 | scheme | Android package |
-| --- | --- | --- |
-| MetaMask | `metamask://` | `io.metamask` |
-| Trust | `trust://` | `com.wallet.crypto.trustapp` |
-| OKX（交易所主 App） | `okex://main` | `com.okinc.okex.gp` |
-| OKX（独立钱包 App） | `okxwallet://main` | `com.okx.wallet` |
+| 钱包                | scheme             | Android package              |
+| ------------------- | ------------------ | ---------------------------- |
+| MetaMask            | `metamask://`      | `io.metamask`                |
+| Trust               | `trust://`         | `com.wallet.crypto.trustapp` |
+| OKX（交易所主 App） | `okex://main`      | `com.okinc.okex.gp`          |
+| OKX（独立钱包 App） | `okxwallet://main` | `com.okx.wallet`             |
 
 `okx://` 根本不存在，而且 OKX 有两个 App。深链表收进 `wallet-deep-links.ts` 作为唯一真相源，每个钱包是候选列表，按顺序试。
 

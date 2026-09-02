@@ -8,11 +8,11 @@
 
 先把事实摆清楚，三个仓库都查过：
 
-| 层 | 现状 | 证据 |
-| --- | --- | --- |
-| RN-Server | **完全没有代币概念**。没有代币表、没有代币 API、没有任何把代币下发给 App 的通路 | `internal/api/server.go` 的 `validateWalletSection` 只允许 `walletConnectProjectId` / `chains` / `networks` / `onchainSends` 四个键；迁移最大编号 27，无一与代币相关 |
-| RN-Admin | **没有任何代币管理界面**。「钱包与链」页只能配 projectId、每条链的启用开关 / 自定义 RPC / 区块浏览器地址、链上转出开关 | `src/modules/app-config/wallet-page.tsx`；全仓搜 token/coin/币种，只命中测试网风险提示文案 |
-| RN-App | 代币写死在 `src/features/wallet/fixtures/wallet.ts`，`verified` 是手写的字面量布尔值；**没有任何从服务端拉代币列表的代码** | `fixtures/wallet.ts:54-163`；`bootstrap.schema.ts` 的 wallet 段无代币字段 |
+| 层        | 现状                                                                                                                       | 证据                                                                                                                                                                 |
+| --------- | -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| RN-Server | **完全没有代币概念**。没有代币表、没有代币 API、没有任何把代币下发给 App 的通路                                            | `internal/api/server.go` 的 `validateWalletSection` 只允许 `walletConnectProjectId` / `chains` / `networks` / `onchainSends` 四个键；迁移最大编号 27，无一与代币相关 |
+| RN-Admin  | **没有任何代币管理界面**。「钱包与链」页只能配 projectId、每条链的启用开关 / 自定义 RPC / 区块浏览器地址、链上转出开关     | `src/modules/app-config/wallet-page.tsx`；全仓搜 token/coin/币种，只命中测试网风险提示文案                                                                           |
+| RN-App    | 代币写死在 `src/features/wallet/fixtures/wallet.ts`，`verified` 是手写的字面量布尔值；**没有任何从服务端拉代币列表的代码** | `fixtures/wallet.ts:54-163`；`bootstrap.schema.ts` 的 wallet 段无代币字段                                                                                            |
 
 所以"不同链不同租户的币种会不一样"这件事**现在完全没有支撑**——所有租户看到的是同一份写死的演示币。
 
@@ -58,10 +58,10 @@ CREATE TABLE IF NOT EXISTS chain_token_catalog (
 
 ### 两个精度是两回事，必须分开命名
 
-| 列 | 含义 | 来源 | 谁能改 | 用在哪 |
-| --- | --- | --- | --- | --- |
-| `decimals` | **链上精度**，协议事实 | 添加时从链上 `decimals()` 读 | 谁都不能改；只能"重新从链上读取" | 最小单位与人类可读金额之间的换算、签名、余额比较 |
-| `display_decimals` | **展示精度**，产品决定 | 添加时默认 `min(6, decimals)`（稳定币建议 2） | 运营 | 列表、余额、输入框、"全部转出"的截断 |
+| 列                 | 含义                   | 来源                                          | 谁能改                           | 用在哪                                           |
+| ------------------ | ---------------------- | --------------------------------------------- | -------------------------------- | ------------------------------------------------ |
+| `decimals`         | **链上精度**，协议事实 | 添加时从链上 `decimals()` 读                  | 谁都不能改；只能"重新从链上读取" | 最小单位与人类可读金额之间的换算、签名、余额比较 |
+| `display_decimals` | **展示精度**，产品决定 | 添加时默认 `min(6, decimals)`（稳定币建议 2） | 运营                             | 列表、余额、输入框、"全部转出"的截断             |
 
 写死的规则：**展示精度只影响"显示成什么样"，任何一处金额换算都不允许读它。** 一旦有人拿
 `display_decimals` 去算最小单位，就会出现 USDT 转 1.005 实际转 1.00 这类静默差错。App 侧
@@ -130,14 +130,14 @@ CREATE TABLE IF NOT EXISTS chain_token_catalog (
 
 ### 管理端（`/v1/admin/tokens`，全部走既有的 reason + expectedVersion + audit_events）
 
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| GET | `/v1/admin/tokens?chain=` | 合并视图（全局 + 本租户覆盖），每行标注 `scope: global \| tenant` |
-| POST | `/v1/admin/tokens/preview` | 入参 `{chain, contractAddress}`。**只读链、不入库**，返回 `{symbol, name, decimals, codeSize, allowlisted}`，供表单预览 |
-| POST | `/v1/admin/tokens` | 入参 `{chain, contractAddress, displayDecimals, name?, logoColor?, sortWeight?}`。服务端**再读一次链**回填 `symbol` / `decimals`（不信 preview 的结果——那是两个请求，中间可以被改） |
-| PATCH | `/v1/admin/tokens/{id}` | 只接受 `name` / `displayDecimals` / `logoColor` / `sortWeight` / `enabled`；出现 `symbol` / `decimals` / `contractAddress` / `chain` 直接 400 |
-| POST | `/v1/admin/tokens/{id}/resync` | 重新从链上读取 `symbol` / `decimals`；读到的值与库里不一致时**不覆盖**，返回差异让运营确认——精度变了意味着合约升级或地址被换，不该静默接受 |
-| DELETE | `/v1/admin/tokens/{id}` | 软删除 |
+| 方法   | 路径                           | 说明                                                                                                                                                                                |
+| ------ | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/v1/admin/tokens?chain=`      | 合并视图（全局 + 本租户覆盖），每行标注 `scope: global \| tenant`                                                                                                                   |
+| POST   | `/v1/admin/tokens/preview`     | 入参 `{chain, contractAddress}`。**只读链、不入库**，返回 `{symbol, name, decimals, codeSize, allowlisted}`，供表单预览                                                             |
+| POST   | `/v1/admin/tokens`             | 入参 `{chain, contractAddress, displayDecimals, name?, logoColor?, sortWeight?}`。服务端**再读一次链**回填 `symbol` / `decimals`（不信 preview 的结果——那是两个请求，中间可以被改） |
+| PATCH  | `/v1/admin/tokens/{id}`        | 只接受 `name` / `displayDecimals` / `logoColor` / `sortWeight` / `enabled`；出现 `symbol` / `decimals` / `contractAddress` / `chain` 直接 400                                       |
+| POST   | `/v1/admin/tokens/{id}/resync` | 重新从链上读取 `symbol` / `decimals`；读到的值与库里不一致时**不覆盖**，返回差异让运营确认——精度变了意味着合约升级或地址被换，不该静默接受                                          |
+| DELETE | `/v1/admin/tokens/{id}`        | 软删除                                                                                                                                                                              |
 
 校验：`displayDecimals` 必须是 `0 ≤ n ≤ decimals` 的整数；`contractAddress` 入库前 EIP-55
 规范化；同一 `(chain, contractAddress, tenant)` 重复时 409。
@@ -197,13 +197,13 @@ CREATE TABLE IF NOT EXISTS chain_token_catalog (
 后再做本地化格式化。截断而不是四舍五入，因为四舍五入会把 0.999 显示成 1.00——用户看到
 "1.00 USDT"却转不出 1 个。
 
-| 位置 | 用什么 |
-| --- | --- |
-| 资产列表、账户详情、发送页的"余额 {amount}" | `formatTokenAmount`（展示精度） |
-| 金额输入框 `AmountInput` 的 `decimals` | 展示精度（不能输入比能看到的更多位） |
-| "全部转出" / 25%～100% 预设 | 先按整数算出精确值，再**截断到展示精度**填入输入框——所见即所签，多出来的尘埃留在余额里 |
-| 确认页的金额行、进度页标题 | **精确值**（`toDecimalString` 全精度），已落地；这一处永远不截断 |
-| 手续费 | 原生币的展示精度，但不足一个最小展示单位时显示 `< 0.0001 BNB` 而不是 `0.0000 BNB` |
+| 位置                                        | 用什么                                                                                 |
+| ------------------------------------------- | -------------------------------------------------------------------------------------- |
+| 资产列表、账户详情、发送页的"余额 {amount}" | `formatTokenAmount`（展示精度）                                                        |
+| 金额输入框 `AmountInput` 的 `decimals`      | 展示精度（不能输入比能看到的更多位）                                                   |
+| "全部转出" / 25%～100% 预设                 | 先按整数算出精确值，再**截断到展示精度**填入输入框——所见即所签，多出来的尘埃留在余额里 |
+| 确认页的金额行、进度页标题                  | **精确值**（`toDecimalString` 全精度），已落地；这一处永远不截断                       |
+| 手续费                                      | 原生币的展示精度，但不足一个最小展示单位时显示 `< 0.0001 BNB` 而不是 `0.0000 BNB`      |
 
 第四行是关键：之前"全部转出"填的是全精度余额，现在输入框只能显示展示精度，两者不一致会
 让用户看到 `1.23` 却签出 `1.234567`。统一成"填进输入框的就是要签的"。
@@ -241,11 +241,11 @@ symbol、精度（`18 位 · 展示 2 位`）、启用状态、白名单提示�
 
 **添加表单（三步，字段权限写死）**：
 
-| 步骤 | 字段 | 可编辑 |
-| --- | --- | --- |
-| 1 | 链（下拉，来自 `walletCatalog`）、合约地址 | 是 |
-| 2 | 点「读取链上信息」→ 调 `preview` → 显示 symbol / name / decimals / 是否在白名单 | **symbol、decimals 只读灰显**；name 预填可改 |
-| 3 | 展示精度（默认 `min(6, decimals)`，上限 = decimals，界面上写明"只影响显示"）、排序、颜色、启用 | 是 |
+| 步骤 | 字段                                                                                           | 可编辑                                       |
+| ---- | ---------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| 1    | 链（下拉，来自 `walletCatalog`）、合约地址                                                     | 是                                           |
+| 2    | 点「读取链上信息」→ 调 `preview` → 显示 symbol / name / decimals / 是否在白名单                | **symbol、decimals 只读灰显**；name 预填可改 |
+| 3    | 展示精度（默认 `min(6, decimals)`，上限 = decimals，界面上写明"只影响显示"）、排序、颜色、启用 | 是                                           |
 
 「读取链上信息」失败时（不是合约、超时、链不匹配）表单不能进入第三步——没有链上数据就没有
 这条记录。

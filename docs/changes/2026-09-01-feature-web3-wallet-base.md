@@ -40,6 +40,7 @@
 依赖（均为审计过的实现，不自研密码学）：`ethers@6`（secp256k1 RFC6979 确定性 nonce、BIP-39/44、EIP-712）、`@noble/ciphers`（AES-GCM）、`@noble/hashes`（HKDF/scrypt）、`react-native-get-random-values`（Hermes 缺 `crypto.getRandomValues`，polyfill 必须排在 `index.ts` 最前）。
 
 配套调整：
+
 - `package.json` 的 `jest.transformIgnorePatterns` 加入 `@noble|@scure` —— 这两个包 v2 起是纯 ESM，Metro 能处理，jest 需要显式转译。
 - `withPrivateKey` 的回调参数不能命名 `use`：`react-hooks/rules-of-hooks` 会把类方法里的 `use(...)` 当成 React 19 的 `use()` hook 而报错。
 

@@ -9,12 +9,12 @@
 
 ## 决定
 
-| 能力 | 选型 | 理由 |
-| --- | --- | --- |
+| 能力     | 选型                                                                  | 理由                                                                             |
+| -------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | 半屏面板 | `@gorhom/bottom-sheet` v5（`BottomSheetModal` + 动态高度 + 键盘避让） | 纯 JS，基于已引入的 reanimated / gesture-handler；拖拽关闭、遮罩点按、多档位齐全 |
-| 图表 | `react-native-svg` 自绘（`Sparkline` / `AreaChart` / `CandleChart`） | 体量小、可完全跟随主题 token；先不引入 skia / victory，避免包体与原生依赖膨胀 |
-| 触感 | `expo-haptics` | 与 Expo 版本对齐 |
-| 剪贴板 | `expo-clipboard` | 地址复制 + toast |
+| 图表     | `react-native-svg` 自绘（`Sparkline` / `AreaChart` / `CandleChart`）  | 体量小、可完全跟随主题 token；先不引入 skia / victory，避免包体与原生依赖膨胀    |
+| 触感     | `expo-haptics`                                                        | 与 Expo 版本对齐                                                                 |
+| 剪贴板   | `expo-clipboard`                                                      | 地址复制 + toast                                                                 |
 
 设计系统统一封装：`src/design-system/sheet.tsx`（`Sheet`，`locked` 时禁用全部关闭手段）、`controls.tsx`（`Switch` / `RadioRow` / `Tabs` / `TextField` / `AmountInput` / `DetailRow`）、`toast.tsx`（zustand 队列 + `ToastHost`）、`charts.tsx`。features 仍禁止直接引用 `tamagui` / 第三方 UI 库，只能经由 design-system。
 

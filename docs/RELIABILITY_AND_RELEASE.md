@@ -41,17 +41,17 @@ feature query/mutation
 ```ts
 type AppError = {
   kind:
-    | 'network'
-    | 'timeout'
-    | 'cancelled'
-    | 'unauthorized'
-    | 'forbidden'
-    | 'validation'
-    | 'conflict'
-    | 'rate_limited'
-    | 'server'
-    | 'incompatible_response'
-    | 'unknown';
+    | "network"
+    | "timeout"
+    | "cancelled"
+    | "unauthorized"
+    | "forbidden"
+    | "validation"
+    | "conflict"
+    | "rate_limited"
+    | "server"
+    | "incompatible_response"
+    | "unknown";
   code?: string;
   userMessageKey: string;
   retryable: boolean;
@@ -71,12 +71,12 @@ TypeScript 类型不等于运行时安全。启动配置、认证、升级策略
 
 ### 2.1 四类信号
 
-| 信号 | 示例 | 处理 |
-| --- | --- | --- |
-| native crash | iOS signal、Android fatal | 自动采集、符号化、按 release 聚合 |
-| JS fatal | 未捕获异常、渲染错误 | 根 ErrorBoundary + feature boundary，保留恢复路径 |
-| handled error | 请求、解析、业务不变量失败 | 按严重度采样，关联 requestId/traceId |
-| performance | 冷启动、慢页面、慢请求、ANR | transaction/span + 版本和设备维度 |
+| 信号          | 示例                        | 处理                                              |
+| ------------- | --------------------------- | ------------------------------------------------- |
+| native crash  | iOS signal、Android fatal   | 自动采集、符号化、按 release 聚合                 |
+| JS fatal      | 未捕获异常、渲染错误        | 根 ErrorBoundary + feature boundary，保留恢复路径 |
+| handled error | 请求、解析、业务不变量失败  | 按严重度采样，关联 requestId/traceId              |
+| performance   | 冷启动、慢页面、慢请求、ANR | transaction/span + 版本和设备维度                 |
 
 根 ErrorBoundary 不能只显示白屏或自动重启循环。它提供安全重试、回到首页、复制诊断 ID；连续启动崩溃时进入 safe mode，跳过疑似热更新并回退到嵌入 bundle。
 

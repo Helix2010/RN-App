@@ -54,8 +54,8 @@ import type {
 } from "../model/predict";
 import type { PredictGateway } from "./gateway";
 
-const USDC = { decimals: 6, symbol: "USDC" };
-const usdc = (text: string) => fromDecimal(text, USDC.decimals, USDC.symbol);
+const USDW = { decimals: 6, symbol: "USDW" };
+const usdc = (text: string) => fromDecimal(text, USDW.decimals, USDW.symbol);
 const BOND = usdc("50");
 /** 交易截止后多久商户"提交结果"（Mock 加速：10 分钟） */
 const PROPOSE_DELAY_MS = 10 * 60 * 1_000;
@@ -226,7 +226,7 @@ export class MockPredictGateway implements PredictGateway {
         marketId: "m-btc-120k",
         eventId: "ev-btc-120k",
         title: localized("买入 Yes · 100 份", "Buy Yes · 100 shares"),
-        amount: money((-toBigInt(usdc("62.20"))).toString(), 6, "USDC"),
+        amount: money((-toBigInt(usdc("62.20"))).toString(), 6, "USDW"),
         detail: localized("含费 0.20", "incl. fee 0.20"),
         at: "2026-08-30T03:42:00Z",
       },
@@ -236,10 +236,10 @@ export class MockPredictGateway implements PredictGateway {
         marketId: "m-eth-etf",
         eventId: "ev-eth-etf",
         title: localized("拆分（Split）", "Split"),
-        amount: money((-toBigInt(usdc("100"))).toString(), 6, "USDC"),
+        amount: money((-toBigInt(usdc("100"))).toString(), 6, "USDW"),
         detail: localized(
-          "100 USDC → 100 Yes + 100 No",
-          "100 USDC → 100 Yes + 100 No",
+          "100 USDW → 100 Yes + 100 No",
+          "100 USDW → 100 Yes + 100 No",
         ),
         at: "2026-08-29T12:15:00Z",
       },
@@ -249,7 +249,7 @@ export class MockPredictGateway implements PredictGateway {
         marketId: "m-mun-liv",
         eventId: "ev-mun-liv",
         title: localized("争议押金锁定", "Dispute bond locked"),
-        amount: money((-toBigInt(BOND)).toString(), 6, "USDC"),
+        amount: money((-toBigInt(BOND)).toString(), 6, "USDW"),
         detail: localized("裁决后返还", "Returned after ruling"),
         at: "2026-08-29T18:02:00Z",
       },
@@ -545,14 +545,14 @@ export class MockPredictGateway implements PredictGateway {
       const positions = await this.computePositions(state, address);
       const positionsValue = positions
         .filter((p) => p.status !== "settled")
-        .reduce((sum, p) => add(sum, p.value), zero(6, "USDC"));
+        .reduce((sum, p) => add(sum, p.value), zero(6, "USDW"));
       const claimable = positions
         .filter((p) => p.redeemable)
-        .reduce((sum, p) => add(sum, p.value), zero(6, "USDC"));
+        .reduce((sum, p) => add(sum, p.value), zero(6, "USDW"));
       await this.save();
       return {
-        available: money(balance.available, 6, "USDC"),
-        lockedInOrders: money(balance.locked, 6, "USDC"),
+        available: money(balance.available, 6, "USDW"),
+        lockedInOrders: money(balance.locked, 6, "USDW"),
         positionsValue,
         claimable,
       };
@@ -576,7 +576,7 @@ export class MockPredictGateway implements PredictGateway {
     if (request.side === "buy") {
       const amount =
         request.type === "market"
-          ? (request.amount ?? zero(6, "USDC"))
+          ? (request.amount ?? zero(6, "USDW"))
           : sharesToMoney(request.shares ?? 0, price);
       const fee = scaleBps(amount, event.feeBps);
       const net = sub(amount, fee);
@@ -635,10 +635,10 @@ export class MockPredictGateway implements PredictGateway {
           request.type === "market" || (request.priceCents ?? 0) >= marketPrice;
         if (request.type === "limit" && !crosses) {
           const lock = preview.cost;
-          const available = sub(money(balance.available, 6, "USDC"), lock);
+          const available = sub(money(balance.available, 6, "USDW"), lock);
           if (isNegative(available)) throw new Error("insufficient balance");
           balance.available = available.raw;
-          balance.locked = add(money(balance.locked, 6, "USDC"), lock).raw;
+          balance.locked = add(money(balance.locked, 6, "USDW"), lock).raw;
           const order: Order = {
             id: nextId("ord"),
             marketId: request.marketId,
@@ -661,12 +661,12 @@ export class MockPredictGateway implements PredictGateway {
             status: "open",
             filledShares: 0,
             avgPriceCents: order.priceCents,
-            fee: zero(6, "USDC"),
+            fee: zero(6, "USDW"),
             cost: lock,
           };
         }
         const available = sub(
-          money(balance.available, 6, "USDC"),
+          money(balance.available, 6, "USDW"),
           preview.cost,
         );
         if (isNegative(available)) throw new Error("insufficient balance");
@@ -706,7 +706,7 @@ export class MockPredictGateway implements PredictGateway {
             `买入 ${request.outcome === "yes" ? "Yes" : "No"} · ${preview.estimatedShares} 份`,
             `Buy ${request.outcome === "yes" ? "Yes" : "No"} · ${preview.estimatedShares} shares`,
           ),
-          amount: money((-toBigInt(preview.cost)).toString(), 6, "USDC"),
+          amount: money((-toBigInt(preview.cost)).toString(), 6, "USDW"),
           detail: localized(
             `含费 ${toApproxNumber(preview.fee).toFixed(2)}`,
             `incl. fee ${toApproxNumber(preview.fee).toFixed(2)}`,
@@ -745,7 +745,7 @@ export class MockPredictGateway implements PredictGateway {
           (p) => p.id !== position.id,
         );
       balance.available = add(
-        money(balance.available, 6, "USDC"),
+        money(balance.available, 6, "USDW"),
         preview.cost,
       ).raw;
       (state.activity[address] as Activity[]).unshift({
@@ -803,8 +803,8 @@ export class MockPredictGateway implements PredictGateway {
         available: string;
         locked: string;
       };
-      balance.locked = sub(money(balance.locked, 6, "USDC"), lock).raw;
-      balance.available = add(money(balance.available, 6, "USDC"), lock).raw;
+      balance.locked = sub(money(balance.locked, 6, "USDW"), lock).raw;
+      balance.available = add(money(balance.available, 6, "USDW"), lock).raw;
       await this.save();
     });
   }
@@ -826,7 +826,7 @@ export class MockPredictGateway implements PredictGateway {
         curPriceCents = settledPayoutCents;
       }
       const value = stored.redeemed
-        ? zero(6, "USDC")
+        ? zero(6, "USDW")
         : sharesToMoney(stored.shares, curPriceCents);
       const costBasis = sharesToMoney(stored.shares, stored.avgPriceCents);
       const pnl = sub(value, costBasis);
@@ -948,7 +948,7 @@ export class MockPredictGateway implements PredictGateway {
       const state = await this.load();
       const positions = await this.computePositions(state, address);
       const stored = state.positions[address] ?? [];
-      let total = zero(6, "USDC");
+      let total = zero(6, "USDW");
       for (const position of positions) {
         if (!positionIds.includes(position.id) || !position.redeemable)
           continue;
@@ -970,7 +970,7 @@ export class MockPredictGateway implements PredictGateway {
         available: string;
         locked: string;
       };
-      balance.available = add(money(balance.available, 6, "USDC"), total).raw;
+      balance.available = add(money(balance.available, 6, "USDW"), total).raw;
       const tx = this.pushTx(state, "redeem");
       await this.save();
       return tx;
@@ -1021,7 +1021,7 @@ export class MockPredictGateway implements PredictGateway {
         else throw new Error("insufficient shares");
       };
       if (direction === "split") {
-        const available = sub(money(balance.available, 6, "USDC"), amount);
+        const available = sub(money(balance.available, 6, "USDW"), amount);
         if (isNegative(available)) throw new Error("insufficient balance");
         balance.available = available.raw;
         adjust("yes", shares);
@@ -1030,7 +1030,7 @@ export class MockPredictGateway implements PredictGateway {
         adjust("yes", -shares);
         adjust("no", -shares);
         balance.available = add(
-          money(balance.available, 6, "USDC"),
+          money(balance.available, 6, "USDW"),
           amount,
         ).raw;
       }
@@ -1046,11 +1046,11 @@ export class MockPredictGateway implements PredictGateway {
             : localized("合并（Merge）", "Merge"),
         amount:
           direction === "split"
-            ? money((-toBigInt(amount)).toString(), 6, "USDC")
+            ? money((-toBigInt(amount)).toString(), 6, "USDW")
             : amount,
         detail: localized(
-          `${shares} USDC ⇄ ${shares} Yes + ${shares} No`,
-          `${shares} USDC ⇄ ${shares} Yes + ${shares} No`,
+          `${shares} USDW ⇄ ${shares} Yes + ${shares} No`,
+          `${shares} USDW ⇄ ${shares} Yes + ${shares} No`,
         ),
         at: mockNowIso(),
       });
@@ -1074,7 +1074,7 @@ export class MockPredictGateway implements PredictGateway {
         available: string;
         locked: string;
       };
-      const available = sub(money(balance.available, 6, "USDC"), BOND);
+      const available = sub(money(balance.available, 6, "USDW"), BOND);
       if (isNegative(available))
         throw new Error("insufficient balance for bond");
       balance.available = available.raw;
@@ -1093,7 +1093,7 @@ export class MockPredictGateway implements PredictGateway {
         marketId,
         eventId: event.id,
         title: localized("争议押金锁定", "Dispute bond locked"),
-        amount: money((-toBigInt(BOND)).toString(), 6, "USDC"),
+        amount: money((-toBigInt(BOND)).toString(), 6, "USDW"),
         detail: localized(
           reason || "裁决后返还",
           reason || "Returned after ruling",

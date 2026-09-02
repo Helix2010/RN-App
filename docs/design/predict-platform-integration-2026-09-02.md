@@ -170,7 +170,7 @@ gamma 每 IP 60 秒 120 次（`gamma-service/config.yaml:58-63`）；relayer 每
 | 领取        | MultiSend：普通市场 `CTF.redeemPositions(USDW, 0x00…, conditionId, indexSets[1(YES)/2(NO)])`；negRisk 市场 `NegRiskAdapter.redeemPositions(conditionId, amounts[yes, no])`；同 conditionId 合并一条；可领 = `redeemable && size > 0 && 链上 CTF.balanceOf(safe, tokenId) > 0` | `lib/redeemBatch.ts:108-200`；`hooks/useRedeem.ts` |
 | 拆分 / 合并 | `CTF.splitPosition / mergePositions(USDW, 0x00…, conditionId, partition[1,2], amount)`，negRisk 走 adapter；一笔 SafeTx                                                                                                                                                       | `hooks/useSplitMerge.ts:30-50,207-295`             |
 
-**我们的映射决定（非平台事实）**：`Market.id` 用 `conditionId`（clob 的 `market`、data 的 `conditionId` 都以它为键）；`PredictEvent.id` 用 gamma 事件 id、`slug` 用事件 slug；价格换成整数分（`round(p×100)`）；`yesTokenId / noTokenId` 取 `clobTokenIds[0] / [1]`；余额、成本、盈亏用 6 位 USDC 的 `Money`；`submitDispute` 平台没有入口，网关抛 `PredictUnsupportedError`；多结果事件下每个市场一行、标题取 `groupItemTitle`。
+**我们的映射决定（非平台事实）**：`Market.id` 用 `conditionId`（clob 的 `market`、data 的 `conditionId` 都以它为键）；`PredictEvent.id` 用 gamma 事件 id、`slug` 用事件 slug；价格换成整数分（`round(p×100)`）；`yesTokenId / noTokenId` 取 `clobTokenIds[0] / [1]`；余额、成本、盈亏用 6 位 USDW 的 `Money`（预测账户内的抵押品单位；账户余额同为 USDW，同币种才能比较——2026-09-03 联调改正，此前标成 USDC 导致下单页崩溃）；`submitDispute` 平台没有入口，网关抛 `PredictUnsupportedError`；多结果事件下每个市场一行、标题取 `groupItemTitle`。
 
 ## 3. 我们的方案
 

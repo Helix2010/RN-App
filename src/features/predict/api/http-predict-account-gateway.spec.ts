@@ -104,6 +104,8 @@ function platform() {
   const state = {
     safeDeployed: false,
     approved: false,
+    /** 授权上链后 App 读链节点落后的次数：前 N 次 allowance / isApprovedForAll 仍读到未授权 */
+    approvalLagReads: 0,
     submissions: [] as Record<string, unknown>[],
     requests: [] as Request[],
     unwraps: [] as Record<string, unknown>[],
@@ -222,6 +224,17 @@ function chain(platformState: ReturnType<typeof platform>) {
     },
     async readContract(_chain: string, _to: string, data: string) {
       const sel = data.slice(0, 10);
+      const approvalRead =
+        sel === selector(erc20.getFunction("allowance")) ||
+        sel === selector(conditionalTokens.getFunction("isApprovedForAll"));
+      if (
+        approvalRead &&
+        platformState.approved &&
+        platformState.approvalLagReads > 0
+      ) {
+        platformState.approvalLagReads -= 1;
+        return uint(0n);
+      }
       if (sel === selector(erc20.getFunction("allowance")))
         return uint(platformState.approved ? (1n << 256n) - 1n : 0n);
       if (sel === selector(conditionalTokens.getFunction("isApprovedForAll")))
@@ -324,6 +337,24 @@ describe("HttpPredictAccountGateway", () => {
     // 没有关联就没有平台：不是"未启用"，是"没配置"，两者界面上都不能拿演示数据顶
     await expect(gateway.getBalance(addr(1))).rejects.toBeInstanceOf(
       PredictServiceNotConfiguredError,
+    );
+  });
+
+  it("waits for the approvals to become visible on-chain after the relayer reports them mined", async () => {
+    const { gateway, wallet, platformState } = build();
+    // relayer 报上链后，读链节点前两轮还看不到授权（每轮读 4 个 allowance）
+    platformState.approvalLagReads = 8;
+    const status = await gateway.enable(wallet.address);
+    expect(enablementComplete(status)).toBe(true);
+    expect(status.approved).toBe(true);
+    expect(platformState.approvalLagReads).toBe(0);
+  });
+
+  it("fails enable instead of reporting an unapproved account when the approvals never show up", async () => {
+    const { gateway, wallet, platformState } = build();
+    platformState.approvalLagReads = Number.MAX_SAFE_INTEGER;
+    await expect(gateway.enable(wallet.address)).rejects.toThrow(
+      /approvals are still not visible/,
     );
   });
 

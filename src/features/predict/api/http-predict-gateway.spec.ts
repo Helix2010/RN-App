@@ -360,7 +360,7 @@ describe("HttpPredictGateway", () => {
       status: "trading",
       redeemable: false,
     });
-    expect(positions[0]?.value).toEqual(fromDecimal("7.75", 6, "USDC"));
+    expect(positions[0]?.value).toEqual(fromDecimal("7.75", 6, "USDW"));
     expect(
       seen
         .find((r) => r.url.pathname === "/positions")
@@ -370,7 +370,7 @@ describe("HttpPredictGateway", () => {
     const activity = await gateway.listActivity(EOA);
     expect(activity[0]).toMatchObject({ type: "TRADE", marketId: CONDITION });
     // 买入是出账
-    expect(activity[0]?.amount).toEqual(fromDecimal("-6.875", 6, "USDC"));
+    expect(activity[0]?.amount).toEqual(fromDecimal("-6.875", 6, "USDW"));
 
     const orders = await gateway.listOpenOrders(EOA);
     // MATCHED 的不算未完成
@@ -412,7 +412,7 @@ describe("HttpPredictGateway", () => {
       outcome: "yes",
       side: "buy",
       type: "market",
-      amount: fromDecimal("10", 6, "USDC"),
+      amount: fromDecimal("10", 6, "USDW"),
     });
     const post = seen.find(
       (r) => r.url.pathname === "/order" && r.method === "POST",
@@ -426,9 +426,9 @@ describe("HttpPredictGateway", () => {
       filledShares: 15.62,
       avgPriceCents: 64,
     });
-    expect(result.cost).toEqual(fromDecimal("9.9968", 6, "USDC"));
+    expect(result.cost).toEqual(fromDecimal("9.9968", 6, "USDW"));
     // 手续费 20 bps
-    expect(result.fee).toEqual(fromDecimal("0.019994", 6, "USDC"));
+    expect(result.fee).toEqual(fromDecimal("0.019994", 6, "USDW"));
     // 订单的 signer 是钱包地址（EOA），maker 是 Safe
     const sentBody = JSON.parse(
       String((post as unknown as { body?: string }).body ?? "{}"),
@@ -446,11 +446,11 @@ describe("HttpPredictGateway", () => {
       outcome: "yes",
       side: "buy",
       type: "market",
-      amount: fromDecimal("10", 6, "USDC"),
+      amount: fromDecimal("10", 6, "USDW"),
     });
     expect(buy.estimatedShares).toBe(15.62);
     expect(buy.avgPriceCents).toBe(64);
-    expect(buy.potentialPayout).toEqual(fromDecimal("15.62", 6, "USDC"));
+    expect(buy.potentialPayout).toEqual(fromDecimal("15.62", 6, "USDW"));
     const sell = await gateway.previewOrder(EOA, {
       marketId: CONDITION,
       outcome: "yes",
@@ -460,7 +460,7 @@ describe("HttpPredictGateway", () => {
     });
     // 买一 0.60 只有 150.5 份，20 份全吃得到
     expect(sell.estimatedShares).toBe(20);
-    expect(sell.cost).toEqual(fromDecimal("12", 6, "USDC"));
+    expect(sell.cost).toEqual(fromDecimal("12", 6, "USDW"));
   });
 
   it("redeems settled positions with one MultiSend of CTF.redeemPositions per condition", async () => {
@@ -490,13 +490,13 @@ describe("HttpPredictGateway", () => {
       EOA,
       CONDITION,
       "split",
-      fromDecimal("3", 6, "USDC"),
+      fromDecimal("3", 6, "USDW"),
     );
     await gateway.splitOrMerge(
       EOA,
       CONDITION,
       "merge",
-      fromDecimal("1", 6, "USDC"),
+      fromDecimal("1", 6, "USDW"),
     );
     expect(relayed.map((call) => [call.to, call.operation])).toEqual([
       [CONTRACTS.ctf, 0],

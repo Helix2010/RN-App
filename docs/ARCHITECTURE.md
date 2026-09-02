@@ -23,19 +23,19 @@
 
 推荐采用：
 
-| 领域 | 决策 | 原因 |
-| --- | --- | --- |
-| RN 运行方式 | Expo Development Build + Prebuild | 保留 Expo 工具链、OTA 和配置插件能力，同时允许真实原生模块；不依赖 Expo Go |
-| RN 架构 | React Native New Architecture | 以 Fabric / TurboModules 为长期基线，新依赖必须验证兼容性 |
-| UI 底层 | Tamagui + 自有 Web3 Design System | 主题与原子组件成熟，适合 DEX 高定制和未来 RN/Web；feature 不直接依赖供应商组件 |
-| 语言/包管理 | TypeScript strict + pnpm + Corepack | 收紧边界，确保本地与 CI 依赖一致 |
-| 导航 | React Navigation，集中定义 typed route | 原生交互成熟，支持深链和嵌套路由 |
-| 服务端状态 | TanStack Query | 缓存、失效、重试和异步状态有单一模型 |
-| 客户端状态 | Zustand，仅用于跨页面/跨组件客户端状态 | API 小、样板少；不得复制服务端缓存 |
-| 表单 | React Hook Form + 边界 schema 校验 | 高性能且能显式表达提交/字段错误 |
-| API | OpenAPI 生成 TypeScript client + 平台网络适配器 | 契约可检查，业务不手写 URL 和响应类型 |
-| 可观测 | Sentry 类错误平台 + OpenTelemetry 链路语义 | 移动崩溃还原与后端 trace 对齐 |
-| 测试 | Vitest/Jest + React Native Testing Library + Maestro | 单元/组件/关键路径分层，避免全靠脆弱 E2E |
+| 领域        | 决策                                                 | 原因                                                                           |
+| ----------- | ---------------------------------------------------- | ------------------------------------------------------------------------------ |
+| RN 运行方式 | Expo Development Build + Prebuild                    | 保留 Expo 工具链、OTA 和配置插件能力，同时允许真实原生模块；不依赖 Expo Go     |
+| RN 架构     | React Native New Architecture                        | 以 Fabric / TurboModules 为长期基线，新依赖必须验证兼容性                      |
+| UI 底层     | Tamagui + 自有 Web3 Design System                    | 主题与原子组件成熟，适合 DEX 高定制和未来 RN/Web；feature 不直接依赖供应商组件 |
+| 语言/包管理 | TypeScript strict + pnpm + Corepack                  | 收紧边界，确保本地与 CI 依赖一致                                               |
+| 导航        | React Navigation，集中定义 typed route               | 原生交互成熟，支持深链和嵌套路由                                               |
+| 服务端状态  | TanStack Query                                       | 缓存、失效、重试和异步状态有单一模型                                           |
+| 客户端状态  | Zustand，仅用于跨页面/跨组件客户端状态               | API 小、样板少；不得复制服务端缓存                                             |
+| 表单        | React Hook Form + 边界 schema 校验                   | 高性能且能显式表达提交/字段错误                                                |
+| API         | OpenAPI 生成 TypeScript client + 平台网络适配器      | 契约可检查，业务不手写 URL 和响应类型                                          |
+| 可观测      | Sentry 类错误平台 + OpenTelemetry 链路语义           | 移动崩溃还原与后端 trace 对齐                                                  |
+| 测试        | Vitest/Jest + React Native Testing Library + Maestro | 单元/组件/关键路径分层，避免全靠脆弱 E2E                                       |
 
 依赖的具体版本由脚手架初始化时选取当前稳定兼容组合，并由锁文件和 CI 固定。升级按月集中处理；RN/Expo 大版本升级独立立项，不在业务 PR 中顺带完成。
 
