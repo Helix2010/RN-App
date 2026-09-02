@@ -70,6 +70,7 @@ import type {
 import { transferErrorCopy } from "../../wallet/model/transfer-errors";
 import { TxProgress } from "./tx-progress";
 import { TokenAvatar } from "./assets-screen";
+import { AddressScanner } from "./address-scanner";
 import { useRequireVerification } from "../../security/use-require-verification";
 
 /** 最近转出列表最多显示几条（表单内联；更多的放进"最近转出"面板） */
@@ -170,6 +171,9 @@ function SendForm({
   const confirm = useRef<SheetHandle>(null);
   const book = useRef<SheetHandle>(null);
   const picker = useRef<SheetHandle>(null);
+  const [scanning, setScanning] = useState(false);
+  /** 扫码/粘贴的链接里标注的 chainId，与当前选的链不一致时提示；地址一改就清掉 */
+  const [requestedChainId, setRequestedChainId] = useState<number | null>(null);
 
   const { wallet } = useGateways();
   // 这条链是真链还是演示账本：两者的确认页必须让用户分得清
@@ -281,11 +285,42 @@ function SendForm({
     feeKnown &&
     !send.isPending;
 
+  const applyRecipient = (raw: string) => {
+    const request = parsePaymentRequest(raw);
+    setTo(request.address);
+    setRequestedChainId(request.chainId);
+  };
+  const changeTo = (value: string) => {
+    setTo(value);
+    setRequestedChainId(null);
+  };
   const paste = async () => {
     // 剪贴板里常常是 "ethereum:0x…" 这类收款链接，取出地址部分
-    const value = recipientFromText(await Clipboard.getStringAsync());
-    if (value) setTo(value);
+    const value = (await Clipboard.getStringAsync()).trim();
+    if (value) applyRecipient(value);
   };
+  const scanned = (data: string): boolean => {
+    const request = parsePaymentRequest(data);
+    if (classifyEvmAddress(request.address) === "invalid") return false;
+    applyRecipient(data);
+    setScanning(false);
+    return true;
+  };
+  // 链接标注的链与当前选的币所在链不一致：只提示，不替用户换链、不替用户填金额
+  const requestedChain =
+    requestedChainId === null
+      ? null
+      : (enabledChains().find((id) => evmChainIdOf(id) === requestedChainId) ??
+        null);
+  const chainHint =
+    requestedChainId === null || requestedChain === chain
+      ? null
+      : requestedChain
+        ? fill(t("send.scanChainMismatch"), {
+            scanned: CHAINS[requestedChain].name,
+            current: CHAINS[chain].name,
+          })
+        : fill(t("send.scanChainUnknown"), { chainId: requestedChainId });
 
   const submit = async () => {
     if (!selected || !amount) return;
@@ -415,7 +450,7 @@ function SendForm({
             <Body fontSize={12}>{t("send.address")}</Body>
             <TextField
               value={to}
-              onChangeText={setTo}
+              onChangeText={changeTo}
               placeholder={t("send.addressPlaceholder")}
               autoCapitalize="none"
               autoCorrect={false}
@@ -426,7 +461,7 @@ function SendForm({
                 <Row gap="$2">
                   {to.length > 0 ? (
                     <Stack
-                      onPress={() => setTo("")}
+                      onPress={() => changeTo("")}
                       accessibilityRole="button"
                       accessibilityLabel={t("send.clear")}
                       testID="send-address-clear"
@@ -446,6 +481,18 @@ function SendForm({
                   >
                     <AppIcon
                       name="content-paste"
+                      size={20}
+                      colorToken="primary"
+                    />
+                  </Stack>
+                  <Stack
+                    onPress={() => setScanning(true)}
+                    accessibilityRole="button"
+                    accessibilityLabel={t("send.scan")}
+                    testID="send-address-scan"
+                  >
+                    <AppIcon
+                      name="qrcode-scan"
                       size={20}
                       colorToken="primary"
                     />
@@ -473,6 +520,14 @@ function SendForm({
                 </Row>
               </Row>
             ) : null}
+            {chainHint ? (
+              <Row alignItems="center" gap="$1" testID="send-chain-hint">
+                <AppIcon name="alert-circle" size={14} colorToken="warning" />
+                <InlineText flex={1} fontSize={12} color="$warning">
+                  {chainHint}
+                </InlineText>
+              </Row>
+            ) : null}
             {to.length === 0 && (recents.data?.length ?? 0) > 0 ? (
               <Stack gap="$1" testID="send-recents">
                 <InlineText fontSize={11} color="$textMuted">
@@ -483,7 +538,7 @@ function SendForm({
                     key={entry.address}
                     entry={entry}
                     locale={locale}
-                    onPress={() => setTo(entry.address)}
+                    onPress={() => changeTo(entry.address)}
                     testID={`send-recent-${entry.address.toLowerCase()}`}
                   />
                 ))}
@@ -565,6 +620,12 @@ function SendForm({
         </Content>
       </PageScroll>
 
+      <AddressScanner
+        visible={scanning}
+        onClose={() => setScanning(false)}
+        onScanned={scanned}
+      />
+
       <Sheet ref={book} title={t("send.recent")} closeLabel={t("common.close")}>
         {(recents.data?.length ?? 0) === 0 ? (
           <Body
@@ -582,7 +643,7 @@ function SendForm({
             entry={entry}
             locale={locale}
             onPress={() => {
-              setTo(entry.address);
+              changeTo(entry.address);
               book.current?.dismiss();
             }}
             testID={`send-recent-list-${entry.address.toLowerCase()}`}
@@ -798,9 +859,26 @@ function tokenKeyOf(token: { chain: ChainId; address: string }): string {
  * 其它内容原样返回，交给地址校验去报错——这里不猜。
  */
 export function recipientFromText(text: string): string {
+  return parsePaymentRequest(text).address;
+}
+
+/**
+ * 解析收款文本：纯地址，或 EIP-681 链接（`ethereum:[pay-]<address>[@chainId][?value=…]`）。
+ * chainId 取出来只用于提示"这个码标注的是另一条链"；value 一律丢弃。
+ */
+export function parsePaymentRequest(text: string): {
+  address: string;
+  chainId: number | null;
+} {
   const trimmed = text.trim();
-  const match = /^ethereum:(?:pay-)?(0x[0-9a-fA-F]{40})/.exec(trimmed);
-  return match?.[1] ?? trimmed;
+  const match = /^ethereum:(?:pay-)?(0x[0-9a-fA-F]{40})(?:@(\d+))?/.exec(
+    trimmed,
+  );
+  if (!match) return { address: trimmed, chainId: null };
+  return {
+    address: match[1] as string,
+    chainId: match[2] ? Number(match[2]) : null,
+  };
 }
 
 function RecentRecipientRow({

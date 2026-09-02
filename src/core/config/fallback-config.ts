@@ -215,6 +215,19 @@ const zhCN = {
   "send.available": "可用",
   "send.noBalanceOnChain": "这条链上没有可转出的资产",
   "send.loadingBalances": "正在读取余额…",
+  "send.scan": "扫码",
+  "send.scanTitle": "扫描收款地址",
+  "send.scanHint": "对准收款方的地址二维码",
+  "send.scanNotAddress": "这个二维码里没有钱包地址",
+  "send.scanTorch": "手电筒",
+  "send.scanPermissionTitle": "需要相机权限",
+  "send.scanPermissionBody":
+    "扫描地址二维码需要使用相机。请在系统设置里允许本应用使用相机。",
+  "send.scanOpenSettings": "去设置",
+  "send.scanChainMismatch":
+    "二维码标注的是 {scanned} 网络，当前选的币在 {current} 上。请与收款方核对在哪条链上收款。",
+  "send.scanChainUnknown":
+    "二维码标注的网络（chainId {chainId}）不在本平台启用的网络里，请与收款方核对。",
   "send.addressValid": "{chain} 地址格式校验通过",
   "send.addressInvalid": "地址格式不正确",
   "send.addressChecksum": "地址大小写校验和不正确，可能抄错了一个字符",
@@ -1020,6 +1033,19 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "send.available": "Available",
   "send.noBalanceOnChain": "Nothing to send on this chain",
   "send.loadingBalances": "Loading balances…",
+  "send.scan": "Scan",
+  "send.scanTitle": "Scan recipient address",
+  "send.scanHint": "Point at the recipient's address QR code",
+  "send.scanNotAddress": "This QR code does not contain a wallet address",
+  "send.scanTorch": "Torch",
+  "send.scanPermissionTitle": "Camera access needed",
+  "send.scanPermissionBody":
+    "Scanning an address QR code uses the camera. Allow camera access for this app in system settings.",
+  "send.scanOpenSettings": "Open settings",
+  "send.scanChainMismatch":
+    "This QR code is for the {scanned} network, but the selected token is on {current}. Confirm with the recipient which chain they expect.",
+  "send.scanChainUnknown":
+    "This QR code names a network (chainId {chainId}) that is not enabled here. Confirm with the recipient.",
   "send.addressValid": "Valid {chain} address",
   "send.addressInvalid": "Invalid address format",
   "send.addressChecksum":

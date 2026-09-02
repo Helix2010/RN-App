@@ -4,7 +4,11 @@ import {
   renderWithProviders,
   signIn,
 } from "../../../test/harness";
-import { SendScreen, recipientFromText } from "./send-screen";
+import {
+  SendScreen,
+  parsePaymentRequest,
+  recipientFromText,
+} from "./send-screen";
 import type { Gateways } from "../../../core/gateways/gateway-context";
 import type { TokenBalance, WalletTransfer } from "../../wallet/model/wallet";
 import { InsufficientGasError } from "../../../core/chain/transfer-service";
@@ -14,6 +18,10 @@ import { fromDecimal, money } from "../../../core/money/money";
 import { ToastHost } from "../../../design-system";
 import * as LocalAuthentication from "expo-local-authentication";
 import * as Clipboard from "expo-clipboard";
+import {
+  resetCameraPermission,
+  setCameraPermission,
+} from "../../../test/mocks/expo-camera";
 
 /** 网关返回的是按链分好的快照；测试里没有不可用的链 */
 const snapshot = (items: TokenBalance[]) => ({ items, unavailable: [] });
@@ -749,5 +757,122 @@ describe("recipientFromText", () => {
     expect(recipientFromText("ethereum:not-an-address")).toBe(
       "ethereum:not-an-address",
     );
+  });
+});
+
+describe("SendScreen QR scanning", () => {
+  afterEach(() => resetCameraPermission());
+
+  async function openScanner() {
+    const gateways = createTestGateways();
+    await signIn(gateways);
+    gateways.wallet.getBalances = jest.fn(async () =>
+      snapshot([
+        balance({ address: USDT_BSC, symbol: "USDT", verified: true }),
+      ]),
+    );
+    await renderWithProviders(
+      <SendScreen onBack={jest.fn()} initialChain="bsc" />,
+      { gateways },
+    );
+    void fireEvent.press(await screen.findByTestId("send-address-scan"));
+    return screen.findByTestId("address-scanner-camera");
+  }
+
+  it("fills the address from a scanned QR code and closes the scanner", async () => {
+    const camera = await openScanner();
+
+    void fireEvent(camera, "barcodeScanned", { data: RECIPIENT });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("send-address")).toHaveProp("value", RECIPIENT),
+    );
+    expect(screen.queryByTestId("address-scanner")).toBeNull();
+    expect(screen.queryByTestId("send-chain-hint")).toBeNull();
+  });
+
+  it("keeps scanning and says so when the code is not an address", async () => {
+    const camera = await openScanner();
+
+    void fireEvent(camera, "barcodeScanned", { data: "https://example.com" });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("address-scanner-hint")).toHaveTextContent(
+        /没有钱包地址/,
+      ),
+    );
+    expect(screen.getByTestId("send-address")).toHaveProp("value", "");
+  });
+
+  it("warns when the payment link names another chain instead of switching silently", async () => {
+    // 测试租户启用 bsc/eth/base；当前选的是 bsc 上的 USDT，码里标注 chainId 1（Ethereum）
+    const camera = await openScanner();
+
+    void fireEvent(camera, "barcodeScanned", {
+      data: `ethereum:${RECIPIENT}@1?value=1e18`,
+    });
+
+    const hint = await screen.findByTestId("send-chain-hint");
+    expect(hint).toHaveTextContent(new RegExp(CHAINS.eth.name));
+    expect(hint).toHaveTextContent(new RegExp(CHAINS.bsc.name));
+    expect(screen.getByTestId("send-address")).toHaveProp("value", RECIPIENT);
+    // 金额没有被替用户填上
+    expect(screen.getByTestId("send-amount")).toHaveProp("value", "");
+
+    // 用户改动地址后提示随之消失
+    void fireEvent.changeText(screen.getByTestId("send-address"), RECIPIENT);
+    await waitFor(() =>
+      expect(screen.queryByTestId("send-chain-hint")).toBeNull(),
+    );
+  });
+
+  it("says the chain is not enabled here when the link names an unknown chainId", async () => {
+    const camera = await openScanner();
+
+    void fireEvent(camera, "barcodeScanned", {
+      data: `ethereum:${RECIPIENT}@137`,
+    });
+
+    expect(await screen.findByTestId("send-chain-hint")).toHaveTextContent(
+      /137/,
+    );
+  });
+
+  it("offers the settings shortcut instead of a camera when permission is denied for good", async () => {
+    setCameraPermission({
+      granted: false,
+      status: "denied",
+      canAskAgain: false,
+    });
+    const gateways = createTestGateways();
+    await signIn(gateways);
+    gateways.wallet.getBalances = jest.fn(async () =>
+      snapshot([
+        balance({ address: USDT_BSC, symbol: "USDT", verified: true }),
+      ]),
+    );
+    await renderWithProviders(
+      <SendScreen onBack={jest.fn()} initialChain="bsc" />,
+      { gateways },
+    );
+
+    void fireEvent.press(await screen.findByTestId("send-address-scan"));
+
+    expect(await screen.findByTestId("address-scanner-denied")).toBeTruthy();
+    expect(screen.queryByTestId("address-scanner-camera")).toBeNull();
+  });
+});
+
+describe("parsePaymentRequest", () => {
+  it("reads the chainId out of an EIP-681 link and drops the value", () => {
+    expect(parsePaymentRequest(`ethereum:${RECIPIENT}@56?value=1e18`)).toEqual({
+      address: RECIPIENT,
+      chainId: 56,
+    });
+  });
+
+  it("reports no chainId for a bare address or a link without one", () => {
+    expect(parsePaymentRequest(RECIPIENT).chainId).toBeNull();
+    expect(parsePaymentRequest(`ethereum:${RECIPIENT}`).chainId).toBeNull();
   });
 });

@@ -167,6 +167,16 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     "expo-localization",
     "expo-secure-store",
     "expo-notifications",
+    // 转出页扫描收款地址二维码（ADR 0010）；权限文案是系统弹窗里用户看到的理由
+    [
+      "expo-camera",
+      {
+        cameraPermission:
+          "Allow $(PRODUCT_NAME) to use the camera to scan wallet address QR codes.",
+        microphonePermission: false,
+        recordAudioAndroid: false,
+      },
+    ],
     // 外部钱包的 package visibility 声明：开发包也要，否则本地调不通深链
     "./plugins/with-wallet-deep-links.js",
     // 原生启动图改成纯色：模板默认那张占位图（网格 + 同心圆）不属于任何租户

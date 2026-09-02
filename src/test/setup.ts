@@ -31,6 +31,7 @@ jest.mock("expo-haptics", () => ({
     Warning: "warning",
   },
 }));
+jest.mock("expo-camera", () => require("./mocks/expo-camera"));
 jest.mock("expo-clipboard", () => ({
   setStringAsync: jest.fn(async () => true),
   getStringAsync: jest.fn(async () => ""),

@@ -26,6 +26,14 @@
 
 新增 `send.clear / send.recent / send.recentEmpty / send.pickToken / send.available / send.noBalanceOnChain / send.loadingBalances`，删除 `send.addressBook / send.addressBookEmpty`；`i18n/seed` 已导出（765 键），服务端种子同步见 RN-Server。
 
+### 扫码（原生依赖，随 1.2.7 全量包）
+
+- 引入 `expo-camera`（ADR 0010）；`app.config.ts` 加 config plugin，只申请相机权限。
+- `AddressScanner`：全屏相机 + 取景框 + 手电筒；只认 QR；扫到的内容交给 `parsePaymentRequest`，不是地址时提示并 1.5 s 后恢复扫描；权限被永久拒绝时给"去设置"。
+- EIP-681 链接里的 `chainId` 与当前选的币不在同一条链时，地址栏下方出黄字提示（`send-chain-hint`），不替用户换链；`value` 一律丢弃。
+- `tenants/anyfun/tenant.json` 升到 1.2.7 / androidVersionCode 21 / iosBuildNumber 8。
+- 测试替身 `src/test/mocks/expo-camera.tsx`：`CameraView` 把 `onBarcodeScanned` 挂在 View 上供 `fireEvent`，`setCameraPermission` 控制权限状态。
+
 ## OP Sepolia RPC 核对
 
 线上 bootstrap（`api.anyfun.win`，租户 100000001）里 op-sepolia 的 `rpcUrls` 仍是平台默认 `https://sepolia.optimism.io`，管理端改的 Pocket 地址落在了 `explorerUrl` 字段。两条端点都能正常回答 `eth_chainId` 与 Multicall3，所以 App 侧"重试"来自旧 OTA 包，不来自端点；但浏览器字段要改回 `https://sepolia-optimism.etherscan.io`，否则"在浏览器查看"会打开 RPC 地址。
@@ -33,4 +41,4 @@
 ## 验证
 
 - `pnpm check`：新增转出页币种选择 / 清空 / 粘贴 EIP-681 / 最近转出 / `recipientFromText` 用例，资产页链徽标与链筛选用例。
-- 本次是纯 JS 改动，可作为 runtime 1.2.6 的 OTA 发布；扫码（`expo-camera`）是原生依赖，随 1.2.7 全量包（ADR 0010）。
+- 第一个提交（转出页重排、链信息）是纯 JS 改动，可作为 runtime 1.2.6 的 OTA 发布；第二个提交引入 `expo-camera`，是原生依赖，随 1.2.7 全量包（ADR 0010）。
