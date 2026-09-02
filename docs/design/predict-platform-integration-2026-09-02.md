@@ -47,13 +47,15 @@ POST {gamma}/auth/refresh   Authorization: Bearer   → { token }
 
 ### 2.3 三层凭证
 
-| 层                      | 用途                                 | 获取                                                                                                                                                                                                             | 存放                 |
-| ----------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
-| gamma JWT               | relayer 提交、bridge、资料           | 上面的登录                                                                                                                                                                                                       | 客户端               |
-| CLOB API key（L2 HMAC） | 下单 / 撤单 / 余额可用额度 / 用户 WS | L1：签 `ClobAuth` EIP-712（domain `{name:"ClobAuthDomain",version:"1",chainId}`）→ `POST {clob}/auth/api-key`（头 `PRED_ADDRESS/SIGNATURE/TIMESTAMP/NONCE` + `PRED_SCOPE_ID`）→ `{ apiKey, secret, passphrase }` | 客户端，等同私钥级别 |
-| Safe 授权               | 交易所能动 Safe 里的 USDW / CTF      | relayer 转发一笔 MultiSend：`USDW.approve × 4` + `CTF.setApprovalForAll × 3`                                                                                                                                     | 链上                 |
+| 层                      | 用途                                                                                                                                                                                                        | 获取                                                                                                                                                                                                             | 存放               |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| gamma JWT               | relayer 提交、bridge、资料                                                                                                                                                                                  | 上面的登录                                                                                                                                                                                                       | 客户端             |
+| CLOB API key（L2 HMAC） | 撤单 / 余额可用额度 / 成交记录 / 用户 WS；**下单请求也要带它，但订单本身另有 EOA 的 EIP-712 签名，clob 会验签**（`INVALID_SIGNATURE: signer mismatch`），所以这把密钥单独泄露不能替用户下单，能撤单、能看账 | L1：签 `ClobAuth` EIP-712（domain `{name:"ClobAuthDomain",version:"1",chainId}`）→ `POST {clob}/auth/api-key`（头 `PRED_ADDRESS/SIGNATURE/TIMESTAMP/NONCE` + `PRED_SCOPE_ID`）→ `{ apiKey, secret, passphrase }` | 客户端，账户级敏感 |
+| Safe 授权               | 交易所能动 Safe 里的 USDW / CTF                                                                                                                                                                             | relayer 转发一笔 MultiSend：`USDW.approve × 4` + `CTF.setApprovalForAll × 3`                                                                                                                                     | 链上               |
 
 L2 签名：`base64(HMAC-SHA256(base64url解码(secret), ts + METHOD + path + body))`，时钟容差 ±30 秒，先取 `GET {clob}/time`。
+
+阶段 6 做下单时注意：订单的 `maker` 是 Safe、`signer` 是 EOA、`signatureType` 是 Gnosis Safe 那一档，不是 EOA 直接做 maker。
 
 **clob-service 不看域名**：它没有租户中间件，租户身份只在建 API key 时由 `PRED_SCOPE_ID` 绑进密钥。这个头对平台是可选的，对我们是必填——漏了会得到一把不属于任何租户的密钥。
 
@@ -65,11 +67,11 @@ L2 签名：`base64(HMAC-SHA256(base64url解码(secret), ts + METHOD + path + bo
 
 ### 2.5 资金转入（用户付 gas）
 
-| 路径                  | 链上动作                                                                                              | 后端                                                                                                     |
-| --------------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| A：EOA 的 USDC → Safe | `USDC.approve(USDW_WRAPPER, max)`（首次）→ `USDWrapper.wrap(USDC, amount, safe)`，1:1 铸 USDW 到 Safe | 无                                                                                                       |
-| B：EOA 的 USDW → Safe | `USDW.transfer(safe, amount)`                                                                         | 无                                                                                                       |
-| C：跨链（Relay）      | 源链由用户签发；目的链合约自动 wrap 到 Safe                                                           | `GET /bridge/assets`、`POST /bridge/quote`、`POST /bridge/requests`、轮询 `/bridge/requests/{id}`（JWT） |
+| 路径                  | 链上动作                                                                                                                                                                                                                          | 后端                                                                                                     |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| A：EOA 的 USDC → Safe | `USDC.approve(USDW_WRAPPER, amount)` → `USDWrapper.wrap(USDC, amount, safe)`，1:1 铸 USDW 到 Safe。网页版授权的是无上限额度，我们**按本次金额授权**：多一笔几分钱的 L2 交易，换来 wrapper 万一出事时 EOA 里的 USDC 不会被整个拿走 | 无                                                                                                       |
+| B：EOA 的 USDW → Safe | `USDW.transfer(safe, amount)`                                                                                                                                                                                                     | 无                                                                                                       |
+| C：跨链（Relay）      | 源链由用户签发；目的链合约自动 wrap 到 Safe                                                                                                                                                                                       | `GET /bridge/assets`、`POST /bridge/quote`、`POST /bridge/requests`、轮询 `/bridge/requests/{id}`（JWT） |
 
 dev 环境 `bridge/assets.enabled=false`，C 路径当前关着。测试网有 faucet：`GET/POST {faucet}/api/v1/faucet/{status,claim}`（JWT），实测每人 0.001 TETH，条件是 Safe 已部署。
 
@@ -136,7 +138,7 @@ RN-Server 新增下发（严格 schema，缺则模块不可用，不写默认）
 
 - 服务端：`modules.predict = true` 时 `services.predict` 必须完整合法，否则 bootstrap 返回 503（与代币目录、零条链的处理一致）；`modules.predict = false` 时不下发 `services.predict`。
 - 管理端「预测市场」页：开关 + 接口域名 + scopeId + 链四项，加一个「测试连接」按钮——服务端去请求 `https://gamma-api.{domain}/public-info`（带 `X-Tenant-Domain`），回显品牌名、chainId、scopeId，并校验 scopeId 与所填一致、chainId 与所选链一致；不通过就不让保存。
-- App：schema 严格；`domain` 只接受主机名（不含协议、端口、路径）。
+- App：`services.predict` 段本身严格；`domain` 只接受主机名（不含协议、端口、路径）。bootstrap 根对象不是 strict（未知键丢弃），所以服务端先上 `services` 段不会打坏已安装的旧 App；发布顺序仍然是服务端 → 管理端 → App，`modules.predict` 在 App 发布前保持关闭。
 
 ### 3.3 App 侧新增模块
 
@@ -155,13 +157,21 @@ src/features/predict/model/predict.ts     PredictTx 加 claimableAt / requestId�
 
 HMAC-SHA256、keccak、ABI 编码都用已有依赖（`@noble/hashes`、ethers），不新增原生模块。
 
-凭证存放：gamma JWT、CLOB 三元组、Safe 地址 → `expo-secure-store`，按 `tenantDomain + address` 作键；切换账户 / 登出即清；CLOB 密钥按私钥对待，下单超过大额阈值走现有 `useRequireVerification`。
+凭证存放：gamma JWT、CLOB 三元组、Safe 地址 → `expo-secure-store`，按 `tenantDomain + scopeId + address` 作键；切换账户 / 登出即清；下单超过大额阈值走现有 `useRequireVerification`。iOS 的 keychain 在卸载重装后仍在：首次启动发现本机没有钱包时，把预测凭证一并清掉，不让一把旧密钥跟着新安装复活。
+
+读链只用我们租户自己下发的 RPC（`rpcUrlsFor(chain)`），不用 `public-info.rpcUrl`：App 里链的访问只有一个来源。
+
+`services.predict` 在运行中变化（域名、scopeId 或链任一变了）：视为换了平台，清掉该租户的全部预测凭证，下次进模块重新跑启用流程；`modules.predict` 关掉则只隐藏入口、不动凭证。地址比对一律不区分大小写（JWT 的 `sub` 是小写，我们存的是 EIP-55）。
 
 ### 3.4 用户流程
 
 **游客**：未登录也能浏览行情与市场——这些都是公开接口，只需要 `X-Tenant-Domain`，不需要任何凭证。
 
 **启用预测交易（一次性，已登录用户进入预测市场模块时触发，见 §6）**
+
+进入模块时先出一页「启用预测交易」：说明要签什么、钱放在哪、转出规则，附平台的协议（`GET {gamma}/agreements`，网页版在连接钱包前要用户勾选），一个按钮跑完四步，另有「稍后」可以先看行情。四个签名不能在用户没被告知的情况下从钱包里连续弹出来——对外部钱包用户尤其如此。
+
+四步：
 
 1. 签 `LoginMessage` → JWT。
 2. `deployed` 查 Safe；未部署 → 签 `CreateProxy` → relayer 部署（免 gas）。
@@ -192,6 +202,10 @@ HMAC-SHA256、keccak、ABI 编码都用已有依赖（`@noble/hashes`、ethers�
 - JWT `sub` 与当前地址不一致就作废重登（切换钱包）。
 - 转入需要用户持有原生币；主网上这是真钱，要在划转页提前提示，不能到签名时才失败。
 - 平台 JWT 私钥 `gamma-jwt-private.pem` 就放在仓库根目录：是他们的事，但联调时别把这个文件带进任何日志或文档。
+- **平台限流按 IP**：gamma 每 IP 60 秒 120 次，relayer 每 IP 每小时 1000 次、提交 100 次、建 Safe 10 次。手机用户在运营商 NAT 后面成百上千人共用一个出口 IP，上量后必然撞线。接入前要让平台按租户提高或改为按 JWT 计数；我们这边把轮询压到最低（relayer 交易状态 3 秒一次到终态即停，余额 15 秒，待领取列表 30 秒），并对 429 做退避、不做重试风暴。
+- **待领取列表来自子图**（data-service `unwrap-requests`），索引有延迟：发起解包成功后本机先记一条乐观记录（requestId、claimableAt、金额），与服务端列表按 requestId 合并，服务端出现后以服务端为准。否则用户会看到"刚发起的转出不见了"。
+- 平台租户过期时 `public-info` 返回 403：模块显示"预测市场暂不可用"，不进启用流程。
+- data-service 的持仓、活动、盈亏按地址公开可查，任何人都能看任一地址的仓位：这是平台设计，写进用户可见的说明里，不在我们能改的范围。
 
 ### 3.6 联调环境（dev）
 
@@ -213,6 +227,9 @@ HMAC-SHA256、keccak、ABI 编码都用已有依赖（`@noble/hashes`、ethers�
 5. gas 不足时：转入按钮前置提示，不进入签名。
 6. 断网 / relayer 返回 `STATE_FAILED`：界面显示失败原因，不静默重试。
 7. `X-Tenant-Domain` 断言：所有请求录制成夹具，测试逐条检查该头存在。
+8. 外部钱包（MetaMask / OKX 移动端）走完四步：重点看 `uint256 scopeId` 这种大整数在 `eth_signTypedData_v4` 里各家钱包是否签得一致。
+9. 网页版与 App 用同一个地址同时发起 Safe 交易：后发的一笔要么取到新 nonce 成功，要么以失败呈现并可重试，不能卡死。
+10. 发起解包后立刻杀 App 再进：待领取列表在子图追上之前就有这一条（乐观记录），追上后不重复。
 
 ### 3.7 失败与边界
 
@@ -229,7 +246,10 @@ HMAC-SHA256、keccak、ABI 编码都用已有依赖（`@noble/hashes`、ethers�
 | CLOB 密钥被平台吊销                                      | L2 请求 401 → 重走 `ClobAuth` 换新密钥                              |
 | 转出金额低于 `minUnwrapUsdw`                             | 提交前拦截                                                          |
 | 转入时原生币不够 gas                                     | 签名前拦截，走现有 `InsufficientGasError` 文案                      |
-| 转出发起成功但 App 被杀                                  | 待领取列表来自 data-service，重进即恢复；不依赖本地状态             |
+| 转出发起成功但 App 被杀                                  | 本机乐观记录 + data-service 列表合并，重进即恢复                    |
+| 平台限流 429                                             | 指数退避，最多 3 次，界面显示"稍后再试"；不并发重试                 |
+| `services.predict` 在运行中被改                          | 清预测凭证，下次进模块重新启用（§3.3）                              |
+| 平台租户过期（`public-info` 403）                        | 模块不可用提示，不进启用流程                                        |
 
 ### 3.8 服务地址：从哪来、谁维护、租户怎么隔离
 
@@ -267,7 +287,7 @@ HMAC-SHA256、keccak、ABI 编码都用已有依赖（`@noble/hashes`、ethers�
 | 2    | `predict-platform` client：租户头、public-info、登录 / 刷新、relayer、Safe/MultiSend 编码、ClobAuth/L2 | 4–5 天 |
 | 3    | 链层任意合约调用 + 转入（A/B）+ faucet                                                                 | 2–3 天 |
 | 4    | 转出两阶段 + 待领取列表 + 模型改动 + 划转页改造                                                        | 3–4 天 |
-| 5    | 启用流程（4 步、可续做）+ 凭证存储 + 登出清理                                                          | 2–3 天 |
+| 5    | 启用引导页 + 启用流程（4 步、可续做）+ 凭证存储 + 登出 / 重装 / 配置变化清理                           | 3–4 天 |
 | 6    | `HttpPredictGateway` 其余读接口（行情 / 持仓 / 活动 / WS）                                             | 4–6 天 |
 | 7    | 测试（录制 dev 响应做夹具）、联调、文档                                                                | 3 天   |
 
@@ -314,3 +334,25 @@ App 的钱包地址就是预测平台里的 EOA，这个理解是对的。但平
 
 1. 主网接入时让平台把 Monad 的 `USDC_UNDERLYING` 加进 relayer 白名单，否则转出第二阶段必败（平台自己的主网部署文档也标注要手工加；dev 已经有）。
 2. 主网 `unwrapDelay` 目前 2 小时：用户不会盯两小时倒计时，主网接入时要做"可以领取了"的推送（走现有推送链路，由 App 在发起解包成功后向 RN-Server 登记一条定时提醒，或本地通知）。
+
+## 8. 对抗评审记录（第二轮，2026-09-02）
+
+逐条攻击方案里的假设，结论与改动：
+
+| 攻击点                                             | 结论                                                                      | 改动                                                                 |
+| -------------------------------------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| "CLOB 密钥等同私钥"                                | 不成立：clob 对每笔订单验 EOA 的 EIP-712 签名，密钥单独泄露只能撤单、看账 | §2.3 改为"账户级敏感"，并注明阶段 6 订单的 maker / signer 结构       |
+| 无上限授权 wrapper                                 | 网页版是无上限；wrapper 出事时 EOA 里的 USDC 会被整个拿走                 | §2.5 改为按本次金额授权                                              |
+| 服务端先上 `services` 段会不会打坏旧 App           | 不会：bootstrap 根对象丢弃未知键（已核对 schema）                         | §3.2 写明发布顺序                                                    |
+| 限流按 IP，手机走运营商 NAT                        | 成立，且是上量后的必然故障                                                | §3.5 列出实际数字，接入前要平台按租户放宽；我们压低轮询、对 429 退避 |
+| 待领取列表依赖子图                                 | 成立：索引延迟会让刚发起的转出"消失"                                      | §3.5 / §3.7 加乐观记录合并                                           |
+| 进模块就连弹四个签名                               | 对外部钱包用户体验差、且不合"告知后签名"的原则                            | §3.4 加启用引导页与协议展示，保留"进模块时触发"                      |
+| 卸载重装后 keychain 里的凭证复活                   | iOS 会                                                                    | §3.3 首次启动无钱包即清预测凭证                                      |
+| `services.predict` 运行中改动                      | 会把旧凭证发到新平台                                                      | §3.3 视为换平台，清凭证重启用                                        |
+| 两个 RPC 来源（我们下发的与 `public-info.rpcUrl`） | 违反单一来源                                                              | §3.3 只用我们下发的                                                  |
+| 网页与 App 共用 Safe 的 nonce 竞争                 | 会发生                                                                    | §3.6 加验收项 9                                                      |
+| 大整数 `scopeId` 在外部钱包的 typed data 实现      | 未验证，是已知的兼容坑                                                    | §3.6 加验收项 8                                                      |
+| 平台租户过期                                       | `public-info` 403，原方案没写                                             | §3.5 / §3.7                                                          |
+| 持仓按地址公开                                     | 平台设计，无法改                                                          | §3.5 写进用户说明                                                    |
+
+未被推翻的核心结论：直连、一个域名派生服务地址、显式 scopeId 关联、`unwrapDelay` 以链上为准、转出两阶段。
