@@ -12,7 +12,6 @@ import {
 import { AppState, BackHandler, Modal, useColorScheme } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  loadBootstrap,
   loadCachedBootstrap,
   type BootstrapSnapshot,
 } from "../core/config/bootstrap-repository";
@@ -22,7 +21,7 @@ import type {
 } from "../core/config/bootstrap.schema";
 import { createFallbackConfig } from "../core/config/fallback-config";
 import { translateMessage } from "../core/config/localization";
-import { useBootstrap } from "../core/config/use-bootstrap";
+import { bootstrapQueryFn, useBootstrap } from "../core/config/use-bootstrap";
 import { changeLocalePreference } from "../core/config/locale-change";
 import {
   usePreferencesStore,
@@ -46,18 +45,27 @@ import {
   Stack,
 } from "../design-system";
 import { LaunchScreen } from "./launch-screen";
-import { BootstrapSkeleton } from "./bootstrap-skeleton";
-import { applyDeliveredWalletConfig } from "../core/wallet/config/wallet-runtime-config";
+
 import {
   registerPushTokenIfAuthorized,
   subscribeToUpdateSignals,
 } from "../core/device/installation-service";
 import {
   collectBrandingAssets,
-  hydrateCachedBranding,
   resolveBrandingVisual,
   warmBrandingAssets,
 } from "../core/config/branding-assets";
+
+/** 没有品牌配置的租户，启动页至少停留这么久，避免一闪而过。 */
+const LAUNCH_MIN_DISPLAY_MS = 700;
+
+type LaunchBranding = NonNullable<BootstrapConfig["branding"]>;
+
+function launchBrandingOf(config: BootstrapConfig): LaunchBranding | null {
+  return config.branding?.enabled && config.branding.launch.enabled
+    ? config.branding
+    : null;
+}
 
 type RuntimeValue = {
   config: BootstrapConfig;
@@ -106,8 +114,8 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   const query = useBootstrap(locale);
   const fallback = useMemo(() => createFallbackConfig(locale), [locale]);
   const snapshot = query.data;
-  // The embedded configuration is used only to render the startup gate. It is
-  // never exposed through RuntimeContext and cannot open business screens.
+  // 拿到远程下发之前 config 是内置配置：它只用来渲染启动门禁（启动页 / 重试屏 /
+  // 强制 OTA 弹层）。业务界面（children）只在 entered 之后挂载，永远不会跑在它上面。
   const config = snapshot?.config ?? fallback;
   const runtimeSnapshot = useMemo<BootstrapSnapshot>(
     () =>
@@ -125,12 +133,12 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
     string | null
   >(null);
   const [launchMinimumElapsed, setLaunchMinimumElapsed] = useState(false);
-  const [launchTimeout, setLaunchTimeout] = useState(false);
-  const [launchBranding, setLaunchBranding] =
-    useState<BootstrapConfig["branding"]>();
-  const [launchBrandingVersion, setLaunchBrandingVersion] = useState<
-    number | null
-  >(null);
+  // 上次成功的 bootstrap（读本地缓存）：undefined = 还没读完；null = 没有缓存
+  const [cachedLaunchConfig, setCachedLaunchConfig] = useState<
+    BootstrapConfig | null | undefined
+  >(undefined);
+  // 进入过一次就不再回到启动页：运行中的配置刷新失败不该把用户踢回门禁
+  const [entered, setEntered] = useState(false);
   const [notificationStatus, setNotificationStatus] = useState<
     "idle" | "registered" | "denied" | "unavailable"
   >("idle");
@@ -144,20 +152,25 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
         ? "dark"
         : "light"
       : themePreference;
-  const brandingConfig =
-    config.branding?.enabled && config.branding.launch.enabled
-      ? config.branding
-      : undefined;
-  const activeBranding = !snapshot
-    ? (launchBranding ?? brandingConfig)
-    : brandingConfig && launchBrandingVersion === brandingConfig.version
-      ? launchBranding
-      : brandingConfig;
+  /**
+   * 本次启动用哪一版品牌视觉，**严格按服务端配置、决定一次就不再换**：
+   * 有上次缓存的 bootstrap 就用缓存里那一版（图片已在本地，一次画成），服务端这次下发
+   * 了新版本也只在后台预热、留给下一次启动；没有缓存（首次安装）就用本次下发的那版。
+   * 中途换版本，logo 会随着"缓存 → 远程 → 预热完成"换 URI，用户看到的就是启动图加载
+   * 了好几遍。undefined 表示还不知道（缓存没读完 / 首次安装还没拿到下发）。
+   */
+  const activeBranding: LaunchBranding | null | undefined =
+    cachedLaunchConfig === undefined
+      ? undefined
+      : cachedLaunchConfig !== null
+        ? launchBrandingOf(cachedLaunchConfig)
+        : snapshot
+          ? launchBrandingOf(snapshot.config)
+          : undefined;
+  const launchPending = activeBranding === undefined;
   const launchVisual = activeBranding
     ? resolveBrandingVisual(activeBranding.launch.visuals, launchTheme)
     : undefined;
-  const brandingReady =
-    !brandingConfig || launchBrandingVersion === brandingConfig.version;
   const nativeUpdateStatus = useUpdateStatus();
   const t = useCallback(
     (key: string) => translateMessage(config.localization.messages, key),
@@ -172,7 +185,7 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
         stage: async (targetLocale) => {
           await queryClient.fetchQuery({
             queryKey: ["mobile-bootstrap", targetLocale],
-            queryFn: ({ signal }) => loadBootstrap(targetLocale, signal),
+            queryFn: ({ signal }) => bootstrapQueryFn(targetLocale, signal),
             staleTime: 5 * 60 * 1_000,
             gcTime: 24 * 60 * 60 * 1_000,
             retry: false,
@@ -186,10 +199,7 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     let active = true;
     void loadCachedBootstrap(locale).then((cached) => {
-      const branding = cached?.branding;
-      if (!active || !branding?.enabled || !branding.launch.enabled) return;
-      setLaunchBranding(branding);
-      setLaunchBrandingVersion(branding.version);
+      if (active) setCachedLaunchConfig((known) => known ?? cached);
     });
     return () => {
       active = false;
@@ -197,10 +207,12 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   }, [locale]);
   const refresh = useCallback(async (): Promise<BootstrapSnapshot> => {
     const result = await query.refetch();
+    // refetch 失败时 React Query 会保留上一份 data；那不是"刷新成功"
+    if (result.isError)
+      throw result.error ?? new Error("Remote Bootstrap is unavailable");
     if (result.data) return result.data;
-    if (snapshot) return snapshot;
-    throw result.error ?? new Error("Remote Bootstrap is unavailable");
-  }, [query, snapshot]);
+    throw new Error("Remote Bootstrap is unavailable");
+  }, [query]);
   const dismissUpdatePrompt = useCallback(() => {
     setManualUpdatePromptVersion(null);
   }, []);
@@ -247,52 +259,24 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
     });
     return task;
   }, [refresh]);
+  // 最短停留时间按冻结的那版品牌配置；没有品牌配置的租户按平台常量
+  const minimumMs =
+    activeBranding?.launch.minDisplayMs ?? LAUNCH_MIN_DISPLAY_MS;
   useEffect(() => {
-    const minimumMs = config.branding?.launch.minDisplayMs ?? 700;
-    const maximumMs = config.branding?.launch.maxDisplayMs ?? 1_800;
-    const minimumTimer = setTimeout(
-      () => setLaunchMinimumElapsed(true),
-      minimumMs,
-    );
-    const timeoutTimer = setTimeout(() => setLaunchTimeout(true), maximumMs);
-    return () => {
-      clearTimeout(minimumTimer);
-      clearTimeout(timeoutTimer);
-    };
-  }, [
-    config.branding?.launch.maxDisplayMs,
-    config.branding?.launch.minDisplayMs,
-  ]);
+    if (launchPending) return;
+    const timer = setTimeout(() => setLaunchMinimumElapsed(true), minimumMs);
+    return () => clearTimeout(timer);
+  }, [launchPending, minimumMs]);
+  // 本次下发的品牌资源在后台下载、校验并缓存，给**下一次**启动用；不碰当前启动页
   useEffect(() => {
-    let active = true;
-    const remoteBranding = snapshot ? brandingConfig : undefined;
-    if (!remoteBranding) return () => undefined;
-    void hydrateCachedBranding({ ...config, branding: remoteBranding }).then(
-      (cached) => {
-        if (active && cached.branding) {
-          setLaunchBranding(cached.branding);
-          setLaunchBrandingVersion(cached.branding.version);
-        }
-      },
-    );
+    if (!snapshot) return;
+    const remoteBranding = launchBrandingOf(snapshot.config);
+    if (!remoteBranding) return;
     void warmBrandingAssets(
-      collectBrandingAssets(config),
+      collectBrandingAssets(snapshot.config),
       remoteBranding.cachePolicy,
-    ).then(() => {
-      if (!active) return;
-      void hydrateCachedBranding({ ...config, branding: remoteBranding }).then(
-        (cached) => {
-          if (active && cached.branding) {
-            setLaunchBranding(cached.branding);
-            setLaunchBrandingVersion(cached.branding.version);
-          }
-        },
-      );
-    });
-    return () => {
-      active = false;
-    };
-  }, [brandingConfig, config, snapshot]);
+    );
+  }, [snapshot]);
   const runSilentOtaCheck = useCallback((candidate: BootstrapConfig) => {
     if (!candidate.features.otaEnabled || !candidate.update.ota.enabled) return;
     const key = [
@@ -345,11 +329,16 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   // 钱包参数（WalletConnect projectId / 链集合 / 代币目录）由服务端按租户下发；
   // 应用后要让连接器列表重新读一次，否则外部钱包会一直停在"未启用"；
   // 真链上的代币列表来自目录，目录变了余额列表也要重读
+  // 钱包运行时配置本身在 bootstrapQueryFn 里随数据一起应用；这里只让依赖它的查询重读
   useEffect(() => {
-    applyDeliveredWalletConfig(config.wallet);
     void queryClient.invalidateQueries({ queryKey: ["wallet-connectors"] });
     void queryClient.invalidateQueries({ queryKey: ["wallet-balances"] });
   }, [config.wallet, queryClient]);
+  // 放行条件：本次拿到了远程下发（不是内置配置）且最短停留已到。没有超时放行：
+  // 数据没下来就不进业务页，失败走重试屏。进入过就锁住，后续刷新失败不回门禁
+  const deliveryReady =
+    snapshot !== undefined && snapshot.source === "remote" && !snapshot.stale;
+  if (!entered && deliveryReady && launchMinimumElapsed) setEntered(true);
   useEffect(
     () =>
       subscribeToUpdateSignals((signal) => {
@@ -479,125 +468,99 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
 
   return (
     <FoundationThemeProvider config={config} preference={themePreference}>
-      {!snapshot ? (
-        query.isPending ? (
-          launchMinimumElapsed && !activeBranding ? (
-            <BootstrapSkeleton />
-          ) : (
-            <LaunchScreen
-              message={
-                activeBranding?.launch.subtitle ||
-                (locale === "en-US"
-                  ? "Connecting to configuration service"
-                  : "正在连接配置服务")
-              }
-              title={activeBranding?.launch.title}
-              backgroundColor={launchVisual?.backgroundColor}
-              logo={launchVisual?.logo}
-              backgroundImage={launchVisual?.backgroundImage}
-              animationType={activeBranding?.launch.animation.type}
-              animationDurationMs={activeBranding?.launch.animation.durationMs}
-            />
-          )
-        ) : (
+      <RuntimeContext.Provider value={value}>
+        {entered ? (
+          children
+        ) : query.isError && !snapshot ? (
           <BootstrapUnavailableScreen
             locale={locale}
             retrying={query.isFetching}
             onRetry={() => void query.refetch()}
           />
-        )
-      ) : (
-        <RuntimeContext.Provider value={value}>
-          {launchMinimumElapsed &&
-          (!query.isPending || launchTimeout) &&
-          (brandingReady || launchTimeout) ? (
-            children
-          ) : (
-            <LaunchScreen
-              message={activeBranding?.launch.subtitle || t("status.loading")}
-              title={activeBranding?.launch.title || t("app.name")}
-              backgroundColor={launchVisual?.backgroundColor}
-              logo={launchVisual?.logo}
-              backgroundImage={launchVisual?.backgroundImage}
-              animationType={activeBranding?.launch.animation.type}
-              animationDurationMs={activeBranding?.launch.animation.durationMs}
-            />
-          )}
-          <Modal
-            visible={immediateOtaVisible}
-            transparent
-            animationType="fade"
-            statusBarTranslucent
-            navigationBarTranslucent
-            presentationStyle="overFullScreen"
-            onRequestClose={() => undefined}
-          >
-            <FoundationThemeProvider
-              config={config}
-              preference={themePreference}
+        ) : (
+          // 整个启动过程只有这一个实例、同一个树位置：换分支重挂载会让 logo 再淡入一次
+          <LaunchScreen
+            pending={launchPending}
+            message={activeBranding?.launch.subtitle || t("status.loading")}
+            title={activeBranding?.launch.title || t("app.name")}
+            backgroundColor={launchVisual?.backgroundColor}
+            logo={launchVisual?.logo}
+            backgroundImage={launchVisual?.backgroundImage}
+            animationType={activeBranding?.launch.animation.type}
+            animationDurationMs={activeBranding?.launch.animation.durationMs}
+          />
+        )}
+        <Modal
+          visible={immediateOtaVisible}
+          transparent
+          animationType="fade"
+          statusBarTranslucent
+          navigationBarTranslucent
+          presentationStyle="overFullScreen"
+          onRequestClose={() => undefined}
+        >
+          <FoundationThemeProvider config={config} preference={themePreference}>
+            <Stack
+              flex={1}
+              justifyContent="center"
+              padding="$4"
+              backgroundColor="$backdrop"
+              accessibilityRole="alert"
+              accessibilityViewIsModal
             >
-              <Stack
-                flex={1}
-                justifyContent="center"
-                padding="$4"
-                backgroundColor="$backdrop"
-                accessibilityRole="alert"
-                accessibilityViewIsModal
-              >
-                {pendingOta ? (
-                  <Card
-                    width="100%"
-                    maxWidth={460}
-                    alignSelf="center"
-                    borderColor="$warning"
-                    backgroundColor="$surface"
-                    padding="$5"
-                  >
-                    <Stack gap="$3">
-                      <Label color="$warning">
-                        {t("update.otaImmediateRequiredLabel")}
-                      </Label>
-                      <SectionTitle>
-                        {t(
-                          pendingOta.status === "error"
-                            ? "update.otaImmediateRetryTitle"
-                            : "update.otaImmediateTitle",
-                        )}
-                      </SectionTitle>
-                      <Body>
-                        {t(
-                          pendingOta.status === "applying"
-                            ? "update.otaApplying"
-                            : pendingOta.status === "error"
-                              ? "update.otaImmediateRetry"
-                              : "update.otaImmediateRequired",
-                        )}
+              {pendingOta ? (
+                <Card
+                  width="100%"
+                  maxWidth={460}
+                  alignSelf="center"
+                  borderColor="$warning"
+                  backgroundColor="$surface"
+                  padding="$5"
+                >
+                  <Stack gap="$3">
+                    <Label color="$warning">
+                      {t("update.otaImmediateRequiredLabel")}
+                    </Label>
+                    <SectionTitle>
+                      {t(
+                        pendingOta.status === "error"
+                          ? "update.otaImmediateRetryTitle"
+                          : "update.otaImmediateTitle",
+                      )}
+                    </SectionTitle>
+                    <Body>
+                      {t(
+                        pendingOta.status === "applying"
+                          ? "update.otaApplying"
+                          : pendingOta.status === "error"
+                            ? "update.otaImmediateRetry"
+                            : "update.otaImmediateRequired",
+                      )}
+                    </Body>
+                    <Stack
+                      padding="$3"
+                      borderRadius="$3"
+                      backgroundColor="$surfaceVariant"
+                    >
+                      <Body color="$textMuted" fontSize={13}>
+                        {t("update.otaImmediateHint")}
                       </Body>
-                      <Stack
-                        padding="$3"
-                        borderRadius="$3"
-                        backgroundColor="$surfaceVariant"
-                      >
-                        <Body color="$textMuted" fontSize={13}>
-                          {t("update.otaImmediateHint")}
-                        </Body>
-                      </Stack>
-                      <PrimaryButton
-                        disabled={pendingOta.status === "applying"}
-                        onPress={() => void applyPendingOta()}
-                      >
-                        {pendingOta.status === "applying"
-                          ? t("update.otaApplying")
-                          : t("update.applyImmediate")}
-                      </PrimaryButton>
                     </Stack>
-                  </Card>
-                ) : null}
-              </Stack>
-            </FoundationThemeProvider>
-          </Modal>
-        </RuntimeContext.Provider>
-      )}
+                    <PrimaryButton
+                      disabled={pendingOta.status === "applying"}
+                      onPress={() => void applyPendingOta()}
+                    >
+                      {pendingOta.status === "applying"
+                        ? t("update.otaApplying")
+                        : t("update.applyImmediate")}
+                    </PrimaryButton>
+                  </Stack>
+                </Card>
+              ) : null}
+            </Stack>
+          </FoundationThemeProvider>
+        </Modal>
+      </RuntimeContext.Provider>
     </FoundationThemeProvider>
   );
 }

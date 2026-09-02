@@ -58,6 +58,9 @@ const androidVersionCode = tenant?.androidVersionCode ?? 1;
 const iosBuildNumber = tenant?.iosBuildNumber ?? "1";
 const buildNumber =
   process.env.EXPO_OS === "ios" ? iosBuildNumber : String(androidVersionCode);
+// 图标底色与原生启动图底色共用：冷启动第一帧就是这个纯色，没有 logo。
+// logo 只由 JS 启动页画一次（按租户下发的品牌配置），原生层再画一遍就是两张启动图。
+const iconBackgroundColor = tenant?.iconBackgroundColor ?? "#E9F0FF";
 const apiBaseUrl =
   tenant?.apiBaseUrl ??
   process.env.EXPO_PUBLIC_API_BASE_URL ??
@@ -125,7 +128,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     // the activity. Native builds must be regenerated after this change.
     predictiveBackGestureEnabled: false,
     adaptiveIcon: {
-      backgroundColor: tenant?.iconBackgroundColor ?? "#E9F0FF",
+      backgroundColor: iconBackgroundColor,
       foregroundImage: tenantAsset(
         "android-icon-foreground.png",
         "./assets/android-icon-foreground.png",
@@ -148,6 +151,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     "expo-notifications",
     // 外部钱包的 package visibility 声明：开发包也要，否则本地调不通深链
     "./plugins/with-wallet-deep-links.js",
+    // 原生启动图改成纯色：模板默认那张占位图（网格 + 同心圆）不属于任何租户
+    [
+      "./plugins/with-plain-splash.js",
+      { backgroundColor: iconBackgroundColor },
+    ],
     ...(distributionChannel === "development"
       ? []
       : ["./plugins/with-production-android-optimizations.js"]),

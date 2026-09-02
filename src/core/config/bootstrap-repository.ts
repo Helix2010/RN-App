@@ -27,9 +27,9 @@ const languagePackageSchema = z.object({
 
 export type BootstrapSnapshot = {
   config: BootstrapConfig;
-  source: "remote" | "cache" | "fallback";
+  /** remote：本次从服务端拿到的；fallback：内置配置，只用于渲染启动门禁 */
+  source: "remote" | "fallback";
   stale: boolean;
-  lastError?: Error;
 };
 
 function cacheKey(locale: SupportedLocale): string {
@@ -205,12 +205,8 @@ export async function loadBootstrap(
     );
     return { config: enriched, source: "remote", stale: false };
   } catch (error) {
-    const lastError =
-      error instanceof Error ? error : new Error("Unknown error");
-    const cached = await readCache(locale);
-    if (cached) {
-      return { config: cached, source: "cache", stale: true, lastError };
-    }
-    throw lastError;
+    // 拿不到远程下发就是失败：不用上次的缓存冒充一份"配置"。缓存只供
+    // loadCachedBootstrap 决定启动页画哪版品牌，业务界面不会跑在它上面
+    throw error instanceof Error ? error : new Error("Unknown error");
   }
 }

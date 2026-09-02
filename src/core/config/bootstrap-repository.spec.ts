@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { apiClient } from "../network/api-client";
-import { loadBootstrap } from "./bootstrap-repository";
+import { loadBootstrap, loadCachedBootstrap } from "./bootstrap-repository";
 import { createFallbackConfig } from "./fallback-config";
 
 jest.mock("@react-native-async-storage/async-storage", () => ({
@@ -38,14 +38,34 @@ describe("loadBootstrap", () => {
     jest.clearAllMocks();
   });
 
-  it("blocks startup and removes a corrupted cache when the server is unavailable", async () => {
+  it("blocks startup when the server is unavailable, whatever the cache holds", async () => {
     getBootstrap.mockRejectedValue(new Error("server unavailable"));
     storage.getItem.mockResolvedValue("{broken-json");
 
     await expect(loadBootstrap("zh-CN")).rejects.toThrow("server unavailable");
+  });
+
+  it("removes a corrupted cache when the launch screen reads it", async () => {
+    // 缓存只在启动页决定画哪版品牌时读；坏掉的缓存在这里被清掉，而不是拿来冒充配置
+    storage.getItem.mockResolvedValue("{broken-json");
+
+    await expect(loadCachedBootstrap("zh-CN")).resolves.toBeNull();
     expect(storage.removeItem).toHaveBeenCalledWith(
       "foundation.bootstrap.v3.https%3A%2F%2Ftenant-a.example.com.dex-mobile.zh-CN",
     );
+  });
+
+  it("does not hand out a cached snapshot when the server is unavailable", async () => {
+    // 缓存只用来决定启动页画哪版品牌；拿不到远程下发就是失败，业务界面不能跑在旧配置上
+    getBootstrap.mockRejectedValue(new Error("server unavailable"));
+    storage.getItem.mockResolvedValue(
+      JSON.stringify({
+        savedAt: Date.now(),
+        config: createFallbackConfig("zh-CN"),
+      }),
+    );
+
+    await expect(loadBootstrap("zh-CN")).rejects.toThrow("server unavailable");
   });
 
   it("uses the request domain and writes only the domain-scoped cache", async () => {
