@@ -78,6 +78,8 @@ WS 协议用 node `ws` 直连 prax1s 复核过：初始 dump 的 `timestamp` 是
 - 2026-09-03 直接写库（web4，用户授权）：anyfun（100000001）`services.predict` 指向 `predict.prax1s.xyz` / `0xfb05…454a` / op-sepolia，op-sepolia 目录加 USDW（`0x790e…6098`，6 位），`tokens` 锚点 +1；`modules.predict` 保持 false。线上 bootstrap 已核实 `wallet.tokens` 含 USDW、`services` 仍空。
 - 同日稍后按用户要求直接把 `modules.predict` 置 true（版本号守卫 UPDATE）；现网 1.2.7 老包在新包发出前会显示 Mock 预测市场。已核实币种下发只看 `chain_token_catalog` 自身的 enabled 与链开关（RN-Server `internal/api/tokens.go` 不读 `modules.predict`）。
 
+- 2026-09-03 模拟器 `rn_smoke` 上的测试钱包：EOA `0x75D26308e8E47519C0dE6Cbe444c20430013d3F4`（OP Sepolia，Safe `0x9047…fb34` 已建并授权，余额 0 ETH / 0 USDC）。继续联调转入 / 下单 / 取回前，需要给这个 EOA 打少量 OP Sepolia ETH（≈0.01 即可）：随后在 App 里先自铸测试 USDC（`0x2eA6…c3AD` 的 `mint` 无权限）或由运维直接铸给它，再走转入。
+
 ## 验证
 
 - RN-App `pnpm check` 全绿；新增 spec：`http-predict-account-gateway.spec.ts`（假平台 + 假链，覆盖启用 / 余额 / 转入 / 两阶段转出 / 关联变化清凭证）、`transfer-form.spec.tsx`、`predict-enable-screen.spec.tsx`，`market-list-screen.spec.tsx` 改为账户网关状态驱动。
