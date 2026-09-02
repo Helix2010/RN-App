@@ -1,6 +1,6 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import { useGateways } from "../../../core/gateways/gateway-context";
@@ -14,11 +14,11 @@ import {
 } from "../../../core/wallet/keygen/mnemonic";
 import {
   AppIcon,
+  ActionButton,
   Body,
   Content,
   Page,
   PageScroll,
-  PrimaryButton,
   Row,
   ScreenHeader,
   SectionTitle,
@@ -47,6 +47,7 @@ export function WalletImportScreen({
   const [secret, setSecret] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const submitting = useRef(false);
 
   const preview = useMemo(() => {
     const trimmed = secret.trim();
@@ -74,7 +75,8 @@ export function WalletImportScreen({
 
   const submit = async () => {
     const trimmed = secret.trim();
-    if (!preview) return;
+    if (!preview || submitting.current) return;
+    submitting.current = true;
     setBusy(true);
     setError("");
     try {
@@ -94,6 +96,7 @@ export function WalletImportScreen({
             : t("wallet.import.invalidPrivateKey"),
       );
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   };
@@ -107,7 +110,7 @@ export function WalletImportScreen({
           backLabel={t("action.back")}
         />
       </Content>
-      <PageScroll>
+      <PageScroll keyboardShouldPersistTaps="handled">
         <Content paddingTop="$1" gap="$4" paddingBottom={40}>
           <Tabs
             value={mode}
@@ -185,13 +188,17 @@ export function WalletImportScreen({
               </Body>
             </Row>
           ) : null}
-          <PrimaryButton
+          <ActionButton
             onPress={() => void submit()}
             disabled={busy || !preview}
+            loading={busy}
+            loadingLabel={t("common.processing")}
+            width="100%"
+            alignSelf="stretch"
             testID="wallet-import-submit"
           >
             {t("wallet.import.submit")}
-          </PrimaryButton>
+          </ActionButton>
         </Content>
       </PageScroll>
     </Page>

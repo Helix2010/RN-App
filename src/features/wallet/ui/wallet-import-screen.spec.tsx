@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react-native";
 import { shortenAddress } from "../../../core/i18n/format";
 import { deriveAccount } from "../../../core/wallet/keygen/mnemonic";
 import {
@@ -46,6 +46,46 @@ describe("WalletImportScreen", () => {
     expect(accounts.map((item) => item.address)).toContain(
       deriveAccount(PHRASE, 0).address,
     );
+  });
+
+  it("shows progress immediately and ignores a second tap while importing", async () => {
+    const gateways = createTestGateways();
+    const importMnemonic = jest
+      .spyOn(gateways.wallet, "importMnemonic")
+      .mockImplementation(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return {
+          address: deriveAccount(PHRASE, 0).address,
+          label: "Imported",
+          connector: "embedded",
+          chains: ["eth"],
+          current: false,
+          backedUp: false,
+        };
+      });
+    const { navigation, runtime } = await renderImport(gateways);
+    void fireEvent.changeText(
+      await screen.findByTestId("wallet-import-secret"),
+      PHRASE,
+    );
+    const button = await screen.findByTestId("wallet-import-submit");
+
+    await act(async () => {
+      void fireEvent.press(button);
+      void fireEvent.press(button);
+      await Promise.resolve();
+    });
+
+    expect(importMnemonic).toHaveBeenCalledTimes(1);
+    expect(
+      await screen.findByText(runtime.t("common.processing")),
+    ).toBeTruthy();
+    expect(button.props.accessibilityState).toEqual({
+      busy: true,
+      disabled: true,
+    });
+
+    await waitFor(() => expect(navigation.popToTop).toHaveBeenCalled());
   });
 
   it("explains an invalid phrase as soon as it is typed and refuses to submit", async () => {

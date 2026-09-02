@@ -553,12 +553,17 @@ export function SegmentedControl<T extends string>({
 export function PageScroll({
   children,
   refresh,
-}: PropsWithChildren<{ refresh?: RefreshControlProps }>) {
+  keyboardShouldPersistTaps = "handled",
+}: PropsWithChildren<{
+  refresh?: RefreshControlProps;
+  keyboardShouldPersistTaps?: "always" | "never" | "handled";
+}>) {
   const theme = useTheme();
   return (
     <ScrollView
       flex={1}
       showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps={keyboardShouldPersistTaps}
       refreshControl={
         refresh ? (
           <RefreshControl
