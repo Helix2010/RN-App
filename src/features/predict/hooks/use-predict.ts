@@ -249,6 +249,17 @@ export function useSubmitDispute(address: string | undefined) {
   });
 }
 
+/** 盈亏曲线（data-service `/user-pnl`）；"今日"= 1d 序列末值 − 首值 */
+export function usePredictPnl(address: string | undefined, range: PriceRange) {
+  const { predict } = useGateways();
+  return useQuery({
+    queryKey: ["predict-pnl", address, range],
+    queryFn: () => predict.getPnl(address as string, range),
+    enabled: Boolean(address),
+    staleTime: 60_000,
+  });
+}
+
 export function useLeaderboard(
   period: LeaderboardPeriod,
   sort: "pnl" | "volume",

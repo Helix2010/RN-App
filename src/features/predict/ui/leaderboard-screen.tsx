@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
-import { formatUsd, shortenAddress } from "../../../core/i18n/format";
+import { formatUsd, NO_QUOTE, shortenAddress } from "../../../core/i18n/format";
 import {
   Body,
   Content,
@@ -19,6 +19,7 @@ import {
 } from "../../../design-system";
 import { useSession } from "../../session/hooks/use-session";
 import { requestAuth } from "../../session/model/auth-sheet-store";
+import { usePredictEnablement } from "../hooks/use-predict-account";
 import { useLeaderboard } from "../hooks/use-predict";
 import type { LeaderboardPeriod } from "../model/predict";
 import { fill } from "./shared";
@@ -39,6 +40,12 @@ export function LeaderboardScreen({
   const rows = useLeaderboard(period, sort);
   const session = useSession();
   const address = session.data?.address;
+  // 平台排行榜按 Safe（proxyWallet）计名，没有"查我的名次"接口：在返回的榜单里找自己，找不到就是未上榜
+  const enablement = usePredictEnablement(address);
+  const safe = enablement.data?.safe?.address.toLowerCase();
+  const me = safe
+    ? rows.data?.find((row) => row.address.toLowerCase() === safe)
+    : undefined;
 
   return (
     <Page>
@@ -185,15 +192,30 @@ export function LeaderboardScreen({
             </Stack>
             <Stack flex={1}>
               <SectionTitle fontSize={14}>
-                {fill(t("predict.leaderboard.myRank"), { rank: "1,204" })}
+                {me
+                  ? fill(t("predict.leaderboard.myRank"), {
+                      rank: me.rank.toLocaleString(locale),
+                    })
+                  : t("predict.leaderboard.unranked")}
               </SectionTitle>
               <Body fontSize={12}>
-                {t("predict.leaderboard.weekPnl")}{" "}
-                <InlineText color="$pricePositive" fontWeight="700">
-                  {formatUsd(312.4, locale, { sign: true })}
+                {t("predict.leaderboard.pnl")}{" "}
+                <InlineText
+                  color={
+                    me === undefined
+                      ? "$textMuted"
+                      : me.pnlUsd >= 0
+                        ? "$pricePositive"
+                        : "$priceNegative"
+                  }
+                  fontWeight="700"
+                >
+                  {me ? formatUsd(me.pnlUsd, locale, { sign: true }) : NO_QUOTE}
                 </InlineText>{" "}
                 ·{" "}
-                {fill(t("predict.volume"), { amount: formatUsd(4860, locale) })}
+                {fill(t("predict.volume"), {
+                  amount: me ? formatUsd(me.volumeUsd, locale) : NO_QUOTE,
+                })}
               </Body>
             </Stack>
             <PrimaryButton

@@ -7,6 +7,7 @@ import {
   formatDateTime,
   formatMoney,
   formatUsd,
+  NO_QUOTE,
 } from "../../../core/i18n/format";
 import { pickTranslation } from "../../../core/i18n/localized-text";
 import {
@@ -43,6 +44,7 @@ import {
   useOpenOrders,
   usePositions,
   usePredictActivity,
+  usePredictPnl,
   useRedeem,
 } from "../hooks/use-predict";
 import type {
@@ -83,6 +85,15 @@ export function PositionsScreen({
   const locale = config.localization.selectedLocale;
   const session = useSession();
   const address = session.data?.address;
+  // 今日盈亏来自平台盈亏曲线（1d），没有数据就显示占位而不编数
+  const pnlSeries = usePredictPnl(address, "1d");
+  const todayPnl = (() => {
+    const points = pnlSeries.data;
+    if (!points || points.length === 0) return null;
+    const first = points[0]?.pnlUsd ?? 0;
+    const last = points[points.length - 1]?.pnlUsd ?? first;
+    return last - first;
+  })();
   const balance = usePredictAccountBalance(address);
   const positions = usePositions(address, true);
   const orders = useOpenOrders(address);
@@ -227,8 +238,19 @@ export function PositionsScreen({
               </Stack>
               <Stack>
                 <Body fontSize={11}>{t("predict.today")}</Body>
-                <InlineText fontWeight="800" color="$pricePositive">
-                  {formatUsd(41.2, locale, { sign: true })}
+                <InlineText
+                  fontWeight="800"
+                  color={
+                    todayPnl === null
+                      ? "$textMuted"
+                      : todayPnl >= 0
+                        ? "$pricePositive"
+                        : "$priceNegative"
+                  }
+                >
+                  {todayPnl === null
+                    ? NO_QUOTE
+                    : formatUsd(todayPnl, locale, { sign: true })}
                 </InlineText>
               </Stack>
             </Row>

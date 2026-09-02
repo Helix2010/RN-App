@@ -63,6 +63,7 @@ WS 协议用 node `ws` 直连 prax1s 复核过：初始 dump 的 `timestamp` 是
 - **预测账户详情页崩溃**：`HttpPredictGateway` 把成交额 / 持仓市值 / 盈亏标成 `USDC`，账户余额是 `USDW`，下单页比较两者时 `Money` 断言不同币种直接抛错（Mock 时期两边都是 USDC 所以没暴露）。预测账户内一切金额统一为 USDW（抵押品），Mock 与 spec 同步。
 - **启用第一次跑完仍显示未启用**：relayer 报授权交易已上链后，App 读链的公共节点（Pocket）还没看到授权，`enable()` 立刻读到"未授权"却按成功返回，界面提示完成并退出，再进来还是"启用"。现在 relayer 报上链后轮询链上授权可见（最多 10 × 1.5 秒），看不到按失败抛错，与建 Safe 那步的校验一致。
 - **水龙头失败提示**：平台拒绝领取时（实测 "USDC balance must exceed the required minimum"）toast 前缀原来是"划转失败"，改为"领取测试网 gas 失败"。
+- **两处演示数字残留**：持仓页"今日盈亏"写死 `+$41.20`，改为平台盈亏曲线（`/user-pnl` 1d 序列末值 − 首值，新 hook `usePredictPnl`），没数据显示 "—"；排行榜"我的排名 #1,204 · 本周盈亏 +$312.40 · Vol $4,860" 全是写死的，改为在返回榜单里按 Safe（`proxyWallet`）找自己，找不到显示"暂未上榜"与 "—"（平台没有查单人名次的接口）。
 - **备份助记词页报重复 key**：12 词里同一个词出现两次是合法的，列表 key 改为带位置。
 
 联调环境事实：prax1s `public-info.chain.contracts` 已含 `USDW_WRAPPER` / `USDC_UNDERLYING`；测试 USDC（`0x2eA6…c3AD`）的 `mint(address,uint256)` 无权限限制，EOA 有少量 OP Sepolia ETH 即可自铸后联调转入 / 下单。
