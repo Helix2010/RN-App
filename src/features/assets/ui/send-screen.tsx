@@ -196,6 +196,11 @@ function SendForm({
     (item) => !isZero(item.amount),
   );
   const chainUnavailable = balances.data?.unavailable ?? [];
+  // 主表单只说当前这条链：余额查了全部启用的链，把别条链的故障摆在转出表单上是噪音。
+  // 每条链各自的故障在选币面板里按分组显示
+  const currentChainUnavailable = chainUnavailable.filter(
+    (failure) => failure.chain === chain,
+  );
   // 选中的币决定链；还没选时取当前链上第一个有余额的币
   const selected: TokenBalance | undefined =
     tokens.find((item) => tokenKeyOf(item.token) === tokenKey) ??
@@ -441,7 +446,7 @@ function SendForm({
               <AppIcon name="chevron-down" size={20} colorToken="textMuted" />
             </Row>
             <ChainUnavailableNotice
-              failures={chainUnavailable}
+              failures={currentChainUnavailable}
               onRetry={() => void balances.refetch()}
             />
           </Stack>
@@ -852,19 +857,12 @@ function tokenKeyOf(token: { chain: ChainId; address: string }): string {
 }
 
 /**
- * 从粘贴/扫码得到的文本里取出收款地址。
+ * 解析粘贴 / 扫码得到的收款文本：纯地址，或 EIP-681 链接
+ * （`ethereum:[pay-]<address>[@chainId][?value=…]`）。
  *
- * 接受纯地址和 EIP-681 收款链接（`ethereum:0x…@chainId?value=…`）。链接里的 chainId
- * 与 value 这里不采纳：换链、填金额都要用户自己确认，静默照做等于替用户做决定。
- * 其它内容原样返回，交给地址校验去报错——这里不猜。
- */
-export function recipientFromText(text: string): string {
-  return parsePaymentRequest(text).address;
-}
-
-/**
- * 解析收款文本：纯地址，或 EIP-681 链接（`ethereum:[pay-]<address>[@chainId][?value=…]`）。
- * chainId 取出来只用于提示"这个码标注的是另一条链"；value 一律丢弃。
+ * chainId 取出来**只用于提示**"这个码标注的是另一条链"，`value` 一律丢弃：换链、
+ * 填金额都要用户自己确认，静默照做等于替用户做决定。不是链接的内容原样返回，
+ * 交给地址校验去报错——这里不猜。
  */
 export function parsePaymentRequest(text: string): {
   address: string;

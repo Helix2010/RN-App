@@ -193,7 +193,6 @@ export function ProfileScreen({
             <SRow
               icon="book-account-outline"
               title={t("profile.addressBook")}
-              value={fill(t("profile.addressBook.count"), { n: 2 })}
               onPress={() => toast(t("state.empty"), "info")}
               testID="profile-address-book"
             />

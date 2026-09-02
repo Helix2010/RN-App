@@ -122,7 +122,7 @@ export const bootstrapSchema = z.object({
     supportedLocales: z.array(languageCodeSchema).min(1),
     localeCatalog: z.array(localeCatalogItemSchema).min(1).optional(),
     messagesVersion: z.string().min(1),
-    refreshIntervalSeconds: z.number().int().min(300).max(86400).optional(),
+    refreshIntervalSeconds: z.number().int().min(300).max(86400),
     messages: z.record(z.string(), z.string()),
     resource: z
       .object({

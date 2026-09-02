@@ -65,10 +65,15 @@ function ScannerBody({
   const [rejected, setRejected] = useState(false);
   const busy = useRef(false);
   const cooldown = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const asked = useRef(false);
 
+  // 一次挂载只弹一次系统授权框。Android 上"拒绝一次"之后 canAskAgain 仍是 true，
+  // 跟着 permission 变化重新请求会把用户按在弹框里反复点
   useEffect(() => {
-    if (permission && !permission.granted && permission.canAskAgain)
-      void requestPermission();
+    if (asked.current || !permission) return;
+    if (permission.granted || !permission.canAskAgain) return;
+    asked.current = true;
+    void requestPermission();
   }, [permission, requestPermission]);
 
   useEffect(

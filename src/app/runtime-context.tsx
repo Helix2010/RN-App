@@ -303,8 +303,11 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (snapshot && !query.isPending) runSilentOtaCheck(config);
   }, [config, query.isPending, runSilentOtaCheck, snapshot]);
+  // 配置重拉的节奏由服务端下发（管理端"刷新间隔"），不是客户端写死的数字：
+  // 运营改了链 / 币 / 端点后多久生效，得是管理端能看见并调整的值。
+  // 回到前台也会立刻重拉一次，所以这个间隔只决定"一直开着不动"时的上限
   useEffect(() => {
-    const interval = 15 * 60 * 1_000;
+    const interval = config.localization.refreshIntervalSeconds * 1_000;
     const refreshAndCheck = (): void => {
       if (AppState.currentState !== "active") return;
       void query.refetch().then((result) => {

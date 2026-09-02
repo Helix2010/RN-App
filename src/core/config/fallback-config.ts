@@ -528,7 +528,7 @@ const zhCN = {
   "profile.appLockOn": "应用锁已开",
   "profile.appLockOff": "应用锁未开",
   "profile.addressBook": "转账地址簿",
-  "profile.addressBook.count": "{n} 个地址",
+
   "profile.predictPortfolio": "预测持仓",
   "profile.claimable": "可领取",
   "profile.watchlist": "自选代币",
@@ -1360,7 +1360,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "profile.appLockOn": "App lock on",
   "profile.appLockOff": "App lock off",
   "profile.addressBook": "Address book",
-  "profile.addressBook.count": "{n} addresses",
+
   "profile.predictPortfolio": "Predict positions",
   "profile.claimable": "Claimable",
   "profile.watchlist": "Watchlist",
@@ -1736,6 +1736,7 @@ export function createFallbackConfig(locale: SupportedLocale): BootstrapConfig {
     requestId: "offline",
     localization: {
       selectedLocale: locale,
+      refreshIntervalSeconds: 21_600,
       fallbackLocale: "zh-CN",
       supportedLocales: ["zh-CN", "en-US"],
       localeCatalog: [

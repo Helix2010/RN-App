@@ -13,6 +13,16 @@ describe("bootstrapSchema", () => {
     });
   });
 
+  it("requires the config refresh interval instead of picking one itself", () => {
+    // 运营改了链 / 币 / 端点后多久生效，必须是管理端能看见的值；
+    // 客户端自己挑一个数字，管理端那个输入框就成了不起作用的摆设
+    const config = createFallbackConfig("zh-CN");
+    const without = { ...config, localization: { ...config.localization } };
+    delete (without.localization as { refreshIntervalSeconds?: number })
+      .refreshIntervalSeconds;
+    expect(bootstrapSchema.safeParse(without).success).toBe(false);
+  });
+
   it("rejects arbitrary remote theme values", () => {
     const config = createFallbackConfig("zh-CN");
     config.theme.dark.primary = "url(javascript:unsafe)";

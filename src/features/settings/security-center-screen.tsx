@@ -236,7 +236,6 @@ export function SecurityCenterScreen({
             />
             <SRow
               title={t("profile.addressBook")}
-              value={fill(t("profile.addressBook.count"), { n: 2 })}
               onPress={() => toast(t("state.empty"), "info")}
               testID="sec-address-book"
             />

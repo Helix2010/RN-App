@@ -4,11 +4,7 @@ import {
   renderWithProviders,
   signIn,
 } from "../../../test/harness";
-import {
-  SendScreen,
-  parsePaymentRequest,
-  recipientFromText,
-} from "./send-screen";
+import { SendScreen, parsePaymentRequest } from "./send-screen";
 import type { Gateways } from "../../../core/gateways/gateway-context";
 import type { TokenBalance, WalletTransfer } from "../../wallet/model/wallet";
 import { InsufficientGasError } from "../../../core/chain/transfer-service";
@@ -740,21 +736,19 @@ describe("SendScreen recipient actions", () => {
   });
 });
 
-describe("recipientFromText", () => {
+describe("parsePaymentRequest", () => {
   it("returns a bare address untouched, trimmed", () => {
-    expect(recipientFromText(`  ${RECIPIENT}\n`)).toBe(RECIPIENT);
+    expect(parsePaymentRequest(`  ${RECIPIENT}\n`).address).toBe(RECIPIENT);
   });
 
-  it("extracts the address from an EIP-681 link but ignores chain and value", () => {
-    // 换链、填金额都要用户自己确认，静默照做等于替用户做决定
-    expect(recipientFromText(`ethereum:${RECIPIENT}@56?value=1e18`)).toBe(
+  it("accepts the pay- prefix that some wallets emit", () => {
+    expect(parsePaymentRequest(`ethereum:pay-${RECIPIENT}`).address).toBe(
       RECIPIENT,
     );
-    expect(recipientFromText(`ethereum:pay-${RECIPIENT}`)).toBe(RECIPIENT);
   });
 
   it("hands anything else to the address validator as-is", () => {
-    expect(recipientFromText("ethereum:not-an-address")).toBe(
+    expect(parsePaymentRequest("ethereum:not-an-address").address).toBe(
       "ethereum:not-an-address",
     );
   });
@@ -863,7 +857,7 @@ describe("SendScreen QR scanning", () => {
   });
 });
 
-describe("parsePaymentRequest", () => {
+describe("parsePaymentRequest chain id", () => {
   it("reads the chainId out of an EIP-681 link and drops the value", () => {
     expect(parsePaymentRequest(`ethereum:${RECIPIENT}@56?value=1e18`)).toEqual({
       address: RECIPIENT,
