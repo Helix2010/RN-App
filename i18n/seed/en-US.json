@@ -680,6 +680,7 @@
     "transfer.faucetClaim": "Claim {amount}",
     "transfer.faucetClaimed": "Already claimed today",
     "transfer.faucetDone": "Testnet gas claimed",
+    "transfer.faucetFailed": "Faucet claim failed:",
     "transfer.from": "From",
     "transfer.gasBalance": "Wallet gas",
     "transfer.insufficient": "Insufficient balance",

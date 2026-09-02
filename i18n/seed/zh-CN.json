@@ -680,6 +680,7 @@
     "transfer.faucetClaim": "领取 {amount}",
     "transfer.faucetClaimed": "今日已领取",
     "transfer.faucetDone": "已领取测试网 gas",
+    "transfer.faucetFailed": "领取测试网 gas 失败：",
     "transfer.from": "从",
     "transfer.gasBalance": "钱包 gas",
     "transfer.insufficient": "余额不足",
