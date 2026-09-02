@@ -28,11 +28,9 @@ import { ChainDot, TokenAvatar, TokenPrice } from "./shared";
 /** D-01 行情 / DEX 首页：链筛选、热门 / 涨幅榜 / 新币 / 自选、流动性过滤、代币行（名称+市值·流动性 / 走势 / 价格+24h）。 */
 export function MarketScreen({
   onOpenToken,
-  onOpenSwap,
   onOpenHistory,
 }: {
   onOpenToken: (token: TokenSummary) => void;
-  onOpenSwap: () => void;
   onOpenHistory: () => void;
 }) {
   const insets = useSafeAreaInsets();

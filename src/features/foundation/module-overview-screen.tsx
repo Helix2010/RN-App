@@ -72,7 +72,6 @@ function DexMarketTab() {
           address: item.token.address,
         })
       }
-      onOpenSwap={() => navigation.navigate("Swap")}
       onOpenHistory={() => navigation.navigate("SwapHistory")}
     />
   );
