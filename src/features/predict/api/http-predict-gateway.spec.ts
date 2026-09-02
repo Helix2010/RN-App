@@ -599,8 +599,17 @@ describe("HttpPredictGateway", () => {
           bids: [{ price: "0.60", size: "1" }],
           asks: [{ price: "0.66", size: "2" }],
           tick_size: "0.01",
-          timestamp: "1800000000000",
+          // 初始 dump 的时间戳是 ISO 串（实测）
+          timestamp: "2027-01-15T08:00:00Z",
         },
+      }),
+    });
+    // 有簿价时成交价只是回落，不再推价
+    socket.onmessage?.({
+      data: JSON.stringify({
+        event_type: "last_trade_price",
+        asset_id: "111",
+        data: { price: "0.700000" },
       }),
     });
     socket.onmessage?.({

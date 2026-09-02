@@ -119,6 +119,27 @@ function centsOrNull(price: number | null): number | null {
  * 订单簿推出的 YES 概率（分）：mid → ask → bid，只认 0 < p < 100 的可成交价，
  * 同网页版 `orderbookPricing.ts` resolveFirstOptionProbability。
  */
+/**
+ * 簿时间戳：REST `/book` 给毫秒串，WS 初始 dump 给 ISO 串（实测 2026-09-03）；都解析不了就用收到的时刻。
+ */
+function bookTimestamp(raw: string | number | null | undefined): string {
+  if (raw !== null && raw !== undefined && raw !== "") {
+    const numeric = Number(raw);
+    const ms = Number.isFinite(numeric)
+      ? numeric > 1e12
+        ? numeric
+        : numeric * 1000
+      : Date.parse(String(raw));
+    if (Number.isFinite(ms) && ms > 0) return new Date(ms).toISOString();
+  }
+  return new Date().toISOString();
+}
+
+/** 可成交价：0 < p < 1（同网页版 isTradablePrice） */
+function tradable(value: number | null): number | null {
+  return value !== null && value > 0 && value < 1 ? value : null;
+}
+
 function bookMidCents(book: OrderBook): number | null {
   const tradable = (level: { priceCents: number }) =>
     level.priceCents > 0 && level.priceCents < 100;
@@ -447,9 +468,7 @@ export class HttpPredictGateway implements PredictGateway {
   }
 
   private mapBook(marketId: string, book: ClobOrderBook): OrderBook {
-    const stamp = Number(book.timestamp ?? 0);
-    const updatedAt =
-      stamp > 1e12 ? new Date(stamp).toISOString() : iso(stamp || 0);
+    const updatedAt = bookTimestamp(book.timestamp);
     const level = (item: { price: number; size: number }) => ({
       priceCents: cents(item.price),
       shares: item.size,
@@ -557,9 +576,22 @@ export class HttpPredictGateway implements PredictGateway {
         });
         this.wsUrl = url;
       }
+      // 每个代币最近一次由簿算出的价；有簿价时忽略 last_trade_price（同网页版：成交价只是最后的回落）
+      const bookPrice = new Map<string, number | null>();
       stop = this.ws.subscribe([...byToken.keys()], 2, (event) => {
         const ref = byToken.get(event.assetId);
         if (!ref) return;
+        if (event.kind === "last_trade") {
+          const last = tradable(event.price);
+          if (last === null || (bookPrice.get(event.assetId) ?? null) !== null)
+            return;
+          onEvent({
+            type: "price_change",
+            marketId: ref.conditionId,
+            yesPriceCents: cents(last),
+          });
+          return;
+        }
         if (event.kind === "book") {
           const book = this.mapBook(ref.conditionId, {
             market: ref.conditionId,
@@ -572,6 +604,7 @@ export class HttpPredictGateway implements PredictGateway {
           onEvent({ type: "book", book });
           // 网页版的概率来自订单簿；gamma 没缓存价时靠这一条把列表 / 详情的价格补上
           const fromBook = bookMidCents(book);
+          bookPrice.set(event.assetId, fromBook);
           if (fromBook !== null)
             onEvent({
               type: "price_change",
@@ -580,10 +613,12 @@ export class HttpPredictGateway implements PredictGateway {
             });
           return;
         }
+        const bid = tradable(event.bestBid);
+        const ask = tradable(event.bestAsk);
         const mid =
-          event.bestBid !== null && event.bestAsk !== null
-            ? (event.bestBid + event.bestAsk) / 2
-            : (event.bestAsk ?? event.bestBid ?? event.price);
+          bid !== null && ask !== null
+            ? (bid + ask) / 2
+            : (ask ?? bid ?? tradable(event.price));
         if (mid === null) return;
         onEvent({
           type: "price_change",

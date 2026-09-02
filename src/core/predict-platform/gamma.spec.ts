@@ -59,8 +59,10 @@ describe("gammaMarketSchema", () => {
     expect(displayPrice({ ...base, bestBid: 0.3 })).toBe(0.3);
     expect(displayPrice({ ...base, lastTradePrice: 0.55 })).toBe(0.55);
     expect(displayPrice(base)).toBeNull();
-    // 超出 0–1 的值不是概率，不采用
+    // 超出 0–1 的值不是概率，不采用；0 / 1 是 gamma 的"没数据"，同网页版也不采用
     expect(displayPrice({ ...base, bestBid: 1.5 })).toBeNull();
+    expect(displayPrice({ ...base, lastTradePrice: 0 })).toBeNull();
+    expect(displayPrice({ ...base, bestAsk: 1 })).toBeNull();
   });
 });
 

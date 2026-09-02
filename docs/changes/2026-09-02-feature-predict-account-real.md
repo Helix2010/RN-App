@@ -56,6 +56,8 @@ App 里的预测账户余额、存入 / 取出此前全是 `MockPredictGateway` 
 - **WS 没有消费者**：`subscribeMarkets` 接好了但没有任何界面调用。新增 `useMarketStream(marketIds)`：`book` 事件写入 `predict-book` 缓存，`price_change` 写回已缓存的事件 / 事件列表；网关收到 `book` 时再按网页版 `resolveFirstOptionProbability`（mid → ask → bid，只认 0 < p < 100）推一条价格，所以 gamma 没缓存价的市场在初始 dump 后也能显示概率。详情页订阅全部结果，市场列表 / 置顶卡订阅每个事件前 3 个结果，首页热门订阅前 2 个。
 - **首页热门写死 `tagId: "hot"`**：平台没有这个标签。改为不带标签、按成交量排序。
 
+WS 协议用 node `ws` 直连 prax1s 复核过：初始 dump 的 `timestamp` 是 ISO 串（原来按毫秒数解析会得到 1970，已改 `bookTimestamp`）、会来空的 `price_change` 与 `last_trade_price`（有簿价时忽略成交价，无簿价时用它兜住显示，同网页版回落顺序）、`PING`→`PONG`；gamma 的 0 / 1 价按网页版视为没数据。
+
 联调环境事实：prax1s `public-info.chain.contracts` 已含 `USDW_WRAPPER` / `USDC_UNDERLYING`；测试 USDC（`0x2eA6…c3AD`）的 `mint(address,uint256)` 无权限限制，EOA 有少量 OP Sepolia ETH 即可自铸后联调转入 / 下单。
 
 ## 不做的事

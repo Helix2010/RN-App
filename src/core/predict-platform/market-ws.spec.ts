@@ -133,6 +133,19 @@ describe("MarketWsClient", () => {
       timestamp: "1800000001000",
     });
     socket.receive({ event_type: "tick_size_change", asset_id: "111" });
+    // 实测服务端会发空的 price_change 与 last_trade_price
+    socket.receive({
+      event_type: "price_change",
+      asset_id: "111",
+      market: "",
+      price_changes: [],
+      timestamp: "",
+    });
+    socket.receive({
+      event_type: "last_trade_price",
+      asset_id: "111",
+      data: { price: "0.260000" },
+    });
     socket.receive({
       event_type: "book",
       asset_id: "111",
@@ -157,6 +170,7 @@ describe("MarketWsClient", () => {
         bestBid: 0.61,
         bestAsk: 0.63,
       },
+      { kind: "last_trade", assetId: "111", price: 0.26 },
       {
         kind: "book",
         assetId: "111",

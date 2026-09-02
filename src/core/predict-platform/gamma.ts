@@ -221,8 +221,9 @@ export async function fetchMarketsByCondition(
  * 都没有返回 null，不编一个 0.5。
  */
 export function displayPrice(market: GammaMarket): number | null {
+  // 网页版 adapters.ts:566-567 / orderbookPricing.ts isTradablePrice：0 和 1 不是可成交价（gamma 用 0 表示没数据）
   const valid = (value: number | null) =>
-    value !== null && value >= 0 && value <= 1 ? value : null;
+    value !== null && value > 0 && value < 1 ? value : null;
   const bid = valid(market.bestBid);
   const ask = valid(market.bestAsk);
   if (bid !== null && ask !== null) return (bid + ask) / 2;

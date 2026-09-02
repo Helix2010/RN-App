@@ -8,9 +8,9 @@ import { bookLevelSchema } from "./clob-market";
  *   之后增量 `{operation:"subscribe"|"unsubscribe", assets_ids, level}`；level 1 = quote、2 = depth；
  * - 服务端每 10 秒 ping、15 秒等 pong（协议帧，RN 的 WebSocket 自动应答）；客户端另外每 10 秒发文本
  *   `PING`，服务端回文本 `PONG`；
- * - 事件：`book`（初始 dump 把簿放在 `data` 里，实时事件平铺 bids / asks，形态同 REST `/book`）、
- *   `price_change`（`price_changes[{asset_id, price, size, side, best_bid, best_ask}]`）、
- *   `tick_size_change` 等；未订阅 / 不认识的事件忽略；
+ * - 事件：`book`（初始 dump 把簿放在 `data` 里，`timestamp` 是 ISO 串；实时事件平铺 bids / asks，形态同 REST `/book`）、
+ *   `price_change`（`price_changes[{asset_id, price, size, side, best_bid, best_ask}]`，实测可能是空数组）、
+ *   `last_trade_price`（`data.price`）、`tick_size_change` 等；未订阅 / 不认识的事件忽略；
  * - 断线按 1s → 30s 指数退避重连，重连后重发全部订阅（服务端会再发一次初始 dump）。
  */
 
@@ -42,6 +42,12 @@ const priceChangeSchema = z.object({
   timestamp: z.union([z.string(), z.number()]).nullish(),
 });
 
+const lastTradeSchema = z.object({
+  event_type: z.literal("last_trade_price"),
+  asset_id: z.string(),
+  data: z.object({ price: numeric }),
+});
+
 export type MarketWsBook = z.infer<typeof bookPayloadSchema>;
 export type MarketWsEvent =
   | { kind: "book"; assetId: string; book: MarketWsBook }
@@ -51,7 +57,8 @@ export type MarketWsEvent =
       price: number | null;
       bestBid: number | null;
       bestAsk: number | null;
-    };
+    }
+  | { kind: "last_trade"; assetId: string; price: number | null };
 
 export type MarketWsLevel = 1 | 2;
 
@@ -239,6 +246,16 @@ export class MarketWsClient {
           bestBid: change.best_bid ?? null,
           bestAsk: change.best_ask ?? null,
         });
+      return;
+    }
+    if (type === "last_trade_price") {
+      const parsed = lastTradeSchema.safeParse(record);
+      if (!parsed.success) return;
+      this.emit(parsed.data.asset_id, {
+        kind: "last_trade",
+        assetId: parsed.data.asset_id,
+        price: parsed.data.data.price,
+      });
       return;
     }
     if (type === "book") {
