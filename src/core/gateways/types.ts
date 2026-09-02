@@ -72,6 +72,9 @@ export const CHAINS: Record<ChainId, Chain> = {
   },
 };
 
+/** 原生币在 TokenRef.address 里的哨兵值：原生币没有合约。比较一律用它，不用字面量。 */
+export const NATIVE_TOKEN_ADDRESS = "native";
+
 export type TokenRef = {
   chain: ChainId;
   address: string;

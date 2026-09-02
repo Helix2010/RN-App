@@ -1,5 +1,10 @@
-import { CHAINS, type ChainId, type TokenRef } from "../../gateways/types";
-import { classifyEvmAddress } from "../address";
+import {
+  CHAINS,
+  NATIVE_TOKEN_ADDRESS,
+  type ChainId,
+  type TokenRef,
+} from "../../gateways/types";
+import { classifyEvmAddress, normalizeEvmAddress } from "../address";
 
 /**
  * 服务端在 bootstrap 里下发的钱包运行时参数。
@@ -37,9 +42,6 @@ type DeliveredWalletConfig = {
   /** 代币目录（含原生币条目）；老服务端不下发时为空 */
   tokens: DeliveredToken[];
 };
-
-/** 原生币的哨兵地址，和 TokenRef 的约定一致。 */
-const NATIVE = "native";
 
 /**
  * 目录没下发原生币条目时的展示精度。
@@ -147,7 +149,10 @@ function withTrustedTokens(tokens: DeliveredToken[]): DeliveredToken[] {
   const trusted: DeliveredToken[] = [];
   for (const token of tokens) {
     const address = token.address.trim();
-    if (address !== NATIVE && classifyEvmAddress(address) !== "valid") {
+    if (
+      address !== NATIVE_TOKEN_ADDRESS &&
+      classifyEvmAddress(address) !== "valid"
+    ) {
       console.warn(
         `[wallet] 丢弃 ${token.chain} 上的代币 ${token.symbol}：地址 ${token.address} 不是合法的 EIP-55 地址`,
       );
@@ -163,7 +168,11 @@ function withTrustedTokens(tokens: DeliveredToken[]): DeliveredToken[] {
       );
     trusted.push({
       ...token,
-      address,
+      // 存 EIP-55 形式：确认页会原样显示它，全小写会让用户失去校验和这道肉眼防线
+      address:
+        address === NATIVE_TOKEN_ADDRESS
+          ? address
+          : normalizeEvmAddress(address),
       displayDecimals,
       logoColor: token.logoColor || CHAINS[token.chain].color,
     });
@@ -192,12 +201,13 @@ export function applyDeliveredWalletConfig(config: {
     onchainSends: config.onchainSends === true,
     tokens: config.tokens ? withTrustedTokens(config.tokens) : [],
   };
+  // 监听者是 WalletConnect 客户端（projectId / 链变了要重建）。代币目录变了
+  // 不需要重建它——余额的刷新由 runtime-context 单独触发
   const changed =
     delivered === null ||
     delivered.walletConnectProjectId !== next.walletConnectProjectId ||
     delivered.onchainSends !== next.onchainSends ||
-    JSON.stringify(delivered.networks) !== JSON.stringify(next.networks) ||
-    JSON.stringify(delivered.tokens) !== JSON.stringify(next.tokens);
+    JSON.stringify(delivered.networks) !== JSON.stringify(next.networks);
   delivered = next;
   if (changed) for (const listener of listeners) listener();
 }
@@ -286,8 +296,9 @@ export function deliveredTokens(chain: ChainId): DeliveredToken[] {
  */
 export function nativeDisplayDecimals(chain: ChainId): number {
   return (
-    deliveredTokens(chain).find((token) => token.address === NATIVE)
-      ?.displayDecimals ?? FALLBACK_NATIVE_DISPLAY_DECIMALS
+    deliveredTokens(chain).find(
+      (token) => token.address === NATIVE_TOKEN_ADDRESS,
+    )?.displayDecimals ?? FALLBACK_NATIVE_DISPLAY_DECIMALS
   );
 }
 

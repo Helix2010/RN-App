@@ -147,16 +147,26 @@ describe("bootstrapSchema wallet tokens", () => {
     expect(parsed.data.wallet.tokens[1]).toEqual(delivered);
   });
 
-  it("rejects a token whose precision or symbol is outside the protocol range", () => {
+  it("drops a token outside the protocol range but keeps the rest of the bootstrap", () => {
+    // 一条坏行（或 App 还不认识的新链）不能把品牌、文案、升级策略一起冻结在过期缓存里
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
     const config = createFallbackConfig("zh-CN");
-    const withToken = (token: object) =>
+    const parseWith = (token: object) =>
       bootstrapSchema.safeParse({
         ...config,
-        wallet: { ...config.wallet, tokens: [token] },
-      }).success;
-    expect(withToken({ ...delivered, decimals: 37 })).toBe(false);
-    expect(withToken({ ...delivered, decimals: 1.5 })).toBe(false);
-    expect(withToken({ ...delivered, symbol: "" })).toBe(false);
-    expect(withToken({ ...delivered, chain: "polygon" })).toBe(false);
+        wallet: { ...config.wallet, tokens: [delivered, token] },
+      });
+    for (const bad of [
+      { ...delivered, decimals: 37 },
+      { ...delivered, decimals: 1.5 },
+      { ...delivered, symbol: "" },
+      { ...delivered, chain: "polygon" },
+    ]) {
+      const parsed = parseWith(bad);
+      expect(parsed.success).toBe(true);
+      expect(parsed.data?.wallet.tokens).toHaveLength(1);
+    }
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 });

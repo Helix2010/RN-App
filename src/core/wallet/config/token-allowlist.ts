@@ -1,4 +1,8 @@
-import type { ChainId, TokenRef } from "../../gateways/types";
+import {
+  NATIVE_TOKEN_ADDRESS,
+  type ChainId,
+  type TokenRef,
+} from "../../gateways/types";
 
 /**
  * 客户端认可的主流代币合约地址。
@@ -64,7 +68,7 @@ export function verifyAgainstAllowlist(token: {
   decimals: number;
 }): AllowlistVerdict {
   // 原生币不来自合约，由链目录描述，不需要地址背书
-  if (token.address === "native") return { status: "verified" };
+  if (token.address === NATIVE_TOKEN_ADDRESS) return { status: "verified" };
   const entry = ALLOWLIST[token.chain]?.[token.address.toLowerCase()];
   if (!entry) return { status: "unlisted" };
   if (entry.symbol !== token.symbol || entry.decimals !== token.decimals)

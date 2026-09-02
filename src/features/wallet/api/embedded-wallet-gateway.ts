@@ -4,7 +4,7 @@ import type {
   TokenRef,
   Tx,
 } from "../../../core/gateways/types";
-import { CHAINS } from "../../../core/gateways/types";
+import { CHAINS, NATIVE_TOKEN_ADDRESS } from "../../../core/gateways/types";
 import { money, toApproxNumber, type Money } from "../../../core/money/money";
 import { EmbeddedSigner } from "../../../core/wallet/signer/embedded-signer";
 import type { WalletSigner } from "../../../core/wallet/signer/types";
@@ -43,6 +43,21 @@ export class TokenMetadataMismatchError extends Error {
   constructor(readonly symbol: string) {
     super(`token metadata does not match the known contract: ${symbol}`);
     this.name = "TokenMetadataMismatchError";
+  }
+}
+
+/**
+ * 真链上的余额暂时读不到。
+ *
+ * 必须是一个错误而不是"沿用上一次的值"：这里没有"上一次的值"——能拿到的只有
+ * 演示账本里种下的 8120 USDT，把它当余额显示等于在真链上撒谎，而且 React Query
+ * 会用这个"成功"结果覆盖掉缓存里上一次真实的链上数据。抛错的话缓存保留、界面
+ * 显示"暂时读不到"，重试之后自然恢复。
+ */
+export class ChainBalanceUnavailableError extends Error {
+  constructor(readonly chain: ChainId) {
+    super(`balances on ${chain} are unavailable right now`);
+    this.name = "ChainBalanceUnavailableError";
   }
 }
 
@@ -336,9 +351,12 @@ export class EmbeddedWalletGateway implements WalletGateway {
       // 下发的目录同样要过白名单：verified 只能由客户端授予，decimals 不符的丢掉
       const catalogue = trustedTokens(
         deliveredTokens(id)
-          .filter((token) => token.address !== "native")
+          .filter((token) => token.address !== NATIVE_TOKEN_ADDRESS)
           .map((token) => ({ token: { ...token, verified: false } })),
       ).map((item) => item.token);
+      if (catalogue.length === 0)
+        // 老服务端、或服务端读库失败省略了 tokens：真链上会只剩原生币，要留痕
+        console.warn(`[wallet] ${id} 走真链但目录里没有代币，列表只剩原生币`);
       let fetched: Map<string, bigint>;
       try {
         fetched = await onchain.tokenBalances(
@@ -347,41 +365,34 @@ export class EmbeddedWalletGateway implements WalletGateway {
           catalogue.map((token) => token.address),
         );
       } catch (error) {
-        console.warn(`[wallet] ${id} 代币余额查询失败，沿用上一次的值`, error);
-        continue;
+        console.warn(`[wallet] ${id} 代币余额查询失败`, error);
+        throw new ChainBalanceUnavailableError(id);
       }
-      const previous = new Map(
-        result
-          .filter(
-            (item) =>
-              item.token.chain === id && item.token.address !== "native",
-          )
-          .map((item) => [item.token.address.toLowerCase(), item] as const),
-      );
       // 真链上不该显示演示币；原生币由 withOnchainNative 单独处理
       result = result.filter(
-        (item) => item.token.chain !== id || item.token.address === "native",
+        (item) =>
+          item.token.chain !== id ||
+          item.token.address === NATIVE_TOKEN_ADDRESS,
       );
       for (const token of catalogue) {
-        const key = token.address.toLowerCase();
-        const raw = fetched.get(key);
-        const held = previous.get(key);
+        const raw = fetched.get(token.address.toLowerCase());
         if (raw === undefined) {
-          // Multicall 里单条失败：有旧值就沿用，没有就不显示——显示 0 是在撒谎
-          if (held) result.push({ ...held, token });
-          else
-            console.warn(
-              `[wallet] ${id} 上 ${token.symbol} 的余额查不到，暂不显示`,
-            );
+          // Multicall 里单条失败：不显示。演示账本里的数不是"旧值"，显示 0 也是撒谎
+          console.warn(
+            `[wallet] ${id} 上 ${token.symbol} 的余额查不到，暂不显示`,
+          );
           continue;
         }
         const amount = money(raw, token.decimals, token.symbol);
         result.push({
           token,
           amount,
-          usdValue:
-            toApproxNumber(amount) * referencePriceForSymbol(token.symbol),
-          change24hPct: held?.change24hPct ?? 0,
+          // 参考价只给白名单内的币：任何合约都能把 symbol() 写成 ETH，
+          // 按符号取价会让一个假币按 4500 美元估值，进而影响大额验证阈值与总额
+          usdValue: token.verified
+            ? toApproxNumber(amount) * referencePriceForSymbol(token.symbol)
+            : 0,
+          change24hPct: 0,
         });
       }
     }
@@ -411,19 +422,18 @@ export class EmbeddedWalletGateway implements WalletGateway {
       try {
         raw = await onchain.nativeBalance(id, address);
       } catch (error) {
-        // 链上查不到就保留原值并留痕，别把余额显示成 0 让用户以为钱没了
-        console.warn(
-          `[wallet] ${id} 原生币余额查询失败，沿用上一次的值`,
-          error,
-        );
-        continue;
+        // 真链上没有"原值"可沿用——账本里那个是演示数字。抛错让缓存保留上一次真实值
+        console.warn(`[wallet] ${id} 原生币余额查询失败`, error);
+        throw new ChainBalanceUnavailableError(id);
       }
       const native = CHAINS[id];
       const amount = money(raw, native.nativeDecimals, native.nativeSymbol);
       // 真链上展示精度以下发目录为准，演示夹具里的那份只服务于演示账本
       const displayDecimals = nativeDisplayDecimals(id);
       const index = result.findIndex(
-        (item) => item.token.chain === id && item.token.address === "native",
+        (item) =>
+          item.token.chain === id &&
+          item.token.address === NATIVE_TOKEN_ADDRESS,
       );
       if (index >= 0) {
         const previous = result[index] as TokenBalance;
@@ -439,7 +449,7 @@ export class EmbeddedWalletGateway implements WalletGateway {
         result.push({
           token: {
             chain: id,
-            address: "native",
+            address: NATIVE_TOKEN_ADDRESS,
             symbol: native.nativeSymbol,
             name: native.nativeSymbol,
             decimals: native.nativeDecimals,

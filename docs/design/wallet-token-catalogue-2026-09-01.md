@@ -48,8 +48,8 @@ CREATE TABLE IF NOT EXISTS chain_token_catalog (
     mtime DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '修改时间',
     deleted TINYINT(1) NOT NULL DEFAULT 0 COMMENT '软删除标记',
     PRIMARY KEY(id),
-    UNIQUE KEY uk_chain_token_catalog(chain, contract_address, tenant_id),
-    KEY ix_chain_token_catalog_tenant(tenant_id, chain, enabled, deleted)
+    UNIQUE KEY uk_chain_token(chain, contract_address, tenant_id),
+    KEY ix_chain_token_tenant(tenant_id, chain, enabled, deleted)
 ) ENGINE=InnoDB COMMENT='全局与租户代币目录'
 ```
 
@@ -207,6 +207,14 @@ CREATE TABLE IF NOT EXISTS chain_token_catalog (
 
 第四行是关键：之前"全部转出"填的是全精度余额，现在输入框只能显示展示精度，两者不一致会
 让用户看到 `1.23` 却签出 `1.234567`。统一成"填进输入框的就是要签的"。
+
+### 余额查询失败时的行为：报错，不退回演示账本
+
+真链上读不到余额（节点限流、Multicall revert）时 `getBalances` **抛错**，而不是"沿用上一次
+的值"——这里没有上一次的值，能拿到的只有演示账本里种下的数字，把它当余额显示等于在真链上
+撒谎，而且 React Query 会用这个"成功"结果覆盖掉缓存里上一次真实的链上数据。抛错的话缓存
+保留、界面显示"暂时读不到"，重试后自然恢复。Multicall 里单条缺失的代币不显示，也不退回
+演示数字。参考价只给白名单内的币：任何合约都能把 `symbol()` 写成 ETH。
 
 ### 余额查询
 

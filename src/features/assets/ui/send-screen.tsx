@@ -1,14 +1,17 @@
 import * as Clipboard from "expo-clipboard";
 import {
   fill,
-  formatMoney,
   formatTokenAmount,
   shortenAddress,
 } from "../../../core/i18n/format";
 import { useRef, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
-import { CHAINS, type ChainId } from "../../../core/gateways/types";
+import {
+  CHAINS,
+  NATIVE_TOKEN_ADDRESS,
+  type ChainId,
+} from "../../../core/gateways/types";
 import { useGateways } from "../../../core/gateways/gateway-context";
 import { classifyEvmAddress } from "../../../core/wallet/address";
 import {
@@ -131,7 +134,7 @@ export function SendScreen({
   // 把代币转给代币合约本身 = 永久丢失，这是最常见的一类不可逆误操作
   const addressIsTokenContract = Boolean(
     selected &&
-    selected.token.address !== "native" &&
+    selected.token.address !== NATIVE_TOKEN_ADDRESS &&
     to.trim().toLowerCase() === selected.token.address.toLowerCase(),
   );
   const addressValid = addressVerdict === "valid" && !addressIsTokenContract;
@@ -178,7 +181,9 @@ export function SendScreen({
     : "—";
   // "全部" 与预设的基数：原生币走真链时是扣掉手续费的上限
   const nativeOnchain =
-    onchain && selected !== undefined && selected.token.address === "native";
+    onchain &&
+    selected !== undefined &&
+    selected.token.address === NATIVE_TOKEN_ADDRESS;
   const ceilingKnown = !nativeOnchain || Boolean(quote.data?.maxAmount);
   const ceiling =
     quote.data?.maxAmount ?? selected?.amount ?? money(0n, 18, "");
@@ -251,7 +256,7 @@ export function SendScreen({
         <Content paddingTop={insets.top + 8} flex={1} justifyContent="center">
           <TxProgress
             tx={tx.data}
-            title={`${t("assets.send")} ${formatMoney(receipt.record.amount, locale)} → ${shortenAddress(receipt.to)}`}
+            title={`${t("assets.send")} ${toDecimalString(receipt.record.amount)} ${receipt.record.amount.symbol} → ${shortenAddress(receipt.to)}`}
             onDone={onBack}
             // 真链上一笔要等几秒到几分钟，没有出口就是把用户关在这一页
             onMinimize={onBack}
@@ -451,10 +456,7 @@ export function SendScreen({
               </Body>
             ) : null}
             <DetailRow label={t("send.eta")} value={t("send.etaValue")} />
-            <DetailRow
-              label={t("send.recipientGets")}
-              value={amount && selected ? formatMoney(amount, locale) : "—"}
-            />
+            <DetailRow label={t("send.recipientGets")} value={exactAmount} />
           </Stack>
           {usd > 1000 ? (
             <Row alignItems="center" gap="$2">
@@ -470,7 +472,7 @@ export function SendScreen({
             {fill(t("send.confirm"), {
               amount:
                 amount && selected && !isZero(amount)
-                  ? formatMoney(amount, locale)
+                  ? exactAmount
                   : (selected?.token.symbol ?? ""),
             })}
           </PrimaryButton>
@@ -557,7 +559,7 @@ export function SendScreen({
               <DetailRow
                 label={t("send.tokenContract")}
                 value={
-                  selected.token.address === "native"
+                  selected.token.address === NATIVE_TOKEN_ADDRESS
                     ? `${selected.token.symbol} · ${t("send.nativeToken")}`
                     : `${selected.token.symbol} · ${selected.token.address}`
                 }
@@ -615,7 +617,7 @@ export function SendScreen({
               {send.isPending || verifying
                 ? t("login.signing")
                 : fill(t("send.confirm"), {
-                    amount: formatMoney(amount, locale),
+                    amount: exactAmount,
                   })}
             </PrimaryButton>
             <SecondaryButton

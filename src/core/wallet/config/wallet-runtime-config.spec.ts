@@ -342,15 +342,22 @@ describe("delivered token catalogue", () => {
     expect(deliveredTokens("bsc")[0]?.logoColor).toBe("#F0B90B");
   });
 
-  it("notifies subscribers when only the catalogue changed", () => {
+  it("does not rebuild the WalletConnect client when only the catalogue changed", () => {
+    // 监听者是 WalletConnect 客户端；改一个展示精度不该让它重建
     const listener = jest.fn();
     const unsubscribe = onWalletConfigChange(listener);
     deliver([usdt]);
     expect(listener).toHaveBeenCalledTimes(1);
-    deliver([usdt]);
-    expect(listener).toHaveBeenCalledTimes(1);
     deliver([{ ...usdt, displayDecimals: 4 }]);
-    expect(listener).toHaveBeenCalledTimes(2);
+    expect(listener).toHaveBeenCalledTimes(1);
     unsubscribe();
+  });
+
+  it("stores contract addresses in EIP-55 form, whatever case the server sent", () => {
+    // 确认页会原样显示它：全小写会让用户失去校验和这道肉眼防线
+    deliver([{ ...usdt, address: usdt.address.toLowerCase() }]);
+    expect(deliveredTokens("bsc")[0]?.address).toBe(
+      "0x55d398326f99059fF775485246999027B3197955",
+    );
   });
 });

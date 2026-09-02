@@ -130,3 +130,14 @@ describe("formatTokenAmount", () => {
     );
   });
 });
+
+describe("formatTokenAmount with a broken display precision", () => {
+  it("falls back to the chain precision instead of throwing", () => {
+    // BigInt(NaN) 会抛 RangeError，整页跟着崩；一个坏值只该退回链上精度
+    const value = { raw: "1500000", decimals: 6, symbol: "USDC" };
+    expect(formatTokenAmount(value, Number.NaN, "en-US")).toBe("1.5 USDC");
+    expect(
+      formatTokenAmount(value, undefined as unknown as number, "en-US"),
+    ).toBe("1.5 USDC");
+  });
+});

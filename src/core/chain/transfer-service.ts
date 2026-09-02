@@ -1,4 +1,5 @@
 import { Transaction } from "ethers";
+import { NATIVE_TOKEN_ADDRESS } from "../gateways/types";
 import type { SignRequestContext, WalletSigner } from "../wallet/signer/types";
 import {
   assertLocallySignable,
@@ -27,9 +28,6 @@ const ALREADY_KNOWN =
  * 3. **手续费只为本地签名准备**。外部钱包自己算 nonce 和 gas（`managesOwnFees`），
  *    替它准备既浪费三次 RPC，也可能和它自己的取值冲突。
  */
-
-/** `native` 是原生币的哨兵值，和 TokenRef 里的约定一致。 */
-const NATIVE = "native";
 
 /**
  * 一笔转账能用的 gas 上限。
@@ -175,7 +173,7 @@ export class TransferService {
   }
 
   private isNative(request: TransferRequest): boolean {
-    return request.tokenAddress === NATIVE;
+    return request.tokenAddress === NATIVE_TOKEN_ADDRESS;
   }
 
   private callData(request: TransferRequest): {

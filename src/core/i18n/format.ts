@@ -125,10 +125,11 @@ export function formatTokenAmount(
   options?: { withSymbol?: boolean },
 ): string {
   // 展示精度永远 ≤ 链上精度；配置层已断言，这里再夹一次，别让一个坏值把界面炸掉
-  const digits = Math.max(
-    0,
-    Math.min(Math.trunc(displayDecimals), value.decimals),
-  );
+  // NaN / undefined 也要兜住：BigInt(NaN) 会抛 RangeError，整页跟着崩
+  const requested = Number.isFinite(displayDecimals)
+    ? Math.trunc(displayDecimals)
+    : value.decimals;
+  const digits = Math.max(0, Math.min(requested, value.decimals));
   const negative = isNegative(value);
   const abs = negative ? -toBigInt(value) : toBigInt(value);
   // 整数除法天然向下：丢掉展示精度之外的位

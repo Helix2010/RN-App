@@ -1,4 +1,9 @@
-import { CHAINS, type ChainId, type Tx } from "../../../core/gateways/types";
+import {
+  CHAINS,
+  NATIVE_TOKEN_ADDRESS,
+  type ChainId,
+  type Tx,
+} from "../../../core/gateways/types";
 import { money, type Money } from "../../../core/money/money";
 import { ChainClient } from "../../../core/chain/chain-client";
 import { createRpcClient } from "../../../core/chain/rpc-client";
@@ -14,9 +19,6 @@ import type {
   TransferQuote,
   WalletTransfer,
 } from "../model/wallet";
-
-/** 原生币的哨兵地址，和 TokenRef 的约定一致。 */
-const NATIVE = "native";
 
 /** 内存里最多记这么多笔：进度只在提交后几分钟内有意义，更早的去区块浏览器看。 */
 const MAX_TRACKED = 50;
@@ -133,7 +135,7 @@ export class OnchainTransfers {
     const toNative = (value: bigint): Money =>
       money(value, native.nativeDecimals, native.nativeSymbol);
     const fee = await transfer.estimateFee(spec);
-    if (request.token.address !== NATIVE)
+    if (request.token.address !== NATIVE_TOKEN_ADDRESS)
       return { fee: toNative(fee), maxAmount: null };
     // 原生币的"全部"必须扣掉手续费，否则这一笔必然失败，而用户会反复重试
     const max = await transfer.maxNativeAmount(spec);

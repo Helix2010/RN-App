@@ -397,7 +397,8 @@ describe("SendScreen progress page", () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(screen.getByTestId("tx-progress")).toBeTruthy();
     expect(screen.getByText(runtime.t("tx.minimize"))).toBeTruthy();
-    expect(screen.getByText(/100\.00 USDT/)).toBeTruthy();
+    // 进度页标题是签名的精确值，不四舍五入
+    expect(screen.getByText(/100 USDT/)).toBeTruthy();
   });
 });
 

@@ -13,6 +13,11 @@ export type EvmAddressVerdict = "valid" | "checksum" | "invalid";
 
 const HEX40 = /^0x[0-9a-fA-F]{40}$/;
 
+/** 归一成 EIP-55 校验和形式；输入必须已经是合法地址。 */
+export function normalizeEvmAddress(input: string): string {
+  return getAddress(input.trim());
+}
+
 export function classifyEvmAddress(input: string): EvmAddressVerdict {
   const value = input.trim();
   if (!HEX40.test(value)) return "invalid";

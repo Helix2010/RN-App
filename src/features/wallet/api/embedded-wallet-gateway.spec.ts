@@ -9,6 +9,7 @@ import {
   WalletProvisioningUnsupportedError,
 } from "./gateway";
 import {
+  ChainBalanceUnavailableError,
   EmbeddedWalletGateway,
   TokenMetadataMismatchError,
   type ExternalWalletConnector,
@@ -565,7 +566,9 @@ describe("EmbeddedWalletGateway native balances", () => {
     expect(list[0]?.usdValue).toBe(0);
   });
 
-  it("keeps the previous figure when the node cannot be reached", async () => {
+  it("fails loudly when the node cannot be reached, instead of showing the demo figure", async () => {
+    // 这里没有"上一次的值"——账本里那个 7 是演示数字。抛错让 React Query 保留
+    // 缓存里上一次真实的链上数据；成功返回演示数字会把它覆盖掉
     const { port } = fakeOnchain(["bsc"]);
     port.nativeBalance = async () => {
       throw new Error("node down");
@@ -581,10 +584,9 @@ describe("EmbeddedWalletGateway native balances", () => {
       },
     ]);
 
-    const [bnb] = await gateway.getBalances(ADDRESS, "bsc");
-
-    // 别把余额显示成 0 让用户以为钱没了
-    expect(bnb?.amount.raw).toBe("7");
+    await expect(gateway.getBalances(ADDRESS, "bsc")).rejects.toBeInstanceOf(
+      ChainBalanceUnavailableError,
+    );
     warn.mockRestore();
   });
 });
@@ -663,7 +665,9 @@ describe("EmbeddedWalletGateway token balances", () => {
     expect(usdt?.token).toMatchObject({ verified: true, displayDecimals: 2 });
   });
 
-  it("keeps the previous figures when the token query fails", async () => {
+  it("fails loudly when the token query fails, never falling back to the demo ledger", async () => {
+    // 演示账本里给每个新地址都种了 8120 USDT；公共节点限流一次就显示这个数，
+    // 正是"真链上显示演示币"。抛错让缓存里上一次真实数据留下
     deliver([usdtDelivered]);
     const { port } = fakeOnchain(["bsc"]);
     port.tokenBalances = async () => {
@@ -675,14 +679,69 @@ describe("EmbeddedWalletGateway token balances", () => {
       .spyOn(chainData, "getBalances")
       .mockResolvedValue([demo("bsc", PEPE_BSC, "PEPE")]);
 
+    await expect(gateway.getBalances(ADDRESS, "bsc")).rejects.toBeInstanceOf(
+      ChainBalanceUnavailableError,
+    );
+    warn.mockRestore();
+  });
+
+  it("omits a token whose single balance call failed instead of showing a demo figure", async () => {
+    deliver([usdtDelivered]);
+    const { port } = fakeOnchain(["bsc"]);
+    port.tokenBalances = async () => new Map(); // Multicall 单条失败：没有这个键
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const { gateway, chainData } = setup({ onchain: port });
+    jest
+      .spyOn(chainData, "getBalances")
+      .mockResolvedValue([demo("bsc", USDT_BSC, "USDT")]);
+
     const list = await gateway.getBalances(ADDRESS, "bsc");
 
-    // 别把列表清空让用户以为钱没了；和原生币的处理一致。
-    // （原生币那一条是 withOnchainNative 按既有规则补上的，与代币查询无关）
-    const pepe = list.find((item) => item.token.symbol === "PEPE");
-    expect(pepe?.amount.raw).toBe((10n ** 18n).toString());
+    expect(list.find((item) => item.token.symbol === "USDT")).toBeUndefined();
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
+  });
+
+  it("warns when a real chain has no catalogue at all", async () => {
+    // 老服务端、或服务端读库失败省略了 tokens：列表只剩原生币，要留痕
+    deliver([]);
+    const { port } = fakeOnchain(["bsc"]);
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const { gateway, chainData } = setup({ onchain: port });
+    jest.spyOn(chainData, "getBalances").mockResolvedValue([]);
+
+    await gateway.getBalances(ADDRESS, "bsc");
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("目录里没有代币"),
+    );
+    warn.mockRestore();
+  });
+
+  it("prices only allowlisted tokens, so a contract calling itself ETH is worth nothing", async () => {
+    // 任何合约都能把 symbol() 写成 ETH；按符号取价会影响大额验证阈值与总额
+    deliver([
+      {
+        chain: "bsc",
+        address: "0x000000000000000000000000000000000000bEEF",
+        symbol: "ETH",
+        name: "Fake ETH",
+        decimals: 18,
+        displayDecimals: 4,
+        logoColor: "#627EEA",
+      },
+    ]);
+    const { port } = fakeOnchain(["bsc"]);
+    port.tokenBalances = async () =>
+      new Map([["0x000000000000000000000000000000000000beef", 10n ** 18n]]);
+    const { gateway, chainData } = setup({ onchain: port });
+    jest.spyOn(chainData, "getBalances").mockResolvedValue([]);
+
+    const list = await gateway.getBalances(ADDRESS, "bsc");
+
+    const fake = list.find((item) => item.token.address.endsWith("bEEF"));
+    expect(fake?.amount.raw).toBe((10n ** 18n).toString());
+    expect(fake?.usdValue).toBe(0);
   });
 
   it("leaves chains without endpoints on the demo ledger", async () => {
