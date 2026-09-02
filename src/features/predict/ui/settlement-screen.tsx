@@ -327,7 +327,7 @@ export function SettlementScreen({
                     testID="settlement-dispute"
                   >
                     {fill(t("predict.settlement.dispute"), {
-                      bond: formatMoney(adj.bond, locale),
+                      bond: adj.bond ? formatMoney(adj.bond, locale) : "",
                     })}
                   </SecondaryButton>
                 ) : null}
@@ -345,7 +345,7 @@ export function SettlementScreen({
       <Sheet
         ref={disputeSheet}
         title={fill(t("predict.settlement.dispute"), {
-          bond: adj ? formatMoney(adj.bond, locale) : "",
+          bond: adj?.bond ? formatMoney(adj.bond, locale) : "",
         })}
         closeLabel={t("common.close")}
         locked={dispute.isPending}

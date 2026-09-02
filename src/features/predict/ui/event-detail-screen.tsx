@@ -266,7 +266,10 @@ export function EventDetailScreen({
                   { value: "rules", label: t("predict.tab.rules") },
                   {
                     value: "holders",
-                    label: `${t("predict.tab.holders")} ${event.data.holders.toLocaleString()}`,
+                    label:
+                      event.data.holders === null
+                        ? t("predict.tab.holders")
+                        : `${t("predict.tab.holders")} ${event.data.holders.toLocaleString()}`,
                   },
                 ]}
                 onChange={setTab}
@@ -373,9 +376,11 @@ export function EventDetailScreen({
                 </Stack>
               ) : (
                 <Body>
-                  {fill(t("predict.holders"), {
-                    n: event.data.holders.toLocaleString(),
-                  })}
+                  {event.data.holders === null
+                    ? t("state.empty")
+                    : fill(t("predict.holders"), {
+                        n: event.data.holders.toLocaleString(),
+                      })}
                 </Body>
               )}
             </>

@@ -35,6 +35,16 @@ App 里的预测账户余额、存入 / 取出此前全是 `MockPredictGateway` 
 - 死代码：relayer 提交体的 `metadata`（服务端 `SubmitRequest` 无此字段）、`MultiSendOp.value`、`AssetsOverview.predict.safe`、`ActivityType "WITHDRAW"`、若干只在文件内使用的 export；英文 `transfer.note` 过时文案。
 - 平台侧隐患（已写入设计文档 §5）：EIP-712 域名 `PredictMarket` 是 gamma 配置项且不在 `public-info`；CLOB secret 的 base64url / base64 解码不一致；`USDC_UNDERLYING` / `USDW_WRAPPER` 需在平台管理端手工加自定义合约行。
 
+## 阶段 6 读侧：行情 / 持仓 / 订单接真实平台（2026-09-02 深夜）
+
+事实先从平台源码提取写入设计文档 §2.9（gamma 事件 / 标签、clob 订单簿 / 历史 / 费率、data-service 持仓 / 活动 / 盈亏 / 排行榜、下单签名与提交、领取 / 拆合走 relayer），再实现：
+
+- `core/predict-platform/{gamma,clob-market,clob-orders,data-positions}.ts`：zod 严格解析（数值可能是字符串、`outcomes/clobTokenIds` 可能是 JSON 串、多语言是按语言分键的 JSON 串），查询参数照网页版（active、未 closed、排除 recurring、排序字段与方向、`is_carousel` 标签、`sizeThreshold=0` 等）。
+- `HttpPredictGateway`：`Market.id` = conditionId、事件 id = gamma id、价格换整数分、金额 6 位 USDC；展示价按网页版规则（mid → ask → bid → 最新成交，缺就 null 不编 0.5）；持仓 / 活动按 Safe 地址查；我的挂单走 L2、"未完成"判据同网页版；撤单 `DELETE /order`。
+- 生产接线从 `MockPredictGateway` 切到 `HttpPredictGateway`（Mock 只剩测试用）；市场列表默认标签改为平台给的第一个标签（原来写死 `hot`）。
+- 模型：平台不给的字段改为可空 / 可选并在界面保护——持有人数、排行榜胜率、争议保证金；活动类型加 `CONVERSION` / `MAKER_REBATE`。
+- **未接**：下单（EIP-712 Order 签名 + `POST /order`）、领取、拆合、WS 推送；平台网页没有争议提交入口。这些方法抛 `PredictUnsupportedError`。
+
 ## 不做的事
 
 - 没有任何「平台不可用就用演示数据」的路径：关联缺失显示未配置，public-info 对不上直接报错。

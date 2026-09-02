@@ -125,11 +125,12 @@ export function LeaderboardScreen({
                   <Body fontSize={12}>
                     {fill(t("predict.volume"), {
                       amount: formatUsd(entry.volumeUsd, locale),
-                    })}{" "}
-                    ·{" "}
-                    {fill(t("predict.leaderboard.winRate"), {
-                      pct: `${entry.winRatePct}%`,
                     })}
+                    {entry.winRatePct === undefined
+                      ? ""
+                      : ` · ${fill(t("predict.leaderboard.winRate"), {
+                          pct: `${entry.winRatePct}%`,
+                        })}`}
                   </Body>
                 </Stack>
                 <InlineText

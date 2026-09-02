@@ -490,6 +490,40 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
     return { ctx, jwt, safe, clob: stored.clob };
   }
 
+  /**
+   * 给行情 / 下单网关用的交易上下文：平台关联、合约、Safe、JWT 与 CLOB 密钥。
+   * 账户没启用时抛 `PredictNotEnabledError`，与余额读取一致。
+   */
+  async tradingContext(address: string): Promise<{
+    service: PredictServiceConfig;
+    contracts: PlatformContracts;
+    chainId: number;
+    safe: string;
+    jwt: string;
+    clob: NonNullable<
+      Awaited<ReturnType<PredictCredentialStore["load"]>>["clob"]
+    >;
+  }> {
+    const { ctx, jwt, safe, clob } = await this.enabledContext(address);
+    return {
+      service: ctx.service,
+      contracts: ctx.contracts,
+      chainId: evmChainIdOf(ctx.service.chain),
+      safe,
+      jwt,
+      clob,
+    };
+  }
+
+  /** 只读行情要的平台关联与合约（不需要登录）。 */
+  async platformContext(): Promise<{
+    service: PredictServiceConfig;
+    contracts: PlatformContracts;
+  }> {
+    const ctx = await this.contextFor();
+    return { service: ctx.service, contracts: ctx.contracts };
+  }
+
   // ---- 余额 ----
 
   /**

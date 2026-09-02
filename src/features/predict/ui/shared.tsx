@@ -237,9 +237,11 @@ export function EventCard({
             amount: formatUsd(event.volumeUsd, locale, { compact: true }),
           })}
         </Body>
-        <Body fontSize={11}>
-          {fill(t("predict.holders"), { n: event.holders.toLocaleString() })}
-        </Body>
+        {event.holders === null ? null : (
+          <Body fontSize={11}>
+            {fill(t("predict.holders"), { n: event.holders.toLocaleString() })}
+          </Body>
+        )}
       </Row>
     </Card>
   );

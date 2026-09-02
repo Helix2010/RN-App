@@ -44,7 +44,8 @@ export type PredictEvent = {
   tagIds: string[];
   markets: Market[];
   volumeUsd: number;
-  holders: number;
+  /** 持有人数；平台不提供时为 null（界面不显示，不编数） */
+  holders: number | null;
   endsAt: string;
   featured: boolean;
   rules: LocalizedText;
@@ -166,7 +167,8 @@ export type Adjudication = {
   proposedEvidence?: LocalizedText;
   disputeDeadline?: string;
   disputeWindowSec: number;
-  bond: Money;
+  /** 争议保证金；平台不暴露时缺省 */
+  bond?: Money;
   canDispute: boolean;
   disputedAt?: string;
   disputedBy?: string;
@@ -179,6 +181,8 @@ export type ActivityType =
   | "SPLIT"
   | "MERGE"
   | "REDEEM"
+  | "CONVERSION"
+  | "MAKER_REBATE"
   | "DEPOSIT"
   | "DISPUTE_BOND"
   | "SETTLEMENT"
@@ -211,7 +215,8 @@ export type LeaderboardEntry = {
   name?: string;
   pnlUsd: number;
   volumeUsd: number;
-  winRatePct: number;
+  /** 平台排行榜不给胜率时缺省 */
+  winRatePct?: number;
 };
 
 export type LeaderboardPeriod = "today" | "week" | "month" | "all";

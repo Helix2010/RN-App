@@ -72,7 +72,10 @@ export function MarketListScreen({
     if (shouldPromptEnable(address)) onOpenEnable();
   }, [address, enablement.data, onOpenEnable]);
   const tags = usePredictTags();
-  const [tagId, setTagId] = useState("hot");
+  const [pickedTag, setTagId] = useState<string | null>(null);
+  // 默认选平台给的第一个标签（网页版的"热门"）；标签没到之前不带 tag 过滤
+  const defaultTag = tags.data?.[0]?.id;
+  const tagId = pickedTag ?? defaultTag;
   const [sort, setSort] = useState<NonNullable<EventQuery["sort"]>>("volume");
   const events = usePredictEvents({ tagId, sort, limit: 20 });
   const featured = usePredictEvents({ featured: true, limit: 1 });
@@ -208,7 +211,7 @@ export function MarketListScreen({
             ))}
           </Row>
 
-          {banner && tagId === "hot" ? (
+          {banner && tagId === defaultTag ? (
             <Stack
               padding="$3"
               borderRadius="$4"
@@ -266,7 +269,7 @@ export function MarketListScreen({
               events.data.items
                 .filter(
                   (event) =>
-                    !(banner && tagId === "hot" && event.id === banner.id),
+                    !(banner && tagId === defaultTag && event.id === banner.id),
                 )
                 .map((event) => (
                   <EventCard
