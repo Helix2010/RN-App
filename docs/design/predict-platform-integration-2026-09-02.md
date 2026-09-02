@@ -1,0 +1,202 @@
+# 接入 pm-cup2026 预测市场平台：登录与资金转入 / 转出分析
+
+- 状态：分析（2026-09-02），待产品决策后立项
+- 对象：`~/fy/work/pm-cup2026`（`apps/user-dapp` C 端 + `services/gamma|clob|data|relayer|faucet`），dev 环境 `https://predict.prax1s.xyz`
+- 关联：ADR 0007（Gateway 双实现，预留 `createGateways(bootstrap.services)`）、`wallet-onchain-security-2026-09-01.md`、`AGENTS.md` 正式场景开发原则
+- 依据：源码追读（三路）+ dev 环境实测（公开接口、一次性密钥完整登录、链上合约参数）
+
+## 1. 结论先行
+
+1. **平台侧零改动即可接入。** user-dapp 的 Next.js BFF 只是转发；所有业务接口（gamma / clob / data / relayer）都能被原生客户端直连，平台自己的 cex-dapp 接入就是这么做的。我们的 App 直连，RN-Server 只负责按租户下发平台域名与开关。
+2. **登录不是 SIWE，是 EIP-712。** 签一条 `LoginMessage` 换 gamma JWT；dev 环境实测有效期 30 天，可刷新。我们的内置钱包已有 `signTypedData`，外部钱包走 WalletConnect 同样可签。
+3. **资金模型是"每人一个 Safe"。** 交易余额 = 用户 Safe 里的 USDW（6 位），不是 EOA 余额，也不是平台记账。**转入要用户自己付 gas**（approve + wrap 两笔链上交易）；**转出免 gas但分两步**（发起解包 → 等待延迟 → 领取），目标地址固定为登录的 EOA。
+4. **我们现有的 `PredictGateway` 契约要改两处**：`deposit` 变成两笔需要 gas 的链上交易；`withdraw` 变成"发起 + 领取"两阶段，模型要加 `claimableAt` 与待领取列表。其余（行情、下单、持仓）接口形态基本能一一映射。
+5. dev 环境用的是 **OP Sepolia（11155420）**，我们 anyfun 租户已启用这条链，且目录里的 USDC 就是平台的 `USDC_UNDERLYING`（`0x2eA6…c3AD`），可以直接联调。
+
+## 2. 平台契约（实测确认）
+
+### 2.1 租户与配置
+
+| 项       | 事实                                                                                                                                                                                                           |
+| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 租户识别 | 请求头 `X-Tenant-Domain`，缺省用 `Host`。**未知域名静默落到租户 0**，不是报错——我们的客户端必须每个请求都带这个头，不能漏                                                                                      |
+| 服务地址 | 由租户域名派生：`gamma-api.{domain}`、`clob-api.{domain}`、`data-api.{domain}`、`relayer.{domain}`、`clob-ws.{domain}`、`faucet.{domain}`                                                                      |
+| 配置入口 | `GET {gamma}/public-info`：`scopeId`（租户 bytes32）、`chain`（chainId / rpcUrl / explorer / tokens / 22 个合约地址）、`contracts`、`loginStatement`、`walletConnectProjectId`、`agreements`。租户过期返回 403 |
+| dev 实值 | scopeId `0xfb05…454a`，chain 11155420，USDW `0x790e…6098`，USDC `0x2eA6…c3AD`，CTF_EXCHANGE `0xB6C9…6c2b`，SAFE_FACTORY `0x08C3…5Fe6`，MULTI_SEND `0xA238…7761`，USDW_WRAPPER `0x7deB…F740`                    |
+
+### 2.2 登录（gamma-service）
+
+```
+GET  {gamma}/auth/nonce?address=0x…      → { nonce, scopeId, issuedAt, chainId, statement }
+签名  EIP-712  domain { name:"PredictMarket", version:"1", chainId }   ← 没有 verifyingContract
+      LoginMessage(address wallet, string nonce, uint256 scopeId, string issuedAt,
+                   string domain, string uri, uint256 chainId)
+POST {gamma}/auth/login  { signature, messageParams:{ address, nonce, scopeId, issuedAt, domain, uri, chainId } }
+      → { token }        RS256，sub = 小写 EOA，scope_id，uid，owner；dev 有效期 30 天
+POST {gamma}/auth/refresh   Authorization: Bearer   → { token }
+```
+
+要点：
+
+- nonce 300 秒有效、**验签前就核销**，失败要重新取 nonce。
+- `scopeId` 签成 `uint256`（`BigInt(hex)`），传参仍是 0x-hex。
+- `messageParams.domain` 会到 `tenant_domain` 表反查，**必须是该租户已登记的域名**（App 签 `predict.prax1s.xyz`，不能签 scheme 或包名）。
+- 没有服务端登出，也没有 `/me`；登出 = 本地丢令牌。
+- 首次登录服务端建 `predict_users` 行，并异步算出该 EOA 的 Safe 地址。
+- 实测：一次性密钥 nonce → 签名 → login 全程 200，随后用 JWT 查 relayer `/deployed` 拿到未部署的 Safe 地址 `0x79ec…1740`。
+
+### 2.3 三层凭证
+
+| 层                      | 用途                                 | 获取                                                                                                                                                                                                             | 存放                 |
+| ----------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| gamma JWT               | relayer 提交、bridge、资料           | 上面的登录                                                                                                                                                                                                       | 客户端               |
+| CLOB API key（L2 HMAC） | 下单 / 撤单 / 余额可用额度 / 用户 WS | L1：签 `ClobAuth` EIP-712（domain `{name:"ClobAuthDomain",version:"1",chainId}`）→ `POST {clob}/auth/api-key`（头 `PRED_ADDRESS/SIGNATURE/TIMESTAMP/NONCE` + `PRED_SCOPE_ID`）→ `{ apiKey, secret, passphrase }` | 客户端，等同私钥级别 |
+| Safe 授权               | 交易所能动 Safe 里的 USDW / CTF      | relayer 转发一笔 MultiSend：`USDW.approve × 4` + `CTF.setApprovalForAll × 3`                                                                                                                                     | 链上                 |
+
+L2 签名：`base64(HMAC-SHA256(base64url解码(secret), ts + METHOD + path + body))`，时钟容差 ±30 秒，先取 `GET {clob}/time`。
+
+### 2.4 代理钱包（Safe）
+
+- 地址 = CREATE2，salt = `keccak256(abi.encode(eoa, scopeId))`，**部署前就能算出**：`GET {relayer}/deployed?signer=&scopeId=` → `{ deployed, address }`。
+- 部署：签 `CreateProxy`（domain `{name:"Polymarket Contract Proxy Factory", chainId, verifyingContract: factory}`）→ `POST {relayer}/submit type=SAFE-CREATE` → 轮询 `/transaction` 到 `STATE_MINED|CONFIRMED`。relayer 付 gas。
+- 单 owner（EOA）、阈值 1。
+
+### 2.5 资金转入（用户付 gas）
+
+| 路径                  | 链上动作                                                                                              | 后端                                                                                                     |
+| --------------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| A：EOA 的 USDC → Safe | `USDC.approve(USDW_WRAPPER, max)`（首次）→ `USDWrapper.wrap(USDC, amount, safe)`，1:1 铸 USDW 到 Safe | 无                                                                                                       |
+| B：EOA 的 USDW → Safe | `USDW.transfer(safe, amount)`                                                                         | 无                                                                                                       |
+| C：跨链（Relay）      | 源链由用户签发；目的链合约自动 wrap 到 Safe                                                           | `GET /bridge/assets`、`POST /bridge/quote`、`POST /bridge/requests`、轮询 `/bridge/requests/{id}`（JWT） |
+
+dev 环境 `bridge/assets.enabled=false`，C 路径当前关着。测试网有 faucet：`GET/POST {faucet}/api/v1/faucet/{status,claim}`（JWT），实测每人 0.001 TETH，条件是 Safe 已部署。
+
+### 2.6 资金转出（免 gas，两阶段，目标固定为 EOA）
+
+```
+阶段 A  GET {relayer}/nonce?address={safe}
+        签 SafeTx（domain 只有 { chainId, verifyingContract: safe }）
+        to = MULTI_SEND, operation = 1, data = [ USDW.approve(wrapper, amt), wrapper.initiateUnwrap(amt, USDC) ]
+        POST {relayer}/submit type=SAFE metadata="initiate-unwrap"  → 轮询 → 事件 UnwrapInitiated(requestId, claimableAt)
+等待    unwrapDelay（链上读 wrapper.unwrapDelay()；dev 实测 60 秒，合约上限 30 天）
+阶段 B  同样一笔 SafeTx：[ wrapper.claimUnwrap(requestId), USDC.transfer(eoa, amount) ]
+待领取  GET {data}/unwrap-requests?safe=&claimed=false
+```
+
+- 最小额 `wrapper.minUnwrapUsdw()`（dev 0.001 USDW），无手续费，无人工审核。
+- relayer 校验 `from == JWT.sub`、`scopeId == JWT.scope_id`、MultiSend 内每个目标都在白名单（**USDC_UNDERLYING 要运营手动加白**，否则转出必败）。
+- 跨链转出接口在 gamma 有、user-dapp 没接、部署文档标注关闭。
+
+### 2.7 余额
+
+- 交易余额：RPC 直读 `USDW.balanceOf(safe)`。
+- 可用 / 冻结：`GET {clob}/balance-allowance?asset_type=COLLATERAL`（L2）→ `{ balance, allowances, virtual_available, locked }`。
+- 持仓 / 活动 / 盈亏：data-service 全公开 GET，按 `user=` 查询。
+- 行情：clob 公开 REST + `wss://clob-ws.{domain}/ws/market`（无鉴权，订阅帧 `{ assets_ids, level }`）；用户 WS `/ws/user` 首帧带 L2 三元组。
+
+## 3. 与我们项目的对应
+
+### 3.1 现状
+
+| 我们                   | 现在                                                                           | 接入后                                                              |
+| ---------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------- |
+| 会话                   | SIWE → RN-Server `wallet_session`（地址即账号）                                | 保留。预测平台的 JWT 是第二套凭证，按需获取、与地址绑定             |
+| 钱包                   | 内置 vault（`signMessage / signTypedData / submitTransaction`）+ WalletConnect | 直接复用；EIP-712 全部由现有签名器完成                              |
+| 链层                   | `OnchainTransfers` 只会 ERC-20 / 原生转账                                      | 要加"任意合约调用"能力（approve / wrap / transfer 三个 ABI）        |
+| `PredictGateway`       | `MockPredictGateway`，纯本地账本                                               | 新增 `HttpPredictGateway`，按 ADR 0007 由 `bootstrap.services` 选择 |
+| 预测账户余额           | Mock `available/locked`                                                        | Safe 的 USDW + clob `virtual_available/locked`                      |
+| 划转页 `transfer-form` | 钱包 ⇄ 预测账户，秒到                                                          | 转入：两笔交易、要 gas；转出：两阶段、有延迟、只能回 EOA            |
+| 模块开关               | `modules.predict`（服务端）                                                    | 不变；再加 `services.predict` 配置                                  |
+
+### 3.2 架构：App 直连，RN-Server 只下发配置
+
+不做 BFF 代理的理由：
+
+- 平台已有"新前端零后端改动"的先例（cex-dapp），直连是它设计的用法；
+- gamma JWT 与 CLOB 密钥都是用户级凭证，经 RN-Server 中转就变成平台替用户保管凭证，与"平台不兜底"的立场冲突；
+- WebSocket 行情直连最简单。
+
+RN-Server 新增下发（严格 schema，缺则模块不可用，不写默认）：
+
+```json
+"services": {
+  "predict": {
+    "domain": "predict.prax1s.xyz",
+    "chain": "op-sepolia"
+  }
+}
+```
+
+`chain` 必须是本租户启用的链，且 `public-info.chainId` 与之相符，否则 App 拒绝启用预测模块并留痕（同 `PROTOCOL` 断言的做法）。管理端「预测市场」页只有这两个字段加开关。
+
+### 3.3 App 侧新增模块
+
+```
+src/core/predict-platform/
+  tenant-client.ts     每个请求带 X-Tenant-Domain；派生五个子域
+  public-info.ts       严格 zod；chainId 与租户链断言
+  auth.ts              nonce → LoginMessage 签名 → JWT；exp 提前 5 分钟刷新；绑定地址
+  relayer.ts           deployed / nonce / submit / transaction 轮询
+  clob-auth.ts         ClobAuth 签名、L1 头、L2 HMAC
+  safe.ts              SafeTx 类型、MultiSend 编码、CreateProxy 类型
+  contracts.ts         ERC20 / USDWrapper / CTF 的 ABI 片段
+src/features/predict/api/http-predict-gateway.ts
+src/features/predict/model/predict.ts     PredictTx 加 claimableAt / requestId；新增 PendingWithdrawal
+```
+
+凭证存放：gamma JWT、CLOB 三元组、Safe 地址 → `expo-secure-store`，按 `tenantDomain + address` 作键；切换账户 / 登出即清；CLOB 密钥按私钥对待，下单超过大额阈值走现有 `useRequireVerification`。
+
+### 3.4 用户流程
+
+**启用预测交易（一次性，进入预测模块或首次划转时触发）**
+
+1. 签 `LoginMessage` → JWT。
+2. `deployed` 查 Safe；未部署 → 签 `CreateProxy` → relayer 部署（免 gas）。
+3. 签 `ClobAuth` → 拿 CLOB 密钥。
+4. 签一笔 SafeTx MultiSend 做 7 个授权（免 gas）。
+
+内置钱包 4 次签名落在同一个 5 分钟解锁窗口里，只弹一次生物验证；外部钱包每次都要在钱包里确认，和网页版一致。步骤要可断点续做：每步完成写本地状态，重进按 `deployed` / allowance 实查对齐，不信本地缓存。
+
+**转入**
+
+- 入口仍是划转页，方向"钱包 → 预测账户"。
+- 显示 EOA 的 USDC 与 USDW 余额；选 USDC 走 A（首次多一笔 approve），选 USDW 走 B。
+- 先查原生币够不够 gas，不够就是现有的 `InsufficientGasError` 文案；测试网多一个"领取测试 gas"按钮（faucet）。
+- 两笔交易的进度用现有 `TxProgress`。
+
+**转出**
+
+- 方向"预测账户 → 钱包"，目标固定显示登录地址，不可改（平台合约如此）。
+- 提交 = 阶段 A；成功后进入"解锁中"，显示 `claimableAt` 倒计时（dev 60 秒，主网可能到天）。
+- 划转页多一个"待领取"列表（data-service `unwrap-requests`），到期出现"领取"按钮 = 阶段 B。
+- 文案必须说清"先解锁再到账"，不能写成一笔转账。
+
+### 3.5 安全与运维要点
+
+- `X-Tenant-Domain` 漏发不会报错、会落到租户 0：客户端封装在一个 client 里统一加，测试断言每个请求都带。
+- 登录 `domain` 只能签平台已登记的域名；我们的 App 用 `services.predict.domain`。
+- relayer 白名单：接入前让平台把 `USDC_UNDERLYING` 加白，否则转出阶段 B 必败。
+- JWT `sub` 与当前地址不一致就作废重登（切换钱包）。
+- 转入需要用户持有原生币；主网上这是真钱，要在划转页提前提示，不能到签名时才失败。
+- 平台 JWT 私钥 `gamma-jwt-private.pem` 就放在仓库根目录：是他们的事，但联调时别把这个文件带进任何日志或文档。
+
+## 4. 工作量（单人，App 为主）
+
+| 阶段 | 内容                                                                                                   | 估时   |
+| ---- | ------------------------------------------------------------------------------------------------------ | ------ |
+| 1    | 三端 `services.predict` 下发 + 管理端页面 + schema                                                     | 1–2 天 |
+| 2    | `predict-platform` client：租户头、public-info、登录 / 刷新、relayer、Safe/MultiSend 编码、ClobAuth/L2 | 4–5 天 |
+| 3    | 链层任意合约调用 + 转入（A/B）+ faucet                                                                 | 2–3 天 |
+| 4    | 转出两阶段 + 待领取列表 + 模型改动 + 划转页改造                                                        | 3–4 天 |
+| 5    | 启用流程（4 步、可续做）+ 凭证存储 + 登出清理                                                          | 2–3 天 |
+| 6    | `HttpPredictGateway` 其余读接口（行情 / 持仓 / 活动 / WS）                                             | 4–6 天 |
+| 7    | 测试（录制 dev 响应做夹具）、联调、文档                                                                | 3 天   |
+
+只做"登录 + 转入 / 转出"这一片（阶段 1–5）约 2.5–3 周；整个预测模块接真约 4–5 周。
+
+## 5. 需要决策
+
+1. **直连还是经 RN-Server 代理**：本文推荐直连；如果坚持代理，RN-Server 要保管用户级凭证，安全立场要重新讨论。
+2. **启用流程的时机**：进预测模块就做，还是第一次下单 / 划转才做（推荐后者，减少无意义签名）。
+3. **转出延迟的呈现**：主网 `unwrapDelay` 是多少要向平台确认；超过一小时就得做推送提醒"可以领取了"。
+4. **主网链**：平台默认主网是 Monad（143），我们的 `PROTOCOL` 表还没有这条链；上主网前要加链 + 端点 + 目录，与 op-sepolia 同一套流程。
