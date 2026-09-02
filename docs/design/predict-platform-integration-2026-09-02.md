@@ -201,7 +201,7 @@ HMAC-SHA256、keccak、ABI 编码都用已有依赖（`@noble/hashes`、ethers�
 | 测试 USDC  | 平台的 `USDC_UNDERLYING`（`0x2eA6…c3AD`，6 位）**有公开的 `mint(address,uint256)`，任何地址都能给自己铸**（2026-09-02 eth_call 实测）。联调时用脚本给测试地址铸 USDC，不需要找平台要 |
 | 测试 gas   | 任意 OP Sepolia 水龙头；或平台 faucet（JWT，每人一次 0.001 TETH，条件是 Safe 已部署）。转入两笔交易大约要几万 gas，0.001 TETH 够用                                                   |
 | 转出延迟   | wrapper 链上 60 秒，最小 0.001 USDW                                                                                                                                                  |
-| 平台侧前提 | relayer 白名单里要有 `USDC_UNDERLYING`（§7 待办 1）                                                                                                                                  |
+| 平台侧前提 | dev 的 relayer 配置已把 `USDC_UNDERLYING` 列入白名单（`services/relayer-service/config.yaml`），无需动作；主网见 §7 待办 1                                                           |
 
 验收清单（一条链跑通即视为登录 + 转入 / 转出完成）：
 
@@ -234,7 +234,7 @@ HMAC-SHA256、keccak、ABI 编码都用已有依赖（`@noble/hashes`、ethers�
 
 | 阶段 | 内容                                                                                                   | 估时   |
 | ---- | ------------------------------------------------------------------------------------------------------ | ------ |
-| 0    | 平台侧准备：确认租户域名、relayer 白名单加 `USDC_UNDERLYING`、给测试地址铸 USDC                        | 半天   |
+| 0    | 平台侧准备：确认租户域名、给测试地址铸 USDC（dev 的 relayer 白名单已含 USDC）                          | 半天   |
 | 1    | 三端 `services.predict` 下发 + 管理端页面（含测试连接）+ schema                                        | 1–2 天 |
 | 2    | `predict-platform` client：租户头、public-info、登录 / 刷新、relayer、Safe/MultiSend 编码、ClobAuth/L2 | 4–5 天 |
 | 3    | 链层任意合约调用 + 转入（A/B）+ faucet                                                                 | 2–3 天 |
@@ -282,5 +282,5 @@ App 的钱包地址就是预测平台里的 EOA，这个理解是对的。但平
 ## 7. 待办（不阻塞开工）
 
 0. 转入路径 B 要显示 EOA 里的 USDW：租户目录里加 USDW（`0x790e…6098`，6 位）这一条，管理端上币即可，不是代码改动。
-1. 让平台把 `USDC_UNDERLYING` 加进 relayer 白名单（dev 与将来的主网各一次），否则转出第二阶段必败。
+1. 主网接入时让平台把 Monad 的 `USDC_UNDERLYING` 加进 relayer 白名单，否则转出第二阶段必败（平台自己的主网部署文档也标注要手工加；dev 已经有）。
 2. 主网 `unwrapDelay` 目前 2 小时：用户不会盯两小时倒计时，主网接入时要做"可以领取了"的推送（走现有推送链路，由 App 在发起解包成功后向 RN-Server 登记一条定时提醒，或本地通知）。
