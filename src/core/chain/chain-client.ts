@@ -292,6 +292,36 @@ export class ChainClient {
     };
   }
 
+  /** 回执里的日志（解析事件用）；还没上链返回 null。 */
+  async getReceiptLogs(
+    hash: string,
+  ): Promise<{ address: string; topics: string[]; data: string }[] | null> {
+    const receipt = await this.rpc.call<{
+      transactionHash?: string;
+      blockNumber?: string;
+      logs?: { address: string; topics: string[]; data: string }[];
+    } | null>("eth_getTransactionReceipt", [hash]);
+    if (!receipt || !receipt.blockNumber) return null;
+    if (receipt.transactionHash?.toLowerCase() !== hash.toLowerCase())
+      return null;
+    return receipt.logs ?? [];
+  }
+
+  /** 只读调用（eth_call），返回 ABI 编码的结果；解码由调用方按自己的 ABI 做。 */
+  async call(to: string, data: string): Promise<string> {
+    const raw = await this.rpc.call<string>("eth_call", [
+      { to, data },
+      "latest",
+    ]);
+    if (typeof raw !== "string" || !raw.startsWith("0x"))
+      throw new RpcError(
+        "node returned a malformed call result",
+        undefined,
+        String(raw),
+      );
+    return raw;
+  }
+
   /** ERC-20 转账的 calldata。原生币转账不用它。 */
   static transferData(to: string, amount: bigint): string {
     return erc20.encodeFunctionData("transfer", [to, amount]);

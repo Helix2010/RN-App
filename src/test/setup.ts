@@ -1,5 +1,7 @@
+import { resetEnablePrompts } from "../features/predict/model/enable-prompt";
 /* eslint-disable @typescript-eslint/no-require-imports */
 import { resetDeliveredWalletConfig } from "../core/wallet/config/wallet-runtime-config";
+import { resetDeliveredServices } from "../core/predict-platform/config";
 import { useMockRuntime } from "../core/mock/mock-runtime";
 import { FIXTURE_NOW } from "../features/predict/fixtures/events";
 
@@ -49,4 +51,8 @@ beforeEach(() => {
 export {};
 
 // 租户钱包配置是模块级状态：每个用例都从"还没下发"开始
-afterEach(() => resetDeliveredWalletConfig());
+afterEach(() => {
+  resetDeliveredWalletConfig();
+  resetDeliveredServices();
+  resetEnablePrompts();
+});

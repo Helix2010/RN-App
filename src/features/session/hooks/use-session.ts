@@ -47,10 +47,17 @@ export function useSessionRevalidation(): void {
 }
 
 export function useSignOut() {
-  const { session } = useGateways();
+  const { session, predictAccount } = useGateways();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => session.signOut(),
+    mutationFn: async () => {
+      const current = queryClient.getQueryData(sessionQueryKey) as
+        { address?: string } | null | undefined;
+      await session.signOut();
+      // 平台 JWT / CLOB 凭证跟着会话走：登出就丢掉，下次登录重新签
+      if (current?.address)
+        await predictAccount.forgetCredentials(current.address);
+    },
     onSuccess: () => {
       queryClient.setQueryData(sessionQueryKey, null);
       // 清账户级缓存，保留游客可见数据（行情 / 市场）
@@ -63,6 +70,7 @@ export function useSignOut() {
             "activity",
             "wallet-balances",
             "assets",
+            "predict-account",
           ].includes(String(query.queryKey[0])),
       });
     },

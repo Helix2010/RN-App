@@ -1,3 +1,4 @@
+import { usePredictAccountBalance } from "../hooks/use-predict-account";
 import {
   forwardRef,
   useEffect,
@@ -38,7 +39,6 @@ import {
   useOrderPreview,
   usePlaceOrder,
   usePositions,
-  usePredictBalance,
   usePredictEvent,
 } from "../hooks/use-predict";
 import type {
@@ -86,7 +86,7 @@ export const OrderSheet = forwardRef<
   const [priceText, setPriceText] = useState("");
   const [tif, setTif] = useState<TimeInForce>("GTC");
 
-  const balance = usePredictBalance(address);
+  const balance = usePredictAccountBalance(address);
   const positions = usePositions(address);
   const book = useOrderBook(market?.id);
   const place = usePlaceOrder(address);

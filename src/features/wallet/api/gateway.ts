@@ -1,4 +1,5 @@
 import type { ChainId, TokenRef, Tx } from "../../../core/gateways/types";
+import type { WalletSigner } from "../../../core/wallet/signer/types";
 import type { Money } from "../../../core/money/money";
 import type { WalletConnectorId } from "../../session/model/session";
 import type {
@@ -39,6 +40,11 @@ export interface WalletGateway {
   getBalances(address: string, chain?: ChainId): Promise<BalanceSnapshot>;
   /** 供 Predict 存入 / DEX 兑换扣减或增加钱包余额（Mock 内部账本）。 */
   adjustBalance(address: string, token: TokenRef, delta: Money): Promise<void>;
+  /**
+   * 这个账户的签名器（内置钱包或外部钱包）。预测平台的 EIP-712 登录、Safe 交易签名
+   * 和合约调用都要它；业务层拿到的只是签名结果，永远拿不到私钥。
+   */
+  signerFor(address: string): Promise<WalletSigner>;
   /** `reason` 会显示在系统身份验证弹窗 / 外部钱包确认页上 */
   signMessage(
     address: string,

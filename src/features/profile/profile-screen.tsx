@@ -1,15 +1,15 @@
+import { usePredictAccountBalance } from "../predict/hooks/use-predict-account";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import {
   fill,
   formatDate,
-  formatUsd,
+  formatMoney,
   shortenAddress,
 } from "../../core/i18n/format";
 import * as Clipboard from "expo-clipboard";
 import { useEffect, useRef } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../app/runtime-context";
-import { toApproxNumber } from "../../core/money/money";
 import { usePreferencesStore } from "../../core/preferences/preferences-store";
 import {
   AppIcon,
@@ -33,7 +33,6 @@ import {
 } from "../../design-system";
 import type { RootStackParamList } from "../../navigation/types";
 import { ReceiveSheet } from "../assets/ui/receive-sheet";
-import { usePredictBalance } from "../predict/hooks/use-predict";
 import { useSession, useSignOut } from "../session/hooks/use-session";
 import { requestAuth } from "../session/model/auth-sheet-store";
 import { useWalletAccounts } from "../wallet/hooks/use-wallet";
@@ -48,7 +47,7 @@ export function ProfileScreen({
   const session = useSession();
   const address = session.data?.address;
   const accounts = useWalletAccounts();
-  const balance = usePredictBalance(
+  const balance = usePredictAccountBalance(
     config.modules.predict ? address : undefined,
   );
   const signOut = useSignOut();
@@ -67,10 +66,6 @@ export function ProfileScreen({
 
   if (!address) return <Page />;
   const connector = session.data?.connector ?? "metamask";
-  const claimable = balance.data ? toApproxNumber(balance.data.claimable) : 0;
-  const positionsUsd = balance.data
-    ? toApproxNumber(balance.data.positionsValue)
-    : 0;
 
   return (
     <Page>
@@ -203,8 +198,11 @@ export function ProfileScreen({
               <SRow
                 icon="chart-timeline-variant"
                 title={t("profile.predictPortfolio")}
-                value={formatUsd(positionsUsd, locale)}
-                pill={claimable > 0 ? t("profile.claimable") : undefined}
+                value={
+                  balance.data
+                    ? formatMoney(balance.data.available, locale)
+                    : "—"
+                }
                 onPress={() => navigation.navigate("Positions")}
                 testID="profile-predict-portfolio"
               />

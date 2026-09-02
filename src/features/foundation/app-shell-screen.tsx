@@ -86,6 +86,7 @@ export function AppShellScreen({ navigation }: Props) {
             }
             onOpenSend={() => navigation.navigate("Send")}
             onOpenSwap={() => setTab("swap")}
+            onOpenPredictEnable={() => navigation.navigate("PredictEnable")}
           />
         ) : effectiveTab === "predict" ||
           effectiveTab === "positions" ||

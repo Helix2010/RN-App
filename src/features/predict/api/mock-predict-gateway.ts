@@ -524,6 +524,7 @@ export class MockPredictGateway implements PredictGateway {
   }
 
   // ---------- 账户 ----------
+  /** 演示账本的余额：只供下单 / 撤单的演示逻辑与其测试用，不再是账户余额的来源。 */
   async getBalance(address: string): Promise<PredictBalance> {
     return simulate(async () => {
       const state = await this.load();
@@ -1045,52 +1046,6 @@ export class MockPredictGateway implements PredictGateway {
         at: mockNowIso(),
       });
       const tx = this.pushTx(state, direction);
-      await this.save();
-      return tx;
-    });
-  }
-
-  async deposit(address: string, amount: Money): Promise<PredictTx> {
-    return simulate(async () => {
-      const state = await this.load();
-      this.ensureAccount(state, address);
-      const balance = state.balances[address] as {
-        available: string;
-        locked: string;
-      };
-      balance.available = add(money(balance.available, 6, "USDC"), amount).raw;
-      (state.activity[address] as Activity[]).unshift({
-        id: nextId("act"),
-        type: "DEPOSIT",
-        title: localized("从钱包存入", "Deposit from wallet"),
-        amount,
-        at: mockNowIso(),
-      });
-      const tx = this.pushTx(state, "deposit");
-      await this.save();
-      return tx;
-    });
-  }
-
-  async withdraw(address: string, amount: Money): Promise<PredictTx> {
-    return simulate(async () => {
-      const state = await this.load();
-      this.ensureAccount(state, address);
-      const balance = state.balances[address] as {
-        available: string;
-        locked: string;
-      };
-      const available = sub(money(balance.available, 6, "USDC"), amount);
-      if (isNegative(available)) throw new Error("insufficient balance");
-      balance.available = available.raw;
-      (state.activity[address] as Activity[]).unshift({
-        id: nextId("act"),
-        type: "WITHDRAW",
-        title: localized("取回钱包", "Withdraw to wallet"),
-        amount: money((-toBigInt(amount)).toString(), 6, "USDC"),
-        at: mockNowIso(),
-      });
-      const tx = this.pushTx(state, "withdraw");
       await this.save();
       return tx;
     });

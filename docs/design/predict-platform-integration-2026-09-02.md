@@ -254,6 +254,9 @@ src/features/predict/model/predict.ts   PredictTx 加 claimableAt / requestId；
 
 ## 5. 待办
 
+实现状态（2026-09-02）：阶段 1–5（服务端下发、管理端、App 平台客户端、账户网关、启用 / 划转界面）已落地，见 `docs/changes/2026-09-02-feature-predict-account-real.md`；阶段 6（行情 / 下单 / 持仓）未开始。
+
+
 1. 联调租户：RN-Server 新建 dev 租户 + dev App 包，关联 prax1s。
 2. 转入路径 B 要显示 EOA 的 USDW：租户目录上 USDW（`0x790e…6098`，6 位），管理端操作。
 3. 主网前：平台把 Monad 的 `USDC_UNDERLYING` 加进 relayer 白名单；确认主网限流按租户放宽。

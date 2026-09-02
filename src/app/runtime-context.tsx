@@ -343,9 +343,11 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
       ["assets"],
       // 转出记录按启用的链过滤，最近转出地址由它派生
       ["wallet-recent-recipients"],
+      // 预测账户依赖平台关联与链：任一变了都要重读
+      ["predict-account"],
     ])
       void queryClient.invalidateQueries({ queryKey: key });
-  }, [config.wallet, queryClient]);
+  }, [config.wallet, config.services, queryClient]);
   // 放行条件：本次拿到了远程下发（不是内置配置）且最短停留已到。没有超时放行：
   // 数据没下来就不进业务页，失败走重试屏。进入过就锁住，后续刷新失败不回门禁
   const deliveryReady = snapshot !== undefined && snapshot.source === "remote";

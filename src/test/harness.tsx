@@ -20,7 +20,8 @@ import { usePreferencesStore } from "../core/preferences/preferences-store";
 import { memoryStorage } from "../core/gateways/types";
 import { translateMessage } from "../core/config/localization";
 import { FoundationThemeProvider } from "../design-system";
-import { MockAssetsGateway } from "../features/assets/api/mock-assets-gateway";
+import { AssetsOverviewGateway } from "../features/assets/api/assets-overview-gateway";
+import { InMemoryPredictAccountGateway } from "./predict-account";
 import { MockDexGateway } from "../features/dex/api/mock-dex-gateway";
 import { MockPredictGateway } from "../features/predict/api/mock-predict-gateway";
 import { MockSessionGateway } from "../features/session/api/mock-session-gateway";
@@ -42,12 +43,15 @@ export function createTestGateways(overrides?: Partial<Gateways>): Gateways {
   const storage = memoryStorage();
   const wallet = new MockWalletGateway(storage);
   const predict = new MockPredictGateway(storage);
+  const predictAccount =
+    overrides?.predictAccount ?? new InMemoryPredictAccountGateway();
   return {
     session: new MockSessionGateway(storage),
     wallet,
     predict,
+    predictAccount,
     dex: new MockDexGateway(storage, wallet),
-    assets: new MockAssetsGateway(wallet, predict),
+    assets: new AssetsOverviewGateway(wallet, predictAccount),
     mode: "mock",
     lockKeys: () => {},
     ...overrides,

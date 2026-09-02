@@ -321,7 +321,7 @@ export class EmbeddedWalletGateway implements WalletGateway {
     });
   }
 
-  private async signerFor(address: string): Promise<WalletSigner> {
+  async signerFor(address: string): Promise<WalletSigner> {
     if (await this.deps.vault.has(address))
       return new EmbeddedSigner(address, this.deps.vault);
     const registry = await this.readRegistry();

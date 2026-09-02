@@ -14,7 +14,6 @@ import type {
   PlaceOrderRequest,
   PnlPoint,
   Position,
-  PredictBalance,
   PredictEvent,
   PredictTx,
   PriceRange,
@@ -23,7 +22,9 @@ import type {
 } from "../model/predict";
 
 /**
- * Predict 领域网关：一期由 MockPredictGateway 实现；契约即后续自有预测服务的接口契约。
+ * Predict 领域网关（行情 / 下单 / 持仓）：目前由 MockPredictGateway 实现，后续逐步接入
+ * 真实平台。**账户（余额、转入、转出）不在这里**——它已经接真实平台，见
+ * `account-gateway.ts`，没有 Mock 实现。
  * 所有读写都带 address（钱包地址 = 用户主体）；游客可调用无需 address 的方法。
  */
 export interface PredictGateway {
@@ -39,7 +40,6 @@ export interface PredictGateway {
   getFeeBps(marketId: string): Promise<number>;
   getAdjudication(marketId: string): Promise<Adjudication>;
 
-  getBalance(address: string): Promise<PredictBalance>;
   previewOrder(
     address: string,
     request: PlaceOrderRequest,
@@ -60,8 +60,7 @@ export interface PredictGateway {
     direction: "split" | "merge",
     amount: Money,
   ): Promise<PredictTx>;
-  deposit(address: string, amount: Money): Promise<PredictTx>;
-  withdraw(address: string, amount: Money): Promise<PredictTx>;
+
   submitDispute(
     address: string,
     marketId: string,

@@ -6,7 +6,10 @@ import {
   type PropsWithChildren,
 } from "react";
 import type { AssetsGateway } from "../../features/assets/api/gateway";
-import { MockAssetsGateway } from "../../features/assets/api/mock-assets-gateway";
+import { AssetsOverviewGateway } from "../../features/assets/api/assets-overview-gateway";
+import type { PredictAccountGateway } from "../../features/predict/api/account-gateway";
+import { HttpPredictAccountGateway } from "../../features/predict/api/http-predict-account-gateway";
+import { PredictCredentialStore } from "../predict-platform/credentials";
 import type { DexGateway } from "../../features/dex/api/gateway";
 import { MockDexGateway } from "../../features/dex/api/mock-dex-gateway";
 import type { PredictGateway } from "../../features/predict/api/gateway";
@@ -34,6 +37,8 @@ export type Gateways = {
   session: SessionGateway;
   wallet: WalletGateway;
   predict: PredictGateway;
+  /** 预测账户：真实平台，没有 Mock 实现 */
+  predictAccount: PredictAccountGateway;
   dex: DexGateway;
   assets: AssetsGateway;
   /** 业务数据来源；密钥与签名始终是真的 */
@@ -87,12 +92,20 @@ function createGateways(storage: KeyValueStorage): Gateways {
   // 测试通过 GatewayProvider 注入 Mock 会话，不走这条路径。
   const session = new HttpSessionGateway(storage);
   const predict = new MockPredictGateway(storage);
+  // 预测账户接真实平台：没有 services.predict 下发时账户功能如实不可用
+  const predictAccount = new HttpPredictAccountGateway({
+    wallet,
+    onchain,
+    credentials: new PredictCredentialStore(expoSecureStore),
+    storage,
+  });
   const dex = new MockDexGateway(storage, wallet);
-  const assets = new MockAssetsGateway(wallet, predict);
+  const assets = new AssetsOverviewGateway(wallet, predictAccount);
   return {
     session,
     wallet,
     predict,
+    predictAccount,
     dex,
     assets,
     mode: "mock",

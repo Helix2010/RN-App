@@ -8,6 +8,11 @@ import { money, type Money } from "../../../core/money/money";
 import { ChainClient } from "../../../core/chain/chain-client";
 import { createRpcClient } from "../../../core/chain/rpc-client";
 import { TransferService } from "../../../core/chain/transfer-service";
+import {
+  ContractCallService,
+  type ContractCall,
+  type SubmittedCall,
+} from "../../../core/chain/contract-call-service";
 import type { WalletSigner } from "../../../core/wallet/signer/types";
 import {
   evmChainIdOf,
@@ -35,7 +40,11 @@ const MAX_TRACKED = 50;
 export class OnchainTransfers {
   private readonly services = new Map<
     ChainId,
-    { chain: ChainClient; transfer: TransferService }
+    {
+      chain: ChainClient;
+      transfer: TransferService;
+      calls: ContractCallService;
+    }
   >();
   /**
    * txHash → 这笔转账的链与快照。
@@ -86,6 +95,61 @@ export class OnchainTransfers {
     contracts: string[],
   ): Promise<Map<string, bigint>> {
     return this.serviceFor(chain).chain.getTokenBalances(address, contracts);
+  }
+
+  /** 任意合约调用（预测平台的 approve / wrap 等）。签名器由调用方按账户解析。 */
+  async callContract(
+    chain: ChainId,
+    call: Omit<ContractCall, "chainId" | "nativeSymbol">,
+    signer: WalletSigner,
+  ): Promise<SubmittedCall> {
+    return this.serviceFor(chain).calls.submit(
+      this.callOf(chain, call),
+      signer,
+    );
+  }
+
+  async estimateCall(
+    chain: ChainId,
+    call: Omit<ContractCall, "chainId" | "nativeSymbol">,
+  ): Promise<bigint> {
+    return this.serviceFor(chain).calls.estimateFee(this.callOf(chain, call));
+  }
+
+  /** 只读调用；结果是 ABI 编码的 hex，由调用方解码。 */
+  async readContract(
+    chain: ChainId,
+    to: string,
+    data: string,
+  ): Promise<string> {
+    return this.serviceFor(chain).chain.call(to, data);
+  }
+
+  /** 回执里的日志；null = 还没上链。 */
+  async receiptLogs(
+    chain: ChainId,
+    hash: string,
+  ): Promise<{ address: string; topics: string[]; data: string }[] | null> {
+    return this.serviceFor(chain).chain.getReceiptLogs(hash);
+  }
+
+  /** 某条链上一笔交易的回执状态；null = 还没上链。 */
+  async receiptOf(
+    chain: ChainId,
+    hash: string,
+  ): Promise<{ status: "success" | "reverted"; blockNumber: number } | null> {
+    return this.serviceFor(chain).chain.getReceipt(hash);
+  }
+
+  private callOf(
+    chain: ChainId,
+    call: Omit<ContractCall, "chainId" | "nativeSymbol">,
+  ): ContractCall {
+    return {
+      ...call,
+      chainId: evmChainIdOf(chain),
+      nativeSymbol: CHAINS[chain].nativeSymbol,
+    };
   }
 
   async send(
@@ -205,6 +269,7 @@ export class OnchainTransfers {
   private serviceFor(chain: ChainId): {
     chain: ChainClient;
     transfer: TransferService;
+    calls: ContractCallService;
   } {
     if (rpcUrlsFor(chain).length === 0)
       throw new Error(`no rpc endpoint delivered for ${chain}`);
@@ -219,6 +284,10 @@ export class OnchainTransfers {
     const entry = {
       chain: chainClient,
       transfer: new TransferService({
+        chain: chainClient,
+        reason: this.deps.reason,
+      }),
+      calls: new ContractCallService({
         chain: chainClient,
         reason: this.deps.reason,
       }),

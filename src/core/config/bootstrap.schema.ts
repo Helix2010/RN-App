@@ -3,6 +3,23 @@ import { z } from "zod";
 /** 链 id 的唯一枚举来源，避免 schema 里散落多份。 */
 const chainIdSchema = z.enum(["bsc", "eth", "base", "op-sepolia", "monad"]);
 
+/**
+ * 预测市场平台的租户关联：接口域名、平台 scopeId、我们这边的链。
+ *
+ * 两边的租户 id **不假定相同**（AGENTS.md「租户身份与外部系统的对应」），关联只靠
+ * 这三个字段；它们决定用户的登录凭证发往哪里，所以每一项都严格。
+ */
+export const predictServiceSchema = z.object({
+  /** 裸主机名；App 按平台规则从它派生 gamma-api / clob-api / data-api / relayer / clob-ws / faucet 子域 */
+  domain: z
+    .string()
+    .regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/),
+  /** 平台租户 scope：bytes32 的 0x-hex，小写 */
+  scopeId: z.string().regex(/^0x[0-9a-f]{64}$/),
+  chain: chainIdSchema,
+});
+export type PredictServiceConfig = z.infer<typeof predictServiceSchema>;
+
 /** 代币目录的一条。这里刻意没有 verified：它只能由客户端白名单授予。 */
 const walletTokenSchema = z.object({
   chain: chainIdSchema,
@@ -180,6 +197,8 @@ export const bootstrapSchema = z.object({
     directUpdateEnabled: z.boolean(),
     diagnosticsEnabled: z.boolean(),
   }),
+  /** 外部服务的接入配置。服务端只在 predict 模块开着时下发 predict 一项 */
+  services: z.object({ predict: predictServiceSchema.optional() }),
   branding: brandingSchema.optional(),
   app: z.object({
     version: z.string().min(1),

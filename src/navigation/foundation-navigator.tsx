@@ -28,6 +28,7 @@ import { EventDetailScreen } from "../features/predict/ui/event-detail-screen";
 import { SettlementScreen } from "../features/predict/ui/settlement-screen";
 import { LeaderboardScreen } from "../features/predict/ui/leaderboard-screen";
 import { PositionsScreen } from "../features/predict/ui/positions-screen";
+import { PredictEnableScreen } from "../features/predict/ui/predict-enable-screen";
 import { TokenDetailScreen } from "../features/dex/ui/token-detail-screen";
 import { SwapScreen } from "../features/dex/ui/swap-screen";
 import { SwapHistoryScreen } from "../features/dex/ui/swap-history-screen";
@@ -205,12 +206,21 @@ export function FoundationNavigator() {
             />
           )}
         </Stack.Screen>
+        <Stack.Screen name="PredictEnable">
+          {(props) => (
+            <PredictEnableScreen
+              onBack={() => props.navigation.goBack()}
+              onDone={() => props.navigation.goBack()}
+            />
+          )}
+        </Stack.Screen>
         <Stack.Screen name="Transfer">
           {(props) => (
             <TransferScreen
               direction={props.route.params?.direction}
               amount={props.route.params?.amount}
               onBack={() => props.navigation.goBack()}
+              onOpenEnable={() => props.navigation.navigate("PredictEnable")}
             />
           )}
         </Stack.Screen>
@@ -229,6 +239,9 @@ export function FoundationNavigator() {
               onBack={() => props.navigation.goBack()}
               onOpenSend={() => props.navigation.navigate("Send")}
               onOpenSwap={() => props.navigation.navigate("Swap")}
+              onOpenPredictEnable={() =>
+                props.navigation.navigate("PredictEnable")
+              }
             />
           )}
         </Stack.Screen>

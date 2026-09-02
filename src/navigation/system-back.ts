@@ -6,6 +6,7 @@ export type RootRouteName =
   | "AppearanceSettings"
   | "PredictEvent"
   | "PredictSettlement"
+  | "PredictEnable"
   | "Leaderboard"
   | "Positions"
   | "DexToken"

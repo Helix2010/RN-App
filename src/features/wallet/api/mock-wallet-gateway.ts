@@ -359,6 +359,11 @@ export class MockWalletGateway implements WalletGateway {
     return false;
   }
 
+  async signerFor(): Promise<never> {
+    // 演示账本没有私钥；需要签名的功能不在 Mock 网关上
+    throw new Error("the demo wallet has no signer");
+  }
+
   async listTransfers(address: string): Promise<WalletTransfer[]> {
     const state = await this.load();
     return state.transfers.filter(

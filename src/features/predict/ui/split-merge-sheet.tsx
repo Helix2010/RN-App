@@ -1,3 +1,4 @@
+import { usePredictAccountBalance } from "../hooks/use-predict-account";
 import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import { formatMoney } from "../../../core/i18n/format";
@@ -23,7 +24,6 @@ import { TxProgress } from "../../assets/ui/tx-progress";
 import { EVENTS } from "../fixtures/events";
 import {
   usePositions,
-  usePredictBalance,
   usePredictTx,
   useSplitMerge,
 } from "../hooks/use-predict";
@@ -45,7 +45,7 @@ export const SplitMergeSheet = forwardRef<
   const [marketId, setMarketId] = useState<string>("m-btc-120k");
   const [text, setText] = useState("");
   const [txId, setTxId] = useState<string | undefined>();
-  const balance = usePredictBalance(address);
+  const balance = usePredictAccountBalance(address);
   const positions = usePositions(address);
   const mutation = useSplitMerge(address);
   const tx = usePredictTx(txId);

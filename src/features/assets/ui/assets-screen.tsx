@@ -49,10 +49,12 @@ export function AssetsScreen({
   onOpenAccount,
   onOpenSend,
   onOpenSwap,
+  onOpenPredictEnable,
 }: {
   onOpenAccount: (kind: "predict" | "wallet") => void;
   onOpenSend: () => void;
   onOpenSwap: () => void;
+  onOpenPredictEnable: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const { config, t } = useFoundationRuntime();
@@ -98,24 +100,27 @@ export function AssetsScreen({
       // 没有估值的币不算"小额"：不知道值多少，不能替用户藏起来
       (!hideSmall || item.usdValue === null || item.usdValue >= 1),
   );
-  const predictUsdc: TokenBalance | null = data?.predict
-    ? {
-        token: {
-          chain: "bsc",
-          address: "predict",
-          symbol: "USDC",
-          name: "USD Coin",
-          decimals: 6,
-          // 预测账户的 USDC 不来自下发目录，展示精度按稳定币惯例
-          displayDecimals: 2,
-          logoColor: "#2775CA",
-          verified: true,
-        },
-        amount: data.predict.available,
-        usdValue: toApproxNumber(data.predict.available),
-        change24hPct: 0,
-      }
-    : null;
+  const predict = data?.predict?.status === "enabled" ? data.predict : null;
+  const predictUsdw: TokenBalance | null =
+    predict && (chainFilter === "all" || predict.chain === chainFilter)
+      ? {
+          token: {
+            chain: predict.chain,
+            address: "predict",
+            symbol: "USDW",
+            name: "Wrapped USD",
+            decimals: 6,
+            // 预测账户的 USDW 不来自下发目录，展示精度按稳定币惯例
+            displayDecimals: 2,
+            logoColor: "#2775CA",
+            verified: true,
+          },
+          amount: predict.safeBalance,
+          // USDW 由 wrapper 合约按 1:1 兑 USDC 铸销，估值按 1 美元
+          usdValue: toApproxNumber(predict.safeBalance),
+          change24hPct: 0,
+        }
+      : null;
 
   return (
     <Page>
@@ -290,15 +295,17 @@ export function AssetsScreen({
                       {t("assets.predictAccount")}
                     </SectionTitle>
                     <Body fontSize={12}>
-                      {data?.predict
-                        ? `${t("assets.available")} ${formatMoney(data.predict.available, locale)} · ${t("assets.positions")} ${formatUsd(data.predict.positionsValueUsd, locale)}`
-                        : "—"}
+                      {predict
+                        ? `${t("assets.available")} ${formatMoney(predict.available, locale)} · ${t("assets.lockedInOrders")} ${formatMoney(predict.lockedInOrders, locale, { withSymbol: false })}`
+                        : data?.predict?.status === "not-enabled"
+                          ? t("assets.predictNotEnabled")
+                          : "—"}
                     </Body>
                   </Stack>
                   <InlineText fontWeight="800">
-                    {data?.predict
+                    {predict
                       ? visible
-                        ? formatUsd(data.predict.usd, locale)
+                        ? formatUsd(predict.usd, locale)
                         : "••••"
                       : "—"}
                   </InlineText>
@@ -347,13 +354,13 @@ export function AssetsScreen({
                   failures={data.unavailable}
                   onRetry={() => void overview.refetch()}
                 />
-                {predictUsdc ? (
+                {predictUsdw ? (
                   <HoldingRow
-                    item={predictUsdc}
+                    item={predictUsdw}
                     account={t("assets.predictAccount")}
                     note={
-                      data.predict
-                        ? `${t("assets.lockedInOrders")} ${formatMoney(data.predict.lockedInOrders, locale, { withSymbol: false })}`
+                      predict
+                        ? `${t("assets.lockedInOrders")} ${formatMoney(predict.lockedInOrders, locale, { withSymbol: false })}`
                         : undefined
                     }
                     locale={locale}
@@ -371,7 +378,7 @@ export function AssetsScreen({
                   />
                 ))}
                 {holdings.length === 0 &&
-                !predictUsdc &&
+                !predictUsdw &&
                 data.unavailable.length === 0 ? (
                   <Body>{t("state.empty")}</Body>
                 ) : null}
@@ -404,6 +411,10 @@ export function AssetsScreen({
         >
           <TransferForm
             address={address}
+            onOpenEnable={() => {
+              transfer.current?.dismiss();
+              onOpenPredictEnable();
+            }}
             onFinished={() => transfer.current?.dismiss()}
             onMinimize={() => transfer.current?.dismiss()}
           />

@@ -1,4 +1,10 @@
-import { useState } from "react";
+import {
+  usePredictAccountBalance,
+  usePredictEnablement,
+} from "../hooks/use-predict-account";
+import { enablementComplete } from "../api/account-gateway";
+import { shouldPromptEnable } from "../model/enable-prompt";
+import { useEffect, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import { formatMoney, formatUsd } from "../../../core/i18n/format";
@@ -22,11 +28,7 @@ import {
   useTheme,
 } from "../../../design-system";
 import { useSession } from "../../session/hooks/use-session";
-import {
-  usePredictBalance,
-  usePredictEvents,
-  usePredictTags,
-} from "../hooks/use-predict";
+import { usePredictEvents, usePredictTags } from "../hooks/use-predict";
 import type {
   EventQuery,
   Market,
@@ -40,6 +42,7 @@ export function MarketListScreen({
   onOpenEvent,
   onOrder,
   onOpenTransfer,
+  onOpenEnable,
   onOpenPositions,
   onOpenLeaderboard,
   showPositionsEntry,
@@ -47,6 +50,8 @@ export function MarketListScreen({
   onOpenEvent: (event: PredictEvent, market?: Market) => void;
   onOrder: (market: Market, outcome: Outcome) => void;
   onOpenTransfer: () => void;
+  /** 进入启用引导：账户没启用时顶栏按钮与一次性自动弹出都走这里 */
+  onOpenEnable: () => void;
   onOpenPositions: () => void;
   onOpenLeaderboard: () => void;
   showPositionsEntry: boolean;
@@ -57,7 +62,15 @@ export function MarketListScreen({
   const theme = useTheme();
   const session = useSession();
   const address = session.data?.address;
-  const balance = usePredictBalance(address);
+  const balance = usePredictAccountBalance(address);
+  const enablement = usePredictEnablement(address);
+  // 已登录、租户接了平台、账户还没启用：每个地址在本次进程里自动进一次引导
+  useEffect(() => {
+    if (!address || !enablement.data) return;
+    if (!enablement.data.configured || enablementComplete(enablement.data))
+      return;
+    if (shouldPromptEnable(address)) onOpenEnable();
+  }, [address, enablement.data, onOpenEnable]);
   const tags = usePredictTags();
   const [tagId, setTagId] = useState("hot");
   const [sort, setSort] = useState<NonNullable<EventQuery["sort"]>>("volume");
@@ -79,7 +92,17 @@ export function MarketListScreen({
             <SectionTitle fontSize={20}>{t("predict.title")}</SectionTitle>
             <Row alignItems="center" gap="$2">
               {address ? (
-                balance.data && isZero(balance.data.available) ? (
+                balance.notEnabled ? (
+                  <PrimaryButton
+                    height={32}
+                    paddingHorizontal="$3"
+                    fontSize={12}
+                    onPress={onOpenEnable}
+                    testID="predict-enable"
+                  >
+                    {t("predict.enableChip")}
+                  </PrimaryButton>
+                ) : balance.data && isZero(balance.data.available) ? (
                   <PrimaryButton
                     height={32}
                     paddingHorizontal="$3"

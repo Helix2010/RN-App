@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { loadBootstrap, type BootstrapSnapshot } from "./bootstrap-repository";
 import { applyDeliveredWalletConfig } from "../wallet/config/wallet-runtime-config";
+import { applyDeliveredServices } from "../predict-platform/config";
 import type { SupportedLocale } from "./bootstrap.schema";
 
 /**
@@ -13,6 +14,7 @@ export async function bootstrapQueryFn(
 ): Promise<BootstrapSnapshot> {
   const snapshot = await loadBootstrap(locale, signal);
   applyDeliveredWalletConfig(snapshot.config.wallet);
+  applyDeliveredServices(snapshot.config.services);
   return snapshot;
 }
 

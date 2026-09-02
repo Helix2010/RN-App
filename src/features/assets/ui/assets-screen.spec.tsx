@@ -14,6 +14,7 @@ function renderAssets(options: Parameters<typeof renderWithProviders>[1] = {}) {
       onOpenAccount={jest.fn()}
       onOpenSend={jest.fn()}
       onOpenSwap={jest.fn()}
+      onOpenPredictEnable={jest.fn()}
     />,
     options,
   );

@@ -1,25 +1,28 @@
 import { enabledChains } from "../../../core/wallet/config/wallet-runtime-config";
 import type { TokenBalance } from "../../wallet/model/wallet";
 import { toApproxNumber } from "../../../core/money/money";
-import type { PredictGateway } from "../../predict/api/gateway";
+import {
+  PredictNotEnabledError,
+  type PredictAccountGateway,
+} from "../../predict/api/account-gateway";
 import type { WalletGateway } from "../../wallet/api/gateway";
 import type { AssetsGateway, AssetsOverview } from "./gateway";
 
-/** 资产总览 = 钱包余额 + 预测账户 的聚合，不持有自己的状态。 */
-export class MockAssetsGateway implements AssetsGateway {
+/** 资产总览 = 钱包余额 + 预测账户（真实平台）的聚合，不持有自己的状态。 */
+export class AssetsOverviewGateway implements AssetsGateway {
   constructor(
     private readonly wallet: WalletGateway,
-    private readonly predict: PredictGateway,
+    private readonly predictAccount: PredictAccountGateway,
   ) {}
 
   async getOverview(
     address: string,
     options: { includePredict: boolean },
   ): Promise<AssetsOverview> {
-    const [snapshot, predictBalance] = await Promise.all([
+    const [snapshot, predict] = await Promise.all([
       this.wallet.getBalances(address),
       options.includePredict
-        ? this.predict.getBalance(address)
+        ? this.predictSummary(address)
         : Promise.resolve(null),
     ]);
     const holdings = snapshot.items;
@@ -37,19 +40,8 @@ export class MockAssetsGateway implements AssetsGateway {
     const chains = enabledChains().length - snapshot.unavailable.length;
     const partial =
       snapshot.unavailable.length > 0 || priced.length < holdings.length;
-    const predict = predictBalance
-      ? {
-          available: predictBalance.available,
-          lockedInOrders: predictBalance.lockedInOrders,
-          claimable: predictBalance.claimable,
-          positionsValueUsd: toApproxNumber(predictBalance.positionsValue),
-          usd:
-            toApproxNumber(predictBalance.available) +
-            toApproxNumber(predictBalance.lockedInOrders) +
-            toApproxNumber(predictBalance.positionsValue),
-        }
-      : null;
-    const totalUsd = walletUsd + (predict?.usd ?? 0);
+    const totalUsd =
+      walletUsd + (predict?.status === "enabled" ? predict.usd : 0);
     const change24hUsd = walletChange;
     return {
       totalUsd,
@@ -62,5 +54,28 @@ export class MockAssetsGateway implements AssetsGateway {
       unavailable: snapshot.unavailable,
       partial,
     };
+  }
+
+  /** 未启用不是错误，是账户的一种状态；其它错误原样抛出。 */
+  private async predictSummary(
+    address: string,
+  ): Promise<AssetsOverview["predict"]> {
+    try {
+      const balance = await this.predictAccount.getBalance(address);
+      return {
+        status: "enabled",
+        chain: balance.chain,
+        safe: balance.safe,
+        available: balance.available,
+        lockedInOrders: balance.lockedInOrders,
+        safeBalance: balance.safeBalance,
+        // USDW 由 wrapper 合约按 1:1 兑 USDC 铸销，估值按 1 美元
+        usd: toApproxNumber(balance.safeBalance),
+      };
+    } catch (error) {
+      if (error instanceof PredictNotEnabledError)
+        return { status: "not-enabled" };
+      throw error;
+    }
   }
 }

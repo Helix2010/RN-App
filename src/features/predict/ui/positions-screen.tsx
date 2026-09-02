@@ -1,3 +1,4 @@
+import { usePredictAccountBalance } from "../hooks/use-predict-account";
 import { useRef, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
@@ -8,7 +9,12 @@ import {
   formatUsd,
 } from "../../../core/i18n/format";
 import { pickTranslation } from "../../../core/i18n/localized-text";
-import { isNegative, toApproxNumber } from "../../../core/money/money";
+import {
+  type Money,
+  add,
+  isNegative,
+  toApproxNumber,
+} from "../../../core/money/money";
 import {
   AmountText,
   Body,
@@ -37,7 +43,6 @@ import {
   useOpenOrders,
   usePositions,
   usePredictActivity,
-  usePredictBalance,
   useRedeem,
 } from "../hooks/use-predict";
 import type {
@@ -78,7 +83,7 @@ export function PositionsScreen({
   const locale = config.localization.selectedLocale;
   const session = useSession();
   const address = session.data?.address;
-  const balance = usePredictBalance(address);
+  const balance = usePredictAccountBalance(address);
   const positions = usePositions(address, true);
   const orders = useOpenOrders(address);
   const activity = usePredictActivity(address);
@@ -141,22 +146,26 @@ export function PositionsScreen({
     (sum, item) => sum + toApproxNumber(item.costBasis),
     0,
   );
-  const claimable = balance.data?.claimable;
-  const redeemableIds = (positions.data ?? [])
-    .filter((item) => item.redeemable)
-    .map((item) => item.id);
-
+  // 可领取 = 已结算胜方仓位的兑付合计，来自持仓列表本身，不再从账户余额里取
+  const redeemable = (positions.data ?? []).filter((item) => item.redeemable);
+  const claimable = redeemable.reduce<Money | null>(
+    (sum, item) => (sum ? add(sum, item.value) : item.value),
+    null,
+  );
   const claimAll = () => {
-    redeem.mutate(redeemableIds, {
-      onSuccess: () =>
-        toast(
-          fill(t("predict.positions.claimed"), {
-            amount: claimable ? formatMoney(claimable, locale) : "",
-          }),
-          "success",
-        ),
-      onError: () => toast(t("state.error"), "error"),
-    });
+    redeem.mutate(
+      redeemable.map((item) => item.id),
+      {
+        onSuccess: () =>
+          toast(
+            fill(t("predict.positions.claimed"), {
+              amount: claimable ? formatMoney(claimable, locale) : "",
+            }),
+            "success",
+          ),
+        onError: () => toast(t("state.error"), "error"),
+      },
+    );
   };
 
   return (
@@ -195,9 +204,9 @@ export function PositionsScreen({
                 })}
               </Body>
             </Row>
-            {balance.data ? (
+            {positions.data ? (
               <AmountText fontSize={30} lineHeight={36}>
-                {formatUsd(toApproxNumber(balance.data.positionsValue), locale)}
+                {formatUsd(totalCost + totalPnl, locale)}
               </AmountText>
             ) : (
               <SkeletonBlock height={36} width={160} />
@@ -223,9 +232,7 @@ export function PositionsScreen({
                 </InlineText>
               </Stack>
             </Row>
-            {claimable &&
-            !isNegative(claimable) &&
-            BigInt(claimable.raw) > 0n ? (
+            {claimable && BigInt(claimable.raw) > 0n ? (
               <Row
                 alignItems="center"
                 justifyContent="space-between"

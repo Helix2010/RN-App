@@ -39,6 +39,7 @@ function PredictMarketsTab() {
         })
       }
       onOpenTransfer={() => navigation.navigate("Transfer")}
+      onOpenEnable={() => navigation.navigate("PredictEnable")}
       onOpenPositions={() => navigation.navigate("Positions")}
       onOpenLeaderboard={() => navigation.navigate("Leaderboard")}
     />

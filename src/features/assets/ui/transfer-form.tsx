@@ -1,14 +1,21 @@
-import { useMemo, useState } from "react";
-import { fill, formatMoney, formatUsd } from "../../../core/i18n/format";
+import { useEffect, useMemo, useState } from "react";
 import { useFoundationRuntime } from "../../../app/runtime-context";
-import type { TokenRef } from "../../../core/gateways/types";
+import { CHAINS } from "../../../core/gateways/types";
+import {
+  fill,
+  formatCountdown,
+  formatMoney,
+  shortenAddress,
+} from "../../../core/i18n/format";
 import {
   compare,
   fromDecimal,
   isZero,
+  money,
   toDecimalString,
   type Money,
 } from "../../../core/money/money";
+import { isTestnetChain } from "../../../core/wallet/config/wallet-runtime-config";
 import {
   AmountInput,
   AppIcon,
@@ -16,29 +23,168 @@ import {
   DetailRow,
   IconButton,
   InlineText,
+  Label,
   PrimaryButton,
   Row,
+  SecondaryButton,
   SectionTitle,
+  SkeletonBlock,
   Stack,
   toast,
 } from "../../../design-system";
 import {
-  usePredictBalance,
+  enablementComplete,
+  type DepositAsset,
+  type PendingWithdrawal,
+} from "../../predict/api/account-gateway";
+import {
+  useClaimWithdrawal,
+  useDepositQuote,
+  useFaucet,
+  usePendingWithdrawals,
+  usePredictAccountBalance,
+  usePredictAccountTx,
   usePredictDeposit,
-  usePredictTx,
+  usePredictEnablement,
+  usePredictWalletFunds,
   usePredictWithdraw,
-} from "../../predict/hooks/use-predict";
-import { TOKENS } from "../../wallet/fixtures/wallet";
-import { useWalletBalances } from "../../wallet/hooks/use-wallet";
-import { TxProgress } from "./tx-progress";
+  useUnwrapTerms,
+} from "../../predict/hooks/use-predict-account";
+import type { PredictTx } from "../../predict/model/predict";
 import { useRequireVerification } from "../../security/use-require-verification";
+import { TxProgress } from "./tx-progress";
 
 export type TransferDirection = "deposit" | "withdraw";
-const PREDICT_USDC = { decimals: 6, symbol: "USDC" };
-const WALLET_USDC = TOKENS["USDC.bsc"] as TokenRef;
+const DEPOSIT_ASSETS: DepositAsset[] = ["USDC", "USDW"];
+const USD_DECIMALS = 6;
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** 解包等待时长，按秒 / 分 / 小时给人看。 */
+export function formatDelay(seconds: number, locale: string): string {
+  const zh = locale === "zh-CN";
+  if (seconds < 60) return zh ? `${seconds} 秒` : `${seconds}s`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return zh ? `${minutes} 分钟` : `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (zh) return `${hours} 小时${rest ? ` ${rest} 分` : ""}`;
+  return `${hours}h${rest ? ` ${rest}m` : ""}`;
+}
+
+/** 每秒刷新一次"现在"，只在还有未到期的记录时跑；到期与否按上一次的"现在"判断。 */
+function useCountdownNow(deadlines: string[]): number {
+  const [now, setNow] = useState(() => Date.now());
+  const active = deadlines.some((iso) => new Date(iso).getTime() > now);
+  useEffect(() => {
+    if (!active) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [active]);
+  return now;
+}
 
 /**
- * A-02 划转：钱包 ⇄ 预测账户（链上存入 / 取出）。提交后切到三段进度。
+ * 两阶段取回的第二步：待领取列表 + 到期倒计时 + 领取按钮。
+ * 平台子图还没索引到的记录来自本机乐观记录，标出"等待索引"。
+ */
+export function PendingWithdrawals({
+  address,
+  emptyLabel,
+  onClaimed,
+}: {
+  address: string;
+  /** 不传则列表为空时什么都不渲染 */
+  emptyLabel?: string;
+  onClaimed?: (tx: PredictTx, item: PendingWithdrawal) => void;
+}) {
+  const { config, t } = useFoundationRuntime();
+  const locale = config.localization.selectedLocale;
+  const requireVerification = useRequireVerification();
+  const pending = usePendingWithdrawals(address);
+  const claim = useClaimWithdrawal(address);
+  const items = pending.data ?? [];
+  const now = useCountdownNow(items.map((item) => item.claimableAt));
+
+  const claimOne = async (item: PendingWithdrawal) => {
+    if (!(await requireVerification())) return;
+    claim.mutate(item.requestId, {
+      onSuccess: (tx) => onClaimed?.(tx, item),
+      onError: (error) =>
+        toast(`${t("transfer.failed")} ${messageOf(error)}`, "error"),
+    });
+  };
+
+  if (!pending.data) {
+    if (pending.isError)
+      return (
+        <Body fontSize={12} color="$priceNegative">
+          {messageOf(pending.error)}
+        </Body>
+      );
+    return <SkeletonBlock height={56} />;
+  }
+  if (items.length === 0)
+    return emptyLabel ? (
+      <Body fontSize={12} testID="transfer-pending-empty">
+        {emptyLabel}
+      </Body>
+    ) : null;
+  return (
+    <Stack gap="$2" testID="transfer-pending">
+      <Label>{t("transfer.pendingTitle")}</Label>
+      {items.map((item) => {
+        const ready = new Date(item.claimableAt).getTime() <= now;
+        return (
+          <Row
+            key={item.requestId}
+            alignItems="center"
+            gap="$3"
+            padding="$3"
+            borderRadius="$4"
+            backgroundColor="$surfaceVariant"
+            testID={`transfer-pending-${item.requestId}`}
+          >
+            <Stack flex={1} gap="$0.5">
+              <InlineText fontWeight="800">
+                {formatMoney(item.assetAmount, locale)}
+              </InlineText>
+              <Body fontSize={11}>
+                {ready
+                  ? t("transfer.claimReady")
+                  : fill(t("transfer.claimableIn"), {
+                      countdown: formatCountdown(item.claimableAt, now),
+                    })}
+                {item.source === "local"
+                  ? ` · ${t("transfer.pendingIndexing")}`
+                  : ""}
+              </Body>
+            </Stack>
+            <PrimaryButton
+              height={32}
+              paddingHorizontal="$3"
+              fontSize={12}
+              disabled={!ready || claim.isPending}
+              onPress={() => void claimOne(item)}
+              testID={`transfer-claim-${item.requestId}`}
+            >
+              {t("transfer.claim")}
+            </PrimaryButton>
+          </Row>
+        );
+      })}
+    </Stack>
+  );
+}
+
+/**
+ * A-02 划转：钱包 ⇄ 预测账户，全部是真实链上交易。
+ *
+ * 转入由钱包地址付 gas：USDC 走 approve + wrap 两笔，USDW 直接转一笔；先估手续费并核对
+ * 原生币余额，不够就不让提交。取回分两阶段：先发起解包，到期后在列表里领取，USDC 回到
+ * 钱包地址。账户没启用时不显示表单，只给启用入口。
  */
 export function TransferForm({
   address,
@@ -46,67 +192,111 @@ export function TransferForm({
   initialAmount,
   onFinished,
   onMinimize,
+  onOpenEnable,
 }: {
   address: string;
   initialDirection?: TransferDirection;
   initialAmount?: string;
   onFinished: () => void;
   onMinimize?: () => void;
+  onOpenEnable: () => void;
 }) {
   const { config, t } = useFoundationRuntime();
   const requireVerification = useRequireVerification();
   const locale = config.localization.selectedLocale;
   const [direction, setDirection] =
     useState<TransferDirection>(initialDirection);
+  const [asset, setAsset] = useState<DepositAsset>("USDC");
   const [text, setText] = useState(initialAmount ?? "");
   const [txId, setTxId] = useState<string | undefined>();
+  const [txTitle, setTxTitle] = useState("");
 
-  const wallet = useWalletBalances(address, "bsc");
-  const predict = usePredictBalance(address);
+  const enablement = usePredictEnablement(address);
+  const enabled = enablement.data
+    ? enablementComplete(enablement.data)
+    : undefined;
+  const funds = usePredictWalletFunds(address);
+  const balance = usePredictAccountBalance(address);
+  const terms = useUnwrapTerms(direction === "withdraw");
   const deposit = usePredictDeposit(address);
   const withdraw = usePredictWithdraw(address);
-  const tx = usePredictTx(txId);
+  const tx = usePredictAccountTx(txId);
+  const chain = funds.data?.chain;
+  const testnet = chain ? isTestnetChain(chain) : false;
+  const faucet = useFaucet(address, testnet && enabled === true);
 
-  const walletUsdc = wallet.data?.items.find(
-    (item) => item.token.symbol === "USDC" && item.token.chain === "bsc",
-  );
-  const available: Money =
-    direction === "deposit"
-      ? fromDecimal(
-          walletUsdc ? toDecimalString(walletUsdc.amount) : "0",
-          PREDICT_USDC.decimals,
-          PREDICT_USDC.symbol,
-        )
-      : (predict.data?.available ?? fromDecimal("0", 6, "USDC"));
+  const symbol = direction === "deposit" ? asset : "USDW";
   const amount = useMemo(
-    () => fromDecimal(text || "0", PREDICT_USDC.decimals, PREDICT_USDC.symbol),
-    [text],
+    () => fromDecimal(text || "0", USD_DECIMALS, symbol),
+    [text, symbol],
   );
-  const insufficient = compare(amount, available) > 0;
+  const source: Money | undefined =
+    direction === "deposit"
+      ? asset === "USDC"
+        ? funds.data?.usdc
+        : funds.data?.usdw
+      : balance.data?.available;
+  const insufficient = source ? compare(amount, source) > 0 : false;
+  const quote = useDepositQuote(
+    address,
+    direction === "deposit" && enabled && !isZero(amount) && !insufficient
+      ? { asset, amount }
+      : undefined,
+  );
+  const native = funds.data?.native;
+  const noGas =
+    direction === "deposit" &&
+    native !== undefined &&
+    quote.data !== undefined &&
+    compare(quote.data, native) > 0;
+  const belowMin =
+    direction === "withdraw" &&
+    terms.data !== undefined &&
+    !isZero(amount) &&
+    compare(amount, terms.data.minAmount) < 0;
+  const busy = deposit.isPending || withdraw.isPending;
   const disabled =
-    isZero(amount) || insufficient || deposit.isPending || withdraw.isPending;
+    enabled !== true ||
+    isZero(amount) ||
+    insufficient ||
+    noGas ||
+    belowMin ||
+    busy ||
+    (direction === "deposit" && quote.data === undefined);
 
   const submit = async () => {
     if (!(await requireVerification())) return;
-    const input = { amount, walletToken: WALLET_USDC };
-    const mutation = direction === "deposit" ? deposit : withdraw;
-    mutation.mutate(input, {
-      onSuccess: (result) => setTxId(result.id),
-      onError: () => toast(t("state.error"), "error"),
+    if (direction === "deposit") {
+      setTxTitle(
+        fill(t("transfer.depositTitle"), {
+          amount: formatMoney(amount, locale),
+        }),
+      );
+      deposit.mutate(
+        { asset, amount },
+        {
+          onSuccess: (result) => setTxId(result.id),
+          onError: (error) =>
+            toast(`${t("transfer.failed")} ${messageOf(error)}`, "error"),
+        },
+      );
+      return;
+    }
+    withdraw.mutate(amount, {
+      onSuccess: () => {
+        setText("");
+        toast(t("transfer.withdrawInitiated"), "success");
+      },
+      onError: (error) =>
+        toast(`${t("transfer.failed")} ${messageOf(error)}`, "error"),
     });
   };
 
   if (txId) {
-    const label = fill(
-      direction === "deposit"
-        ? t("transfer.depositTitle")
-        : t("transfer.withdrawTitle"),
-      { amount: formatMoney(amount, locale) },
-    );
     return (
       <TxProgress
         tx={tx.data}
-        title={label}
+        title={txTitle}
         onDone={onFinished}
         onMinimize={onMinimize}
         doneLabel={t("common.done")}
@@ -114,11 +304,76 @@ export function TransferForm({
     );
   }
 
+  if (enabled === undefined) {
+    return (
+      <Stack gap="$3" testID="transfer-form">
+        {enablement.isError ? (
+          <>
+            <Body color="$priceNegative">{messageOf(enablement.error)}</Body>
+            <SecondaryButton onPress={() => void enablement.refetch()}>
+              {t("action.refresh")}
+            </SecondaryButton>
+          </>
+        ) : (
+          <>
+            <SkeletonBlock height={72} />
+            <SkeletonBlock height={120} />
+          </>
+        )}
+      </Stack>
+    );
+  }
+
+  if (!enabled) {
+    return (
+      <Stack
+        gap="$3"
+        padding="$4"
+        borderRadius="$4"
+        backgroundColor="$surfaceVariant"
+        testID="transfer-not-enabled"
+      >
+        <SectionTitle fontSize={16}>{t("assets.enablePredict")}</SectionTitle>
+        <Body fontSize={12}>{t("transfer.notEnabled")}</Body>
+        <PrimaryButton onPress={onOpenEnable} testID="transfer-enable">
+          {t("transfer.enableNow")}
+        </PrimaryButton>
+      </Stack>
+    );
+  }
+
+  const chainName = chain ? CHAINS[chain].name : "";
+  const walletLabel = chainName
+    ? `${t("assets.wallet")} · ${chainName}`
+    : t("assets.wallet");
   const fromLabel =
-    direction === "deposit" ? t("assets.wallet") : t("assets.predictAccount");
+    direction === "deposit" ? walletLabel : t("assets.predictAccount");
   const toLabel =
-    direction === "deposit" ? t("assets.predictAccount") : t("assets.wallet");
+    direction === "deposit" ? t("assets.predictAccount") : walletLabel;
   const amountLabel = formatMoney(amount, locale);
+  const faucetAmount =
+    chain && faucet.status.data
+      ? formatMoney(
+          money(
+            BigInt(faucet.status.data.amountWei),
+            CHAINS[chain].nativeDecimals,
+            CHAINS[chain].nativeSymbol,
+          ),
+          locale,
+          { maxFraction: 6 },
+        )
+      : "";
+  const error = insufficient
+    ? t("transfer.insufficient")
+    : noGas && native
+      ? fill(t("transfer.noGas"), { symbol: native.symbol })
+      : belowMin && terms.data
+        ? fill(t("transfer.minWithdraw"), {
+            amount: formatMoney(terms.data.minAmount, locale, {
+              maxFraction: 6,
+            }),
+          })
+        : undefined;
 
   return (
     <Stack gap="$3" testID="transfer-form">
@@ -131,10 +386,7 @@ export function TransferForm({
         <Row alignItems="center" justifyContent="space-between">
           <Stack gap="$0.5">
             <Body fontSize={11}>{t("transfer.from")}</Body>
-            <SectionTitle fontSize={15}>
-              {fromLabel}
-              {direction === "deposit" ? " · BSC" : ""}
-            </SectionTitle>
+            <SectionTitle fontSize={15}>{fromLabel}</SectionTitle>
           </Stack>
           <IconButton
             label={t("transfer.swapDirection")}
@@ -151,74 +403,161 @@ export function TransferForm({
         <Stack height={1} backgroundColor="$borderColor" />
         <Stack gap="$0.5">
           <Body fontSize={11}>{t("transfer.to")}</Body>
-          <SectionTitle fontSize={15}>
-            {toLabel}
-            {direction === "withdraw" ? " · BSC" : ""}
-          </SectionTitle>
+          <SectionTitle fontSize={15}>{toLabel}</SectionTitle>
         </Stack>
       </Stack>
 
       <Row alignItems="center" justifyContent="space-between">
-        <Body>{t("transfer.token")}</Body>
-        <Row alignItems="center" gap="$2">
-          <Stack
-            width={24}
-            height={24}
-            borderRadius={12}
-            alignItems="center"
-            justifyContent="center"
-            style={{ backgroundColor: WALLET_USDC.logoColor }}
-          >
-            <InlineText color="white" fontSize={11} fontWeight="900">
-              C
-            </InlineText>
-          </Stack>
-          <SectionTitle fontSize={15}>USDC</SectionTitle>
-        </Row>
+        <Body>
+          {direction === "deposit" ? t("transfer.asset") : t("transfer.token")}
+        </Body>
+        {direction === "deposit" ? (
+          <Row gap="$2">
+            {DEPOSIT_ASSETS.map((item) => {
+              const selected = asset === item;
+              return (
+                <Row
+                  key={item}
+                  paddingHorizontal="$3"
+                  paddingVertical="$1.5"
+                  borderRadius={999}
+                  borderWidth={1}
+                  borderColor={selected ? "$primary" : "$borderColor"}
+                  backgroundColor={selected ? "$surfaceVariant" : undefined}
+                  onPress={() => {
+                    setAsset(item);
+                    setText("");
+                  }}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  testID={`transfer-asset-${item}`}
+                >
+                  <InlineText fontSize={12} fontWeight="700">
+                    {item}
+                  </InlineText>
+                </Row>
+              );
+            })}
+          </Row>
+        ) : (
+          <SectionTitle fontSize={15}>USDW</SectionTitle>
+        )}
       </Row>
 
       <AmountInput
         value={text}
         onChangeText={setText}
-        symbol="USDC"
+        symbol={symbol}
         decimals={2}
         helper={fill(
           direction === "deposit"
             ? t("transfer.walletAvailable")
             : t("transfer.predictAvailable"),
-          { amount: formatMoney(available, locale) },
+          { amount: source ? formatMoney(source, locale) : "—" },
         )}
-        error={insufficient ? t("transfer.insufficient") : undefined}
-        onMax={() => setText(toDecimalString(available, 2))}
+        error={error}
+        onMax={() => setText(source ? toDecimalString(source, 2) : "")}
         maxLabel={t("common.max")}
         presets={[25, 50, 75, 100]}
         onPreset={(pct) =>
           setText(
-            toDecimalString(
-              fromDecimal(
-                ((Number(toDecimalString(available)) * pct) / 100).toFixed(2),
-                6,
-                "USDC",
-              ),
-              2,
-            ),
+            source
+              ? toDecimalString(
+                  fromDecimal(
+                    ((Number(toDecimalString(source)) * pct) / 100).toFixed(2),
+                    USD_DECIMALS,
+                    symbol,
+                  ),
+                  2,
+                )
+              : "",
           )
         }
         accessibilityLabel={t("transfer.amount")}
         testID="transfer-amount"
       />
 
-      <Stack>
-        <DetailRow label={t("transfer.eta")} value={t("transfer.etaValue")} />
-        <DetailRow
-          label={t("transfer.networkFee")}
-          value={`≈ 0.0002 BNB (${formatUsd(0.13, locale)})`}
-        />
-      </Stack>
+      {direction === "deposit" ? (
+        <Stack>
+          <DetailRow
+            label={t("transfer.networkFee")}
+            value={
+              quote.data
+                ? `≈ ${formatMoney(quote.data, locale, { maxFraction: 6 })}`
+                : quote.isFetching
+                  ? "…"
+                  : "—"
+            }
+          />
+          <DetailRow
+            label={t("transfer.gasBalance")}
+            value={
+              native ? formatMoney(native, locale, { maxFraction: 6 }) : "—"
+            }
+          />
+        </Stack>
+      ) : (
+        <Stack>
+          <DetailRow
+            label={t("transfer.unwrapDelay")}
+            value={
+              terms.data ? formatDelay(terms.data.delaySeconds, locale) : "—"
+            }
+          />
+          <DetailRow
+            label={t("transfer.walletAddress")}
+            value={shortenAddress(address)}
+          />
+        </Stack>
+      )}
+
+      {direction === "deposit" && testnet && faucet.status.data ? (
+        <Row
+          alignItems="center"
+          gap="$3"
+          padding="$3"
+          borderRadius="$4"
+          backgroundColor="$surfaceVariant"
+          testID="transfer-faucet"
+        >
+          <Stack flex={1} gap="$0.5">
+            <SectionTitle fontSize={13}>{t("transfer.faucet")}</SectionTitle>
+            <Body fontSize={11}>
+              {faucet.status.data.claimed
+                ? t("transfer.faucetClaimed")
+                : t("send.testnetNotice")}
+            </Body>
+          </Stack>
+          <SecondaryButton
+            height={32}
+            paddingHorizontal="$3"
+            fontSize={12}
+            disabled={faucet.status.data.claimed || faucet.claim.isPending}
+            onPress={() =>
+              faucet.claim.mutate(undefined, {
+                onSuccess: () => toast(t("transfer.faucetDone"), "success"),
+                onError: (err) =>
+                  toast(`${t("transfer.failed")} ${messageOf(err)}`, "error"),
+              })
+            }
+            testID="transfer-faucet-claim"
+          >
+            {fill(t("transfer.faucetClaim"), { amount: faucetAmount })}
+          </SecondaryButton>
+        </Row>
+      ) : null}
+
       <Row alignItems="flex-start" gap="$2">
         <AppIcon name="information-outline" size={16} colorToken="textMuted" />
         <Body fontSize={12} flex={1}>
-          {t("transfer.note")}
+          {direction === "deposit"
+            ? t(`transfer.depositSteps.${asset}`)
+            : fill(t("transfer.withdrawTwoPhase"), {
+                delay: terms.data
+                  ? formatDelay(terms.data.delaySeconds, locale)
+                  : "—",
+                address: shortenAddress(address),
+              })}
         </Body>
       </Row>
       <PrimaryButton
@@ -230,9 +569,27 @@ export function TransferForm({
           direction === "deposit"
             ? t("transfer.confirmDeposit")
             : t("transfer.confirmWithdraw"),
-          { amount: isZero(amount) ? "USDC" : amountLabel },
+          { amount: isZero(amount) ? symbol : amountLabel },
         )}
       </PrimaryButton>
+      {deposit.step ? (
+        <Body fontSize={12} testID="transfer-step">
+          {t(`transfer.step.${deposit.step}`)}
+        </Body>
+      ) : null}
+      {direction === "withdraw" ? (
+        <PendingWithdrawals
+          address={address}
+          onClaimed={(result, item) => {
+            setTxTitle(
+              fill(t("transfer.claimTitle"), {
+                amount: formatMoney(item.assetAmount, locale),
+              }),
+            );
+            setTxId(result.id);
+          }}
+        />
+      ) : null}
     </Stack>
   );
 }

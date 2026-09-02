@@ -5,7 +5,6 @@ import { pickTranslation } from "../../core/i18n/localized-text";
 import {
   formatCents,
   formatCompactNumber,
-  formatMoney,
   formatTimeUntil,
   formatTokenPrice,
   formatUsd,
@@ -188,7 +187,7 @@ export function FoundationHomeScreen({
                         {balanceVisible
                           ? formatUsd(overview.data.wallet.usd, locale)
                           : "••••"}
-                        {overview.data.predict
+                        {overview.data.predict?.status === "enabled"
                           ? ` · ${t("home.predictAccount")} ${balanceVisible ? formatUsd(overview.data.predict.usd, locale) : "••••"}`
                           : ""}
                       </InlineText>
@@ -206,27 +205,6 @@ export function FoundationHomeScreen({
                           ? `${formatUsd(overview.data.change24hUsd, locale, { sign: true })} (${overview.data.change24hPct >= 0 ? "+" : ""}${overview.data.change24hPct.toFixed(2)}%)`
                           : "••••"}
                       </InlineText>
-                      {overview.data.predict &&
-                      BigInt(overview.data.predict.claimable.raw) > 0n ? (
-                        <Badge
-                          borderWidth={0}
-                          backgroundColor="$surfaceVariant"
-                          onPress={onOpenPredictPositions}
-                        >
-                          <InlineText
-                            color="$success"
-                            fontSize={11}
-                            fontWeight="700"
-                          >
-                            {t("home.claimable")}{" "}
-                            {formatMoney(
-                              overview.data.predict.claimable,
-                              locale,
-                              { withSymbol: true },
-                            )}
-                          </InlineText>
-                        </Badge>
-                      ) : null}
                     </Row>
                   </>
                 ) : overview.isError ? (
