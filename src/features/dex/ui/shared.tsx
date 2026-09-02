@@ -18,6 +18,7 @@ const CHAIN_COLORS: Record<ChainId, string> = {
   eth: "#627EEA",
   base: "#0052FF",
   "op-sepolia": "#FF0420",
+  monad: "#836EF9",
 };
 
 /** 代币头像 + 右下角链色小圆标（全局一致的链标识）。 */

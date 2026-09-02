@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /** 链 id 的唯一枚举来源，避免 schema 里散落多份。 */
-const chainIdSchema = z.enum(["bsc", "eth", "base", "op-sepolia"]);
+const chainIdSchema = z.enum(["bsc", "eth", "base", "op-sepolia", "monad"]);
 
 /** 代币目录的一条。这里刻意没有 verified：它只能由客户端白名单授予。 */
 const walletTokenSchema = z.object({

@@ -12,7 +12,7 @@ import { RpcError, type RpcClient } from "./rpc-client";
  * 重放），手续费有相对上限（虚高的 gasPrice 会把用户的原生币烧成手续费）。
  */
 
-/** 所有主流 EVM 链上的同一份部署，实测 bsc / eth / base / op-sepolia 字节码一致。 */
+/** 所有主流 EVM 链上的同一份部署，实测 bsc / eth / base / op-sepolia 字节码一致；monad 上同地址有代码（2026-09-02 eth_getCode 实测）。 */
 const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
 const erc20 = new Interface([

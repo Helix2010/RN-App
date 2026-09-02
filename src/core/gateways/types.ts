@@ -20,8 +20,11 @@ export type Tx = {
   updatedAt: string;
 };
 
-/** `op-sepolia` 是测试链：币无价值，界面上必须和主网区分开。 */
-export type ChainId = "bsc" | "eth" | "base" | "op-sepolia";
+/**
+ * `op-sepolia` 是测试链：币无价值，界面上必须和主网区分开。
+ * `monad` 是预测市场平台（pm-cup2026）的默认主网，2026-09-02 按用户要求预先加入。
+ */
+export type ChainId = "bsc" | "eth" | "base" | "op-sepolia" | "monad";
 
 export type Chain = {
   id: ChainId;
@@ -60,6 +63,15 @@ export const CHAINS: Record<ChainId, Chain> = {
     nativeDecimals: 18,
     color: "#FF0420",
     explorerUrl: "https://sepolia-optimism.etherscan.io",
+  },
+  monad: {
+    id: "monad",
+    name: "Monad",
+    shortName: "Monad",
+    nativeSymbol: "MON",
+    nativeDecimals: 18,
+    color: "#836EF9",
+    explorerUrl: "https://monadvision.com",
   },
   base: {
     id: "base",

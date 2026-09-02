@@ -54,6 +54,8 @@ const PROTOCOL: Record<ChainId, { chainId: number; testnet: boolean }> = {
   bsc: { chainId: 56, testnet: false },
   base: { chainId: 8453, testnet: false },
   "op-sepolia": { chainId: 11155420, testnet: true },
+  // 2026-09-02 经 https://rpc.monad.xyz 实测 eth_chainId = 0x8f
+  monad: { chainId: 143, testnet: false },
 };
 
 /** 问了一条租户没启用的链：调用方只应从 `enabledChains()` 里取链。 */

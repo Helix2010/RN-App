@@ -17,6 +17,7 @@ const PROTOCOL: Record<ChainId, { chainId: number; testnet: boolean }> = {
   bsc: { chainId: 56, testnet: false },
   base: { chainId: 8453, testnet: false },
   "op-sepolia": { chainId: 11155420, testnet: true },
+  monad: { chainId: 143, testnet: false },
 };
 
 export function tenantNetwork(

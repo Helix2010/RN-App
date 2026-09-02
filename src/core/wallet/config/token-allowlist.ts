@@ -49,6 +49,9 @@ const ALLOWLIST: Record<ChainId, Record<string, AllowlistEntry>> = {
   },
   // 测试链上的代币没有价值，不给任何"已验证"背书
   "op-sepolia": {},
+  // Monad 上还没有经链上核验的主流合约；预测平台用的 USDC 是否为 Circle 官方部署
+  // 未确认，先不背书——租户可以上目录，只是没有估值、转出一律验证
+  monad: {},
 };
 
 export type AllowlistVerdict =
