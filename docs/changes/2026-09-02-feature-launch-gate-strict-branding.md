@@ -30,7 +30,8 @@
 ## 技术影响
 
 - `loadBootstrap` 失败即抛错，不再返回 `source: "cache"`；`BootstrapSnapshot.source` 只剩 `remote | fallback`。缓存仅供 `loadCachedBootstrap` 决定启动页画哪版品牌。
-- `launch.maxDisplayMs` 服务端仍下发，App 不再使用（没有超时放行）。
+- `launch.maxDisplayMs` 已从 App schema、内置配置与服务端配置模型里删除。服务端的 bootstrap 输出暂时保留一个常量 1800（`legacyLaunchMaxDisplayMs`）：已安装的 App ≤ 1.2.6 校验要求它必填，缺了整份 bootstrap 解析失败。等 `update.minSupportedVersion` 抬到不再要求它的版本后一起删。
+- `BootstrapSnapshot.stale` 已删除：远程数据不再有"过期"态，只看 `source`。`RuntimeValue.isInitialLoading` 无消费者，已删除。
 - 新增 `plugins/with-plain-splash.js`：`withAndroidColors` + `withAndroidStyles` 把 `Theme.App.SplashScreen.windowBackground` 改为 `@color/splashscreen_background`，颜色取 tenant.json 的 `iconBackgroundColor`。属于原生变更，随下一次全量 APK 生效。
 - 与 `docs/changes/2026-08-29-feature-remote-branding-launch.md` 验收条件 1、3（"无网络不阻塞进入可用状态"）相冲突：按 2026-09-02 确立的"正式场景开发原则（不写回退 / 兜底）"，以本文为准。
 
@@ -39,3 +40,14 @@
 - `pnpm check`（含 67 个套件 / 485 个用例，新增 `src/app/runtime-context.spec.tsx` 4 个门禁用例、`bootstrap-repository.spec.ts` 2 个）。
 - `EXPO_PUBLIC_TENANT=anyfun expo config --type introspect` 确认 `splashscreen_background=#E9F0FF`、`windowBackground=@color/splashscreen_background`。
 - 待做：下一次 `pnpm android:release anyfun` 出包后在真机验证冷启动只有一次 logo 淡入。
+
+## 审查后的修正（同日）
+
+- 启动页动画起点按真正下发的类型重设（此前 `none` / `fade` 会停在透明或 86% 缩放）。
+- "已确认没有缓存"是已知结果，不再被后一次读取覆盖；启动视觉在一次启动内不再可能换版本。
+- 转出页与收款页、账户详情的"当前链"改为每次渲染按启用集合派生：配置刷新把链关掉不会再在渲染期抛错；入口指定了未启用的链，如实显示"这条网络已在本平台停用"。
+- WalletConnect 会话没有一条启用的链：连接即失败并断开会话（`WalletConnectNoEnabledChainError`），登录页有对应文案；不再留下"已连接但零条链"的账户。
+- `getBalances` 对未启用的链一律抛 `ChainNotEnabledError`，与链层其他入口一致；新错误类都有用户文案。
+- 删除 `session.data?.chains ?? ["bsc"]` 这类永不触发的兜底；`loadBootstrap` 去掉只会重抛的 try/catch。
+- 仍待做：根级 ErrorBoundary（RELIABILITY 文档要求，当前不存在）；余额查询按链分别报错而不是整批失败；首页头部无 logo 时的内置几何标。
+

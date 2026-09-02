@@ -66,19 +66,18 @@ function buildRuntime(options: HarnessOptions): RuntimeValue {
   const config = options.config ? options.config(withModules) : withModules;
   return {
     config,
-    snapshot: { config, source: "fallback", stale: false },
+    snapshot: { config, source: "fallback" },
     // 从真实的偏好 store 读，测试可以先 setState 再渲染来驱动分支
     localePreference: usePreferencesStore.getState().locale,
     themePreference: usePreferencesStore.getState().theme,
     setLocale: async () => {},
     setTheme: () => {},
     t: (key: string) => translateMessage(config.localization.messages, key),
-    isInitialLoading: false,
     isRefreshing: false,
-    refresh: async () => ({ config, source: "fallback", stale: false }),
+    refresh: async () => ({ config, source: "fallback" }),
     checkForUpdates: async () => ({
       kind: "none",
-      snapshot: { config, source: "fallback", stale: false },
+      snapshot: { config, source: "fallback" },
     }),
     dismissUpdatePrompt: () => {},
     manualUpdatePromptVersion: null,

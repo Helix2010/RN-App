@@ -280,12 +280,14 @@ export function ProfileScreen({
           </Stack>
         </Content>
       </PageScroll>
-      <ReceiveSheet
-        ref={receive}
-        address={address}
-        ens={session.data?.ens}
-        chains={session.data?.chains ?? ["bsc"]}
-      />
+      {session.data ? (
+        <ReceiveSheet
+          ref={receive}
+          address={session.data.address}
+          ens={session.data.ens}
+          chains={session.data.chains}
+        />
+      ) : null}
       <Sheet
         ref={logout}
         title={t("profile.logoutConfirm")}

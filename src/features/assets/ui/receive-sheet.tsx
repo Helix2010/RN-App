@@ -38,7 +38,9 @@ export const ReceiveSheet = forwardRef<
   const { t } = useFoundationRuntime();
   const theme = useTheme();
   const options = chains.filter(isChainEnabled);
-  const [chain, setChain] = useState<ChainId | undefined>(options[0]);
+  const [picked, setPicked] = useState<ChainId | undefined>(options[0]);
+  // 可选项会随配置刷新变化：选中的链不在里面就回到第一项，一项都没有就是空态
+  const chain = picked && options.includes(picked) ? picked : options[0];
 
   const copy = async () => {
     await Clipboard.setStringAsync(address);
@@ -82,7 +84,7 @@ export const ReceiveSheet = forwardRef<
             ? `${CHAINS[id].name} · ${t("send.testnetTag")}`
             : CHAINS[id].name,
         }))}
-        onChange={setChain}
+        onChange={setPicked}
         accessibilityLabel={t("send.network")}
       />
       <Stack alignItems="center" gap="$3" paddingVertical="$2">

@@ -11,7 +11,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import { CHAINS, type ChainId } from "../../../core/gateways/types";
 import { pickTranslation } from "../../../core/i18n/localized-text";
-import { enabledChains } from "../../../core/wallet/config/wallet-runtime-config";
+import {
+  enabledChains,
+  isChainEnabled,
+} from "../../../core/wallet/config/wallet-runtime-config";
 import { isNegative, toApproxNumber } from "../../../core/money/money";
 import {
   AmountText,
@@ -319,7 +322,9 @@ function WalletAccount({
 }) {
   const { config, t } = useFoundationRuntime();
   const locale = config.localization.selectedLocale;
-  const [chain, setChain] = useState<ChainId | "all">("all");
+  const [picked, setPicked] = useState<ChainId | "all">("all");
+  // 选中的链被关掉后回到"全部"，不能拿着它去问链层
+  const chain = picked === "all" || isChainEnabled(picked) ? picked : "all";
   const balances = useWalletBalances(
     address || undefined,
     chain === "all" ? undefined : chain,
@@ -382,7 +387,7 @@ function WalletAccount({
               label: CHAINS[id].name,
             })),
           ]}
-          onChange={setChain}
+          onChange={setPicked}
           accessibilityLabel={t("send.network")}
         />
         {balances.data ? (

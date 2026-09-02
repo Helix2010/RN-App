@@ -88,7 +88,6 @@ export const brandingSchema = z.object({
   launch: z.object({
     enabled: z.boolean(),
     minDisplayMs: z.number().int().min(0).max(3000),
-    maxDisplayMs: z.number().int().min(300).max(5000),
     animation: z.object({
       type: z.enum(["fade_scale", "fade", "none"]),
       durationMs: z.number().int().min(0).max(1500),

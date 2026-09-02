@@ -7,7 +7,7 @@ import { Body, Page, Stack } from "../design-system";
 /**
  * 启动页：**严格按服务端下发的品牌配置画**，配置里有什么画什么。
  *
- * - `pending`：还不知道本次该用哪版品牌（缓存还没读完），只画背景与一句状态文案；
+ * - `pending`：还不知道本次该用哪版品牌（缓存还没读完），只画主题背景与一句状态文案；
  * - 配置里没有 logo / 背景图就不画，没有"内置几何标"这种替身——先画替身再换成
  *   租户 logo，用户看到的就是启动图加载了两次；
  * - 配置的图片加载失败只留痕，不换别的图。
@@ -31,19 +31,24 @@ export function LaunchScreen({
   animationType?: "fade_scale" | "fade" | "none";
   animationDurationMs?: number;
 }) {
-  const [opacity] = useState(
-    () => new Animated.Value(animationType === "none" ? 1 : 0),
-  );
-  const [scale] = useState(
-    () => new Animated.Value(animationType === "fade_scale" ? 0.86 : 1),
-  );
+  const [opacity] = useState(() => new Animated.Value(0));
+  const [scale] = useState(() => new Animated.Value(1));
   const [logoFailedId, setLogoFailedId] = useState<string | null>(null);
   const [backgroundFailedId, setBackgroundFailedId] = useState<string | null>(
     null,
   );
 
   useEffect(() => {
-    if (pending || animationType === "none") return;
+    if (pending) return;
+    // 首帧还不知道品牌配置（pending），Animated.Value 的初值不能按 props 给：
+    // 这里按真正下发的动画类型重设起点，再起动画
+    if (animationType === "none") {
+      opacity.setValue(1);
+      scale.setValue(1);
+      return;
+    }
+    opacity.setValue(0);
+    scale.setValue(animationType === "fade_scale" ? 0.86 : 1);
     const fade = Animated.timing(opacity, {
       toValue: 1,
       duration: animationDurationMs,
@@ -105,7 +110,10 @@ export function LaunchScreen({
           accessibilityIgnoresInvertColors
         />
       ) : null}
-      <Animated.View style={{ opacity, transform: [{ scale }] }}>
+      <Animated.View
+        style={{ opacity, transform: [{ scale }] }}
+        testID="launch-content"
+      >
         <Stack alignItems="center" gap="$4">
           {logo && logoFailedId !== logo.assetId ? (
             <Image

@@ -344,12 +344,12 @@ export function AssetsScreen({
           </Stack>
         </Content>
       </PageScroll>
-      {address ? (
+      {session.data ? (
         <ReceiveSheet
           ref={receive}
-          address={address}
-          ens={session.data?.ens}
-          chains={session.data?.chains ?? ["bsc"]}
+          address={session.data.address}
+          ens={session.data.ens}
+          chains={session.data.chains}
         />
       ) : null}
       {address && config.modules.predict ? (

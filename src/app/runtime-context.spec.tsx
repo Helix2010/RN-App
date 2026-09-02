@@ -98,7 +98,7 @@ function brandedConfig(version: number, logo: BrandingAsset): BootstrapConfig {
 }
 
 function remote(config: BootstrapConfig): BootstrapSnapshot {
-  return { config, source: "remote", stale: false };
+  return { config, source: "remote" };
 }
 
 /** 业务界面的替身：首帧就读钱包运行时配置，验证它在挂载前已经应用 */
@@ -213,6 +213,25 @@ describe("FoundationRuntimeProvider startup gate", () => {
     await waitFor(() => expect(screen.getByTestId("probe")).toBeTruthy(), {
       timeout: 3000,
     });
+  });
+
+  it("stays entered when a later refresh fails", async () => {
+    // 进入过就锁住：运行中的配置刷新失败不该把用户踢回门禁
+    loadBootstrapMock.mockResolvedValueOnce(
+      remote(withWallet(createFallbackConfig("zh-CN"), { chains: ["eth"] })),
+    );
+    await renderProvider();
+    await waitFor(() => expect(screen.getByTestId("probe")).toBeTruthy(), {
+      timeout: 3000,
+    });
+
+    loadBootstrapMock.mockRejectedValueOnce(new Error("offline"));
+    await act(async () => {
+      await client?.refetchQueries({ queryKey: ["mobile-bootstrap"] });
+    });
+
+    expect(screen.getByTestId("probe")).toBeTruthy();
+    expect(screen.queryByText("暂时无法启动应用")).toBeNull();
   });
 
   it("shows the retry screen when the bootstrap request fails and never enters on stale data", async () => {

@@ -14,6 +14,7 @@ import {
   verifyAgainstAllowlist,
 } from "../../../core/wallet/config/token-allowlist";
 import {
+  ChainNotEnabledError,
   deliveredTokens,
   enabledChains,
   isChainEnabled,
@@ -342,9 +343,8 @@ export class EmbeddedWalletGateway implements WalletGateway {
   }
 
   async getBalances(address: string, chain?: ChainId): Promise<TokenBalance[]> {
-    // 租户关掉的链一条都不显示。它没有端点，不拦的话会落到演示账本，
-    // 和真链余额并排——"关掉"就变成了"变成假的"
-    if (chain && !isChainEnabled(chain)) return [];
+    // 问一条未启用的链是调用方的 bug，和链层其他入口一样直接抛错
+    if (chain && !isChainEnabled(chain)) throw new ChainNotEnabledError(chain);
     const enabled = new Set(enabledChains());
     const balances = (
       await this.deps.chainData.getBalances(address, chain)

@@ -1,3 +1,5 @@
+import { ChainNotEnabledError } from "../../../core/wallet/config/wallet-runtime-config";
+import { ChainEndpointsUnavailableError } from "../api/embedded-wallet-gateway";
 import { RpcError, RpcUnavailableError } from "../../../core/chain/rpc-client";
 import {
   FeeChangedError,
@@ -41,6 +43,10 @@ export function transferErrorCopy(error: unknown): TransferErrorCopy {
   // 节点接受了请求但拒绝了这笔交易（revert / nonce 太低 / gas 过低）。
   // 节点原文在 detail 里，只进日志——里面是合约内部话，给用户看只会更困惑。
   if (error instanceof RpcError) return { key: "send.error.node" };
+  if (error instanceof ChainEndpointsUnavailableError)
+    return { key: "send.error.chainEndpoints" };
+  if (error instanceof ChainNotEnabledError)
+    return { key: "send.error.chainDisabled" };
   if (error instanceof WalletAuthRequiredError)
     return {
       key:

@@ -97,13 +97,20 @@ export type LoginStep =
     }
   | {
       step: "error";
-      reason: "rejected" | "timeout" | "failed";
+      reason: "rejected" | "timeout" | "noChain" | "failed";
       account?: WalletAccount;
       challenge?: SignInChallenge;
       connector: WalletConnectorId;
     };
 
-function reasonOf(error: unknown): "rejected" | "timeout" | "failed" {
+function reasonOf(
+  error: unknown,
+): "rejected" | "timeout" | "noChain" | "failed" {
+  if (
+    error instanceof Error &&
+    error.name === "WalletConnectNoEnabledChainError"
+  )
+    return "noChain";
   const message = error instanceof Error ? error.message : "";
   if (/reject/i.test(message)) return "rejected";
   if (/timeout/i.test(message)) return "timeout";

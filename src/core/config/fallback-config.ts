@@ -79,6 +79,9 @@ const zhCN = {
   "login.opening": "正在打开 {wallet}…",
   "login.connectFailed": "连接 {wallet} 没有成功，请重试",
   "login.connectTimeout": "等待 {wallet} 确认超时，请重试",
+  "login.noEnabledChain":
+    "{wallet} 批准的网络都未在本平台启用，请在钱包里切换到已支持的网络后重试",
+
   "login.reason": "确认登录签名",
   "login.builtin": "内置钱包",
   "login.external": "连接外部钱包",
@@ -230,6 +233,8 @@ const zhCN = {
     "{symbol} 的转账消耗异常，已阻止。这个代币合约可能有问题，请勿继续尝试。",
   "send.error.network": "连不上链上节点，请检查网络后重试",
   "send.error.node": "节点拒绝了这笔交易，请稍后重试",
+  "send.error.chainEndpoints": "这条网络当前没有可用的节点，请稍后重试",
+  "send.error.chainDisabled": "这条网络已在本平台停用",
   "send.error.tokenMismatch":
     "这个代币的合约信息与已知记录不符，已阻止转出。请联系客服核实。",
   "send.error.noKey":
@@ -860,6 +865,9 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "login.opening": "Opening {wallet}…",
   "login.connectFailed": "Could not connect {wallet}. Try again.",
   "login.connectTimeout": "{wallet} did not confirm in time. Try again.",
+  "login.noEnabledChain":
+    "{wallet} approved none of the networks enabled on this platform. Switch to a supported network in the wallet and try again.",
+
   "login.reason": "Confirm the sign-in signature",
   "login.builtin": "Built-in wallet",
   "login.external": "Connect external wallet",
@@ -1022,6 +1030,9 @@ const enUS: Record<keyof typeof zhCN, string> = {
     "Cannot reach a chain node. Check your connection and retry.",
   "send.error.node":
     "The node rejected this transaction. Please try again later.",
+  "send.error.chainEndpoints":
+    "This network has no reachable node right now. Please try again later.",
+  "send.error.chainDisabled": "This network is disabled on this platform.",
   "send.error.tokenMismatch":
     "This token's contract details do not match our records, so the send was blocked. Please contact support.",
   "send.error.noKey":
@@ -1701,7 +1712,6 @@ export function createFallbackConfig(locale: SupportedLocale): BootstrapConfig {
       launch: {
         enabled: true,
         minDisplayMs: 700,
-        maxDisplayMs: 1800,
         animation: { type: "fade_scale", durationMs: 360 },
         title: locale === "en-US" ? "AnyFun" : "AnyFun",
         subtitle:

@@ -75,7 +75,6 @@ type RuntimeValue = {
   setLocale: (locale: LocalePreference) => Promise<void>;
   setTheme: (theme: ThemePreference) => void;
   t: (key: string) => string;
-  isInitialLoading: boolean;
   isRefreshing: boolean;
   refresh: () => Promise<BootstrapSnapshot>;
   checkForUpdates: () => Promise<UpdateCheckResult>;
@@ -122,7 +121,6 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
       snapshot ?? {
         config: fallback,
         source: "fallback",
-        stale: true,
       },
     [fallback, snapshot],
   );
@@ -199,7 +197,11 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     let active = true;
     void loadCachedBootstrap(locale).then((cached) => {
-      if (active) setCachedLaunchConfig((known) => known ?? cached);
+      // null 表示"已经确认没有缓存"，也是一个已知结果，不能被后一次读取覆盖
+      if (active)
+        setCachedLaunchConfig((known) =>
+          known === undefined ? cached : known,
+        );
     });
     return () => {
       active = false;
@@ -221,7 +223,7 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
     const task = (async (): Promise<UpdateCheckResult> => {
       try {
         const refreshed = await refresh();
-        if (refreshed.source !== "remote" || refreshed.stale) {
+        if (refreshed.source !== "remote") {
           return {
             kind: "error",
             error: new Error("Remote configuration is stale"),
@@ -299,16 +301,14 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
     }).then(setOtaResult);
   }, []);
   useEffect(() => {
-    if (snapshot && !query.isPending && !snapshot.stale)
-      runSilentOtaCheck(config);
+    if (snapshot && !query.isPending) runSilentOtaCheck(config);
   }, [config, query.isPending, runSilentOtaCheck, snapshot]);
   useEffect(() => {
     const interval = 15 * 60 * 1_000;
     const refreshAndCheck = (): void => {
       if (AppState.currentState !== "active") return;
       void query.refetch().then((result) => {
-        if (result.data && !result.data.stale)
-          runSilentOtaCheck(result.data.config);
+        if (result.data) runSilentOtaCheck(result.data.config);
       });
     };
     const timer = setInterval(refreshAndCheck, interval);
@@ -321,7 +321,7 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
     };
   }, [config.localization.refreshIntervalSeconds, query, runSilentOtaCheck]);
   useEffect(() => {
-    if (!snapshot || snapshot.stale) return;
+    if (!snapshot) return;
     void registerPushTokenIfAuthorized(config, themePreference).then(
       setNotificationStatus,
     );
@@ -336,8 +336,7 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   }, [config.wallet, queryClient]);
   // 放行条件：本次拿到了远程下发（不是内置配置）且最短停留已到。没有超时放行：
   // 数据没下来就不进业务页，失败走重试屏。进入过就锁住，后续刷新失败不回门禁
-  const deliveryReady =
-    snapshot !== undefined && snapshot.source === "remote" && !snapshot.stale;
+  const deliveryReady = snapshot !== undefined && snapshot.source === "remote";
   if (!entered && deliveryReady && launchMinimumElapsed) setEntered(true);
   useEffect(
     () =>
@@ -352,7 +351,7 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
           });
         }
         void query.refetch().then((result) => {
-          if (result.data && !result.data.stale) {
+          if (result.data) {
             runSilentOtaCheck(result.data.config);
             if (
               signal.type === "app_update_available" &&
@@ -432,7 +431,6 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
       setLocale,
       setTheme,
       t,
-      isInitialLoading: query.isPending,
       isRefreshing: query.isFetching && !query.isPending,
       refresh,
       checkForUpdates,

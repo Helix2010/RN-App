@@ -1,4 +1,5 @@
 import { tenantWallet } from "../../../test/wallet-config";
+import { ChainNotEnabledError } from "../../../core/wallet/config/wallet-runtime-config";
 import { verifyMessage } from "ethers";
 import { memoryStorage } from "../../../core/gateways/types";
 import { deriveAccount } from "../../../core/wallet/keygen/mnemonic";
@@ -846,10 +847,12 @@ describe("EmbeddedWalletGateway chain switch", () => {
       .mockResolvedValue([demoNative("bsc", "BNB"), demoNative("eth", "ETH")]);
 
     const all = await gateway.getBalances(ADDRESS);
-    const bsc = await gateway.getBalances(ADDRESS, "bsc");
 
     expect(all.map((item) => item.token.chain)).toEqual(["eth"]);
-    expect(bsc).toEqual([]);
+    // 直接问一条关掉的链是调用方的 bug：抛错，不给一个"空"的成功
+    await expect(gateway.getBalances(ADDRESS, "bsc")).rejects.toBeInstanceOf(
+      ChainNotEnabledError,
+    );
   });
 
   it("reports the tenant's current chains for the built-in wallet, not the snapshot taken at creation", async () => {

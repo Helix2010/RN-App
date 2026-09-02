@@ -95,6 +95,23 @@ describe("parseAccounts", () => {
 });
 
 describe("WalletConnectConnector", () => {
+  it("refuses a session that approved none of the enabled chains, and disconnects it", async () => {
+    // 零条可用链的"已连接"账户什么都做不了：连接即失败，按自己的错误类报出去
+    const { connector, client } = setup({
+      approval: async () =>
+        session({
+          namespaces: { eip155: { accounts: [`eip155:999:${ADDRESS}`] } },
+        }),
+    });
+
+    await expect(connector.connect("metamask")).rejects.toMatchObject({
+      name: "WalletConnectNoEnabledChainError",
+    });
+    expect(client.disconnect).toHaveBeenCalledWith(
+      expect.objectContaining({ topic: "topic-1" }),
+    );
+  });
+
   it("requests the chains and methods it needs, then returns the shared account", async () => {
     const { connector, client, present } = setup();
     const result = await connector.connect("metamask");

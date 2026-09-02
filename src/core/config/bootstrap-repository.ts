@@ -29,7 +29,6 @@ export type BootstrapSnapshot = {
   config: BootstrapConfig;
   /** remote：本次从服务端拿到的；fallback：内置配置，只用于渲染启动门禁 */
   source: "remote" | "fallback";
-  stale: boolean;
 };
 
 function cacheKey(locale: SupportedLocale): string {
@@ -186,27 +185,25 @@ async function applyRemoteLanguagePackage(
   }
 }
 
+/**
+ * 拿不到远程下发就是失败，错误原样抛出：不用上次的缓存冒充一份"配置"。
+ * 缓存只供 loadCachedBootstrap 决定启动页画哪版品牌，业务界面不会跑在它上面。
+ */
 export async function loadBootstrap(
   locale: SupportedLocale,
   signal?: AbortSignal,
 ): Promise<BootstrapSnapshot> {
-  try {
-    const config = await apiClient.get(
-      `/v1/mobile/bootstrap?locale=${encodeURIComponent(locale)}`,
-      bootstrapSchema,
-      { signal },
-    );
-    const enriched = await hydrateCachedBranding(
-      await applyRemoteLanguagePackage(normalizeConfig(config), signal),
-    );
-    await AsyncStorage.setItem(
-      cacheKey(locale),
-      JSON.stringify({ savedAt: Date.now(), config: enriched }),
-    );
-    return { config: enriched, source: "remote", stale: false };
-  } catch (error) {
-    // 拿不到远程下发就是失败：不用上次的缓存冒充一份"配置"。缓存只供
-    // loadCachedBootstrap 决定启动页画哪版品牌，业务界面不会跑在它上面
-    throw error instanceof Error ? error : new Error("Unknown error");
-  }
+  const config = await apiClient.get(
+    `/v1/mobile/bootstrap?locale=${encodeURIComponent(locale)}`,
+    bootstrapSchema,
+    { signal },
+  );
+  const enriched = await hydrateCachedBranding(
+    await applyRemoteLanguagePackage(normalizeConfig(config), signal),
+  );
+  await AsyncStorage.setItem(
+    cacheKey(locale),
+    JSON.stringify({ savedAt: Date.now(), config: enriched }),
+  );
+  return { config: enriched, source: "remote" };
 }

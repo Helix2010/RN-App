@@ -128,7 +128,9 @@ export function ConnectWalletSheet() {
         t(
           state.reason === "timeout"
             ? "login.connectTimeout"
-            : "login.connectFailed",
+            : state.reason === "noChain"
+              ? "login.noEnabledChain"
+              : "login.connectFailed",
         ),
         { wallet },
       ),

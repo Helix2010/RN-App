@@ -110,7 +110,7 @@ export function WalletImportScreen({
           backLabel={t("action.back")}
         />
       </Content>
-      <PageScroll keyboardShouldPersistTaps="handled">
+      <PageScroll>
         <Content paddingTop="$1" gap="$4" paddingBottom={40}>
           <Tabs
             value={mode}

@@ -145,7 +145,6 @@ describe("loadBootstrap", () => {
     const snapshot = await loadBootstrap("zh-CN");
 
     expect(snapshot.source).toBe("remote");
-    expect(snapshot.stale).toBe(false);
     expect(snapshot.config.update.decision).toBe("recommended");
     expect(snapshot.config.update.latestVersion).toBe("1.1.5");
     expect(snapshot.config.update.full.releaseId).toBe("rel_latest");

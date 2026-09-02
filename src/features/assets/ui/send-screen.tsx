@@ -17,7 +17,6 @@ import { classifyEvmAddress } from "../../../core/wallet/address";
 import {
   enabledChains,
   evmChainIdOf,
-  isChainEnabled,
   isTestnetChain,
   nativeDisplayDecimals,
 } from "../../../core/wallet/config/wallet-runtime-config";
@@ -89,16 +88,31 @@ export function SendScreen({
   onBack: () => void;
   initialChain?: ChainId;
 }) {
-  if (initialChain && !isChainEnabled(initialChain))
-    throw new Error(
-      `SendScreen opened on a chain this tenant has not enabled: ${initialChain}`,
+  const { t } = useFoundationRuntime();
+  const [picked, setPicked] = useState<ChainId | undefined>(initialChain);
+  const enabled = enabledChains();
+  // 入口（深链参数）指定了一条未启用的链：如实告知，不换成别的链
+  if (initialChain && !enabled.includes(initialChain))
+    return (
+      <SendUnavailable
+        onBack={onBack}
+        message={t("send.error.chainDisabled")}
+      />
     );
-  const chain = initialChain ?? enabledChains()[0];
-  if (!chain) return <SendUnavailable onBack={onBack} />;
-  return <SendForm onBack={onBack} initialChain={chain} />;
+  // 每次渲染按当前启用的链派生：配置刷新把选中的链关掉时，不能拿着它去问链层
+  const chain = picked && enabled.includes(picked) ? picked : enabled[0];
+  if (!chain)
+    return <SendUnavailable onBack={onBack} message={t("send.noChain")} />;
+  return <SendForm onBack={onBack} chain={chain} onChainChange={setPicked} />;
 }
 
-function SendUnavailable({ onBack }: { onBack: () => void }) {
+function SendUnavailable({
+  onBack,
+  message,
+}: {
+  onBack: () => void;
+  message: string;
+}) {
   const insets = useSafeAreaInsets();
   const { t } = useFoundationRuntime();
   return (
@@ -109,7 +123,7 @@ function SendUnavailable({ onBack }: { onBack: () => void }) {
           onBack={onBack}
           backLabel={t("action.back")}
         />
-        <Body testID="send-no-chain">{t("send.noChain")}</Body>
+        <Body testID="send-no-chain">{message}</Body>
       </Content>
     </Page>
   );
@@ -118,10 +132,13 @@ function SendUnavailable({ onBack }: { onBack: () => void }) {
 /** A-05 转出：地址（粘贴 / 地址簿）→ 网络与币种联动 → 数量 → 确认层 → 三段进度。 */
 function SendForm({
   onBack,
-  initialChain,
+  chain,
+  onChainChange,
 }: {
   onBack: () => void;
-  initialChain: ChainId;
+  /** 已由入口按启用的链派生，一定是启用的 */
+  chain: ChainId;
+  onChainChange: (chain: ChainId) => void;
 }) {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
@@ -130,7 +147,7 @@ function SendForm({
   const locale = config.localization.selectedLocale;
   const session = useSession();
   const address = session.data?.address ?? "";
-  const [chain, setChain] = useState<ChainId>(initialChain);
+
   const [to, setTo] = useState("");
   const [tokenKey, setTokenKey] = useState<string | undefined>();
   const [text, setText] = useState("");
@@ -391,7 +408,7 @@ function SendForm({
                   : CHAINS[id].name,
               }))}
               onChange={(next) => {
-                setChain(next);
+                onChainChange(next);
                 setTokenKey(undefined);
                 setText("");
               }}

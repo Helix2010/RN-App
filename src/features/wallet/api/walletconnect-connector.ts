@@ -101,6 +101,14 @@ class WalletConnectTimeoutError extends Error {
   }
 }
 
+/** 钱包批准的链里没有一条是租户启用的：这个会话在本平台上什么都做不了。 */
+export class WalletConnectNoEnabledChainError extends Error {
+  constructor() {
+    super("wallet session approved none of the chains this tenant enabled");
+    this.name = "WalletConnectNoEnabledChainError";
+  }
+}
+
 export class WalletConnectRejectedError extends Error {
   constructor(message = "wallet rejected the request") {
     super(message);
@@ -261,6 +269,15 @@ export class WalletConnectConnector implements ExternalWalletConnector {
     const session = await this.awaitApproval(approval);
     const parsed = parseAccounts(session.namespaces, networks);
     if (!parsed) throw new WalletConnectRejectedError("no account was shared");
+    if (parsed.chains.length === 0) {
+      // 不留一个"已连接但零条链"的账户：断开会话，按它自己的错误类报出去
+      const client = await this.deps.client();
+      await client.disconnect({
+        topic: session.topic,
+        reason: { code: 6000, message: "no enabled chain" },
+      });
+      throw new WalletConnectNoEnabledChainError();
+    }
     this.connections.set(parsed.address.toLowerCase(), {
       topic: session.topic,
       address: parsed.address,
@@ -305,7 +322,8 @@ export class WalletConnectConnector implements ExternalWalletConnector {
     const networks = this.deps.networks();
     for (const session of client.session.getAll()) {
       const parsed = parseAccounts(session.namespaces, networks);
-      if (!parsed) continue;
+      // 没有一条启用的链的旧会话不恢复：恢复了也签不了任何东西
+      if (!parsed || parsed.chains.length === 0) continue;
       this.connections.set(parsed.address.toLowerCase(), {
         topic: session.topic,
         address: parsed.address,
@@ -335,10 +353,7 @@ class WalletConnectSigner implements WalletSigner {
   private chainRef(chainId?: number): string {
     if (chainId !== undefined) return `eip155:${chainId}`;
     const preferred = this.connection.chains[0];
-    if (!preferred)
-      throw new Error(
-        "wallet session approved none of the chains this tenant enabled",
-      );
+    if (!preferred) throw new WalletConnectNoEnabledChainError();
     return `eip155:${evmChainIdOf(preferred)}`;
   }
 
