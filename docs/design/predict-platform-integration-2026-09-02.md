@@ -130,12 +130,12 @@ RN-Server 新增下发（严格 schema，缺则模块不可用，不写默认）
 }
 ```
 
-`chain` 必须是本租户启用的链，且 `public-info.chainId` 与之相符；`scopeId` 由 RN-Server 从本租户的 `tenants.scope_id` 填入（不可在管理端编辑），App 拿到 `public-info` 后断言两者相等。任一不符就拒绝启用预测模块并留痕（同 `PROTOCOL` 断言的做法）。服务地址的来源与租户隔离见 §3.8。
+三个字段都是管理端在开启预测模块时填写的：`domain` 是平台上该租户的接口域名，`scopeId` 是平台上该租户的 scope（bytes32，格式 `^0x[0-9a-f]{64}$`），`chain` 是我们这边启用的链之一。RN-Server 的租户 id 与平台的租户 id **不假定相同**，两边的关联只靠这条配置。App 拿到 `public-info` 后断言 `scopeId` 与 `chainId` 都相符，任一不符就拒绝启用预测模块并留痕（同 `PROTOCOL` 断言的做法）。来源与租户隔离见 §3.8。
 
 三端规则：
 
 - 服务端：`modules.predict = true` 时 `services.predict` 必须完整合法，否则 bootstrap 返回 503（与代币目录、零条链的处理一致）；`modules.predict = false` 时不下发 `services.predict`。
-- 管理端「预测市场」页：开关 + 域名 + 链三项，加一个「测试连接」按钮——服务端去请求 `https://gamma-api.{domain}/public-info`（带 `X-Tenant-Domain`），回显 chainId、scopeId、品牌名，并校验 chainId 与所选链一致；不通过就不让保存。
+- 管理端「预测市场」页：开关 + 接口域名 + scopeId + 链四项，加一个「测试连接」按钮——服务端去请求 `https://gamma-api.{domain}/public-info`（带 `X-Tenant-Domain`），回显品牌名、chainId、scopeId，并校验 scopeId 与所填一致、chainId 与所选链一致；不通过就不让保存。
 - App：schema 严格；`domain` 只接受主机名（不含协议、端口、路径）。
 
 ### 3.3 App 侧新增模块
@@ -237,26 +237,26 @@ HMAC-SHA256、keccak、ABI 编码都用已有依赖（`@noble/hashes`、ethers�
 
 **只需要一个域名。** 平台自己的规则是从租户域名派生全部服务地址（`gamma-api.` / `clob-api.` / `data-api.` / `relayer.` / `clob-ws.` / `faucet.` 六个子域），它的网页端就是这么做的。所以管理端只维护 `domain` 一个字段，App 按同一规则派生，并强制 `https` / `wss`。不提供逐个服务的地址覆盖：平台部署不按它自己的规则，是平台侧的配置错误；将来真有这种租户，再加一个管理端显式声明的 `endpoints`，不是现在。
 
-**租户对应关系（2026-09-02 实测）。** RN-Server 与预测平台用的是同一台 MySQL（`rn` 与 `pm` 两个库），两边的租户 id 与 `scope_id` 完全一致：
+**两个租户注册表用一条显式关联对上，不假定 id 相同。** 平台在所有签名、JWT、CLOB 密钥里用 `scopeId` 标识租户，所以关联键就是它。关联属性放在租户的应用配置 `services.predict.scopeId` 里（与钱包、模块开关同一张 `app_configs` 表），管理端开启预测模块时和接口域名一起填；不加在 `tenants` 表的列上——tenants 表没有管理接口、表结构又和平台镜像，加列会再耦合一次。RN-Server 不读平台的库。
 
-| 租户 id   | 我们（`rn`）                   | 平台（`pm`）      | 平台链     | 平台域名与状态                                                       |
-| --------- | ------------------------------ | ----------------- | ---------- | -------------------------------------------------------------------- |
-| 100000000 | 无                             | prax1s（dev）     | OP Sepolia | `predict.prax1s.xyz` 可用                                            |
-| 100000001 | anyfun（api.anyfun.win，生产） | 同 id 同 scope_id | OP Sepolia | `predict.predict.kim`，但 `gamma-api.predict.predict.kim` 当前不可达 |
-| 100000004 | tokenup.pro                    | 同 id 同 scope_id | OP Sepolia | `predict.tokenup.pro` 可用                                           |
+2026-09-02 线上实测：RN-Server 与平台用同一台 MySQL（`rn` 与 `pm` 两个库），现有四个租户（100000001–100000004）两边 id 与 scope_id 恰好一致，平台的 dev 租户 100000000（prax1s）不在 `rn` 里。这是现状，不是规则；设计按"不一定相同"来。
 
-所以"我们的租户就是平台的租户"，不需要另建映射表，`scopeId` 直接来自我们自己的 `tenants.scope_id`。但**域名仍然要在管理端显式配置**：平台一个租户可以登记多个域名（prax1s 有 `predict.` 和 `predict2.` 两套），选哪个是运营决定；而且 RN-Server 不去读 `pm` 库——那是另一个服务的表，读了就是跨服务耦合，平台改表我们就坏。
+| 平台租户                | 平台链     | 平台域名与状态                                    | 我们这边                             |
+| ----------------------- | ---------- | ------------------------------------------------- | ------------------------------------ |
+| 100000000 prax1s（dev） | OP Sepolia | `predict.prax1s.xyz` 可用                         | 无对应租户，可由任一租户通过配置关联 |
+| 100000001               | OP Sepolia | `predict.predict.kim`，`gamma-api` 子域当前不可达 | anyfun（生产）                       |
+| 100000004               | OP Sepolia | `predict.tokenup.pro` 可用                        | tokenup.pro                          |
 
-**这个字段决定用户凭证发往哪里**（登录 JWT 发到 `gamma-api.{domain}`，CLOB 密钥发到 `clob-api.{domain}`），所以它是安全敏感配置：
+**这两个字段决定用户凭证发往哪里**（登录 JWT 发到 `gamma-api.{domain}`，CLOB 密钥发到 `clob-api.{domain}`），所以是安全敏感配置：
 
-- 管理端只接受主机名（无协议、端口、路径），保存前「测试连接」请求 `public-info`，返回的 `scopeId` 必须等于本租户的 `scope_id`，否则拒绝保存——配错成别的租户的平台，当场就发现。
+- 管理端：`domain` 只接受主机名（无协议、端口、路径）；`scopeId` 校验格式；保存前「测试连接」请求 `public-info`，返回的 `scopeId` 必须等于所填、`chainId` 必须等于所选链，否则拒绝保存——配成别的租户的平台，当场就发现。
 - 修改走现有审计日志。
-- App 端同样断言 `public-info.scopeId == services.predict.scopeId`，不符不启用。
+- App 端同样断言 `public-info.scopeId == services.predict.scopeId` 且 `chainId` 相符，不符不启用。
 
-**环境隔离。** anyfun 是生产租户，有真实用户。联调时如果把它的 `services.predict.domain` 指向 dev 平台并打开预测模块，生产用户就会看到 dev 市场。两条路，需要决策：
+**环境隔离。** anyfun 是生产租户，有真实用户。联调时如果把它的 `services.predict` 指向 dev 平台并打开预测模块，生产用户就会看到 dev 市场。有了显式关联，正确做法很直接：
 
-1. 在 RN-Server 新建一个 dev 租户（新的 id、域名如 `api-dev.anyfun.win`），出一个 dev App 包（`tenants/anyfun-dev/tenant.json`），`services.predict.domain` 指向 `predict.prax1s.xyz`。但 dev 租户的 `scope_id` 与 prax1s（100000000）不同，`scopeId` 断言会拦——要么平台给 dev 租户也建一个同 scope 的租户，要么联调期在管理端允许"跳过 scope 校验"（不建议）。
-2. 让平台把 anyfun 自己的平台域名 `predict.predict.kim` 部署起来（平台侧 100000001 已配好 OP Sepolia），我们的 App 直接对接它：租户一致、scope 一致、链一致，联调和上线是同一条路，只差把预测模块开关打开的时机。**推荐这一条。**
+1. 在 RN-Server 新建一个 dev 租户（新 id，域名如 `api-dev.anyfun.win`），出一个 dev App 包（`tenants/anyfun-dev/tenant.json`），管理端给它配 `domain = predict.prax1s.xyz`、`scopeId = 0xfb05…454a`、`chain = op-sepolia`。不需要平台做任何事。**推荐。**
+2. 或者让平台把 anyfun 的平台域名 `predict.predict.kim` 部署起来，直接用生产租户对接，联调即上线预演。
 
 ## 4. 工作量（单人，App 为主）
 
@@ -305,12 +305,12 @@ App 的钱包地址就是预测平台里的 EOA，这个理解是对的。但平
 | 先接哪条链           | **先调通测试网（OP Sepolia，dev 环境 predict.prax1s.xyz）**；主网接入后续做。Monad（143）这条链本身已按用户要求预先加进三端目录（`docs/changes/2026-09-02-feature-monad-chain.md`），届时只需租户在管理端勾选                       |
 | 直连还是经 RN-Server | **直连平台，不经 RN-Server**；RN-Server 只下发 `services.predict { domain, chain }`                                                                                                                                                 |
 | 启用流程的时机       | **进入预测市场模块时**进入授权流程（已登录的钱包地址作为 EOA）；未登录用户进模块先走现有登录 sheet，登录后接着跑四步                                                                                                                |
-| 服务地址来源         | **管理端维护、RN-Server 随 bootstrap 下发**，一个 `domain` 派生全部服务地址；`scopeId` 由服务端从租户表填入并双向校验（§3.8）                                                                                                       |
+| 服务地址与租户关联   | **管理端维护、RN-Server 随 bootstrap 下发**：开启预测模块时填接口域名 + 平台 scopeId + 链，存在租户应用配置里；不假定两边租户 id 相同；测试连接与 App 双向校验（§3.8）                                                              |
 | 主网 `unwrapDelay`   | 主网当前 7200 秒。**App 不配置这个值，也不经 RN-Server 下发**：发起解包时直接用链上事件返回的 `claimableAt`，展示前再读一次 `wrapper.unwrapDelay()`；平台改了参数 App 自动跟上，两边永远一致。RN-Server 只下发 `services.predict`。 |
 
 ## 7. 待办（不阻塞开工）
 
--1. 联调用哪个租户：建议让平台把 anyfun 的平台域名 `predict.predict.kim` 部署起来（§3.8 路 2）；若走 dev 租户，先解决 scope 不一致。0. 转入路径 B 要显示 EOA 里的 USDW：租户目录里加 USDW（`0x790e…6098`，6 位）这一条，管理端上币即可，不是代码改动。
+-1. 联调用哪个租户：建议 RN-Server 新建 dev 租户 + dev App 包，配置关联到 prax1s（§3.8 路 1）；生产租户 anyfun 不指向 dev 平台。0. 转入路径 B 要显示 EOA 里的 USDW：租户目录里加 USDW（`0x790e…6098`，6 位）这一条，管理端上币即可，不是代码改动。
 
 1. 主网接入时让平台把 Monad 的 `USDC_UNDERLYING` 加进 relayer 白名单，否则转出第二阶段必败（平台自己的主网部署文档也标注要手工加；dev 已经有）。
 2. 主网 `unwrapDelay` 目前 2 小时：用户不会盯两小时倒计时，主网接入时要做"可以领取了"的推送（走现有推送链路，由 App 在发起解包成功后向 RN-Server 登记一条定时提醒，或本地通知）。
