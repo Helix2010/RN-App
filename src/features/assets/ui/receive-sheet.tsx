@@ -6,6 +6,12 @@ import QRCode from "react-native-qrcode-svg";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import { CHAINS, type ChainId } from "../../../core/gateways/types";
 import {
+  deliveredTokens,
+  enabledChains,
+  isChainEnabled,
+  isTestnetChain,
+} from "../../../core/wallet/config/wallet-runtime-config";
+import {
   AppIcon,
   Body,
   InlineText,
@@ -20,21 +26,28 @@ import {
   useTheme,
 } from "../../../design-system";
 
-/** A-04 收款：链 chip 只改提示文案，二维码内容为纯地址。 */
+/**
+ * A-04 收款：链 chip 只改提示文案，二维码内容为纯地址。
+ *
+ * 能选的链 = 账户支持的链 ∩ 租户启用的链；账户一条都对不上时退到租户启用的链
+ * （EVM 地址在每条链上都一样，所以收款本身不受影响）。"支持的币种"读服务端下发的
+ * 代币目录——它就是这条链上 App 会显示余额的那些币；老服务端没下发时只提原生币。
+ */
 export const ReceiveSheet = forwardRef<
   SheetHandle,
   { address: string; ens?: string; chains: ChainId[] }
 >(function ReceiveSheet({ address, ens, chains }, ref) {
   const { t } = useFoundationRuntime();
   const theme = useTheme();
-  const [chain, setChain] = useState<ChainId>(chains[0] ?? "bsc");
+  const supported = chains.filter(isChainEnabled);
+  const options = supported.length > 0 ? supported : enabledChains();
+  const [chain, setChain] = useState<ChainId>(options[0] ?? "bsc");
   const chainName = CHAINS[chain].name;
-  const tokens =
-    chain === "bsc"
-      ? "BNB、USDT、USDC"
-      : chain === "eth"
-        ? "ETH、USDC、UNI"
-        : "ETH、AERO";
+  const testnet = isTestnetChain(chain);
+  const symbols = deliveredTokens(chain).map((token) => token.symbol);
+  const tokens = (
+    symbols.length > 0 ? symbols : [CHAINS[chain].nativeSymbol]
+  ).join(t("receive.tokenSeparator"));
 
   const copy = async () => {
     await Clipboard.setStringAsync(address);
@@ -51,7 +64,13 @@ export const ReceiveSheet = forwardRef<
     >
       <SegmentedControl
         value={chain}
-        options={chains.map((id) => ({ value: id, label: CHAINS[id].name }))}
+        options={options.map((id) => ({
+          value: id,
+          // 测试链必须标出来：主网资产打到测试链地址，虽同地址却在错的链上
+          label: isTestnetChain(id)
+            ? `${CHAINS[id].name} · ${t("send.testnetTag")}`
+            : CHAINS[id].name,
+        }))}
         onChange={setChain}
         accessibilityLabel={t("send.network")}
       />
@@ -99,6 +118,11 @@ export const ReceiveSheet = forwardRef<
           {fill(t("receive.warn"), { chain: chainName })}
         </InlineText>
       </Row>
+      {testnet ? (
+        <Body fontSize={12} color="$warning" testID="receive-testnet-notice">
+          {t("receive.testnetNotice")}
+        </Body>
+      ) : null}
       <Body fontSize={12}>
         {fill(fill(t("receive.support"), { chain: chainName }), { tokens })}
       </Body>

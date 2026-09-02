@@ -2,7 +2,9 @@ import {
   onchainSendsEnabled,
   applyDeliveredWalletConfig,
   deliveredTokens,
+  enabledChains,
   explorerAddressUrl,
+  isChainEnabled,
   isWalletConnectConfigured,
   nativeDisplayDecimals,
   onWalletConfigChange,
@@ -359,5 +361,67 @@ describe("delivered token catalogue", () => {
     expect(deliveredTokens("bsc")[0]?.address).toBe(
       "0x55d398326f99059fF775485246999027B3197955",
     );
+  });
+});
+
+describe("enabledChains", () => {
+  beforeEach(() => resetDeliveredWalletConfig());
+
+  it("falls back to the three mainnets before anything is delivered", () => {
+    expect(enabledChains()).toEqual(["bsc", "eth", "base"]);
+    expect(isChainEnabled("op-sepolia")).toBe(false);
+  });
+
+  it("follows the delivered networks, so a chain the tenant turned off disappears", () => {
+    // 管理端勾掉的链服务端不再下发；界面列链只能以这里为准，不能遍历 CHAINS
+    applyDeliveredWalletConfig({
+      walletConnectProjectId: "p",
+      networks: [
+        {
+          id: "eth",
+          chainId: 1,
+          rpcUrls: ["https://eth.example"],
+          explorerUrl: "https://etherscan.io",
+          testnet: false,
+        },
+        {
+          id: "op-sepolia",
+          chainId: 11155420,
+          rpcUrls: ["https://op.example"],
+          explorerUrl: "https://sepolia-optimism.etherscan.io",
+          testnet: true,
+        },
+      ],
+    });
+
+    expect(enabledChains()).toEqual(["eth", "op-sepolia"]);
+    expect(isChainEnabled("bsc")).toBe(false);
+    expect(isChainEnabled("op-sepolia")).toBe(true);
+  });
+
+  it("does not count a chain the chainId assertion rejected as enabled", () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    applyDeliveredWalletConfig({
+      walletConnectProjectId: "p",
+      networks: [
+        {
+          id: "bsc",
+          chainId: 1,
+          rpcUrls: [],
+          explorerUrl: "https://bscscan.com",
+          testnet: false,
+        },
+        {
+          id: "eth",
+          chainId: 1,
+          rpcUrls: [],
+          explorerUrl: "https://etherscan.io",
+          testnet: false,
+        },
+      ],
+    });
+
+    expect(enabledChains()).toEqual(["eth"]);
+    warn.mockRestore();
   });
 });

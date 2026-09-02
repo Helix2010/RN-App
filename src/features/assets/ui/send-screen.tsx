@@ -15,7 +15,9 @@ import {
 import { useGateways } from "../../../core/gateways/gateway-context";
 import { classifyEvmAddress } from "../../../core/wallet/address";
 import {
+  enabledChains,
   evmChainIdOf,
+  isChainEnabled,
   isTestnetChain,
   nativeDisplayDecimals,
 } from "../../../core/wallet/config/wallet-runtime-config";
@@ -89,7 +91,12 @@ export function SendScreen({
   const locale = config.localization.selectedLocale;
   const session = useSession();
   const address = session.data?.address ?? "";
-  const [chain, setChain] = useState<ChainId>(initialChain ?? "bsc");
+  // 链只能从租户启用的里挑：入口带来的链若已被关掉，落到第一条启用的链上
+  const [chain, setChain] = useState<ChainId>(() =>
+    initialChain && isChainEnabled(initialChain)
+      ? initialChain
+      : (enabledChains()[0] ?? "bsc"),
+  );
   const [to, setTo] = useState("");
   const [tokenKey, setTokenKey] = useState<string | undefined>();
   const [text, setText] = useState("");
@@ -342,7 +349,7 @@ export function SendScreen({
             <Body fontSize={12}>{t("send.network")}</Body>
             <SegmentedControl
               value={chain}
-              options={(Object.keys(CHAINS) as ChainId[]).map((id) => ({
+              options={enabledChains().map((id) => ({
                 value: id,
                 // 测试链必须标出来：它的币没有价值，和主网并排会被当成真资产
                 label: isTestnetChain(id)

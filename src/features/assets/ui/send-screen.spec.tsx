@@ -8,6 +8,11 @@ import { SendScreen } from "./send-screen";
 import type { Gateways } from "../../../core/gateways/gateway-context";
 import type { TokenBalance } from "../../wallet/model/wallet";
 import { InsufficientGasError } from "../../../core/chain/transfer-service";
+import { CHAINS } from "../../../core/gateways/types";
+import {
+  applyDeliveredWalletConfig,
+  resetDeliveredWalletConfig,
+} from "../../../core/wallet/config/wallet-runtime-config";
 import { fromDecimal, money } from "../../../core/money/money";
 import { ToastHost } from "../../../design-system";
 import * as LocalAuthentication from "expo-local-authentication";
@@ -520,5 +525,28 @@ describe("SendScreen display precision", () => {
     await waitFor(() =>
       expect(screen.getAllByText(/< 0\.0001 BNB/).length).toBeGreaterThan(0),
     );
+  });
+});
+
+describe("SendScreen chain switch", () => {
+  afterEach(() => resetDeliveredWalletConfig());
+
+  it("offers only the chains the tenant enabled, and lands on one of them", async () => {
+    // 入口带来的 bsc 已被租户关掉：选择器里不能有它，当前链要落到启用的那条
+    applyDeliveredWalletConfig({
+      walletConnectProjectId: "p",
+      chains: ["eth"],
+    });
+    const gateways = createTestGateways();
+    await signIn(gateways);
+    gateways.wallet.getBalances = jest.fn(async () => []);
+
+    await renderWithProviders(
+      <SendScreen onBack={jest.fn()} initialChain="bsc" />,
+      { gateways },
+    );
+
+    expect(screen.queryByText(CHAINS.bsc.name)).toBeNull();
+    expect(screen.getAllByText(CHAINS.eth.name).length).toBeGreaterThan(0);
   });
 });

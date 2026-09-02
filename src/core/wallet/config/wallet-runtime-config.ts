@@ -227,8 +227,20 @@ export function isWalletConnectConfigured(): boolean {
   return walletConnectProjectId() !== null;
 }
 
-function enabledChains(): ChainId[] {
+/**
+ * 租户启用的链——**界面上"有哪些链"的唯一来源**。
+ *
+ * 管理端钱包页勾掉一条链，服务端就不再下发它的 networks。App 里任何列链的地方
+ * （余额汇总、转出页、收款页、链筛选）都必须从这里取，而不是遍历 `CHAINS`：
+ * 遍历 `CHAINS` 时关掉的链没有端点，会落到演示账本，用户看到的是真余额与演示
+ * 余额并排——"关掉"变成了"变成假的"。未下发时回落到三条主网，老服务端行为不变。
+ */
+export function enabledChains(): ChainId[] {
   return delivered?.chains ?? ["bsc", "eth", "base"];
+}
+
+export function isChainEnabled(chain: ChainId): boolean {
+  return enabledChains().includes(chain);
 }
 
 export function walletNetworks(): WalletNetwork[] {

@@ -11,6 +11,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import { CHAINS, type ChainId } from "../../../core/gateways/types";
 import { pickTranslation } from "../../../core/i18n/localized-text";
+import { enabledChains } from "../../../core/wallet/config/wallet-runtime-config";
 import { isNegative, toApproxNumber } from "../../../core/money/money";
 import {
   AmountText,
@@ -375,7 +376,8 @@ function WalletAccount({
           value={chain}
           options={[
             { value: "all" as const, label: t("assets.allChains") },
-            ...(Object.keys(CHAINS) as ChainId[]).map((id) => ({
+            // 只列租户启用的链：关掉的链在这里出现会是一个永远为空的筛选项
+            ...enabledChains().map((id) => ({
               value: id,
               label: CHAINS[id].name,
             })),

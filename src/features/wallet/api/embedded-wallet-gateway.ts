@@ -15,6 +15,8 @@ import {
 } from "../../../core/wallet/config/token-allowlist";
 import {
   deliveredTokens,
+  enabledChains,
+  isChainEnabled,
   nativeDisplayDecimals,
 } from "../../../core/wallet/config/wallet-runtime-config";
 import type { WalletConnectorId } from "../../session/model/session";
@@ -62,7 +64,20 @@ export class ChainBalanceUnavailableError extends Error {
 }
 
 const REGISTRY_KEY = "foundation.wallet.accounts.v1";
-const DEFAULT_CHAINS: ChainId[] = ["bsc", "eth", "base"];
+
+/**
+ * 账户在界面上"支持的链"。
+ *
+ * 内置钱包是一把 EVM 私钥，租户启用哪条链它就能用哪条，所以直接取租户启用的链，
+ * 不看注册表里存的那份（那只是创建时的快照，租户改配置后就过期了）。
+ * 外部钱包只在它会话里批准过的链上能签，再与租户启用的链取交集。
+ */
+function accountChains(
+  meta: { connector: WalletConnectorId; chains?: ChainId[] } | undefined,
+): ChainId[] {
+  if (!meta || meta.connector === "embedded") return enabledChains();
+  return (meta.chains ?? []).filter(isChainEnabled);
+}
 const DEFAULT_SIGN_REASON = "Confirm with your wallet";
 
 /** 链上数据来源。一期是 Mock 账本；接真链后换成 RPC / 索引器实现。 */
@@ -163,7 +178,7 @@ export class EmbeddedWalletGateway implements WalletGateway {
         address: entry.address,
         label: meta?.label ?? `Wallet ${index + 1}`,
         connector: "embedded" as WalletConnectorId,
-        chains: meta?.chains ?? DEFAULT_CHAINS,
+        chains: accountChains(meta),
         current: sameAddress(registry.current, entry.address),
         backedUp: entry.backedUpAt !== null,
       } satisfies WalletAccount;
@@ -174,7 +189,7 @@ export class EmbeddedWalletGateway implements WalletGateway {
         address: meta.address ?? address,
         label: meta.label,
         connector: meta.connector,
-        chains: meta.chains,
+        chains: accountChains(meta),
         current: sameAddress(registry.current, address),
         // 外部钱包的备份由其自身负责
         backedUp: true,
@@ -239,7 +254,7 @@ export class EmbeddedWalletGateway implements WalletGateway {
       address: existing?.address ?? address,
       label,
       connector: existing?.connector ?? "embedded",
-      chains: existing?.chains ?? DEFAULT_CHAINS,
+      chains: existing?.chains ?? enabledChains(),
     };
     await this.writeRegistry(registry);
   }
@@ -317,7 +332,13 @@ export class EmbeddedWalletGateway implements WalletGateway {
   }
 
   async getBalances(address: string, chain?: ChainId): Promise<TokenBalance[]> {
-    const balances = await this.deps.chainData.getBalances(address, chain);
+    // 租户关掉的链一条都不显示。它没有端点，不拦的话会落到演示账本，
+    // 和真链余额并排——"关掉"就变成了"变成假的"
+    if (chain && !isChainEnabled(chain)) return [];
+    const enabled = new Set(enabledChains());
+    const balances = (
+      await this.deps.chainData.getBalances(address, chain)
+    ).filter((item) => enabled.has(item.token.chain));
     // 代币目录（含 verified 标记）由服务端下发，服务端被攻破时它可以把攻击者的
     // 合约标成"已验证"。所以 verified 只能由客户端那份表授予，元数据不符的丢掉。
     const withTokens = await this.withOnchainTokens(
@@ -345,7 +366,7 @@ export class EmbeddedWalletGateway implements WalletGateway {
     const onchain = this.deps.onchain;
     if (!onchain) return list;
     let result = [...list];
-    const chains = chain ? [chain] : (Object.keys(CHAINS) as ChainId[]);
+    const chains = chain ? [chain] : enabledChains();
     for (const id of chains) {
       if (!onchain.available(id)) continue;
       // 下发的目录同样要过白名单：verified 只能由客户端授予，decimals 不符的丢掉
@@ -415,7 +436,7 @@ export class EmbeddedWalletGateway implements WalletGateway {
     const onchain = this.deps.onchain;
     if (!onchain) return list;
     const result = [...list];
-    const chains = chain ? [chain] : (Object.keys(CHAINS) as ChainId[]);
+    const chains = chain ? [chain] : enabledChains();
     for (const id of chains) {
       if (!onchain.available(id)) continue;
       let raw: bigint;
@@ -522,7 +543,7 @@ export class EmbeddedWalletGateway implements WalletGateway {
       address,
       label: extra?.label ?? registry.meta[key]?.label ?? `Wallet ${count + 1}`,
       connector,
-      chains: extra?.chains ?? registry.meta[key]?.chains ?? DEFAULT_CHAINS,
+      chains: extra?.chains ?? registry.meta[key]?.chains ?? enabledChains(),
     };
     registry.current = address;
     await this.writeRegistry(registry);

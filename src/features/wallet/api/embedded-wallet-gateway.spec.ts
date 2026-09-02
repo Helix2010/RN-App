@@ -507,6 +507,8 @@ describe("EmbeddedWalletGateway token trust", () => {
 });
 
 describe("EmbeddedWalletGateway native balances", () => {
+  afterEach(() => resetDeliveredWalletConfig());
+
   it("replaces the demo native balance with the chain's answer where sends are real", async () => {
     // 转出扣的是真钱，余额却停在演示数字上，用户会以为钱没转出去
     const { port } = fakeOnchain(["bsc"]);
@@ -548,6 +550,11 @@ describe("EmbeddedWalletGateway native balances", () => {
   });
 
   it("adds a native entry for a real chain the demo ledger knows nothing about", async () => {
+    // 测试链默认不在启用列表里（回落值是三条主网），要像租户那样显式启用
+    applyDeliveredWalletConfig({
+      walletConnectProjectId: "p",
+      chains: ["bsc", "op-sepolia"],
+    });
     // 测试链在演示账本里没有条目；没有这一条，真链能力在发送页根本不可达
     const { port } = fakeOnchain(["op-sepolia"]);
     port.nativeBalance = async () => 10n ** 18n;
@@ -801,5 +808,70 @@ describe("EmbeddedWalletGateway token balances", () => {
     const usdt = list.find((item) => item.token.symbol === "USDT");
     expect(usdt?.amount.raw).toBe("0");
     expect(usdt?.usdValue).toBe(0);
+  });
+});
+
+describe("EmbeddedWalletGateway chain switch", () => {
+  afterEach(() => resetDeliveredWalletConfig());
+
+  function enable(chains: ChainId[]) {
+    applyDeliveredWalletConfig({ walletConnectProjectId: "p", chains });
+  }
+
+  function demoNative(chain: ChainId, symbol: string): TokenBalance {
+    return {
+      token: {
+        chain,
+        address: "native",
+        symbol,
+        name: symbol,
+        decimals: 18,
+        displayDecimals: 4,
+        logoColor: "#000000",
+        verified: true,
+      },
+      amount: money(10n ** 18n, 18, symbol),
+      usdValue: 1,
+      change24hPct: 0,
+    };
+  }
+
+  it("hides every balance on a chain the tenant turned off, instead of showing its demo ledger", async () => {
+    // 关掉的链没有端点，不拦的话会落到演示账本，和真链余额并排显示
+    enable(["eth"]);
+    const { gateway, chainData } = setup();
+    jest
+      .spyOn(chainData, "getBalances")
+      .mockResolvedValue([demoNative("bsc", "BNB"), demoNative("eth", "ETH")]);
+
+    const all = await gateway.getBalances(ADDRESS);
+    const bsc = await gateway.getBalances(ADDRESS, "bsc");
+
+    expect(all.map((item) => item.token.chain)).toEqual(["eth"]);
+    expect(bsc).toEqual([]);
+  });
+
+  it("reports the tenant's current chains for the built-in wallet, not the snapshot taken at creation", async () => {
+    enable(["bsc", "eth", "base"]);
+    const { gateway } = setup();
+    await gateway.createWallet();
+
+    enable(["op-sepolia"]);
+    const [account] = await gateway.listAccounts();
+
+    // 一把 EVM 私钥在每条启用的链上都能用；注册表里存的那份只是创建时的快照
+    expect(account?.chains).toEqual(["op-sepolia"]);
+  });
+
+  it("keeps only the enabled chains among those an external wallet approved", async () => {
+    // 外部钱包只在会话里批准的链上能签（这里是 bsc），再与租户启用的链取交集
+    enable(["eth"]);
+    const { gateway } = setup({ external: fakeExternal() });
+    const connected = await gateway.connect("walletconnect");
+    expect(connected.chains).toEqual([]);
+
+    enable(["bsc", "eth"]);
+    const [account] = await gateway.listAccounts();
+    expect(account?.chains).toEqual(["bsc"]);
   });
 });

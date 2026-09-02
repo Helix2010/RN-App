@@ -181,6 +181,9 @@ const zhCN = {
   "receive.support":
     "支持 {chain} 上的 {tokens} 及任意代币。到账通常需要 1–3 个区块确认。",
   "receive.copied": "已复制",
+  "receive.testnetNotice":
+    "这是测试网地址，测试网资产没有真实价值；请勿向它转入主网资产。",
+  "receive.tokenSeparator": "、",
   "send.title": "转出",
   "send.address": "收款地址",
   "send.tokenContract": "代币合约",
@@ -958,6 +961,9 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "receive.support":
     "Supports {tokens} and any token on {chain}. Usually arrives within 1–3 block confirmations.",
   "receive.copied": "Copied",
+  "receive.testnetNotice":
+    "This is a testnet address. Testnet assets have no real value; do not send mainnet assets to it.",
+  "receive.tokenSeparator": ", ",
   "send.title": "Send",
   "send.address": "Recipient address",
   "send.tokenContract": "Token contract",
