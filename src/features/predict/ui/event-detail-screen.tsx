@@ -3,6 +3,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import {
   formatCents,
+  formatPercentCents,
+  NO_QUOTE,
   formatDateTime,
   formatUsd,
 } from "../../../core/i18n/format";
@@ -26,6 +28,7 @@ import {
 } from "../../../design-system";
 import {
   useAdjudication,
+  useMarketStream,
   useOrderBook,
   usePredictEvent,
   usePriceHistory,
@@ -69,6 +72,8 @@ export function EventDetailScreen({
   );
   const history = usePriceHistory(market?.id, range);
   const book = useOrderBook(market?.id);
+  // 详情页所有结果走实时行情（簿 + 价格）
+  useMarketStream(event.data?.markets.map((item) => item.id) ?? []);
   const adjudication = useAdjudication(market?.id);
   const orderSheet = useRef<OrderSheetHandle>(null);
   const autoOpened = useRef(false);
@@ -90,21 +95,27 @@ export function EventDetailScreen({
         <PageState title={t("state.error")} />
       </Page>
     );
-  const yes = market?.yesPriceCents ?? 50;
+  const yes = market?.yesPriceCents ?? null;
   const first = history.data?.[0]?.priceCents;
-  const change = first !== undefined ? yes - first : 0;
+  const change = yes !== null && first !== undefined ? yes - first : null;
   const status = adjudication.data?.status ?? "trading";
   const openOrder = (outcome: Outcome) =>
     market && orderSheet.current?.open(market, outcome);
   const title = event.data ? pickTranslation(event.data.title, locale) : "";
-  const maxReturn = (price: number) =>
-    `${Math.round(((100 - price) / price) * 100)}%`;
+  const maxReturn = (price: number | null) =>
+    price === null || price <= 0
+      ? NO_QUOTE
+      : `${Math.round(((100 - price) / price) * 100)}%`;
 
   return (
     <Page>
       <Content paddingTop={insets.top + 8} paddingBottom={0}>
         <ScreenHeader
-          title={event.data?.categoryTagId.toUpperCase() ?? ""}
+          title={
+            event.data
+              ? pickTranslation(event.data.category, locale).toUpperCase()
+              : ""
+          }
           onBack={onBack}
           backLabel={t("action.back")}
           action={<StatusBadge status={status} />}
@@ -130,7 +141,7 @@ export function EventDetailScreen({
                   value={market.id}
                   options={event.data.markets.map((item) => ({
                     value: item.id,
-                    label: `${pickTranslation(item.outcomeLabel, locale)} ${item.yesPriceCents}%`,
+                    label: `${pickTranslation(item.outcomeLabel, locale)} ${formatPercentCents(item.yesPriceCents)}`,
                   }))}
                   onChange={setSelectedMarketId}
                   accessibilityLabel={t("predict.outcomes")}
@@ -142,26 +153,34 @@ export function EventDetailScreen({
                     fontSize={40}
                     fontWeight="900"
                     lineHeight={44}
-                    color={yes >= 50 ? "$success" : "$danger"}
+                    color={
+                      yes === null
+                        ? "$textMuted"
+                        : yes >= 50
+                          ? "$success"
+                          : "$danger"
+                    }
                   >
-                    {yes}%
+                    {formatPercentCents(yes)}
                   </InlineText>
                   <Body fontSize={12}>{t("predict.yesProbability")}</Body>
                 </Stack>
-                <InlineText
-                  fontWeight="700"
-                  color={change >= 0 ? "$pricePositive" : "$priceNegative"}
-                  paddingBottom="$4"
-                >
-                  {change >= 0 ? "+" : ""}
-                  {change.toFixed(1)} {t("predict.today")}
-                </InlineText>
+                {change !== null ? (
+                  <InlineText
+                    fontWeight="700"
+                    color={change >= 0 ? "$pricePositive" : "$priceNegative"}
+                    paddingBottom="$4"
+                  >
+                    {change >= 0 ? "+" : ""}
+                    {change.toFixed(1)} {t("predict.today")}
+                  </InlineText>
+                ) : null}
               </Row>
               {history.data ? (
                 <AreaChart
                   values={history.data.map((point) => point.priceCents)}
                   height={150}
-                  tone={change >= 0 ? "positive" : "negative"}
+                  tone={(change ?? 0) >= 0 ? "positive" : "negative"}
                   baseline={50}
                 />
               ) : (
@@ -197,7 +216,8 @@ export function EventDetailScreen({
 
               <Row gap="$2">
                 {(["yes", "no"] as const).map((outcome) => {
-                  const price = outcome === "yes" ? yes : 100 - yes;
+                  const price =
+                    yes === null ? null : outcome === "yes" ? yes : 100 - yes;
                   return (
                     <Stack
                       key={outcome}
@@ -438,10 +458,13 @@ export function EventDetailScreen({
             pressStyle={{ opacity: 0.85 }}
           >
             <InlineText color="$onPrimary" fontWeight="800">
-              {t("predict.buyNo")} {formatCents(100 - yes)}
+              {t("predict.buyNo")}{" "}
+              {formatCents(yes === null ? null : 100 - yes)}
             </InlineText>
             <InlineText color="$onPrimary" fontSize={11} opacity={0.85}>
-              {fill(t("predict.maxReturn"), { pct: maxReturn(100 - yes) })}
+              {fill(t("predict.maxReturn"), {
+                pct: maxReturn(yes === null ? null : 100 - yes),
+              })}
             </InlineText>
           </Stack>
         </Row>

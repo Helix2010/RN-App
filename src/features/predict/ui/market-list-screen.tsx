@@ -7,7 +7,11 @@ import { shouldPromptEnable } from "../model/enable-prompt";
 import { useEffect, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
-import { formatMoney, formatUsd } from "../../../core/i18n/format";
+import {
+  formatMoney,
+  formatPercentCents,
+  formatUsd,
+} from "../../../core/i18n/format";
 import { pickTranslation } from "../../../core/i18n/localized-text";
 import { isZero } from "../../../core/money/money";
 import {
@@ -28,7 +32,11 @@ import {
   useTheme,
 } from "../../../design-system";
 import { useSession } from "../../session/hooks/use-session";
-import { usePredictEvents, usePredictTags } from "../hooks/use-predict";
+import {
+  useMarketStream,
+  usePredictEvents,
+  usePredictTags,
+} from "../hooks/use-predict";
 import type {
   EventQuery,
   Market,
@@ -79,6 +87,12 @@ export function MarketListScreen({
   const [sort, setSort] = useState<NonNullable<EventQuery["sort"]>>("volume");
   const events = usePredictEvents({ tagId, sort, limit: 20 });
   const featured = usePredictEvents({ featured: true, limit: 1 });
+  // 列表与置顶卡片里展示的市场走实时行情（每个事件最多前 3 个结果）
+  useMarketStream(
+    [...(featured.data?.items ?? []), ...(events.data?.items ?? [])].flatMap(
+      (item) => item.markets.slice(0, 3).map((market) => market.id),
+    ),
+  );
   const banner = featured.data?.items[0];
 
   return (
@@ -228,7 +242,8 @@ export function MarketListScreen({
                   colorToken="primary"
                 />
                 <InlineText fontSize={11} fontWeight="800" color="$primary">
-                  {t("predict.special")} · {banner.categoryTagId.toUpperCase()}
+                  {t("predict.special")} ·{" "}
+                  {pickTranslation(banner.category, locale).toUpperCase()}
                 </InlineText>
               </Row>
               <SectionTitle>
@@ -240,7 +255,7 @@ export function MarketListScreen({
                     {pickTranslation(market.outcomeLabel, locale)}
                   </Body>
                   <InlineText fontWeight="800" width={44} textAlign="right">
-                    {market.yesPriceCents}%
+                    {formatPercentCents(market.yesPriceCents)}
                   </InlineText>
                   <Stack width={132}>
                     <YesNoButtons

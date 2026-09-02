@@ -1,3 +1,4 @@
+import type { LocalizedText } from "../../../core/i18n/localized-text";
 import type { Page, Unsubscribe } from "../../../core/gateways/types";
 import { money, type Money } from "../../../core/money/money";
 import type { PredictServiceConfig } from "../../../core/config/bootstrap.schema";
@@ -105,8 +106,28 @@ const SIGN_REASON = "predict.sign.reason";
 const USDC_DECIMALS = 6;
 const ONE_USDC = 1_000_000n;
 
-function cents(price: number | null): number {
-  return price === null ? 0 : Math.round(price * 100);
+function cents(price: number): number {
+  return Math.round(price * 100);
+}
+
+/** 展示价可能缺失（gamma 没缓存买卖盘也没成交价），缺就 null 不编数 */
+function centsOrNull(price: number | null): number | null {
+  return price === null ? null : cents(price);
+}
+
+/**
+ * 订单簿推出的 YES 概率（分）：mid → ask → bid，只认 0 < p < 100 的可成交价，
+ * 同网页版 `orderbookPricing.ts` resolveFirstOptionProbability。
+ */
+function bookMidCents(book: OrderBook): number | null {
+  const tradable = (level: { priceCents: number }) =>
+    level.priceCents > 0 && level.priceCents < 100;
+  const bids = book.bids.filter(tradable).map((level) => level.priceCents);
+  const asks = book.asks.filter(tradable).map((level) => level.priceCents);
+  const bid = bids.length > 0 ? Math.max(...bids) : null;
+  const ask = asks.length > 0 ? Math.min(...asks) : null;
+  if (bid !== null && ask !== null) return Math.round((bid + ask) / 2);
+  return ask ?? bid;
 }
 
 function usdc(amount: number): Money {
@@ -208,6 +229,10 @@ function walkBook(
   return { shares, cost };
 }
 
+function tagLabel(tag: GammaTag): LocalizedText {
+  return translationOf(tag.labelTranslation, tag.label ?? tag.slug ?? tag.id);
+}
+
 export class HttpPredictGateway implements PredictGateway {
   /** conditionId → 代币 id 与事件（列表 / 详情读到就记下，订单簿与持仓靠它找代币） */
   private readonly markets = new Map<string, MarketRef>();
@@ -242,10 +267,7 @@ export class HttpPredictGateway implements PredictGateway {
     return {
       id: tag.id,
       slug: tag.slug ?? tag.id,
-      label: translationOf(
-        tag.labelTranslation,
-        tag.label ?? tag.slug ?? tag.id,
-      ),
+      label: tagLabel(tag),
       order: index,
     };
   }
@@ -278,7 +300,7 @@ export class HttpPredictGateway implements PredictGateway {
           ? { default: market.groupItemTitle }
           : undefined,
       question,
-      yesPriceCents: cents(displayPrice(market)),
+      yesPriceCents: centsOrNull(displayPrice(market)),
       volumeUsd: market.volume ?? 0,
       endsAt: market.endDate ?? event.endDate ?? "",
       yesTokenId,
@@ -303,6 +325,7 @@ export class HttpPredictGateway implements PredictGateway {
       title: translationOf(event.titleTranslation, event.title ?? ""),
       kind: sports ? "sports" : multi ? "multi" : "binary",
       categoryTagId: tags[0]?.id ?? "",
+      category: tags[0] ? tagLabel(tags[0]) : {},
       tagIds: tags.map((tag) => tag.id),
       markets,
       volumeUsd: multi
@@ -538,17 +561,23 @@ export class HttpPredictGateway implements PredictGateway {
         const ref = byToken.get(event.assetId);
         if (!ref) return;
         if (event.kind === "book") {
-          onEvent({
-            type: "book",
-            book: this.mapBook(ref.conditionId, {
-              market: ref.conditionId,
-              asset_id: event.assetId,
-              bids: event.book.bids,
-              asks: event.book.asks,
-              tick_size: event.book.tick_size,
-              timestamp: event.book.timestamp,
-            }),
+          const book = this.mapBook(ref.conditionId, {
+            market: ref.conditionId,
+            asset_id: event.assetId,
+            bids: event.book.bids,
+            asks: event.book.asks,
+            tick_size: event.book.tick_size,
+            timestamp: event.book.timestamp,
           });
+          onEvent({ type: "book", book });
+          // 网页版的概率来自订单簿；gamma 没缓存价时靠这一条把列表 / 详情的价格补上
+          const fromBook = bookMidCents(book);
+          if (fromBook !== null)
+            onEvent({
+              type: "price_change",
+              marketId: ref.conditionId,
+              yesPriceCents: fromBook,
+            });
           return;
         }
         const mid =

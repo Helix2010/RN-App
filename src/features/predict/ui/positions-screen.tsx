@@ -460,7 +460,7 @@ function PositionRow({
             <StatusBadge status={position.status} />
           ) : (
             <Body fontSize={11}>
-              {event.categoryTagId.toUpperCase()} ·{" "}
+              {pickTranslation(event.category, locale).toUpperCase()} ·{" "}
               {closesText(event.endsAt, locale, t)}
             </Body>
           )}

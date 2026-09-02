@@ -28,7 +28,8 @@ export type Market = {
   /** 多结果事件中该市场代表的选项名（如"法国"、"降 25 bp"）；二元市场为空 */
   outcomeLabel?: LocalizedText;
   question: LocalizedText;
-  yesPriceCents: number;
+  /** YES 展示价（分）。平台暂无报价（无买卖盘也无成交）时为 null，界面显示占位而不编数 */
+  yesPriceCents: number | null;
   volumeUsd: number;
   endsAt: string;
   yesTokenId: string;
@@ -41,6 +42,8 @@ export type PredictEvent = {
   title: LocalizedText;
   kind: EventKind;
   categoryTagId: string;
+  /** 展示用分类标签 = 首个标签的多语言名称（categoryTagId 只用于筛选） */
+  category: LocalizedText;
   tagIds: string[];
   markets: Market[];
   volumeUsd: number;

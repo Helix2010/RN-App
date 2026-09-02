@@ -47,6 +47,17 @@ App 里的预测账户余额、存入 / 取出此前全是 `MockPredictGateway` 
 - **WS 推送**：`core/predict-platform/market-ws.ts` 接 `wss://clob-ws.{domain}/ws/market`，协议照 `wsservice/market_channel.go` 与 user-dapp `lib/ws/polymarket.ts`——首帧 `{assets_ids, type:"market", custom_feature_enabled:true, initial_dump:true, level}`、增量 `{operation, assets_ids, level}`、每 10 秒文本 `PING`、断线 1s → 30s 指数退避（握手成功即归零）并重发全部订阅；`book`（初始 dump 在 `data` 里）与 `price_change` 映射成 `PredictGateway.subscribeMarkets` 的事件，没有订阅者时不建连接、最后一个取消即断开。假 socket 的 spec 覆盖订阅帧、映射、心跳与重连。
 - **未接**：平台网页没有争议提交入口，`submitDispute` 抛 `PredictUnsupportedError`。
 
+### 模拟器对 prax1s 联调后的修正（2026-09-03）
+
+用 anyfun 租户配置出的 debug 包（1.2.7 / code 21，`EXPO_PUBLIC_TENANT=anyfun` 下 prebuild，Metro 8081）在 `rn_smoke` 上直连线上 bootstrap → prax1s，真实标签 / 事件 / 详情 / 订单簿都能出来，同时暴露出四个只有真数据才会出现的问题，均已修：
+
+- **分类标签显示成数字**：界面直接把 `categoryTagId.toUpperCase()` 当文案（Mock 的 id 是 `crypto` 这类 slug，gamma 的是 `209`）。`PredictEvent` 新增 `category: LocalizedText`（首个标签的多语言名称，`categoryTagId` 只用于筛选），事件卡 / 置顶卡 / 详情页头 / 持仓行 / 首页卡都改用它。
+- **无报价被显示成 0%**：gamma 对没有买卖盘缓存也没有成交的市场返回空价，`cents(null)` 编成 0，列表出现 "Buy Yes 0¢ / No 100¢"。`Market.yesPriceCents` 改为 `number | null`，`formatCents / formatPercentCents` 对 null 显示 "—"，详情页涨跌与最大收益在无价时不算，下单页无价不预填限价、按网页版顺序回落到订单簿 mid / 单边。
+- **WS 没有消费者**：`subscribeMarkets` 接好了但没有任何界面调用。新增 `useMarketStream(marketIds)`：`book` 事件写入 `predict-book` 缓存，`price_change` 写回已缓存的事件 / 事件列表；网关收到 `book` 时再按网页版 `resolveFirstOptionProbability`（mid → ask → bid，只认 0 < p < 100）推一条价格，所以 gamma 没缓存价的市场在初始 dump 后也能显示概率。详情页订阅全部结果，市场列表 / 置顶卡订阅每个事件前 3 个结果，首页热门订阅前 2 个。
+- **首页热门写死 `tagId: "hot"`**：平台没有这个标签。改为不带标签、按成交量排序。
+
+联调环境事实：prax1s `public-info.chain.contracts` 已含 `USDW_WRAPPER` / `USDC_UNDERLYING`；测试 USDC（`0x2eA6…c3AD`）的 `mint(address,uint256)` 无权限限制，EOA 有少量 OP Sepolia ETH 即可自铸后联调转入 / 下单。
+
 ## 不做的事
 
 - 没有任何「平台不可用就用演示数据」的路径：关联缺失显示未配置，public-info 对不上直接报错。

@@ -132,7 +132,11 @@ export class MockPredictGateway implements PredictGateway {
         this.state = {
           prices: Object.fromEntries(
             EVENTS.flatMap((event) =>
-              event.markets.map((m) => [m.id, m.yesPriceCents]),
+              event.markets.flatMap((m) =>
+                m.yesPriceCents === null
+                  ? []
+                  : [[m.id, m.yesPriceCents] as const],
+              ),
             ),
           ),
           balances: {},
@@ -261,7 +265,12 @@ export class MockPredictGateway implements PredictGateway {
   }
 
   private priceOf(state: State, marketId: string): number {
-    return state.prices[marketId] ?? this.market(marketId).market.yesPriceCents;
+    const price =
+      state.prices[marketId] ?? this.market(marketId).market.yesPriceCents;
+    // 演示夹具的市场都带价；没有就是夹具写错了
+    if (price === null)
+      throw new Error(`fixture market ${marketId} has no price`);
+    return price;
   }
 
   /** 结算状态机：截止 → 商户提交 → 争议期 → 自动结算；可被争议打断。 */

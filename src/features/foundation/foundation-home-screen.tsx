@@ -4,6 +4,7 @@ import { useFoundationRuntime } from "../../app/runtime-context";
 import { pickTranslation } from "../../core/i18n/localized-text";
 import {
   formatCents,
+  formatPercentCents,
   formatCompactNumber,
   formatTimeUntil,
   formatTokenPrice,
@@ -38,7 +39,10 @@ import {
 import { useAssetsOverview } from "../assets/hooks/use-assets";
 import { useDexTokens } from "../dex/hooks/use-dex";
 import type { TokenSummary } from "../dex/model/dex";
-import { usePredictEvents } from "../predict/hooks/use-predict";
+import {
+  useMarketStream,
+  usePredictEvents,
+} from "../predict/hooks/use-predict";
 import type { PredictEvent } from "../predict/model/predict";
 import { useSession } from "../session/hooks/use-session";
 import { requestAuth } from "../session/model/auth-sheet-store";
@@ -71,7 +75,13 @@ export function FoundationHomeScreen({
   const accountSheet = useRef<SheetHandle>(null);
   const address = session.data?.address;
   const overview = useAssetsOverview(address, config.modules.predict);
-  const events = usePredictEvents({ tagId: "hot", sort: "volume", limit: 4 });
+  // 热门 = 平台按成交量排序的前几条，不写死标签 id
+  const events = usePredictEvents({ sort: "volume", limit: 4 });
+  useMarketStream(
+    (events.data?.items ?? []).flatMap((item) =>
+      item.markets.slice(0, 2).map((market) => market.id),
+    ),
+  );
   const tokens = useDexTokens({ sort: "hot", limit: 3 });
 
   const refreshing =
@@ -467,7 +477,8 @@ function PredictionHomeCard({
   onPress: () => void;
 }) {
   const primary = event.markets[0];
-  const yes = primary?.yesPriceCents ?? 50;
+  const yes = primary?.yesPriceCents ?? null;
+  const no = yes === null ? null : 100 - yes;
   const multi = event.markets.length > 1;
   return (
     <Card
@@ -482,7 +493,7 @@ function PredictionHomeCard({
           <InlineText color="$textMuted" fontSize={11}>
             {multi
               ? outcomesLabel.replace("{n}", String(event.markets.length))
-              : event.categoryTagId.toUpperCase()}
+              : pickTranslation(event.category, locale).toUpperCase()}
           </InlineText>
         </Badge>
         <Body fontSize={11}>
@@ -503,7 +514,7 @@ function PredictionHomeCard({
                 {pickTranslation(market.outcomeLabel, locale)}
               </Body>
               <InlineText color="$color" fontWeight="800" fontSize={12}>
-                {market.yesPriceCents}%
+                {formatPercentCents(market.yesPriceCents)}
               </InlineText>
             </Row>
           ))}
@@ -517,7 +528,7 @@ function PredictionHomeCard({
           </Badge>
           <Badge flex={1} justifyContent="center" borderWidth={0}>
             <InlineText color="$danger" fontWeight="800">
-              No {formatCents(100 - yes)}
+              No {formatCents(no)}
             </InlineText>
           </Badge>
         </Row>

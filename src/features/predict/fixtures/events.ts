@@ -80,6 +80,7 @@ export const EVENTS: PredictEvent[] = [
     ),
     kind: "binary",
     categoryTagId: "crypto",
+    category: localized("加密", "Crypto"),
     tagIds: ["hot", "crypto"],
     markets: [
       market(
@@ -112,6 +113,7 @@ export const EVENTS: PredictEvent[] = [
     ),
     kind: "multi",
     categoryTagId: "macro",
+    category: localized("宏观", "Macro"),
     tagIds: ["hot", "macro"],
     markets: [
       market(
@@ -160,6 +162,7 @@ export const EVENTS: PredictEvent[] = [
     title: localized("2026 世界杯冠军", "2026 World Cup winner"),
     kind: "multi",
     categoryTagId: "sports",
+    category: localized("体育", "Sports"),
     tagIds: ["hot", "sports"],
     markets: [
       market(
@@ -220,6 +223,7 @@ export const EVENTS: PredictEvent[] = [
     ),
     kind: "binary",
     categoryTagId: "crypto",
+    category: localized("加密", "Crypto"),
     tagIds: ["crypto", "new"],
     markets: [
       market(
@@ -252,6 +256,7 @@ export const EVENTS: PredictEvent[] = [
     title: localized("曼城 vs 阿森纳", "Man City vs Arsenal"),
     kind: "sports",
     categoryTagId: "sports",
+    category: localized("体育", "Sports"),
     tagIds: ["sports", "hot"],
     markets: [
       market(
@@ -310,6 +315,7 @@ export const EVENTS: PredictEvent[] = [
     ),
     kind: "binary",
     categoryTagId: "macro",
+    category: localized("宏观", "Macro"),
     tagIds: ["macro"],
     markets: [
       market(
@@ -342,6 +348,7 @@ export const EVENTS: PredictEvent[] = [
     ),
     kind: "binary",
     categoryTagId: "sports",
+    category: localized("体育", "Sports"),
     tagIds: ["sports"],
     markets: [
       market(
@@ -374,6 +381,7 @@ export const EVENTS: PredictEvent[] = [
     ),
     kind: "binary",
     categoryTagId: "crypto",
+    category: localized("加密", "Crypto"),
     tagIds: ["crypto", "breaking"],
     markets: [
       market(

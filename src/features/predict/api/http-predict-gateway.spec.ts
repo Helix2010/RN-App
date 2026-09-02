@@ -284,6 +284,11 @@ function build() {
 
 afterEach(() => setPlatformFetch(null));
 
+const cleanup: (() => void)[] = [];
+afterEach(() => {
+  for (const stop of cleanup.splice(0)) stop();
+});
+
 describe("HttpPredictGateway", () => {
   it("maps carousel tags and events into the app model (conditionId as market id, cents, token ids)", async () => {
     const { gateway, seen } = build();
@@ -307,6 +312,9 @@ describe("HttpPredictGateway", () => {
       default: "Will BTC hit 120k?",
       zh: "BTC 会到 12 万吗？",
     });
+    // 分类标签 = 首个标签的名称，不是数字 id
+    expect(event?.categoryTagId).toBe("3");
+    expect(event?.category).toEqual({ default: "Crypto" });
     const [market] = event?.markets ?? [];
     expect(market).toMatchObject({
       id: CONDITION,
@@ -563,6 +571,8 @@ describe("HttpPredictGateway", () => {
     const stop = gateway.subscribeMarkets([CONDITION], (event) =>
       events.push(event),
     );
+    // 断言失败也要断开，否则 10 秒 PING 定时器会让 jest 永不退出
+    cleanup.push(stop);
     // 市场 → 代币解析是异步的（走 /markets/information）
     await new Promise((resolve) => setTimeout(resolve, 0));
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -587,7 +597,7 @@ describe("HttpPredictGateway", () => {
         data: {
           asset_id: "111",
           bids: [{ price: "0.60", size: "1" }],
-          asks: [{ price: "0.64", size: "2" }],
+          asks: [{ price: "0.66", size: "2" }],
           tick_size: "0.01",
           timestamp: "1800000000000",
         },
@@ -609,17 +619,19 @@ describe("HttpPredictGateway", () => {
         ],
       }),
     });
+    // 簿事件之外再推一条由簿算出的价格（mid 60/66 → 63），同网页版概率来源；显式 price_change 用 best_bid/ask 的 mid
     expect(events).toEqual([
       {
         type: "book",
         book: {
           marketId: CONDITION,
           bids: [{ priceCents: 60, shares: 1 }],
-          asks: [{ priceCents: 64, shares: 2 }],
+          asks: [{ priceCents: 66, shares: 2 }],
           tickCents: 1,
           updatedAt: "2027-01-15T08:00:00.000Z",
         },
       },
+      { type: "price_change", marketId: CONDITION, yesPriceCents: 63 },
       { type: "price_change", marketId: CONDITION, yesPriceCents: 62 },
     ]);
     stop();

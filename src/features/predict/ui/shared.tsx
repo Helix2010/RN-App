@@ -3,6 +3,7 @@ import {
   formatCents,
   formatCountdown,
   formatDate,
+  formatPercentCents,
   formatTimeUntil,
   formatUsd,
   fill,
@@ -88,11 +89,12 @@ export function YesNoButtons({
   onPress,
   compact,
 }: {
-  yes: number;
+  yes: number | null;
   onPress: (outcome: Outcome) => void;
   compact?: boolean;
 }) {
   const { t } = useFoundationRuntime();
+  const no = yes === null ? null : 100 - yes;
   return (
     <Row gap="$2">
       <Stack
@@ -124,7 +126,7 @@ export function YesNoButtons({
         backgroundColor="$surfaceVariant"
         onPress={() => onPress("no")}
         accessibilityRole="button"
-        accessibilityLabel={`${t("predict.buyNo")} ${formatCents(100 - yes)}`}
+        accessibilityLabel={`${t("predict.buyNo")} ${formatCents(no)}`}
         pressStyle={{ opacity: 0.75 }}
       >
         <InlineText
@@ -132,7 +134,7 @@ export function YesNoButtons({
           fontWeight="800"
           fontSize={compact ? 12 : 14}
         >
-          {compact ? "No" : t("predict.buyNo")} {formatCents(100 - yes)}
+          {compact ? "No" : t("predict.buyNo")} {formatCents(no)}
         </InlineText>
       </Stack>
     </Row>
@@ -154,7 +156,7 @@ export function EventCard({
   const { config, t } = useFoundationRuntime();
   const locale = config.localization.selectedLocale;
   const primary = event.markets[0];
-  const category = event.categoryTagId.toUpperCase();
+  const category = pickTranslation(event.category, locale).toUpperCase();
   const meta = closesText(event.endsAt, locale, t);
   return (
     <Card
@@ -196,7 +198,7 @@ export function EventCard({
                 {pickTranslation(market.outcomeLabel, locale)}
               </Body>
               <InlineText fontWeight="800" width={44} textAlign="right">
-                {market.yesPriceCents}%
+                {formatPercentCents(market.yesPriceCents)}
               </InlineText>
               <Stack width={132}>
                 <YesNoButtons
@@ -218,9 +220,15 @@ export function EventCard({
               <InlineText
                 fontSize={26}
                 fontWeight="900"
-                color={primary.yesPriceCents >= 50 ? "$success" : "$danger"}
+                color={
+                  primary.yesPriceCents === null
+                    ? "$textMuted"
+                    : primary.yesPriceCents >= 50
+                      ? "$success"
+                      : "$danger"
+                }
               >
-                {primary.yesPriceCents}%
+                {formatPercentCents(primary.yesPriceCents)}
               </InlineText>
               <Body fontSize={10}>{t("predict.probability")}</Body>
             </Stack>

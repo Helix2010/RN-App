@@ -108,12 +108,15 @@ export const OrderSheet = forwardRef<
       setType("market");
       setAmountText("");
       setSharesText("");
+      // 无报价时不预填限价，由用户输入
       setPriceText(
-        String(
-          nextOutcome === "yes"
-            ? nextMarket.yesPriceCents - 0.5
-            : 100 - nextMarket.yesPriceCents - 0.5,
-        ),
+        nextMarket.yesPriceCents === null
+          ? ""
+          : String(
+              nextOutcome === "yes"
+                ? nextMarket.yesPriceCents - 0.5
+                : 100 - nextMarket.yesPriceCents - 0.5,
+            ),
       );
       sheet.current?.present();
     },
@@ -139,10 +142,18 @@ export const OrderSheet = forwardRef<
 
   // 从持仓等入口打开时 market 可能来自静态夹具，这里以实时事件价格为准
   const liveEvent = usePredictEvent(market?.eventId);
+  // 价格来源顺序同网页版：实时事件价 → 打开时的市场价 → 订单簿 mid / 单边 → 都没有才用 50 当占位
+  const bestBid = book.data?.bids[0]?.priceCents;
+  const bestAsk = book.data?.asks[0]?.priceCents;
+  const bookYes =
+    bestBid !== undefined && bestAsk !== undefined
+      ? Math.round((bestBid + bestAsk) / 2)
+      : (bestAsk ?? bestBid ?? null);
   const yes =
     liveEvent.data?.markets.find((item) => item.id === market?.id)
       ?.yesPriceCents ??
     market?.yesPriceCents ??
+    bookYes ??
     50;
   const marketPrice = outcome === "yes" ? yes : 100 - yes;
   const limitPrice = Number(priceText) || marketPrice;
@@ -218,8 +229,6 @@ export const OrderSheet = forwardRef<
     });
   };
 
-  const bestBid = book.data?.bids[0]?.priceCents;
-  const bestAsk = book.data?.asks[0]?.priceCents;
   const submitLabel = !request
     ? ""
     : side === "sell"

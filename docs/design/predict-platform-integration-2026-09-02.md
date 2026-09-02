@@ -312,7 +312,7 @@ src/features/predict/model/predict.ts   PredictTx 加 claimableAt / requestId；
 
 ## 5. 待办
 
-实现状态（2026-09-02）：阶段 1–5（服务端下发、管理端、App 平台客户端、账户网关、启用 / 划转界面）已落地，见 `docs/changes/2026-09-02-feature-predict-account-real.md`。阶段 6 读侧已落地（`HttpPredictGateway`：标签、事件列表 / 详情、订单簿、价格历史、费率、结算状态、持仓 / 已平仓、活动、盈亏、排行榜、我的挂单、撤单；事实见 §2.9），生产接线已从 `MockPredictGateway` 切到它。写侧也已落地：下单（EIP-712 Order 签名，maker = Safe / signer = EOA，金额换算逐行移植 `orderAmounts.ts`，市价 = FAK 取对手盘最优价，`POST /order` 带 L2 头）、领取（同 conditionId 合并一条 `redeemPositions`，链上 ERC1155 余额为准，MultiSend 经 relayer）、拆合（直接 SafeTx 调 CTF / adapter，operation 0）。WS 推送也已接（`core/predict-platform/market-ws.ts`：`wss://clob-ws.{domain}/ws/market`，首帧 / 增量订阅帧、10 秒文本 PING、1s → 30s 退避重连并重发订阅，`book` / `price_change` 映射为 `subscribeMarkets` 事件；事实见 §2.7 / §2.9）。剩余：争议提交平台没有入口，抛 `PredictUnsupportedError`；真机对 dev 租户的端到端联调。
+实现状态（2026-09-02）：阶段 1–5（服务端下发、管理端、App 平台客户端、账户网关、启用 / 划转界面）已落地，见 `docs/changes/2026-09-02-feature-predict-account-real.md`。阶段 6 读侧已落地（`HttpPredictGateway`：标签、事件列表 / 详情、订单簿、价格历史、费率、结算状态、持仓 / 已平仓、活动、盈亏、排行榜、我的挂单、撤单；事实见 §2.9），生产接线已从 `MockPredictGateway` 切到它。写侧也已落地：下单（EIP-712 Order 签名，maker = Safe / signer = EOA，金额换算逐行移植 `orderAmounts.ts`，市价 = FAK 取对手盘最优价，`POST /order` 带 L2 头）、领取（同 conditionId 合并一条 `redeemPositions`，链上 ERC1155 余额为准，MultiSend 经 relayer）、拆合（直接 SafeTx 调 CTF / adapter，operation 0）。WS 推送也已接（`core/predict-platform/market-ws.ts`：`wss://clob-ws.{domain}/ws/market`，首帧 / 增量订阅帧、10 秒文本 PING、1s → 30s 退避重连并重发订阅，`book` / `price_change` 映射为 `subscribeMarkets` 事件；事实见 §2.7 / §2.9）。模拟器对 prax1s 的读侧联调已过（真实标签 / 事件 / 详情 / 订单簿），由此修了分类标签、无报价占位、`useMarketStream` 消费 WS、首页标签四处，见变更说明。剩余：争议提交平台没有入口，抛 `PredictUnsupportedError`；启用 / 转入 / 下单 / 取回的端到端联调（需要一个有少量 OP Sepolia ETH 的 EOA）。
 
 对照 §3.3 / §3.4 / §3.7 逐条核对（2026-09-02 晚）后补齐的偏差，均有 spec：
 
@@ -333,7 +333,7 @@ src/features/predict/model/predict.ts   PredictTx 加 claimableAt / requestId；
 
 - 登录 EIP-712 域名 `name: "PredictMarket"` 是 gamma 的配置项 `app_name`（`gamma-service/internal/config/config.go:90-91`，默认值 `:251`），**不在 `public-info` 里**。部署把它改掉，所有登录签名都会验签失败且 App 无从发现。要么平台在 `public-info` 暴露它，要么当作部署硬约束写进运维手册。
 - CLOB 密钥的 `secret`：网页版与 App 都按 base64url 解码（`user-dapp/src/lib/hmac.ts:23-33`），服务端按标准 base64 解（`clob-service/.../middleware/auth.go:54-58`），只在 secret 不含 `-` / `_` 时一致。
-- `USDC_UNDERLYING` / `USDW_WRAPPER` 不是服务端定义的合约名，只是 user-dapp 的查找键（`user-dapp/src/lib/contracts.ts:72-73`），要在平台管理端作为自定义合约行手工添加；缺了 App 报 `PredictPlatformContractMissingError`，不启用。
+- `USDC_UNDERLYING` / `USDW_WRAPPER` 不是服务端定义的合约名，只是 user-dapp 的查找键（`user-dapp/src/lib/contracts.ts:72-73`），要在平台管理端作为自定义合约行手工添加；缺了 App 报 `PredictPlatformContractMissingError`，不启用。（2026-09-03 实测 prax1s 的 `public-info.chain.contracts` 已含两行：`USDW_WRAPPER 0x7deB…F740`、`USDC_UNDERLYING 0x2eA6…c3AD`；该测试 USDC 的 `mint(address,uint256)` 无权限限制（eth_call 从任意地址模拟成功，约 51k gas），联调时 EOA 只要有少量 OP Sepolia ETH 就能自铸。）
 
 1. 联调租户：库里只有 anyfun（100000001）有 App 包与 bootstrap 配置，`test` 租户（100000003）没有域名 / 包，所以联调直接用 anyfun。**已写库（2026-09-03，web4）**：`services.predict = {domain: predict.prax1s.xyz, scopeId: 0xfb05…454a, chain: op-sepolia}`（`mobile-bootstrap` version 12）、op-sepolia 目录加 USDW `0x790e…6098`（id 22，6 位）、`tokens` 锚点 version 3；`modules.predict` 保持 false。线上 bootstrap 已核实：`wallet.tokens` 含 USDW，`services` 为空（模块关着不下发）。**开模块前先发带阶段 6 代码的新版 App**，否则老包会显示 Mock 预测市场。
 2. 转入路径 B 要显示 EOA 的 USDW：租户目录上 USDW（`0x790e…6098`，6 位），管理端操作。

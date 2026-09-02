@@ -66,8 +66,17 @@ export function formatPercent(
 }
 
 /** 预测价格：0–100 的整数分 → "62¢"，支持 0.5 档。 */
-export function formatCents(cents: number): string {
+export function formatCents(cents: number | null): string {
+  if (cents === null) return NO_QUOTE;
   return `${Number.isInteger(cents) ? cents : cents.toFixed(1)}¢`;
+}
+
+/** 无报价占位（平台既无买卖盘也无成交时不编数） */
+export const NO_QUOTE = "—";
+
+/** 概率（分）："62%"；无报价显示占位 */
+export function formatPercentCents(cents: number | null): string {
+  return cents === null ? NO_QUOTE : `${cents}%`;
 }
 
 /** 概率：0–1 → "62%" */

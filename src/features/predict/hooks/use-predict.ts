@@ -1,10 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
+import type { Page } from "../../../core/gateways/types";
 import { useGateways } from "../../../core/gateways/gateway-context";
 import type { Money } from "../../../core/money/money";
 import type {
   EventQuery,
   LeaderboardPeriod,
   PlaceOrderRequest,
+  PredictEvent,
   PriceRange,
 } from "../model/predict";
 
@@ -34,6 +37,53 @@ export function usePredictEvent(slugOrId: string | undefined) {
     enabled: Boolean(slugOrId),
     staleTime: 10_000,
   });
+}
+
+/**
+ * 订阅一批市场的实时行情（clob-ws）：订单簿写入 `predict-book`，价格写回已缓存的事件与事件列表，
+ * 界面不用额外状态。没有市场时不建连接；id 集合变化时重新订阅。
+ */
+export function useMarketStream(marketIds: string[]) {
+  const { predict } = useGateways();
+  const queryClient = useQueryClient();
+  const key = marketIds.join(",");
+  useEffect(() => {
+    if (!key) return;
+    return predict.subscribeMarkets(key.split(","), (event) => {
+      if (event.type === "book") {
+        queryClient.setQueryData(
+          ["predict-book", event.book.marketId],
+          event.book,
+        );
+        return;
+      }
+      const patch = (item: PredictEvent): PredictEvent =>
+        item.markets.some((market) => market.id === event.marketId)
+          ? {
+              ...item,
+              markets: item.markets.map((market) =>
+                market.id === event.marketId
+                  ? { ...market, yesPriceCents: event.yesPriceCents }
+                  : market,
+              ),
+            }
+          : item;
+      queryClient.setQueriesData<PredictEvent>(
+        { queryKey: ["predict-event"] },
+        (old) => (old ? patch(old) : old),
+      );
+      queryClient.setQueriesData<Page<PredictEvent>>(
+        { queryKey: ["predict-events"] },
+        (old) => {
+          if (!old) return old;
+          const items = old.items.map(patch);
+          return items.some((item, i) => item !== old.items[i])
+            ? { ...old, items }
+            : old;
+        },
+      );
+    });
+  }, [key, predict, queryClient]);
 }
 
 export function useOrderBook(marketId: string | undefined) {
