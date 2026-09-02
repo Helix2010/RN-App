@@ -69,6 +69,9 @@ describe("WalletImportScreen", () => {
       PHRASE,
     );
     const button = await screen.findByTestId("wallet-import-submit");
+    expect(button.props.style).toEqual(
+      expect.objectContaining({ alignSelf: "stretch" }),
+    );
 
     await act(async () => {
       void fireEvent.press(button);

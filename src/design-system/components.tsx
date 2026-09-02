@@ -426,6 +426,9 @@ export const AmountText = styled(Text, {
 
 export const PrimaryButton = styled(Button, {
   height: 48,
+  // Keep the visual button and its native hit target in sync when the parent
+  // centers children (PageState, sheets, and other action stacks).
+  alignSelf: "stretch",
   borderRadius: "$5",
   backgroundColor: "$primary",
   color: "$onPrimary",
@@ -437,6 +440,7 @@ export const PrimaryButton = styled(Button, {
 
 export const SecondaryButton = styled(Button, {
   height: 44,
+  alignSelf: "stretch",
   borderRadius: "$5",
   backgroundColor: "$surfaceVariant",
   color: "$color",
