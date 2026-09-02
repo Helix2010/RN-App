@@ -16,7 +16,7 @@ jest.mock("../../design-system", () => ({
 
 /** RNTL 14 + React 19：renderHook 返回 Promise */
 async function setup(): Promise<
-  (request?: { usdValue?: number }) => Promise<boolean>
+  (request?: { usdValue?: number | null }) => Promise<boolean>
 > {
   const { result } = await renderHook(() => useRequireVerification());
   return result.current;
@@ -42,6 +42,14 @@ describe("useRequireVerification", () => {
     usePreferencesStore.setState({ txConfirm: false });
     await expect((await setup())({ usdValue: 10 })).resolves.toBe(true);
     expect(mockAuthenticate).not.toHaveBeenCalled();
+  });
+
+  it("always verifies when the amount's value is unknown, even with the preference off", async () => {
+    // 没有参考价的币：无从判断是不是大额，不能按 0 放行
+    usePreferencesStore.setState({ txConfirm: false });
+    mockAuthenticate.mockResolvedValue("success");
+    await expect((await setup())({ usdValue: null })).resolves.toBe(true);
+    expect(mockAuthenticate).toHaveBeenCalledTimes(1);
   });
 
   it("still verifies a large amount when the preference is off", async () => {

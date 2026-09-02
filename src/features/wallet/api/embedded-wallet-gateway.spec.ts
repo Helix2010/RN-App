@@ -771,7 +771,8 @@ describe("EmbeddedWalletGateway token balances", () => {
 
     const fake = list.find((item) => item.token.address.endsWith("bEEF"));
     expect(fake?.amount.raw).toBe((10n ** 18n).toString());
-    expect(fake?.usdValue).toBe(0);
+    // 没有参考价就是不知道，不是 0
+    expect(fake?.usdValue).toBeNull();
   });
 
   it("leaves chains without endpoints on the demo ledger", async () => {

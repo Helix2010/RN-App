@@ -1,4 +1,5 @@
 import {
+  CHAINS,
   NATIVE_TOKEN_ADDRESS,
   type ChainId,
   type TokenRef,
@@ -112,4 +113,29 @@ export function trustedTokens<T extends { token: TokenRef }>(items: T[]): T[] {
     });
   }
   return trusted;
+}
+
+/**
+ * 冒名检测：这个代币的符号与同一条链上某个**平台核验**的代币（白名单合约或原生币）相同，
+ * 但它不是那个合约。这是白名单在界面上唯一该出声的场景——不在白名单里本身不是问题，
+ * 租户上的币和租户一样可信；自称 USDT 却不是主流 USDT 的合约才需要警示。
+ * 返回被冒名的那个符号；不是冒名返回 null。
+ */
+export function impersonatesKnownToken(token: {
+  chain: ChainId;
+  address: string;
+  symbol: string;
+}): string | null {
+  if (token.address === NATIVE_TOKEN_ADDRESS) return null;
+  const symbol = token.symbol.trim().toUpperCase();
+  if (symbol === CHAINS[token.chain].nativeSymbol.toUpperCase())
+    return CHAINS[token.chain].nativeSymbol;
+  for (const [address, entry] of Object.entries(ALLOWLIST[token.chain] ?? {})) {
+    if (
+      entry.symbol.toUpperCase() === symbol &&
+      address !== token.address.toLowerCase()
+    )
+      return entry.symbol;
+  }
+  return null;
 }

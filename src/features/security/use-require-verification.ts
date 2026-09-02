@@ -5,8 +5,11 @@ import { authenticate } from "../../core/security/app-lock";
 import { toast } from "../../design-system";
 
 export type VerificationRequest = {
-  /** 本次操作的美元规模；超过大额阈值时即使关闭了"交易前验证"也要验证 */
-  usdValue?: number;
+  /**
+   * 本次操作的美元规模；超过大额阈值时即使关闭了"交易前验证"也要验证。
+   * null 表示这个币没有参考价、规模未知：无从判断是不是大额，一律验证。
+   */
+  usdValue?: number | null;
   /** 系统弹窗上的说明文案，默认用通用文案 */
   reason?: string;
 };
@@ -25,8 +28,9 @@ export function useRequireVerification(): (
     async (request?: VerificationRequest) => {
       const prefs = usePreferencesStore.getState();
       const largeAmount =
-        request?.usdValue !== undefined &&
-        request.usdValue >= prefs.largeAmountThresholdUsd;
+        request?.usdValue === null ||
+        (request?.usdValue !== undefined &&
+          request.usdValue >= prefs.largeAmountThresholdUsd);
       if (!prefs.txConfirm && !largeAmount) return true;
       const outcome = await authenticate(
         request?.reason ?? t("security.verify.reason"),

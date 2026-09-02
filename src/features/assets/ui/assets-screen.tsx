@@ -82,7 +82,8 @@ export function AssetsScreen({
 
   const data = overview.data;
   const holdings = (data?.holdings ?? []).filter(
-    (item) => !hideSmall || item.usdValue >= 1,
+    // 没有估值的币不算"小额"：不知道值多少，不能替用户藏起来
+    (item) => !hideSmall || item.usdValue === null || item.usdValue >= 1,
   );
   const predictUsdc: TokenBalance | null = data?.predict
     ? {
@@ -476,7 +477,9 @@ export function HoldingRow({
             : "••••"}
         </InlineText>
         <Body fontSize={12}>
-          ≈ {visible ? formatUsd(item.usdValue, locale) : "••••"}
+          {item.usdValue === null
+            ? "—"
+            : `≈ ${visible ? formatUsd(item.usdValue, locale) : "••••"}`}
         </Body>
       </Stack>
     </Row>

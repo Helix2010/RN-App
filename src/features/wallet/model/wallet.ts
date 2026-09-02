@@ -26,7 +26,8 @@ export type WalletAccount = {
 export type TokenBalance = {
   token: TokenRef;
   amount: Money;
-  usdValue: number;
+  /** 美元估值；没有参考价的币是 null——不显示估值、转出一律要求验证，不能按 0 算 */
+  usdValue: number | null;
   change24hPct: number;
 };
 

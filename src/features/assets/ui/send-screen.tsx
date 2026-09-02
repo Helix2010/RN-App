@@ -1,3 +1,4 @@
+import { impersonatesKnownToken } from "../../../core/wallet/config/token-allowlist";
 import { ChainUnavailableNotice } from "../../wallet/ui/chain-unavailable-notice";
 import * as Clipboard from "expo-clipboard";
 import {
@@ -213,12 +214,17 @@ function SendForm({
   const bookHit = ADDRESS_BOOK.find(
     (entry) => entry.address.toLowerCase() === to.trim().toLowerCase(),
   );
+  // 没有参考价的币 usd 是 null：大额阈值无从判断，转出一律要求验证
   const usd =
     selected && amount
-      ? (toApproxNumber(amount) /
-          Math.max(toApproxNumber(selected.amount), 1e-9)) *
-        selected.usdValue
+      ? selected.usdValue === null
+        ? null
+        : (toApproxNumber(amount) /
+            Math.max(toApproxNumber(selected.amount), 1e-9)) *
+          selected.usdValue
       : 0;
+  // 白名单只在冒名时出声：自称 USDT 却不是主流 USDT 的合约
+  const impersonated = selected ? impersonatesKnownToken(selected.token) : null;
   // 预估要用真实的收款地址：ERC-20 转给未初始化的地址 gas 更高
   const quoteRequest: SendRequest | undefined =
     address && selected && addressValid
@@ -524,7 +530,7 @@ function SendForm({
             <DetailRow label={t("send.eta")} value={t("send.etaValue")} />
             <DetailRow label={t("send.recipientGets")} value={exactAmount} />
           </Stack>
-          {usd > 1000 ? (
+          {usd === null || usd > 1000 ? (
             <Row alignItems="center" gap="$2">
               <AppIcon name="fingerprint" size={16} colorToken="warning" />
               <Body fontSize={12}>{t("send.biometricHint")}</Body>
@@ -629,7 +635,7 @@ function SendForm({
                     ? `${selected.token.symbol} · ${t("send.nativeToken")}`
                     : `${selected.token.symbol} · ${selected.token.address}`
                 }
-                tone={selected.token.verified ? undefined : "warning"}
+                tone={impersonated ? "warning" : undefined}
               />
               {/* 确认页的金额必须是签名的那个数：formatMoney 会四舍五入到两位，
                   1.009 会显示成 1.01 */}
@@ -657,13 +663,14 @@ function SendForm({
                 {t("send.confirmInWallet")}
               </Body>
             ) : null}
-            {selected.token.verified ? null : (
+            {impersonated ? (
               <Row
                 alignItems="center"
                 gap="$2"
                 padding="$3"
                 borderRadius="$4"
                 style={{ backgroundColor: `${theme.warning.val}22` }}
+                testID="send-impersonation-warning"
               >
                 <AppIcon
                   name="shield-alert-outline"
@@ -671,10 +678,12 @@ function SendForm({
                   colorToken="warning"
                 />
                 <Body flex={1} fontSize={12} color="$warning">
-                  {t("send.unverifiedWarning")}
+                  {fill(t("send.impersonationWarning"), {
+                    symbol: impersonated,
+                  })}
                 </Body>
               </Row>
-            )}
+            ) : null}
             <PrimaryButton
               disabled={send.isPending || verifying}
               onPress={() => void submit()}

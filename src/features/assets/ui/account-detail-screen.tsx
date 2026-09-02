@@ -331,7 +331,7 @@ function WalletAccount({
     chain === "all" ? undefined : chain,
   );
   const total = (balances.data?.items ?? []).reduce(
-    (sum, item) => sum + item.usdValue,
+    (sum, item) => sum + (item.usdValue ?? 0),
     0,
   );
   return (

@@ -199,8 +199,8 @@ const zhCN = {
   "send.address": "收款地址",
   "send.tokenContract": "代币合约",
   "send.nativeToken": "原生代币（无合约）",
-  "send.unverifiedWarning":
-    "这个代币不在平台已验证列表里。转出前请核对上面的合约地址，地址被换掉时符号看起来是一样的。",
+  "send.impersonationWarning":
+    "这不是平台核验的 {symbol}：它的合约地址与主流 {symbol} 不同。转出前请逐字核对上面的合约地址。",
   "send.checkAddress": "转出无法撤销。请逐字核对完整地址。",
   "send.addressPlaceholder": "粘贴或扫描地址",
   "send.paste": "粘贴",
@@ -993,8 +993,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "send.address": "Recipient address",
   "send.tokenContract": "Token contract",
   "send.nativeToken": "Native token (no contract)",
-  "send.unverifiedWarning":
-    "This token is not on the platform's verified list. Check the contract address above — a swapped address still shows the same symbol.",
+  "send.impersonationWarning":
+    "This is not the platform-verified {symbol}: its contract address differs from the mainstream {symbol}. Check the contract address above character by character before sending.",
   "send.checkAddress":
     "Transfers cannot be undone. Check the full address character by character.",
   "send.addressPlaceholder": "Paste or scan an address",

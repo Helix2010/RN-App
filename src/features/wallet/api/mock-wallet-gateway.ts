@@ -189,16 +189,17 @@ export class MockWalletGateway implements WalletGateway {
           if (!token) return null;
           if (chain && token.chain !== chain) return null;
           const amount = money(raw, token.decimals, token.symbol);
-          const price = REFERENCE_PRICES_USD[key] ?? 0;
+          const price = REFERENCE_PRICES_USD[key];
           return {
             token,
             amount,
-            usdValue: toApproxNumber(amount) * price,
+            usdValue:
+              price === undefined ? null : toApproxNumber(amount) * price,
             change24hPct: mockChange(key),
           } satisfies TokenBalance;
         })
         .filter((item): item is TokenBalance => item !== null)
-        .sort((a, b) => b.usdValue - a.usdValue);
+        .sort((a, b) => (b.usdValue ?? -1) - (a.usdValue ?? -1));
       return { items, unavailable: [] };
     });
   }

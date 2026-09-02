@@ -47,6 +47,9 @@ function balance(overrides: {
 
 async function openConfirm(options: {
   verified: boolean;
+  /** 缺省是主流 USDT 的合约；冒名用例传一个别的地址 */
+  address?: string;
+  symbol?: string;
   prepare?: (gateways: Gateways) => void;
 }) {
   const gateways = createTestGateways();
@@ -54,8 +57,8 @@ async function openConfirm(options: {
   gateways.wallet.getBalances = jest.fn(async () =>
     snapshot([
       balance({
-        address: USDT_BSC,
-        symbol: "USDT",
+        address: options.address ?? USDT_BSC,
+        symbol: options.symbol ?? "USDT",
         verified: options.verified,
       }),
     ]),
@@ -103,21 +106,36 @@ describe("SendScreen confirmation", () => {
     expect(screen.getByText(/· 56$/)).toBeTruthy();
   });
 
-  it("warns when the token is not on the verified list", async () => {
-    const { runtime } = await openConfirm({ verified: false });
+  it("warns when a token borrows a mainstream symbol at a different contract", async () => {
+    // 自称 USDT 却不是主流 USDT 的合约：白名单唯一该出声的场景
+    await openConfirm({
+      verified: false,
+      address: "0x000000000000000000000000000000000000bEEF",
+    });
 
     await waitFor(() =>
-      expect(
-        screen.getByText(runtime.t("send.unverifiedWarning")),
-      ).toBeTruthy(),
+      expect(screen.getByTestId("send-impersonation-warning")).toBeTruthy(),
     );
+    expect(screen.getByText(/不是平台核验的 USDT/)).toBeTruthy();
   });
 
-  it("stays quiet for a verified token", async () => {
-    const { runtime } = await openConfirm({ verified: true });
+  it("stays quiet for a tenant token that is simply not on the list", async () => {
+    // 租户上的币和租户一样可信：不在白名单里本身不是问题，不贴"未验证"
+    await openConfirm({
+      verified: false,
+      address: "0x000000000000000000000000000000000000bEEF",
+      symbol: "CAKE",
+    });
+
+    await waitFor(() => expect(screen.getByText(/CAKE ·/)).toBeTruthy());
+    expect(screen.queryByTestId("send-impersonation-warning")).toBeNull();
+  });
+
+  it("stays quiet for the verified mainstream contract", async () => {
+    await openConfirm({ verified: true });
 
     await waitFor(() => expect(screen.getByText(/USDT ·/)).toBeTruthy());
-    expect(screen.queryByText(runtime.t("send.unverifiedWarning"))).toBeNull();
+    expect(screen.queryByTestId("send-impersonation-warning")).toBeNull();
   });
 });
 

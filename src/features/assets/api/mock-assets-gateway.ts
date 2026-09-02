@@ -21,9 +21,13 @@ export class MockAssetsGateway implements AssetsGateway {
         : Promise.resolve(null),
     ]);
     const holdings = snapshot.items;
-    const walletUsd = holdings.reduce((sum, item) => sum + item.usdValue, 0);
+    // 没有参考价的币不进合计：合计是"已知估值之和"，不是把不知道的当 0
+    const walletUsd = holdings.reduce(
+      (sum, item) => sum + (item.usdValue ?? 0),
+      0,
+    );
     const walletChange = holdings.reduce(
-      (sum, item) => sum + (item.usdValue * item.change24hPct) / 100,
+      (sum, item) => sum + ((item.usdValue ?? 0) * item.change24hPct) / 100,
       0,
     );
     const chains = new Set(holdings.map((item) => item.token.chain)).size;

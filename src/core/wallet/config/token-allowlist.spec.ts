@@ -1,5 +1,6 @@
 import {
   allowlistedAddresses,
+  impersonatesKnownToken,
   trustedTokens,
   verifyAgainstAllowlist,
 } from "./token-allowlist";
@@ -195,5 +196,52 @@ describe("trustedTokens", () => {
     ]);
 
     expect(token?.token.verified).toBe(true);
+  });
+});
+
+describe("impersonatesKnownToken", () => {
+  it("flags a contract that calls itself USDT but is not the mainstream USDT", () => {
+    expect(
+      impersonatesKnownToken({
+        chain: "bsc",
+        address: "0x000000000000000000000000000000000000bEEF",
+        symbol: "usdt",
+      }),
+    ).toBe("USDT");
+  });
+
+  it("flags a contract that borrows the native coin's symbol", () => {
+    expect(
+      impersonatesKnownToken({
+        chain: "eth",
+        address: "0x000000000000000000000000000000000000bEEF",
+        symbol: "ETH",
+      }),
+    ).toBe("ETH");
+  });
+
+  it("leaves the real contract, the native coin and ordinary tenant tokens alone", () => {
+    // 不在白名单里本身不是问题：租户上的币和租户一样可信
+    expect(
+      impersonatesKnownToken({
+        chain: "bsc",
+        address: "0x55d398326f99059fF775485246999027B3197955",
+        symbol: "USDT",
+      }),
+    ).toBeNull();
+    expect(
+      impersonatesKnownToken({
+        chain: "bsc",
+        address: "native",
+        symbol: "BNB",
+      }),
+    ).toBeNull();
+    expect(
+      impersonatesKnownToken({
+        chain: "bsc",
+        address: "0x000000000000000000000000000000000000bEEF",
+        symbol: "CAKE",
+      }),
+    ).toBeNull();
   });
 });

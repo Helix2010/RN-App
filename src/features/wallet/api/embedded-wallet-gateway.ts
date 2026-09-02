@@ -18,6 +18,7 @@ import {
   deliveredTokens,
   enabledChains,
   isChainEnabled,
+  isTestnetChain,
   nativeDisplayDecimals,
   onchainSendsEnabled,
 } from "../../../core/wallet/config/wallet-runtime-config";
@@ -448,7 +449,7 @@ export class EmbeddedWalletGateway implements WalletGateway {
         // 按符号取价会让一个假币按 4500 美元估值，进而影响大额验证阈值与总额
         usdValue: token.verified
           ? toApproxNumber(amount) * referencePriceForSymbol(token.symbol)
-          : 0,
+          : null,
         change24hPct: 0,
       });
     }
@@ -462,12 +463,15 @@ export class EmbeddedWalletGateway implements WalletGateway {
     if (index >= 0) {
       const previous = result[index] as TokenBalance;
       const held = toApproxNumber(previous.amount);
-      const price = held > 0 ? previous.usdValue / held : 0;
+      const price =
+        previous.usdValue !== null && held > 0
+          ? previous.usdValue / held
+          : null;
       result[index] = {
         ...previous,
         token: { ...previous.token, displayDecimals },
         amount,
-        usdValue: toApproxNumber(amount) * price,
+        usdValue: price === null ? null : toApproxNumber(amount) * price,
       };
     } else {
       result.push({
@@ -482,7 +486,8 @@ export class EmbeddedWalletGateway implements WalletGateway {
           verified: true,
         },
         amount,
-        usdValue: 0,
+        // 测试链的币没有价值，是真的 0；主网原生币没有参考价，就是不知道
+        usdValue: isTestnetChain(id) ? 0 : null,
         change24hPct: 0,
       });
     }
