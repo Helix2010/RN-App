@@ -77,7 +77,14 @@ export type TokenRef = {
   address: string;
   symbol: string;
   name: string;
+  /** 链上精度（协议事实）：最小单位与人类可读金额之间的换算只认它 */
   decimals: number;
+  /**
+   * 展示精度：列表、余额、输入框保留几位小数，向下截断。
+   * 只影响"显示成什么样"，任何金额换算都不许读它——拿它去算最小单位，
+   * USDT 转 1.005 就会静默变成 1.00。永远 ≤ decimals。
+   */
+  displayDecimals: number;
   /** Logo 加载失败时的确定性底色 */
   logoColor: string;
   verified: boolean;

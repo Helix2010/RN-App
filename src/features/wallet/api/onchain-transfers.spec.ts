@@ -55,6 +55,7 @@ function request(overrides: Partial<SendRequest> = {}): SendRequest {
       symbol: "USDT",
       name: "USDT",
       decimals: 18,
+      displayDecimals: 2,
       logoColor: "#26A17B",
       verified: true,
     },
@@ -171,6 +172,7 @@ describe("OnchainTransfers send", () => {
             symbol: "ETH",
             name: "ETH",
             decimals: 18,
+            displayDecimals: 4,
             logoColor: "#627EEA",
             verified: true,
           },
@@ -256,6 +258,7 @@ describe("OnchainTransfers quote", () => {
           symbol: "BNB",
           name: "BNB",
           decimals: 18,
+          displayDecimals: 4,
           logoColor: "#F0B90B",
           verified: true,
         },
@@ -340,5 +343,35 @@ describe("OnchainTransfers progress", () => {
     expect(onchain.listTransfers(FROM)).toHaveLength(1);
     expect(onchain.listTransfers(FROM.toLowerCase())).toHaveLength(1);
     expect(onchain.listTransfers(TO)).toHaveLength(0);
+  });
+});
+
+describe("OnchainTransfers token balances", () => {
+  it("asks the chain for exactly the delivered contracts, in one call", async () => {
+    deliverBscRpc();
+    const { chain, calls } = fakeChain();
+    const onchain = new OnchainTransfers({
+      reason: "r",
+      createChain: () => chain,
+    });
+
+    const balances = await onchain.tokenBalances("bsc", FROM, [USDT]);
+
+    // 目录该问哪些是网关的事，这一层只负责把这批合约原样问链
+    expect(calls.getTokenBalances).toHaveBeenCalledWith(FROM, [USDT]);
+    expect(balances.get(USDT.toLowerCase())).toBe(10n ** 20n);
+  });
+
+  it("refuses to guess an endpoint for a chain that got none", async () => {
+    deliverBscRpc();
+    const { chain } = fakeChain();
+    const onchain = new OnchainTransfers({
+      reason: "r",
+      createChain: () => chain,
+    });
+
+    await expect(onchain.tokenBalances("eth", FROM, [USDT])).rejects.toThrow(
+      /no rpc endpoint/,
+    );
   });
 });

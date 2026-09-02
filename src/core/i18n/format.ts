@@ -1,4 +1,9 @@
-import { toApproxNumber, type Money } from "../money/money";
+import {
+  isNegative,
+  toApproxNumber,
+  toBigInt,
+  type Money,
+} from "../money/money";
 
 /**
  * 展示格式化层：所有把数值变成文案的逻辑集中在这里。
@@ -83,6 +88,65 @@ export function formatMoney(
     minimumFractionDigits: approx >= 1 ? Math.min(2, maxFraction) : 0,
   }).format(approx);
   return options?.withSymbol === false ? text : `${text} ${value.symbol}`;
+}
+
+/**
+ * 当前 locale 的千分位与小数点符号。
+ *
+ * 从 Intl 的实际输出里取而不写死：和 formatMoney 用的是同一套规则，将来加 locale
+ * 不用改这里。`formatToParts` 在 Hermes 上不保证可用，所以用一个样本数反推。
+ */
+function numberSeparators(locale: string): { group: string; decimal: string } {
+  const sample = new Intl.NumberFormat(intlLocale(locale)).format(1234.5);
+  const match = /^1(\D*)234(\D+)5$/.exec(sample);
+  return { group: match?.[1] ?? ",", decimal: match?.[2] ?? "." };
+}
+
+/** 整数位每三位插一个分隔符；输入是纯数字串，长度不受 Number 精度限制。 */
+function groupDigits(digits: string, separator: string): string {
+  return digits.replace(/\B(?=(\d{3})+$)/g, separator);
+}
+
+/**
+ * 代币金额：按展示精度**向下截断**后再本地化。
+ *
+ * 截断而不是四舍五入：四舍五入会把 0.999 显示成 1.00——用户看到"1.00 USDT"却
+ * 转不出 1 个。截断全程用 bigint，不经过浮点；`value.decimals` 是链上精度，
+ * `displayDecimals` 只决定显示几位，两者在这里相遇但绝不混用。
+ *
+ * 非零但不足一个最小展示单位时显示 `< 0.0001 BNB` 而不是 `0 BNB`：手续费和
+ * 尘埃余额都会落到这里，显示成 0 会让用户以为不要钱 / 没有钱。
+ * 末尾的 0 不保留（"100 USDT"而不是"100.00 USDT"），0 就显示 0。
+ */
+export function formatTokenAmount(
+  value: Money,
+  displayDecimals: number,
+  locale: string,
+  options?: { withSymbol?: boolean },
+): string {
+  // 展示精度永远 ≤ 链上精度；配置层已断言，这里再夹一次，别让一个坏值把界面炸掉
+  const digits = Math.max(
+    0,
+    Math.min(Math.trunc(displayDecimals), value.decimals),
+  );
+  const negative = isNegative(value);
+  const abs = negative ? -toBigInt(value) : toBigInt(value);
+  // 整数除法天然向下：丢掉展示精度之外的位
+  const shown = abs / 10n ** BigInt(value.decimals - digits);
+  const { group, decimal } = numberSeparators(locale);
+  const suffix = options?.withSymbol === false ? "" : ` ${value.symbol}`;
+  if (shown === 0n && abs !== 0n) {
+    const unit = digits === 0 ? "1" : `0${decimal}${"0".repeat(digits - 1)}1`;
+    return negative ? `> -${unit}${suffix}` : `< ${unit}${suffix}`;
+  }
+  const base = 10n ** BigInt(digits);
+  const intText = groupDigits((shown / base).toString(), group);
+  const frac = (shown % base)
+    .toString()
+    .padStart(digits, "0")
+    .replace(/0+$/, "");
+  const text = frac ? `${intText}${decimal}${frac}` : intText;
+  return `${negative ? "-" : ""}${text}${suffix}`;
 }
 
 /** 紧凑数字：1.2K / 3.4M / 5.1B（Hermes Intl 对 compact 支持不完整，手动实现，跨引擎一致）。 */

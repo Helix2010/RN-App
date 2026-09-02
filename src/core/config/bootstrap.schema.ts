@@ -158,11 +158,31 @@ export const bootstrapSchema = z.object({
           }),
         )
         .optional(),
+      // 代币目录按租户下发（全局 + 租户覆盖，服务端已合并）。老服务端没有这段时
+      // 按空处理，不能因为版本落后就让整个 bootstrap 解析失败。
+      // 这里刻意没有 verified：它只能由客户端白名单授予（token-allowlist.ts）。
+      tokens: z
+        .array(
+          z.object({
+            chain: chainIdSchema,
+            // "native" 或 EIP-55 地址；合法性是客户端自己能判断的事实，
+            // 在 wallet-runtime-config 里断言，这里不拒绝整份配置
+            address: z.string(),
+            symbol: z.string().min(1).max(32),
+            name: z.string().max(128).default(""),
+            // 链上精度，协议事实；displayDecimals ≤ decimals 的关系同样在应用时断言
+            decimals: z.number().int().min(0).max(36),
+            displayDecimals: z.number().int().min(0).max(36),
+            logoColor: z.string().default(""),
+          }),
+        )
+        .default([]),
     })
     .default({
       walletConnectProjectId: "",
       onchainSends: false,
       chains: ["bsc", "eth", "base"],
+      tokens: [],
     }),
   features: z.object({
     updateCenter: z.boolean(),

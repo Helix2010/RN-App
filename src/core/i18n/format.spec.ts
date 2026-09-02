@@ -1,4 +1,4 @@
-import { fromDecimal } from "../money/money";
+import { fromDecimal, money } from "../money/money";
 import {
   formatCents,
   formatCountdown,
@@ -6,6 +6,7 @@ import {
   formatPercent,
   formatProbability,
   formatTimeUntil,
+  formatTokenAmount,
   formatTokenPrice,
   shortenAddress,
   splitLeadingZeros,
@@ -68,5 +69,64 @@ describe("format helpers", () => {
     );
     expect(pickTranslation({ en: "Crypto" }, "zh-CN")).toBe("Crypto");
     expect(pickTranslation(undefined, "zh-CN")).toBe("");
+  });
+});
+
+describe("formatTokenAmount", () => {
+  it("truncates to the display precision instead of rounding", () => {
+    // 四舍五入会把 0.999 显示成 1.00，而 1 个转不出
+    expect(
+      formatTokenAmount(fromDecimal("0.999", 18, "USDT"), 2, "en-US"),
+    ).toBe("0.99 USDT");
+    expect(
+      formatTokenAmount(fromDecimal("1234567.89999", 18, "USDT"), 2, "en-US"),
+    ).toBe("1,234,567.89 USDT");
+    expect(
+      formatTokenAmount(fromDecimal("1234567.89999", 18, "USDT"), 2, "zh-CN"),
+    ).toBe("1,234,567.89 USDT");
+    // 末尾的 0 不保留；0 就是 0
+    expect(formatTokenAmount(fromDecimal("100", 18, "USDT"), 2, "en-US")).toBe(
+      "100 USDT",
+    );
+    expect(formatTokenAmount(fromDecimal("0", 18, "USDT"), 2, "en-US")).toBe(
+      "0 USDT",
+    );
+    expect(
+      formatTokenAmount(fromDecimal("0.5", 18, "BNB"), 4, "en-US", {
+        withSymbol: false,
+      }),
+    ).toBe("0.5");
+  });
+
+  it("says '< one display unit' for dust instead of showing zero", () => {
+    expect(
+      formatTokenAmount(fromDecimal("0.001", 18, "USDT"), 2, "en-US"),
+    ).toBe("< 0.01 USDT");
+    // 手续费 0.00003 BNB 按 4 位截成 0，显示成 0 会让用户以为不要钱
+    expect(
+      formatTokenAmount(money(30_000_000_000_000n, 18, "BNB"), 4, "en-US"),
+    ).toBe("< 0.0001 BNB");
+    expect(formatTokenAmount(money(1n, 18, "BNB"), 0, "en-US")).toBe("< 1 BNB");
+    expect(formatTokenAmount(money(-1n, 18, "BNB"), 4, "en-US")).toBe(
+      "> -0.0001 BNB",
+    );
+  });
+
+  it("never shows more digits than the chain has, and keeps bigint precision", () => {
+    // 展示精度大于链上精度时夹到链上精度
+    expect(formatTokenAmount(money(1234567n, 6, "USDC"), 8, "en-US")).toBe(
+      "1.234567 USDC",
+    );
+    // 整数位超过 Number 的安全范围也一位不丢
+    expect(
+      formatTokenAmount(
+        money(123456789012345678901234n, 6, "PEPE"),
+        2,
+        "en-US",
+      ),
+    ).toBe("123,456,789,012,345,678.9 PEPE");
+    expect(formatTokenAmount(money(-1500000n, 6, "USDC"), 2, "en-US")).toBe(
+      "-1.5 USDC",
+    );
   });
 });

@@ -90,3 +90,73 @@ describe("bootstrapSchema", () => {
     expect(parsed.data.update.full.releaseId).toBe("rel_latest");
   });
 });
+
+describe("bootstrapSchema wallet tokens", () => {
+  const delivered = {
+    chain: "bsc" as const,
+    address: "0x55d398326f99059fF775485246999027B3197955",
+    symbol: "USDT",
+    name: "Tether USD",
+    decimals: 18,
+    displayDecimals: 2,
+    logoColor: "#26A17B",
+  };
+
+  it("treats a missing catalogue as empty so an older server still parses", () => {
+    // 不能因为服务端版本落后就让整个 bootstrap 解析失败
+    const config = createFallbackConfig("zh-CN");
+    const parsed = bootstrapSchema.safeParse({
+      ...config,
+      wallet: { walletConnectProjectId: "", chains: ["bsc"] },
+    });
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.wallet.tokens).toEqual([]);
+  });
+
+  it("accepts the delivered token shape verbatim", () => {
+    const config = createFallbackConfig("zh-CN");
+    const parsed = bootstrapSchema.safeParse({
+      ...config,
+      wallet: {
+        ...config.wallet,
+        tokens: [
+          {
+            chain: "bsc",
+            address: "native",
+            symbol: "BNB",
+            decimals: 18,
+            displayDecimals: 4,
+          },
+          delivered,
+        ],
+      },
+    });
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    // name / logoColor 可省略，缺省为空串；verified 不在下发里
+    expect(parsed.data.wallet.tokens[0]).toEqual({
+      chain: "bsc",
+      address: "native",
+      symbol: "BNB",
+      name: "",
+      decimals: 18,
+      displayDecimals: 4,
+      logoColor: "",
+    });
+    expect(parsed.data.wallet.tokens[1]).toEqual(delivered);
+  });
+
+  it("rejects a token whose precision or symbol is outside the protocol range", () => {
+    const config = createFallbackConfig("zh-CN");
+    const withToken = (token: object) =>
+      bootstrapSchema.safeParse({
+        ...config,
+        wallet: { ...config.wallet, tokens: [token] },
+      }).success;
+    expect(withToken({ ...delivered, decimals: 37 })).toBe(false);
+    expect(withToken({ ...delivered, decimals: 1.5 })).toBe(false);
+    expect(withToken({ ...delivered, symbol: "" })).toBe(false);
+    expect(withToken({ ...delivered, chain: "polygon" })).toBe(false);
+  });
+});

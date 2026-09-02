@@ -342,11 +342,13 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
       setNotificationStatus,
     );
   }, [config, snapshot, themePreference]);
-  // 钱包参数（WalletConnect projectId / 链集合）由服务端按租户下发；
-  // 应用后要让连接器列表重新读一次，否则外部钱包会一直停在"未启用"
+  // 钱包参数（WalletConnect projectId / 链集合 / 代币目录）由服务端按租户下发；
+  // 应用后要让连接器列表重新读一次，否则外部钱包会一直停在"未启用"；
+  // 真链上的代币列表来自目录，目录变了余额列表也要重读
   useEffect(() => {
     applyDeliveredWalletConfig(config.wallet);
     void queryClient.invalidateQueries({ queryKey: ["wallet-connectors"] });
+    void queryClient.invalidateQueries({ queryKey: ["wallet-balances"] });
   }, [config.wallet, queryClient]);
   useEffect(
     () =>

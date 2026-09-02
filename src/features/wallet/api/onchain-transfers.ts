@@ -72,6 +72,20 @@ export class OnchainTransfers {
     return this.serviceFor(chain).chain.getNativeBalance(address);
   }
 
+  /**
+   * 一批代币的链上余额（Multicall3，一次请求）。
+   *
+   * 目录来自服务端下发，这一层只负责问链、不判断该问哪些；结果键是小写合约地址，
+   * 查不到的合约不在结果里，交给网关按缺失处理。
+   */
+  async tokenBalances(
+    chain: ChainId,
+    address: string,
+    contracts: string[],
+  ): Promise<Map<string, bigint>> {
+    return this.serviceFor(chain).chain.getTokenBalances(address, contracts);
+  }
+
   async send(
     request: SendRequest,
     signer: WalletSigner,

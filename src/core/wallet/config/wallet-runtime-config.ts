@@ -1,4 +1,5 @@
-import { CHAINS, type ChainId } from "../../gateways/types";
+import { CHAINS, type ChainId, type TokenRef } from "../../gateways/types";
+import { classifyEvmAddress } from "../address";
 
 /**
  * 服务端在 bootstrap 里下发的钱包运行时参数。
@@ -19,13 +20,34 @@ type WalletNetwork = {
   testnet: boolean;
 };
 
+/**
+ * 服务端下发的代币目录条目：就是 `TokenRef` 去掉 `verified`。
+ *
+ * verified 不在下发里、下发了也不采纳——它只能由客户端白名单授予
+ * （token-allowlist.ts），否则一个被攻破的服务端能把攻击者的合约标成"已验证"。
+ */
+export type DeliveredToken = Omit<TokenRef, "verified">;
+
 type DeliveredWalletConfig = {
   walletConnectProjectId: string;
   chains: ChainId[];
   networks: WalletNetwork[];
   /** 转出是否真的上链。默认关：演示账本 */
   onchainSends: boolean;
+  /** 代币目录（含原生币条目）；老服务端不下发时为空 */
+  tokens: DeliveredToken[];
 };
+
+/** 原生币的哨兵地址，和 TokenRef 的约定一致。 */
+const NATIVE = "native";
+
+/**
+ * 目录没下发原生币条目时的展示精度。
+ *
+ * 平台初始数据里原生币统一 4 位；这里只是兜底，让老服务端下的余额与手续费也有
+ * 一个确定的显示位数，而不是各处自己猜。
+ */
+const FALLBACK_NATIVE_DISPLAY_DECIMALS = 4;
 
 /**
  * 每条链的 EIP-155 chain id。
@@ -108,11 +130,53 @@ function withHttpsEndpointsOnly(networks: WalletNetwork[]): WalletNetwork[] {
   });
 }
 
+/**
+ * 代币目录的客户端断言。服务端已经校验过一遍，这里是第二层——和 chainId、https
+ * 一样，都是"客户端自己就能判断的事实"，不需要任何配置知识：
+ *
+ * 1. `displayDecimals > decimals` 截到 `decimals`。展示精度只影响显示，超过链上
+ *    精度的位数是不存在的数字；截掉比拒绝整条更合适，用户至少还能看到这个币。
+ * 2. 地址既不是 `native` 也不是合法地址的条目丢弃并留痕。一个错的地址不会让用户
+ *    丢钱（余额查询查不到、转出会被 ethers 拦），但它会在列表里占一行并且永远是 0。
+ * 3. 同 (chain, address) 重复取首条。服务端合并时应已去重，这里只是防御。
+ *
+ * logoColor 为空时用链的主题色：它直接落到 backgroundColor 上，空串没有意义。
+ */
+function withTrustedTokens(tokens: DeliveredToken[]): DeliveredToken[] {
+  const seen = new Set<string>();
+  const trusted: DeliveredToken[] = [];
+  for (const token of tokens) {
+    const address = token.address.trim();
+    if (address !== NATIVE && classifyEvmAddress(address) !== "valid") {
+      console.warn(
+        `[wallet] 丢弃 ${token.chain} 上的代币 ${token.symbol}：地址 ${token.address} 不是合法的 EIP-55 地址`,
+      );
+      continue;
+    }
+    const key = `${token.chain}:${address.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const displayDecimals = Math.min(token.displayDecimals, token.decimals);
+    if (displayDecimals !== token.displayDecimals)
+      console.warn(
+        `[wallet] ${token.chain} 上的 ${token.symbol} 展示精度 ${token.displayDecimals} 超过链上精度 ${token.decimals}，截到 ${displayDecimals}`,
+      );
+    trusted.push({
+      ...token,
+      address,
+      displayDecimals,
+      logoColor: token.logoColor || CHAINS[token.chain].color,
+    });
+  }
+  return trusted;
+}
+
 export function applyDeliveredWalletConfig(config: {
   walletConnectProjectId: string;
   chains?: ChainId[];
   networks?: WalletNetwork[];
   onchainSends?: boolean;
+  tokens?: DeliveredToken[];
 }): void {
   const trustedNetworks = config.networks
     ? withHttpsEndpointsOnly(withTrustedChainIds(config.networks))
@@ -126,12 +190,14 @@ export function applyDeliveredWalletConfig(config: {
     chains,
     networks: trustedNetworks ?? fallbackNetworks(chains),
     onchainSends: config.onchainSends === true,
+    tokens: config.tokens ? withTrustedTokens(config.tokens) : [],
   };
   const changed =
     delivered === null ||
     delivered.walletConnectProjectId !== next.walletConnectProjectId ||
     delivered.onchainSends !== next.onchainSends ||
-    JSON.stringify(delivered.networks) !== JSON.stringify(next.networks);
+    JSON.stringify(delivered.networks) !== JSON.stringify(next.networks) ||
+    JSON.stringify(delivered.tokens) !== JSON.stringify(next.tokens);
   delivered = next;
   if (changed) for (const listener of listeners) listener();
 }
@@ -202,6 +268,27 @@ export function isTestnetChain(chain: ChainId): boolean {
 /** 链层（余额 / 广播）用的 RPC 端点；未下发时为空，调用方必须处理不可用。 */
 export function rpcUrlsFor(chain: ChainId): string[] {
   return networkFor(chain).rpcUrls;
+}
+
+/**
+ * 这条链上服务端下发的代币目录（含原生币条目），已经过客户端断言。
+ *
+ * 未下发时为空——真链上的代币列表**只**来自这里，不回落到演示夹具：
+ * 真链上显示一个演示币，用户会拿着并不存在的余额去转出。
+ */
+export function deliveredTokens(chain: ChainId): DeliveredToken[] {
+  return (delivered?.tokens ?? []).filter((token) => token.chain === chain);
+}
+
+/**
+ * 原生币的展示精度：手续费、原生币余额都按它显示。
+ * 目录里的 native 条目说了算；没下发时按平台约定的 4 位。
+ */
+export function nativeDisplayDecimals(chain: ChainId): number {
+  return (
+    deliveredTokens(chain).find((token) => token.address === NATIVE)
+      ?.displayDecimals ?? FALLBACK_NATIVE_DISPLAY_DECIMALS
+  );
 }
 
 /** 仅供测试重置模块级状态。 */

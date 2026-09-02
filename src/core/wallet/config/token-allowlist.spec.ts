@@ -125,6 +125,7 @@ describe("trustedTokens", () => {
         symbol: overrides.symbol,
         name: overrides.symbol,
         decimals: overrides.decimals,
+        displayDecimals: 2,
         logoColor: "#26A17B",
         verified: overrides.verified,
       },

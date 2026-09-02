@@ -1701,6 +1701,8 @@ export function createFallbackConfig(locale: SupportedLocale): BootstrapConfig {
           testnet: false,
         },
       ],
+      // 内嵌配置没有代币目录：演示账本靠夹具，真链上的目录只能来自服务端下发
+      tokens: [],
     },
     branding: {
       schemaVersion: 1,

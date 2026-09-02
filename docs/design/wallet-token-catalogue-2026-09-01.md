@@ -31,7 +31,7 @@
 ## 三、表结构
 
 ```sql
-CREATE TABLE IF NOT EXISTS chain_token (
+CREATE TABLE IF NOT EXISTS chain_token_catalog (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '代币主键',
     tenant_id BIGINT NOT NULL DEFAULT 0 COMMENT '租户ID，0表示平台全局代币',
     chain VARCHAR(32) NOT NULL COMMENT '链 id，与平台链目录一致：bsc/eth/base/op-sepolia',
@@ -48,12 +48,12 @@ CREATE TABLE IF NOT EXISTS chain_token (
     mtime DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '修改时间',
     deleted TINYINT(1) NOT NULL DEFAULT 0 COMMENT '软删除标记',
     PRIMARY KEY(id),
-    UNIQUE KEY uk_chain_token(chain, contract_address, tenant_id),
-    KEY ix_chain_token_tenant(tenant_id, chain, enabled, deleted)
+    UNIQUE KEY uk_chain_token_catalog(chain, contract_address, tenant_id),
+    KEY ix_chain_token_catalog_tenant(tenant_id, chain, enabled, deleted)
 ) ENGINE=InnoDB COMMENT='全局与租户代币目录'
 ```
 
-迁移编号取 **28**（当前最大 27 = `release_mandatory_flag`）。上一版里的 `source` 列去掉了：
+迁移编号取 **28**（当前最大 27 = `release_mandatory_flag`），表名 `chain_token_catalog`。乐观锁锚点是 `app_configs` 里独立的 `tokens` 键（照多语言用 `languages` 键的先例）：复用 bootstrap 的版本会让还在继承全局配置的租户因加一个币就被迫复制一份配置；首次写入 `expectedVersion=0`。上一版里的 `source` 列去掉了：
 元数据只能来自链上，不存在"人工录入"这个来源，留着这一列只会诱导人去开一个手填入口。
 
 ### 两个精度是两回事，必须分开命名

@@ -58,6 +58,7 @@ export const TOKENS: Record<string, TokenRef> = {
     symbol: "BNB",
     name: "BNB",
     decimals: 18,
+    displayDecimals: 4,
     logoColor: "#F0B90B",
     verified: true,
   },
@@ -67,6 +68,7 @@ export const TOKENS: Record<string, TokenRef> = {
     symbol: "USDT",
     name: "Tether USD",
     decimals: 18,
+    displayDecimals: 2,
     logoColor: "#26A17B",
     verified: true,
   },
@@ -76,6 +78,7 @@ export const TOKENS: Record<string, TokenRef> = {
     symbol: "USDC",
     name: "USD Coin",
     decimals: 18,
+    displayDecimals: 2,
     logoColor: "#2775CA",
     verified: true,
   },
@@ -85,6 +88,7 @@ export const TOKENS: Record<string, TokenRef> = {
     symbol: "PEPE",
     name: "Pepe",
     decimals: 18,
+    displayDecimals: 4,
     logoColor: "#4CAF50",
     verified: true,
   },
@@ -94,6 +98,7 @@ export const TOKENS: Record<string, TokenRef> = {
     symbol: "CAKE",
     name: "PancakeSwap",
     decimals: 18,
+    displayDecimals: 4,
     logoColor: "#1E88E5",
     verified: true,
   },
@@ -103,6 +108,7 @@ export const TOKENS: Record<string, TokenRef> = {
     symbol: "ETH",
     name: "Ether",
     decimals: 18,
+    displayDecimals: 4,
     logoColor: "#627EEA",
     verified: true,
   },
@@ -112,6 +118,7 @@ export const TOKENS: Record<string, TokenRef> = {
     symbol: "USDC",
     name: "USD Coin",
     decimals: 6,
+    displayDecimals: 2,
     logoColor: "#2775CA",
     verified: true,
   },
@@ -121,6 +128,7 @@ export const TOKENS: Record<string, TokenRef> = {
     symbol: "UNI",
     name: "Uniswap",
     decimals: 18,
+    displayDecimals: 4,
     logoColor: "#FF007A",
     verified: true,
   },
@@ -130,6 +138,7 @@ export const TOKENS: Record<string, TokenRef> = {
     symbol: "MOG",
     name: "Mog Coin",
     decimals: 18,
+    displayDecimals: 4,
     logoColor: "#E64980",
     verified: false,
   },
@@ -139,6 +148,7 @@ export const TOKENS: Record<string, TokenRef> = {
     symbol: "ETH",
     name: "Ether",
     decimals: 18,
+    displayDecimals: 4,
     logoColor: "#627EEA",
     verified: true,
   },
@@ -148,6 +158,7 @@ export const TOKENS: Record<string, TokenRef> = {
     symbol: "AERO",
     name: "Aerodrome",
     decimals: 18,
+    displayDecimals: 4,
     logoColor: "#0052FF",
     verified: true,
   },
@@ -157,6 +168,7 @@ export const TOKENS: Record<string, TokenRef> = {
     symbol: "ZORA",
     name: "Zora",
     decimals: 18,
+    displayDecimals: 4,
     logoColor: "#7C5CFF",
     verified: false,
   },
@@ -177,6 +189,18 @@ export const REFERENCE_PRICES_USD: Record<string, number> = {
   AERO: 0.912,
   ZORA: 0.0412,
 };
+
+/**
+ * 按 symbol 找演示价。下发目录里的代币没有夹具 key，只能按符号对上
+ * （"USDT.bsc" → USDT）；找不到按 0——测试链的币本来就没有价值。
+ * 价格源另议，这只是第一版让真链余额有个估值的占位。
+ */
+export function referencePriceForSymbol(symbol: string): number {
+  const hit = Object.entries(REFERENCE_PRICES_USD).find(
+    ([key]) => key.split(".")[0] === symbol,
+  );
+  return hit?.[1] ?? 0;
+}
 
 export function tokenKey(token: TokenRef): string {
   const found = Object.entries(TOKENS).find(

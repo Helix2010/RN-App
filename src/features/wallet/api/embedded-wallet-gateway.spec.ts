@@ -17,7 +17,12 @@ import {
 import type { ChainId } from "../../../core/gateways/types";
 import { money } from "../../../core/money/money";
 import type { WalletSigner } from "../../../core/wallet/signer/types";
-import type { SendRequest } from "../model/wallet";
+import {
+  applyDeliveredWalletConfig,
+  resetDeliveredWalletConfig,
+  type DeliveredToken,
+} from "../../../core/wallet/config/wallet-runtime-config";
+import type { SendRequest, TokenBalance } from "../model/wallet";
 
 const PHRASE =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
@@ -55,6 +60,7 @@ function fakeOnchain(available: ChainId[]) {
         : null,
     listTransfers: () => [],
     nativeBalance: async () => 0n,
+    tokenBalances: async () => new Map(),
   };
   return { port, sent };
 }
@@ -69,6 +75,7 @@ function sendRequest(chain: ChainId): SendRequest {
       symbol: "BNB",
       name: "BNB",
       decimals: 18,
+      displayDecimals: 4,
       logoColor: "#F0B90B",
       verified: true,
     },
@@ -457,6 +464,7 @@ describe("EmbeddedWalletGateway token trust", () => {
           symbol: "USDT",
           name: "USDT",
           decimals: 18,
+          displayDecimals: 2,
           logoColor: "#26A17B",
           verified: true,
         },
@@ -488,6 +496,7 @@ describe("EmbeddedWalletGateway token trust", () => {
           symbol: "USDT",
           name: "USDT",
           decimals: 6,
+          displayDecimals: 2,
           logoColor: "#26A17B",
           verified: true,
         },
@@ -577,5 +586,161 @@ describe("EmbeddedWalletGateway native balances", () => {
     // 别把余额显示成 0 让用户以为钱没了
     expect(bnb?.amount.raw).toBe("7");
     warn.mockRestore();
+  });
+});
+
+describe("EmbeddedWalletGateway token balances", () => {
+  const USDT_BSC = "0x55d398326f99059fF775485246999027B3197955";
+  const PEPE_BSC = "0x25d887ce7a35172c62febfd67a1856f20faebb00";
+  const UNI_ETH = "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984";
+  const usdtDelivered: DeliveredToken = {
+    chain: "bsc",
+    address: USDT_BSC,
+    symbol: "USDT",
+    name: "Tether USD",
+    decimals: 18,
+    displayDecimals: 2,
+    logoColor: "#26A17B",
+  };
+
+  function deliver(tokens: DeliveredToken[]) {
+    applyDeliveredWalletConfig({
+      walletConnectProjectId: "p",
+      chains: ["bsc", "eth"],
+      tokens,
+    });
+  }
+
+  /** 演示账本里的一条：地址全小写，和夹具一致。 */
+  function demo(chain: ChainId, address: string, symbol: string): TokenBalance {
+    return {
+      token: {
+        chain,
+        address,
+        symbol,
+        name: symbol,
+        decimals: 18,
+        displayDecimals: 4,
+        logoColor: "#000000",
+        verified: true,
+      },
+      amount: money(10n ** 18n, 18, symbol),
+      usdValue: 1,
+      change24hPct: 2.5,
+    };
+  }
+
+  const symbols = (list: TokenBalance[]) =>
+    list.map((item) => item.token.symbol).sort();
+
+  afterEach(() => resetDeliveredWalletConfig());
+
+  it("replaces the demo tokens with the delivered catalogue's on-chain balances where sends are real", async () => {
+    // 真链上显示一个演示币，用户会拿着并不存在的 500 USDT 去转出，然后被"余额不足"顶回来
+    deliver([usdtDelivered]);
+    const { port } = fakeOnchain(["bsc"]);
+    port.tokenBalances = jest.fn(
+      async () => new Map([[USDT_BSC.toLowerCase(), 7n * 10n ** 18n]]),
+    );
+    const { gateway, chainData } = setup({ onchain: port });
+    jest
+      .spyOn(chainData, "getBalances")
+      .mockResolvedValue([
+        demo("bsc", "native", "BNB"),
+        demo("bsc", PEPE_BSC, "PEPE"),
+      ]);
+
+    const list = await gateway.getBalances(ADDRESS, "bsc");
+
+    // 只问下发目录里的合约；演示币 PEPE 在真链上不再出现，原生币仍在
+    expect(port.tokenBalances).toHaveBeenCalledWith("bsc", ADDRESS, [USDT_BSC]);
+    expect(symbols(list)).toEqual(["BNB", "USDT"]);
+    const usdt = list.find((item) => item.token.symbol === "USDT");
+    expect(usdt?.amount.raw).toBe((7n * 10n ** 18n).toString());
+    // 单价按演示价格表按 symbol 匹配（USDT = 1）
+    expect(usdt?.usdValue).toBeCloseTo(7);
+    // verified 仍只由客户端白名单授予；展示精度来自下发
+    expect(usdt?.token).toMatchObject({ verified: true, displayDecimals: 2 });
+  });
+
+  it("keeps the previous figures when the token query fails", async () => {
+    deliver([usdtDelivered]);
+    const { port } = fakeOnchain(["bsc"]);
+    port.tokenBalances = async () => {
+      throw new Error("node down");
+    };
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const { gateway, chainData } = setup({ onchain: port });
+    jest
+      .spyOn(chainData, "getBalances")
+      .mockResolvedValue([demo("bsc", PEPE_BSC, "PEPE")]);
+
+    const list = await gateway.getBalances(ADDRESS, "bsc");
+
+    // 别把列表清空让用户以为钱没了；和原生币的处理一致。
+    // （原生币那一条是 withOnchainNative 按既有规则补上的，与代币查询无关）
+    const pepe = list.find((item) => item.token.symbol === "PEPE");
+    expect(pepe?.amount.raw).toBe((10n ** 18n).toString());
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("leaves chains without endpoints on the demo ledger", async () => {
+    deliver([
+      usdtDelivered,
+      {
+        chain: "eth",
+        address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        symbol: "USDC",
+        name: "USD Coin",
+        decimals: 6,
+        displayDecimals: 2,
+        logoColor: "#2775CA",
+      },
+    ]);
+    const { port } = fakeOnchain(["bsc"]);
+    port.tokenBalances = jest.fn(async () => new Map());
+    const { gateway, chainData } = setup({ onchain: port });
+    jest
+      .spyOn(chainData, "getBalances")
+      .mockResolvedValue([demo("eth", UNI_ETH, "UNI")]);
+
+    const list = await gateway.getBalances(ADDRESS, "eth");
+
+    expect(symbols(list)).toEqual(["UNI"]);
+    expect(port.tokenBalances).not.toHaveBeenCalled();
+  });
+
+  it("shows only the native coin on a real chain whose catalogue is empty", async () => {
+    // 老服务端没下发目录：真链上也不能拿演示币充数
+    deliver([]);
+    const { port } = fakeOnchain(["bsc"]);
+    port.tokenBalances = jest.fn(async () => new Map());
+    const { gateway, chainData } = setup({ onchain: port });
+    jest
+      .spyOn(chainData, "getBalances")
+      .mockResolvedValue([
+        demo("bsc", "native", "BNB"),
+        demo("bsc", PEPE_BSC, "PEPE"),
+      ]);
+
+    const list = await gateway.getBalances(ADDRESS, "bsc");
+
+    expect(symbols(list)).toEqual(["BNB"]);
+  });
+
+  it("adds a delivered token the demo ledger never had, at the chain's balance", async () => {
+    deliver([usdtDelivered]);
+    const { port } = fakeOnchain(["bsc"]);
+    port.tokenBalances = async () => new Map([[USDT_BSC.toLowerCase(), 0n]]);
+    const { gateway, chainData } = setup({ onchain: port });
+    jest.spyOn(chainData, "getBalances").mockResolvedValue([]);
+
+    const list = await gateway.getBalances(ADDRESS, "bsc");
+
+    // 余额为 0 也要在列表里：目录是租户配的，不显示等于把币藏起来
+    const usdt = list.find((item) => item.token.symbol === "USDT");
+    expect(usdt?.amount.raw).toBe("0");
+    expect(usdt?.usdValue).toBe(0);
   });
 });

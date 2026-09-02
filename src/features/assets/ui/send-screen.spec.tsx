@@ -19,6 +19,9 @@ function balance(overrides: {
   address: string;
   symbol: string;
   verified: boolean;
+  /** 展示精度；缺省按稳定币的 2 位 */
+  displayDecimals?: number;
+  amount?: string;
 }): TokenBalance {
   return {
     token: {
@@ -27,10 +30,11 @@ function balance(overrides: {
       symbol: overrides.symbol,
       name: overrides.symbol,
       decimals: 18,
+      displayDecimals: overrides.displayDecimals ?? 2,
       logoColor: "#26A17B",
       verified: overrides.verified,
     },
-    amount: fromDecimal("500", 18, overrides.symbol),
+    amount: fromDecimal(overrides.amount ?? "500", 18, overrides.symbol),
     usdValue: 500,
     change24hPct: 0,
   };
@@ -289,7 +293,13 @@ describe("SendScreen on a real chain", () => {
     const gateways = createTestGateways();
     await signIn(gateways);
     gateways.wallet.getBalances = jest.fn(async () => [
-      balance({ address: USDT_BSC, symbol: "USDT", verified: true }),
+      // 输入框只收展示精度以内的位数，所以这里要给到 6 位才输得进 1.009
+      balance({
+        address: USDT_BSC,
+        symbol: "USDT",
+        verified: true,
+        displayDecimals: 6,
+      }),
     ]);
     await renderWithProviders(
       <SendScreen onBack={jest.fn()} initialChain="bsc" />,
@@ -411,6 +421,103 @@ describe("SendScreen amount presets", () => {
 
     await waitFor(() =>
       expect(screen.getByTestId("send-amount").props.value).toBe("125"),
+    );
+  });
+});
+
+describe("SendScreen display precision", () => {
+  async function renderWithBalance(item: TokenBalance) {
+    const gateways = createTestGateways();
+    await signIn(gateways);
+    gateways.wallet.getBalances = jest.fn(async () => [item]);
+    return renderWithProviders(
+      <SendScreen onBack={jest.fn()} initialChain="bsc" />,
+      { gateways },
+    );
+  }
+
+  it("fills MAX with the balance truncated to the display precision, not rounded", async () => {
+    // 输入框只能显示展示精度；填进去的就是要签的，多出来的尘埃留在余额里。
+    // 500.129999 四舍五入是 500.13，而 500.13 > 余额，用户会看到"余额不足"
+    const { runtime } = await renderWithBalance(
+      balance({
+        address: USDT_BSC,
+        symbol: "USDT",
+        verified: true,
+        amount: "500.129999",
+        displayDecimals: 2,
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          runtime.t("send.balance").replace("{amount}", "500.12 USDT"),
+        ),
+      ).toBeTruthy(),
+    );
+
+    void fireEvent.press(screen.getByLabelText(runtime.t("common.max")));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("send-amount").props.value).toBe("500.12"),
+    );
+  });
+
+  it("computes a preset from the exact balance and then truncates it to the display precision", async () => {
+    // 先按整数算精确值（25% of 500.129999 = 125.03249975），再截到 2 位
+    const { runtime } = await renderWithBalance(
+      balance({
+        address: USDT_BSC,
+        symbol: "USDT",
+        verified: true,
+        amount: "500.129999",
+        displayDecimals: 2,
+      }),
+    );
+    await screen.findByLabelText(runtime.t("common.max"));
+
+    void fireEvent.press(screen.getByText("25%"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("send-amount").props.value).toBe("125.03"),
+    );
+  });
+
+  it("caps typed decimals at the display precision", async () => {
+    // 不能输入比能看到的更多位
+    await renderWithBalance(
+      balance({
+        address: USDT_BSC,
+        symbol: "USDT",
+        verified: true,
+        displayDecimals: 2,
+      }),
+    );
+
+    void fireEvent.changeText(
+      await screen.findByTestId("send-amount"),
+      "1.23456",
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("send-amount").props.value).toBe("1.23"),
+    );
+  });
+
+  it("shows a fee below one display unit as '< …' rather than as zero", async () => {
+    // 0.00003 BNB 按原生币的 4 位展示精度会截成 0，显示成 0 会让用户以为不要钱
+    await openConfirm({
+      verified: true,
+      prepare: (gateways) => {
+        gateways.wallet.quoteTransfer = jest.fn(async () => ({
+          fee: money(30_000_000_000_000n, 18, "BNB"),
+          maxAmount: null,
+        }));
+      },
+    });
+
+    await waitFor(() =>
+      expect(screen.getAllByText(/< 0\.0001 BNB/).length).toBeGreaterThan(0),
     );
   });
 });

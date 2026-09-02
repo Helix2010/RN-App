@@ -1,5 +1,10 @@
 import * as Clipboard from "expo-clipboard";
-import { fill, formatMoney, shortenAddress } from "../../../core/i18n/format";
+import {
+  fill,
+  formatMoney,
+  formatTokenAmount,
+  shortenAddress,
+} from "../../../core/i18n/format";
 import { useRef, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
@@ -9,6 +14,7 @@ import { classifyEvmAddress } from "../../../core/wallet/address";
 import {
   evmChainIdOf,
   isTestnetChain,
+  nativeDisplayDecimals,
 } from "../../../core/wallet/config/wallet-runtime-config";
 import {
   compare,
@@ -160,9 +166,10 @@ export function SendScreen({
       : undefined;
   const quote = useTransferQuote(quoteRequest);
   // Mock 账本（quote 为 null）和预估失败都显示"暂不可估"：编一个数字更糟——
-  // 手续费写小了，用户会以为余额够
+  // 手续费写小了，用户会以为余额够。按原生币的展示精度截断；不足最小展示单位
+  // 时显示"< 0.0001 BNB"而不是"0"
   const feeText = quote.data
-    ? formatMoney(quote.data.fee, locale)
+    ? formatTokenAmount(quote.data.fee, nativeDisplayDecimals(chain), locale)
     : quote.isFetching
       ? t("send.feeEstimating")
       : t("send.feeUnavailable");
@@ -175,7 +182,9 @@ export function SendScreen({
   const ceilingKnown = !nativeOnchain || Boolean(quote.data?.maxAmount);
   const ceiling =
     quote.data?.maxAmount ?? selected?.amount ?? money(0n, 18, "");
-  const precision = Math.min(6, selected?.token.decimals ?? 6);
+  // 输入框只能显示展示精度，"全部"和预设填进去的也截到这一位——所见即所签，
+  // 多出来的尘埃留在余额里。链上精度只在 fromDecimal 换算时用，这里不碰
+  const precision = selected?.token.displayDecimals ?? 0;
   // 真链上没有报价就不能签：签名费要绑定到用户看到的数，没看到就没有可绑的
   const feeKnown = !onchain || Boolean(quote.data);
   const canSubmit =
@@ -396,9 +405,14 @@ export function SendScreen({
               value={text}
               onChangeText={setText}
               symbol={selected.token.symbol}
-              decimals={Math.min(6, selected.token.decimals)}
+              // 不能输入比能看到的更多位：输入框、余额、MAX 三者同一个精度
+              decimals={selected.token.displayDecimals}
               helper={fill(t("send.balance"), {
-                amount: formatMoney(selected.amount, locale),
+                amount: formatTokenAmount(
+                  selected.amount,
+                  selected.token.displayDecimals,
+                  locale,
+                ),
               })}
               error={insufficient ? t("transfer.insufficient") : undefined}
               // 原生币的"全部"必须扣掉手续费，否则这一笔必然失败；真链上报价没回来

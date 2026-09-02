@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import {
   fill,
   formatMoney,
+  formatTokenAmount,
   formatUsd,
   shortenAddress,
 } from "../../../core/i18n/format";
@@ -90,6 +91,8 @@ export function AssetsScreen({
           symbol: "USDC",
           name: "USD Coin",
           decimals: 6,
+          // 预测账户的 USDC 不来自下发目录，展示精度按稳定币惯例
+          displayDecimals: 2,
           logoColor: "#2775CA",
           verified: true,
         },
@@ -455,8 +458,16 @@ export function HoldingRow({
       </Stack>
       <Stack alignItems="flex-end">
         <InlineText fontWeight="700">
+          {/* 按展示精度向下截断：四舍五入会把 0.999 显示成 1.00，而 1 个转不出 */}
           {visible
-            ? formatMoney(item.amount, locale, { withSymbol: false })
+            ? formatTokenAmount(
+                item.amount,
+                item.token.displayDecimals,
+                locale,
+                {
+                  withSymbol: false,
+                },
+              )
             : "••••"}
         </InlineText>
         <Body fontSize={12}>
