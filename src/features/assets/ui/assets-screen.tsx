@@ -138,6 +138,11 @@ export function AssetsScreen({
                 <AmountText fontSize={34} lineHeight={40}>
                   {visible ? formatUsd(data.totalUsd, locale) : "••••••"}
                 </AmountText>
+                {data.partial ? (
+                  <Body fontSize={12} color="$warning" testID="assets-partial">
+                    {t("assets.totalPartial")}
+                  </Body>
+                ) : null}
                 <Row gap="$2" alignItems="center">
                   <InlineText
                     color={
@@ -336,7 +341,9 @@ export function AssetsScreen({
                     visible={visible}
                   />
                 ))}
-                {holdings.length === 0 && !predictUsdc ? (
+                {holdings.length === 0 &&
+                !predictUsdc &&
+                data.unavailable.length === 0 ? (
                   <Body>{t("state.empty")}</Body>
                 ) : null}
               </>

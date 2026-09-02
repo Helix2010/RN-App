@@ -1,7 +1,7 @@
 import * as Clipboard from "expo-clipboard";
 import { getLocales } from "expo-localization";
 import { Component, type ErrorInfo, type ReactNode } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { appRuntime } from "../core/network/api-client";
 
 /**
@@ -149,7 +149,7 @@ const styles = StyleSheet.create({
   mono: {
     fontSize: 12,
     color: "#707A8A",
-    fontFamily: "monospace",
+    fontFamily: Platform.select({ ios: "Menlo", default: "monospace" }),
   },
   primary: {
     marginTop: 8,

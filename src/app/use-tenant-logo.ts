@@ -7,8 +7,7 @@ import { useFoundationRuntime } from "./runtime-context";
 
 /**
  * 租户 logo（来自 RN-Server branding，与启动页同一资源）。
- * 返回 undefined 表示租户没有配置 logo。首页头部目前仍在这种情况下显示内置几何标，
- * 这是尚未按"正式场景原则"处理的替身，不要把它当成设计。
+ * 返回 undefined 表示租户没有配置 logo：BrandMark 此时什么都不画，没有内置替身。
  */
 export function useTenantLogoUri(): string | undefined {
   const { config, themePreference } = useFoundationRuntime();

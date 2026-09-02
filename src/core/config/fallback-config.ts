@@ -157,6 +157,9 @@ const zhCN = {
   "assets.balanceUnavailable.endpoints":
     "{chain} 没有可用的节点，余额无法读取。其他链不受影响。",
   "assets.balanceUnavailable.retry": "重试",
+  "assets.balanceUnavailable.catalogue":
+    "{chain} 的代币目录不完整，余额暂不显示。其他链不受影响。",
+  "assets.totalPartial": "部分合计：不含暂时不可用的链和没有估值的代币",
 
   "assets.signInToView": "登录后查看资产",
   "transfer.title": "划转",
@@ -950,6 +953,10 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "assets.balanceUnavailable.endpoints":
     "{chain} has no reachable node, so its balances cannot be read. Other chains are not affected.",
   "assets.balanceUnavailable.retry": "Retry",
+  "assets.balanceUnavailable.catalogue":
+    "The token catalogue for {chain} is incomplete, so its balances are not shown. Other chains are not affected.",
+  "assets.totalPartial":
+    "Partial total: excludes unavailable chains and tokens without a price",
 
   "assets.signInToView": "Log in to see your assets",
   "transfer.title": "Transfer",

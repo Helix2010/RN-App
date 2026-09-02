@@ -396,7 +396,8 @@ function WalletAccount({
           onRetry={() => void balances.refetch()}
         />
         {balances.data ? (
-          balances.data.items.length === 0 ? (
+          balances.data.items.length === 0 &&
+          balances.data.unavailable.length === 0 ? (
             <Body>{t("state.empty")}</Body>
           ) : (
             balances.data.items.map((item) => (

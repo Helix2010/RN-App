@@ -1,3 +1,4 @@
+import { NATIVE_TOKEN_ADDRESS } from "../../../core/gateways/types";
 import { useNavigation } from "@react-navigation/native";
 import { fill, formatMoney, shortenAddress } from "../../../core/i18n/format";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -383,7 +384,7 @@ function SignConfirm({
   const balances = useWalletBalances(account?.address);
   const native = balances.data?.items.find(
     (item) =>
-      item.token.address === "native" &&
+      item.token.address === NATIVE_TOKEN_ADDRESS &&
       item.token.chain === account?.chains[0],
   );
   const connectorName =

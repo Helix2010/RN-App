@@ -84,14 +84,15 @@ export function AppIcon({
   );
 }
 
-/** 品牌标：优先使用租户服务端下发的 logo（uri），否则退回内置几何标。 */
 /**
  * 租户 logo。`uri` 来自服务端品牌配置：没有配置就什么都不画——不存在"内置几何标"
  * 这种替身。图片下载完成前显示同尺寸骨架，占位但不冒充内容。
  */
 export function BrandMark({ size = 48, uri }: { size?: number; uri?: string }) {
   const [loaded, setLoaded] = useState(false);
-  if (!uri) return null;
+  const [failed, setFailed] = useState(false);
+  // 配置的图片下不下来：什么都不画（和没配一样），留一条 warning；不能留一个灰块
+  if (!uri || failed) return null;
   return (
     <YStack width={size} height={size} testID="brand-mark">
       {loaded ? null : (
@@ -106,6 +107,10 @@ export function BrandMark({ size = 48, uri }: { size?: number; uri?: string }) {
       <Image
         source={{ uri }}
         onLoad={() => setLoaded(true)}
+        onError={() => {
+          console.warn(`[brand] logo 加载失败：${uri}`);
+          setFailed(true);
+        }}
         style={{ width: size, height: size, borderRadius: size * 0.28 }}
         accessibilityLabel="brand logo"
       />

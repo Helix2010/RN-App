@@ -195,11 +195,12 @@ export const REFERENCE_PRICES_USD: Record<string, number> = {
  * （"USDT.bsc" → USDT）；找不到按 0——测试链的币本来就没有价值。
  * 价格源另议，这只是第一版让真链余额有个估值的占位。
  */
-export function referencePriceForSymbol(symbol: string): number {
+/** 演示参考价表里的单价；没有这个符号就是 null——"不知道"不能写成 0 */
+export function referencePriceForSymbol(symbol: string): number | null {
   const hit = Object.entries(REFERENCE_PRICES_USD).find(
     ([key]) => key.split(".")[0] === symbol,
   );
-  return hit?.[1] ?? 0;
+  return hit === undefined ? null : hit[1];
 }
 
 export function tokenKey(token: TokenRef): string {

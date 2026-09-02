@@ -20,6 +20,8 @@ export type AssetsOverview = {
   holdings: TokenBalance[];
   /** 这次没拿到余额的链：总额与持仓里都不含它们，界面要单独说明 */
   unavailable: ChainBalanceFailure[];
+  /** 总额是部分合计：有链不可用，或有持仓没有估值。界面不能把它当精确数字展示 */
+  partial: boolean;
 };
 
 export interface AssetsGateway {

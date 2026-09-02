@@ -1,4 +1,4 @@
-import { tenantWallet } from "../../../test/wallet-config";
+import { nativeEntry, tenantWallet } from "../../../test/wallet-config";
 import { ChainNotEnabledError } from "../../../core/wallet/config/wallet-runtime-config";
 import { verifyMessage } from "ethers";
 import { memoryStorage } from "../../../core/gateways/types";
@@ -545,8 +545,8 @@ describe("EmbeddedWalletGateway native balances", () => {
     const [bnb] = await balances(gateway, ADDRESS, "bsc");
 
     expect(bnb?.amount.raw).toBe((5n * 10n ** 17n).toString());
-    // 单价沿用账本隐含的 600：金额是真的，单价是演示的，比两者都假强
-    expect(bnb?.usdValue).toBeCloseTo(300);
+    // 估值和代币走同一张参考价表（BNB 624.8），不再沿用账本隐含的单价
+    expect(bnb?.usdValue).toBeCloseTo(0.5 * 624.8);
   });
 
   it("leaves chains without endpoints on the demo ledger", async () => {
@@ -900,5 +900,44 @@ describe("EmbeddedWalletGateway chain switch", () => {
     enable(["bsc", "eth"]);
     const [account] = await gateway.listAccounts();
     expect(account?.chains).toEqual(["bsc"]);
+  });
+});
+
+describe("EmbeddedWalletGateway per-chain isolation", () => {
+  it("keeps one chain's balances when another chain's node fails", async () => {
+    applyDeliveredWalletConfig(tenantWallet({ chains: ["bsc", "eth"] }));
+    const { port } = fakeOnchain(["bsc", "eth"]);
+    port.nativeBalance = async (chain) => {
+      if (chain === "eth") throw new Error("eth node down");
+      return 10n ** 18n;
+    };
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const { gateway, chainData } = setup({ onchain: port });
+    jest.spyOn(chainData, "getBalances").mockResolvedValue(snapshot([]));
+
+    const result = await gateway.getBalances(ADDRESS);
+
+    expect(result.items.map((item) => item.token.chain)).toEqual(["bsc"]);
+    expect(result.unavailable).toEqual([{ chain: "eth", reason: "node" }]);
+    warn.mockRestore();
+  });
+
+  it("marks a chain whose catalogue lacks the native entry as unavailable, without touching the others", async () => {
+    applyDeliveredWalletConfig({
+      ...tenantWallet({ chains: ["bsc", "eth"] }),
+      // eth 没有原生币条目
+      tokens: [nativeEntry("bsc")],
+    });
+    const { port } = fakeOnchain(["bsc", "eth"]);
+    port.nativeBalance = async () => 10n ** 18n;
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const { gateway, chainData } = setup({ onchain: port });
+    jest.spyOn(chainData, "getBalances").mockResolvedValue(snapshot([]));
+
+    const result = await gateway.getBalances(ADDRESS);
+
+    expect(result.items.map((item) => item.token.chain)).toEqual(["bsc"]);
+    expect(result.unavailable).toEqual([{ chain: "eth", reason: "catalogue" }]);
+    warn.mockRestore();
   });
 });

@@ -62,8 +62,11 @@ export class TokenMetadataMismatchError extends Error {
  * 显示"暂时读不到"，重试之后自然恢复。
  */
 export class ChainBalanceUnavailableError extends Error {
-  constructor(readonly chain: ChainId) {
-    super(`balances on ${chain} are unavailable right now`);
+  constructor(
+    readonly chain: ChainId,
+    readonly reason: "node" | "catalogue" = "node",
+  ) {
+    super(`balances on ${chain} are unavailable right now (${reason})`);
     this.name = "ChainBalanceUnavailableError";
   }
 }
@@ -74,6 +77,12 @@ export class ChainEndpointsUnavailableError extends Error {
     super(`chain ${chain} has no usable rpc endpoint`);
     this.name = "ChainEndpointsUnavailableError";
   }
+}
+
+/** 按演示参考价估值；表里没有这个符号就是 null，不写成 0 */
+function priced(amount: Money, symbol: string): number | null {
+  const price = referencePriceForSymbol(symbol);
+  return price === null ? null : toApproxNumber(amount) * price;
 }
 
 const REGISTRY_KEY = "foundation.wallet.accounts.v1";
@@ -376,7 +385,7 @@ export class EmbeddedWalletGateway implements WalletGateway {
           continue;
         }
         if (error instanceof ChainBalanceUnavailableError) {
-          unavailable.push({ chain: id, reason: "node" });
+          unavailable.push({ chain: id, reason: error.reason });
           continue;
         }
         throw error;
@@ -447,31 +456,35 @@ export class EmbeddedWalletGateway implements WalletGateway {
         amount,
         // 参考价只给白名单内的币：任何合约都能把 symbol() 写成 ETH，
         // 按符号取价会让一个假币按 4500 美元估值，进而影响大额验证阈值与总额
-        usdValue: token.verified
-          ? toApproxNumber(amount) * referencePriceForSymbol(token.symbol)
-          : null,
+        usdValue: token.verified ? priced(amount, token.symbol) : null,
         change24hPct: 0,
       });
     }
     const native = CHAINS[id];
     const amount = money(nativeRaw, native.nativeDecimals, native.nativeSymbol);
-    // 真链上展示精度以下发目录为准，演示夹具里的那份只服务于演示账本
-    const displayDecimals = nativeDisplayDecimals(id);
+    // 真链上展示精度以下发目录为准。目录缺这条链的原生币条目是数据问题，只让这条链
+    // 不可用，不能连累别的链
+    let displayDecimals: number;
+    try {
+      displayDecimals = nativeDisplayDecimals(id);
+    } catch (error) {
+      console.warn(`[wallet] ${id} 的代币目录没有原生币条目`, error);
+      throw new ChainBalanceUnavailableError(id, "catalogue");
+    }
+    // 原生币的估值和代币走同一张参考价表；测试链的币没有价值，是真的 0
+    const usdValue = isTestnetChain(id)
+      ? 0
+      : priced(amount, native.nativeSymbol);
     const index = result.findIndex(
       (item) => item.token.address === NATIVE_TOKEN_ADDRESS,
     );
     if (index >= 0) {
       const previous = result[index] as TokenBalance;
-      const held = toApproxNumber(previous.amount);
-      const price =
-        previous.usdValue !== null && held > 0
-          ? previous.usdValue / held
-          : null;
       result[index] = {
         ...previous,
         token: { ...previous.token, displayDecimals },
         amount,
-        usdValue: price === null ? null : toApproxNumber(amount) * price,
+        usdValue,
       };
     } else {
       result.push({
@@ -486,8 +499,7 @@ export class EmbeddedWalletGateway implements WalletGateway {
           verified: true,
         },
         amount,
-        // 测试链的币没有价值，是真的 0；主网原生币没有参考价，就是不知道
-        usdValue: isTestnetChain(id) ? 0 : null,
+        usdValue,
         change24hPct: 0,
       });
     }

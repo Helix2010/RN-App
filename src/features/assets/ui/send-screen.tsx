@@ -1,3 +1,4 @@
+import { usePreferencesStore } from "../../../core/preferences/preferences-store";
 import { impersonatesKnownToken } from "../../../core/wallet/config/token-allowlist";
 import { ChainUnavailableNotice } from "../../wallet/ui/chain-unavailable-notice";
 import * as Clipboard from "expo-clipboard";
@@ -146,6 +147,9 @@ function SendForm({
   const theme = useTheme();
   const { config, t } = useFoundationRuntime();
   const requireVerification = useRequireVerification();
+  const largeAmountThresholdUsd = usePreferencesStore(
+    (state) => state.largeAmountThresholdUsd,
+  );
   const locale = config.localization.selectedLocale;
   const session = useSession();
   const address = session.data?.address ?? "";
@@ -530,7 +534,7 @@ function SendForm({
             <DetailRow label={t("send.eta")} value={t("send.etaValue")} />
             <DetailRow label={t("send.recipientGets")} value={exactAmount} />
           </Stack>
-          {usd === null || usd > 1000 ? (
+          {usd === null || usd >= largeAmountThresholdUsd ? (
             <Row alignItems="center" gap="$2">
               <AppIcon name="fingerprint" size={16} colorToken="warning" />
               <Body fontSize={12}>{t("send.biometricHint")}</Body>

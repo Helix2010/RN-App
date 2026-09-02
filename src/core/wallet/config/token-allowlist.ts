@@ -54,7 +54,7 @@ const ALLOWLIST: Record<ChainId, Record<string, AllowlistEntry>> = {
 export type AllowlistVerdict =
   /** 地址与元数据都对得上，可以标为已验证 */
   | { status: "verified" }
-  /** 不在表里：正常情况（租户自定义代币），按未验证展示 */
+  /** 不在表里：正常情况（租户上的代币），照常显示；没有参考价，转出一律验证 */
   | { status: "unlisted" }
   /**
    * 在表里但元数据不符——这是配置错误或篡改，**应当拒绝这个代币**而不是

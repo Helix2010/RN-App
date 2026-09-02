@@ -1,3 +1,4 @@
+import { ChainUnavailableNotice } from "../../wallet/ui/chain-unavailable-notice";
 import { useEffect, useRef, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
@@ -145,9 +146,14 @@ export function SwapScreen({
       void quote.refetch();
   }, [quote, secondsLeft, swap.isPending]);
 
+  // 这条链的余额没拿到时不知道够不够：那是"不可用"，不是"余额不足"
+  const chainUnavailable = balances.data?.unavailable ?? [];
   const insufficient =
     Boolean(sellBalance && compare(amountIn, sellBalance.amount) > 0) ||
-    (!sellBalance && !isZero(amountIn) && Boolean(balances.data));
+    (!sellBalance &&
+      !isZero(amountIn) &&
+      Boolean(balances.data) &&
+      chainUnavailable.length === 0);
   const diffPct = quote.data
     ? ((quote.data.amountOutUsd - quote.data.amountInUsd) /
         Math.max(quote.data.amountInUsd, 1e-9)) *
@@ -315,6 +321,10 @@ export function SwapScreen({
       </Content>
       <PageScroll>
         <Content paddingTop="$1" gap="$3">
+          <ChainUnavailableNotice
+            failures={chainUnavailable}
+            onRetry={() => void balances.refetch()}
+          />
           <Stack
             padding="$3"
             borderRadius="$4"

@@ -37,7 +37,7 @@
 
 ## 验证
 
-- `pnpm check`（含 67 个套件 / 485 个用例，新增 `src/app/runtime-context.spec.tsx` 4 个门禁用例、`bootstrap-repository.spec.ts` 2 个）。
+- `pnpm check`（含 69 个套件 / 499 个用例，新增 `src/app/runtime-context.spec.tsx` 4 个门禁用例、`bootstrap-repository.spec.ts` 2 个）。
 - `EXPO_PUBLIC_TENANT=anyfun expo config --type introspect` 确认 `splashscreen_background=#E9F0FF`、`windowBackground=@color/splashscreen_background`。
 - 待做：下一次 `pnpm android:release anyfun` 出包后在真机验证冷启动只有一次 logo 淡入。
 
@@ -64,4 +64,14 @@
 - 白名单只在**冒名**时出声：符号与同一条链上的主流合约或原生币相同、合约地址不同，转出确认页出警示并把合约行标黄（`impersonatesKnownToken`）。
 - 没有参考价的币 `usdValue` 为 null：列表显示"—"而不是 0，不算"小额"被隐藏，合计只算已知估值；转出时大额阈值无从判断，一律要求生物验证（`useRequireVerification` 对 null 一律验证）。
 - 管理端提示同步改写：不在主流合约表 = 不显示估值、转出一律验证、仅同名冒名时提醒。
+
+## 第二轮审查修正（同日）
+
+- 原生币估值改为和代币走同一张参考价表，不再从演示账本反推单价（此前 eth/base 的原生币永远是"—"，BNB 能估值只因账本恰好有它）；参考价表没有的符号估值为 null，不写成 0。
+- 目录缺某条链的原生币条目只让这条链不可用（`reason: "catalogue"`），不再连累别的链。
+- 兑换页不再把"链不可用"说成"余额不足"，并显示按链不可用提示。
+- 资产页与账户详情：有链不可用时不再显示"暂无数据"；总额为部分合计（有链不可用或有持仓无估值）时标出"部分合计"，链数按启用的链扣掉不可用的。
+- `BrandMark` 图片加载失败时什么都不画并留 warning，不留灰块。
+- 转出页的生物验证提示阈值改为读设置里的大额阈值；`"native"` 字面量改用常量；崩溃页等宽字体按平台选择。
+- 新增测试：资产页按链不可用提示与部分合计、无估值持仓显示"—"、网关多链隔离（节点失败 / 目录缺原生币）。
 
