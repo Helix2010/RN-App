@@ -538,8 +538,12 @@ export function TransferForm({
             onPress={() =>
               faucet.claim.mutate(undefined, {
                 onSuccess: () => toast(t("transfer.faucetDone"), "success"),
+                // 平台会给出原因（如 USDC 余额不足下限），前缀说明是水龙头而不是划转
                 onError: (err) =>
-                  toast(`${t("transfer.failed")} ${messageOf(err)}`, "error"),
+                  toast(
+                    `${t("transfer.faucetFailed")} ${messageOf(err)}`,
+                    "error",
+                  ),
               })
             }
             testID="transfer-faucet-claim"
