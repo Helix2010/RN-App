@@ -1675,6 +1675,7 @@ export function createFallbackConfig(locale: SupportedLocale): BootstrapConfig {
     modules: { predict: true, dex: true },
     wallet: {
       walletConnectProjectId: "",
+      onchainSends: false,
       chains: ["bsc", "eth", "base"],
       // 端点留空：没连上服务端时不该猜 RPC，依赖它的功能应如实不可用
       networks: [

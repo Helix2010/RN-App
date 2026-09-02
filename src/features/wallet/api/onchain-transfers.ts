@@ -6,6 +6,7 @@ import { TransferService } from "../../../core/chain/transfer-service";
 import type { WalletSigner } from "../../../core/wallet/signer/types";
 import {
   evmChainIdOf,
+  onchainSendsEnabled,
   rpcUrlsFor,
 } from "../../../core/wallet/config/wallet-runtime-config";
 import type {
@@ -23,9 +24,9 @@ const MAX_TRACKED = 50;
 /**
  * 真实链上的转出。
  *
- * **可用性就是开关**：一条链只有在服务端下发了 RPC 端点时才走真链，否则回落到
- * Mock 账本。不需要额外的 feature flag——"有没有端点"本身就是最直接的判据，
- * 也让灰度等于"给哪个租户配 RPC"。
+ * 一条链只有在**租户显式开了 `onchainSends`** 且服务端下发了 RPC 端点时才走
+ * 真链，否则回落到 Mock 账本。曾经想用"有没有端点"当开关，但服务端对没配过
+ * 端点的租户也会下发平台默认端点——那不是开关，是常开。
  *
  * 每条链一套客户端，惰性创建：没人转那条链就不该建连接。端点实时读取，不重建。
  */
@@ -56,7 +57,8 @@ export class OnchainTransfers {
   ) {}
 
   available(chain: ChainId): boolean {
-    return rpcUrlsFor(chain).length > 0;
+    // 两个条件缺一不可：租户显式开了链上转出，且这条链有端点可用
+    return onchainSendsEnabled() && rpcUrlsFor(chain).length > 0;
   }
 
   /**

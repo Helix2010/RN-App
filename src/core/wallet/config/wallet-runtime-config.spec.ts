@@ -1,4 +1,5 @@
 import {
+  onchainSendsEnabled,
   applyDeliveredWalletConfig,
   explorerAddressUrl,
   isWalletConnectConfigured,
@@ -221,5 +222,18 @@ describe("delivered rpc endpoints", () => {
     // 空端点是一个已定义的安全状态：那条链的链上功能不可用
     expect(rpcUrlsFor("bsc")).toEqual([]);
     warn.mockRestore();
+  });
+});
+
+describe("onchainSendsEnabled", () => {
+  it("is off until the server delivers an explicit opt-in", () => {
+    expect(onchainSendsEnabled()).toBe(false);
+    applyDeliveredWalletConfig({ walletConnectProjectId: "p" });
+    expect(onchainSendsEnabled()).toBe(false);
+    applyDeliveredWalletConfig({
+      walletConnectProjectId: "p",
+      onchainSends: true,
+    });
+    expect(onchainSendsEnabled()).toBe(true);
   });
 });

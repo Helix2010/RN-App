@@ -19,9 +19,13 @@ const TO = "0x000000000000000000000000000000000000dEaD";
 const USDT = "0x55d398326f99059ff775485246999027b3197955";
 
 /** 只给 bsc 下发端点：另一条链要保持"未下发"以验证路由。 */
-function deliverBscRpc(urls = ["https://bsc.example"]): void {
+function deliverBscRpc(
+  urls = ["https://bsc.example"],
+  onchainSends = true,
+): void {
   applyDeliveredWalletConfig({
     walletConnectProjectId: "p",
+    onchainSends,
     networks: [
       {
         id: "bsc",
@@ -95,6 +99,13 @@ afterEach(() => resetDeliveredWalletConfig());
 describe("OnchainTransfers availability", () => {
   it("is unavailable until the server delivers an rpc endpoint", () => {
     // 下发本身就是灰度开关：没配端点的链不能悄悄用一个公共节点
+    const onchain = new OnchainTransfers({ reason: "r" });
+    expect(onchain.available("bsc")).toBe(false);
+  });
+
+  it("stays on the demo ledger while the tenant has not opted in, even with endpoints", () => {
+    // 没配过端点的租户也会拿到平台默认端点，所以端点不能当开关
+    deliverBscRpc(["https://bsc.example"], false);
     const onchain = new OnchainTransfers({ reason: "r" });
     expect(onchain.available("bsc")).toBe(false);
   });

@@ -141,6 +141,8 @@ export const bootstrapSchema = z.object({
   wallet: z
     .object({
       walletConnectProjectId: z.string(),
+      // 转出是否真的上链。老服务端不下发时按关处理——默认必须是"演示账本"
+      onchainSends: z.boolean().default(false),
       chains: z.array(chainIdSchema).min(1),
       // 端点按租户下发；老服务端没有这段时用 chains 推默认值，
       // 不能因为版本落后就让整个 bootstrap 解析失败
@@ -157,7 +159,11 @@ export const bootstrapSchema = z.object({
         )
         .optional(),
     })
-    .default({ walletConnectProjectId: "", chains: ["bsc", "eth", "base"] }),
+    .default({
+      walletConnectProjectId: "",
+      onchainSends: false,
+      chains: ["bsc", "eth", "base"],
+    }),
   features: z.object({
     updateCenter: z.boolean(),
     otaEnabled: z.boolean(),

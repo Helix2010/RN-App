@@ -23,6 +23,8 @@ type DeliveredWalletConfig = {
   walletConnectProjectId: string;
   chains: ChainId[];
   networks: WalletNetwork[];
+  /** 转出是否真的上链。默认关：演示账本 */
+  onchainSends: boolean;
 };
 
 /**
@@ -110,6 +112,7 @@ export function applyDeliveredWalletConfig(config: {
   walletConnectProjectId: string;
   chains?: ChainId[];
   networks?: WalletNetwork[];
+  onchainSends?: boolean;
 }): void {
   const trustedNetworks = config.networks
     ? withHttpsEndpointsOnly(withTrustedChainIds(config.networks))
@@ -122,10 +125,12 @@ export function applyDeliveredWalletConfig(config: {
     walletConnectProjectId: config.walletConnectProjectId.trim(),
     chains,
     networks: trustedNetworks ?? fallbackNetworks(chains),
+    onchainSends: config.onchainSends === true,
   };
   const changed =
     delivered === null ||
     delivered.walletConnectProjectId !== next.walletConnectProjectId ||
+    delivered.onchainSends !== next.onchainSends ||
     JSON.stringify(delivered.networks) !== JSON.stringify(next.networks);
   delivered = next;
   if (changed) for (const listener of listeners) listener();
@@ -177,6 +182,16 @@ export function evmChainIdOf(chain: ChainId): number {
 /** 区块浏览器上的地址页；服务端下发的地址优先。 */
 export function explorerAddressUrl(chain: ChainId, address: string): string {
   return `${networkFor(chain).explorerUrl}/address/${address}`;
+}
+
+/**
+ * 转出是否真的上链——租户级的显式开关，默认关。
+ *
+ * 不能用"有没有 RPC 端点"当开关：服务端对没配过端点的租户也会下发平台默认端点，
+ * 那样新版本一发布，所有租户的主网转出就同时变成真钱，而余额还停在演示账本上。
+ */
+export function onchainSendsEnabled(): boolean {
+  return delivered?.onchainSends === true;
 }
 
 /** 测试链：币没有价值，界面上任何显示这条链资产的地方都要标出来。 */
