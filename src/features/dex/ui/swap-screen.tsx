@@ -114,10 +114,10 @@ export function SwapScreen({
 
   const balances = useWalletBalances(address, chain);
   const tokens = useDexTokens({ chain, sort: "hot", limit: 30 });
-  const sellBalance = balances.data?.find(
+  const sellBalance = balances.data?.items.find(
     (item) => item.token.address === sell.address,
   );
-  const buyBalance = balances.data?.find(
+  const buyBalance = balances.data?.items.find(
     (item) => item.token.address === buy.address,
   );
   const amountIn = fromDecimal(text || "0", sell.decimals, sell.symbol);
@@ -523,7 +523,7 @@ export function SwapScreen({
         scroll
       >
         {allTokens.map((token) => {
-          const bal = balances.data?.find(
+          const bal = balances.data?.items.find(
             (item) => item.token.address === token.address,
           );
           return (

@@ -92,7 +92,7 @@ describe("MockDexGateway", () => {
     const { dex, wallet } = await setup();
     const bnb = TOKENS.BNB as TokenRef;
     const pepe = TOKENS.PEPE as TokenRef;
-    const before = await wallet.getBalances(ADDRESS, "bsc");
+    const before = (await wallet.getBalances(ADDRESS, "bsc")).items;
     const quote = await dex.quote({
       chain: "bsc",
       sellToken: bnb,
@@ -101,7 +101,7 @@ describe("MockDexGateway", () => {
     });
     const record = await dex.swap(ADDRESS, quote.id);
     expect(record.status).toBe("submitted");
-    const afterDebit = await wallet.getBalances(ADDRESS, "bsc");
+    const afterDebit = (await wallet.getBalances(ADDRESS, "bsc")).items;
     const bnbBefore = before.find((b) => b.token.symbol === "BNB");
     const bnbAfter = afterDebit.find((b) => b.token.symbol === "BNB");
     expect(
@@ -112,7 +112,7 @@ describe("MockDexGateway", () => {
     const done = await dex.getSwap(record.id);
     expect(done?.status).toBe("confirmed");
     expect(done?.amountOut).toBeDefined();
-    const pepeAfter = (await wallet.getBalances(ADDRESS, "bsc")).find(
+    const pepeAfter = (await wallet.getBalances(ADDRESS, "bsc")).items.find(
       (b) => b.token.symbol === "PEPE",
     );
     expect(
@@ -125,7 +125,7 @@ describe("MockDexGateway", () => {
     const { dex, wallet } = await setup();
     const bnb = TOKENS.BNB as TokenRef;
     const pepe = TOKENS.PEPE as TokenRef;
-    const before = (await wallet.getBalances(ADDRESS, "bsc")).find(
+    const before = (await wallet.getBalances(ADDRESS, "bsc")).items.find(
       (b) => b.token.symbol === "BNB",
     );
     const quote = await dex.quote({
@@ -138,7 +138,7 @@ describe("MockDexGateway", () => {
     const record = await dex.swap(ADDRESS, quote.id);
     await jest.advanceTimersByTimeAsync(5_000);
     expect((await dex.getSwap(record.id))?.status).toBe("failed");
-    const after = (await wallet.getBalances(ADDRESS, "bsc")).find(
+    const after = (await wallet.getBalances(ADDRESS, "bsc")).items.find(
       (b) => b.token.symbol === "BNB",
     );
     expect(

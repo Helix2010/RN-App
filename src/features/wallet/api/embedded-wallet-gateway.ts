@@ -24,6 +24,8 @@ import {
 import type { WalletConnectorId } from "../../session/model/session";
 import { referencePriceForSymbol } from "../fixtures/wallet";
 import type {
+  BalanceSnapshot,
+  ChainBalanceFailure,
   SendRequest,
   TokenBalance,
   TransferQuote,
@@ -342,162 +344,147 @@ export class EmbeddedWalletGateway implements WalletGateway {
     return [...embedded, ...external];
   }
 
-  async getBalances(address: string, chain?: ChainId): Promise<TokenBalance[]> {
+  /**
+   * 余额按链分别查、分别失败：一条链的节点没响应，只有这条链进 `unavailable`，
+   * 其他链的真实余额照常返回。整批抛错会让一条链的故障把用户所有资产都遮住。
+   */
+  async getBalances(
+    address: string,
+    chain?: ChainId,
+  ): Promise<BalanceSnapshot> {
     // 问一条未启用的链是调用方的 bug，和链层其他入口一样直接抛错
     if (chain && !isChainEnabled(chain)) throw new ChainNotEnabledError(chain);
-    const enabled = new Set(enabledChains());
-    const balances = (
-      await this.deps.chainData.getBalances(address, chain)
-    ).filter((item) => enabled.has(item.token.chain));
+    const chains = chain ? [chain] : enabledChains();
+    const enabled = new Set(chains);
     // 代币目录（含 verified 标记）由服务端下发，服务端被攻破时它可以把攻击者的
     // 合约标成"已验证"。所以 verified 只能由客户端那份表授予，元数据不符的丢掉。
-    const withTokens = await this.withOnchainTokens(
-      address,
-      chain,
-      trustedTokens(balances),
+    const ledger = trustedTokens(
+      (await this.deps.chainData.getBalances(address, chain)).items.filter(
+        (item) => enabled.has(item.token.chain),
+      ),
     );
-    return this.withOnchainNative(address, chain, withTokens);
+    const items: TokenBalance[] = [];
+    const unavailable: ChainBalanceFailure[] = [];
+    for (const id of chains) {
+      const demo = ledger.filter((item) => item.token.chain === id);
+      try {
+        items.push(...(await this.chainBalances(id, address, demo)));
+      } catch (error) {
+        if (error instanceof ChainEndpointsUnavailableError) {
+          unavailable.push({ chain: id, reason: "endpoints" });
+          continue;
+        }
+        if (error instanceof ChainBalanceUnavailableError) {
+          unavailable.push({ chain: id, reason: "node" });
+          continue;
+        }
+        throw error;
+      }
+    }
+    return { items, unavailable };
   }
 
   /**
-   * 转出走真链的链，代币（ERC-20）余额也来自真链，而且**目录只认服务端下发的**。
+   * 一条链的余额。
    *
-   * 这条链上演示账本里的代币一律移除：真链上显示一个演示币，用户会拿着并不
-   * 存在的 500 USDT 去转出，然后被链上预检的"余额不足"顶回来——界面自相矛盾。
-   * 下发里有而账本没有的补一条，单价按演示价格表按 symbol 匹配（价格源另议），
-   * 匹配不到按 0；两边都有的，金额换成链上的，24h 涨跌沿用账本。
-   * 整批查不到时沿用账本的值并留痕，和原生币一致——别把余额显示成 0。
+   * 演示账本状态（租户没开 onchainSends）直接返回账本里的条目。真链模式下：
+   * - 没有可用端点是错误，不能换成演示数字；
+   * - 代币（ERC-20）余额来自真链，而且**目录只认服务端下发的**：账本里的演示币一律
+   *   移除——真链上显示一个演示币，用户会拿着并不存在的 500 USDT 去转出；
+   * - 原生币余额来自真链，展示精度按目录；单价沿用账本隐含的单价（金额是真的，
+   *   单价是演示的，比两者都假强），账本没有这条链的原生币时补一条、单价按 0；
+   * - 任一步查不到都抛 ChainBalanceUnavailableError，由上层记为这条链不可用。
    */
-  private async withOnchainTokens(
+  private async chainBalances(
+    id: ChainId,
     address: string,
-    chain: ChainId | undefined,
-    list: TokenBalance[],
+    demo: TokenBalance[],
   ): Promise<TokenBalance[]> {
     const onchain = this.deps.onchain;
-    if (!onchain) return list;
-    let result = [...list];
-    const chains = chain ? [chain] : enabledChains();
-    for (const id of chains) {
-      if (!onchain.available(id)) {
-        // 真链模式下没有端点就是错误，不能换成演示数字
-        if (onchainSendsEnabled()) throw new ChainEndpointsUnavailableError(id);
-        continue;
-      }
-      // 下发的目录同样要过白名单：verified 只能由客户端授予，decimals 不符的丢掉
-      const catalogue = trustedTokens(
-        deliveredTokens(id)
-          .filter((token) => token.address !== NATIVE_TOKEN_ADDRESS)
-          .map((token) => ({ token: { ...token, verified: false } })),
-      ).map((item) => item.token);
-      let fetched: Map<string, bigint>;
-      try {
-        fetched = await onchain.tokenBalances(
+    if (!onchain) return demo;
+    if (!onchain.available(id)) {
+      if (onchainSendsEnabled()) throw new ChainEndpointsUnavailableError(id);
+      return demo;
+    }
+    // 下发的目录同样要过白名单：verified 只能由客户端授予，decimals 不符的丢掉
+    const catalogue = trustedTokens(
+      deliveredTokens(id)
+        .filter((token) => token.address !== NATIVE_TOKEN_ADDRESS)
+        .map((token) => ({ token: { ...token, verified: false } })),
+    ).map((item) => item.token);
+    let fetched: Map<string, bigint>;
+    let nativeRaw: bigint;
+    try {
+      [fetched, nativeRaw] = await Promise.all([
+        onchain.tokenBalances(
           id,
           address,
           catalogue.map((token) => token.address),
-        );
-      } catch (error) {
-        console.warn(`[wallet] ${id} 代币余额查询失败`, error);
-        throw new ChainBalanceUnavailableError(id);
-      }
-      // 真链上不该显示演示币；原生币由 withOnchainNative 单独处理
-      result = result.filter(
-        (item) =>
-          item.token.chain !== id ||
-          item.token.address === NATIVE_TOKEN_ADDRESS,
-      );
-      for (const token of catalogue) {
-        const raw = fetched.get(token.address.toLowerCase());
-        if (raw === undefined) {
-          // Multicall 里单条失败：不显示。演示账本里的数不是"旧值"，显示 0 也是撒谎
-          console.warn(
-            `[wallet] ${id} 上 ${token.symbol} 的余额查不到，暂不显示`,
-          );
-          continue;
-        }
-        const amount = money(raw, token.decimals, token.symbol);
-        result.push({
-          token,
-          amount,
-          // 参考价只给白名单内的币：任何合约都能把 symbol() 写成 ETH，
-          // 按符号取价会让一个假币按 4500 美元估值，进而影响大额验证阈值与总额
-          usdValue: token.verified
-            ? toApproxNumber(amount) * referencePriceForSymbol(token.symbol)
-            : 0,
-          change24hPct: 0,
-        });
-      }
+        ),
+        onchain.nativeBalance(id, address),
+      ]);
+    } catch (error) {
+      console.warn(`[wallet] ${id} 余额查询失败`, error);
+      throw new ChainBalanceUnavailableError(id);
     }
-    return result;
-  }
-
-  /**
-   * 转出走真链的链，原生币余额也必须来自真链。
-   *
-   * 代币（ERC-20）还要等服务端的代币目录，但原生币没有这个依赖。不接的话，
-   * 用户真转出了一笔，"资产"页刷出来的数字纹丝不动——他会以为钱没转出去。
-   * 价格暂时沿用账本里隐含的单价（金额是真的，单价是演示的，比两者都假强）；
-   * 账本里没有这条链的原生币时补一条，单价按 0——测试链的币本来就没有价值。
-   */
-  private async withOnchainNative(
-    address: string,
-    chain: ChainId | undefined,
-    list: TokenBalance[],
-  ): Promise<TokenBalance[]> {
-    const onchain = this.deps.onchain;
-    if (!onchain) return list;
-    const result = [...list];
-    const chains = chain ? [chain] : enabledChains();
-    for (const id of chains) {
-      if (!onchain.available(id)) {
-        // 真链模式下没有端点就是错误，不能换成演示数字
-        if (onchainSendsEnabled()) throw new ChainEndpointsUnavailableError(id);
+    // 真链上不该显示演示币；原生币下面单独处理
+    const result = demo.filter(
+      (item) => item.token.address === NATIVE_TOKEN_ADDRESS,
+    );
+    for (const token of catalogue) {
+      const raw = fetched.get(token.address.toLowerCase());
+      if (raw === undefined) {
+        // Multicall 里单条失败：不显示。演示账本里的数不是"旧值"，显示 0 也是撒谎
+        console.warn(
+          `[wallet] ${id} 上 ${token.symbol} 的余额查不到，暂不显示`,
+        );
         continue;
       }
-      let raw: bigint;
-      try {
-        raw = await onchain.nativeBalance(id, address);
-      } catch (error) {
-        // 真链上没有"原值"可沿用——账本里那个是演示数字。抛错让缓存保留上一次真实值
-        console.warn(`[wallet] ${id} 原生币余额查询失败`, error);
-        throw new ChainBalanceUnavailableError(id);
-      }
-      const native = CHAINS[id];
-      const amount = money(raw, native.nativeDecimals, native.nativeSymbol);
-      // 真链上展示精度以下发目录为准，演示夹具里的那份只服务于演示账本
-      const displayDecimals = nativeDisplayDecimals(id);
-      const index = result.findIndex(
-        (item) =>
-          item.token.chain === id &&
-          item.token.address === NATIVE_TOKEN_ADDRESS,
-      );
-      if (index >= 0) {
-        const previous = result[index] as TokenBalance;
-        const held = toApproxNumber(previous.amount);
-        const price = held > 0 ? previous.usdValue / held : 0;
-        result[index] = {
-          ...previous,
-          token: { ...previous.token, displayDecimals },
-          amount,
-          usdValue: toApproxNumber(amount) * price,
-        };
-      } else {
-        result.push({
-          token: {
-            chain: id,
-            address: NATIVE_TOKEN_ADDRESS,
-            symbol: native.nativeSymbol,
-            name: native.nativeSymbol,
-            decimals: native.nativeDecimals,
-            displayDecimals,
-            logoColor: native.color,
-            verified: true,
-          },
-          amount,
-          usdValue: 0,
-          change24hPct: 0,
-        });
-      }
+      const amount = money(raw, token.decimals, token.symbol);
+      result.push({
+        token,
+        amount,
+        // 参考价只给白名单内的币：任何合约都能把 symbol() 写成 ETH，
+        // 按符号取价会让一个假币按 4500 美元估值，进而影响大额验证阈值与总额
+        usdValue: token.verified
+          ? toApproxNumber(amount) * referencePriceForSymbol(token.symbol)
+          : 0,
+        change24hPct: 0,
+      });
+    }
+    const native = CHAINS[id];
+    const amount = money(nativeRaw, native.nativeDecimals, native.nativeSymbol);
+    // 真链上展示精度以下发目录为准，演示夹具里的那份只服务于演示账本
+    const displayDecimals = nativeDisplayDecimals(id);
+    const index = result.findIndex(
+      (item) => item.token.address === NATIVE_TOKEN_ADDRESS,
+    );
+    if (index >= 0) {
+      const previous = result[index] as TokenBalance;
+      const held = toApproxNumber(previous.amount);
+      const price = held > 0 ? previous.usdValue / held : 0;
+      result[index] = {
+        ...previous,
+        token: { ...previous.token, displayDecimals },
+        amount,
+        usdValue: toApproxNumber(amount) * price,
+      };
+    } else {
+      result.push({
+        token: {
+          chain: id,
+          address: NATIVE_TOKEN_ADDRESS,
+          symbol: native.nativeSymbol,
+          name: native.nativeSymbol,
+          decimals: native.nativeDecimals,
+          displayDecimals,
+          logoColor: native.color,
+          verified: true,
+        },
+        amount,
+        usdValue: 0,
+        change24hPct: 0,
+      });
     }
     return result;
   }

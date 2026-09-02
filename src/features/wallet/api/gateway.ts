@@ -2,8 +2,8 @@ import type { ChainId, TokenRef, Tx } from "../../../core/gateways/types";
 import type { Money } from "../../../core/money/money";
 import type { WalletConnectorId } from "../../session/model/session";
 import type {
+  BalanceSnapshot,
   SendRequest,
-  TokenBalance,
   TransferQuote,
   WalletAccount,
   WalletConnector,
@@ -35,7 +35,8 @@ export interface WalletGateway {
   /** 本地显示名 */
   rename(address: string, label: string): Promise<void>;
   markBackedUp(address: string): Promise<void>;
-  getBalances(address: string, chain?: ChainId): Promise<TokenBalance[]>;
+  /** 按链分别报错：一条链查不到只影响它自己，见 BalanceSnapshot.unavailable */
+  getBalances(address: string, chain?: ChainId): Promise<BalanceSnapshot>;
   /** 供 Predict 存入 / DEX 兑换扣减或增加钱包余额（Mock 内部账本）。 */
   adjustBalance(address: string, token: TokenRef, delta: Money): Promise<void>;
   /** `reason` 会显示在系统身份验证弹窗 / 外部钱包确认页上 */

@@ -14,12 +14,13 @@ export class MockAssetsGateway implements AssetsGateway {
     address: string,
     options: { includePredict: boolean },
   ): Promise<AssetsOverview> {
-    const [holdings, predictBalance] = await Promise.all([
+    const [snapshot, predictBalance] = await Promise.all([
       this.wallet.getBalances(address),
       options.includePredict
         ? this.predict.getBalance(address)
         : Promise.resolve(null),
     ]);
+    const holdings = snapshot.items;
     const walletUsd = holdings.reduce((sum, item) => sum + item.usdValue, 0);
     const walletChange = holdings.reduce(
       (sum, item) => sum + (item.usdValue * item.change24hPct) / 100,
@@ -48,6 +49,7 @@ export class MockAssetsGateway implements AssetsGateway {
       wallet: { usd: walletUsd, chains, address },
       predict,
       holdings,
+      unavailable: snapshot.unavailable,
     };
   }
 }

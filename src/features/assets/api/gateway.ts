@@ -1,5 +1,8 @@
 import type { Money } from "../../../core/money/money";
-import type { TokenBalance } from "../../wallet/model/wallet";
+import type {
+  ChainBalanceFailure,
+  TokenBalance,
+} from "../../wallet/model/wallet";
 
 export type AssetsOverview = {
   totalUsd: number;
@@ -15,6 +18,8 @@ export type AssetsOverview = {
     claimable: Money;
   } | null;
   holdings: TokenBalance[];
+  /** 这次没拿到余额的链：总额与持仓里都不含它们，界面要单独说明 */
+  unavailable: ChainBalanceFailure[];
 };
 
 export interface AssetsGateway {

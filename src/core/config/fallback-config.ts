@@ -152,6 +152,12 @@ const zhCN = {
   "assets.claims": "领取记录",
   "assets.walletTotal": "钱包总值",
   "assets.allChains": "全部链",
+  "assets.balanceUnavailable.node":
+    "{chain} 的余额暂时拿不到：节点没有响应。其他链不受影响。",
+  "assets.balanceUnavailable.endpoints":
+    "{chain} 没有可用的节点，余额无法读取。其他链不受影响。",
+  "assets.balanceUnavailable.retry": "重试",
+
   "assets.signInToView": "登录后查看资产",
   "transfer.title": "划转",
   "transfer.from": "从",
@@ -939,6 +945,12 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "assets.claims": "Claims",
   "assets.walletTotal": "Wallet total",
   "assets.allChains": "All chains",
+  "assets.balanceUnavailable.node":
+    "Balances on {chain} are unavailable right now: the node did not respond. Other chains are not affected.",
+  "assets.balanceUnavailable.endpoints":
+    "{chain} has no reachable node, so its balances cannot be read. Other chains are not affected.",
+  "assets.balanceUnavailable.retry": "Retry",
+
   "assets.signInToView": "Log in to see your assets",
   "transfer.title": "Transfer",
   "transfer.from": "From",

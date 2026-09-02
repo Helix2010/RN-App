@@ -32,6 +32,7 @@ import {
   tokenKey,
 } from "../fixtures/wallet";
 import type {
+  BalanceSnapshot,
   SendRequest,
   TokenBalance,
   WalletAccount,
@@ -175,11 +176,14 @@ export class MockWalletGateway implements WalletGateway {
     await this.save();
   }
 
-  async getBalances(address: string, chain?: ChainId): Promise<TokenBalance[]> {
+  async getBalances(
+    address: string,
+    chain?: ChainId,
+  ): Promise<BalanceSnapshot> {
     return simulate(async () => {
       const state = await this.load();
       const ledger = state.balances[address] ?? {};
-      return Object.entries(ledger)
+      const items = Object.entries(ledger)
         .map(([key, raw]) => {
           const token = TOKENS[key];
           if (!token) return null;
@@ -195,6 +199,7 @@ export class MockWalletGateway implements WalletGateway {
         })
         .filter((item): item is TokenBalance => item !== null)
         .sort((a, b) => b.usdValue - a.usdValue);
+      return { items, unavailable: [] };
     });
   }
 

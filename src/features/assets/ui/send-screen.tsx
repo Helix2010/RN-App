@@ -1,3 +1,4 @@
+import { ChainUnavailableNotice } from "../../wallet/ui/chain-unavailable-notice";
 import * as Clipboard from "expo-clipboard";
 import {
   fill,
@@ -177,7 +178,10 @@ function SendForm({
     session.data && session.data.connector !== "embedded",
   );
   const testnet = isTestnetChain(chain);
-  const tokens = (balances.data ?? []).filter((item) => !isZero(item.amount));
+  const tokens = (balances.data?.items ?? []).filter(
+    (item) => !isZero(item.amount),
+  );
+  const chainUnavailable = balances.data?.unavailable ?? [];
   const selected: TokenBalance | undefined =
     tokens.find(
       (item) => `${item.token.chain}:${item.token.address}` === tokenKey,
@@ -413,6 +417,10 @@ function SendForm({
                 setText("");
               }}
               accessibilityLabel={t("send.network")}
+            />
+            <ChainUnavailableNotice
+              failures={chainUnavailable}
+              onRetry={() => void balances.refetch()}
             />
           </Stack>
 

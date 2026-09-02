@@ -60,7 +60,7 @@ export function TokenDetailScreen({
   const [tab, setTab] = useState<"trades" | "holders" | "info">("trades");
   const session = useSession();
   const balances = useWalletBalances(session.data?.address, chain);
-  const held = balances.data?.find(
+  const held = balances.data?.items.find(
     (item) => item.token.address.toLowerCase() === address.toLowerCase(),
   );
 

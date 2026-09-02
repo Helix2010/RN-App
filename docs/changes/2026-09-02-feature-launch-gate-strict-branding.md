@@ -51,3 +51,10 @@
 - 删除 `session.data?.chains ?? ["bsc"]` 这类永不触发的兜底；`loadBootstrap` 去掉只会重抛的 try/catch。
 - 仍待做：根级 ErrorBoundary（RELIABILITY 文档要求，当前不存在）；余额查询按链分别报错而不是整批失败；首页头部无 logo 时的内置几何标。
 
+## 后续补充（同日）
+
+- 根级 ErrorBoundary（`src/app/root-error-boundary.tsx`，挂在 App 根部）：渲染期异常变成可操作的界面——重试（重新挂载整棵树，导航一并重置）、复制诊断信息（诊断 ID、版本、构建号、渠道、错误与组件栈）。只用 RN 原生组件与内置中英文案，不依赖可能就是崩溃源的设计系统与运行时。连续启动崩溃进入 safe mode 需要服务端回滚指令配合，未做。
+- 首次安装的启动流程：加载态（转圈 + 状态文案）→ 拿到服务端下发 → 按下发的品牌配置画启动页并停留最短时间 → 进入。
+- 余额按链分别报错：`WalletGateway.getBalances` 返回 `BalanceSnapshot { items, unavailable }`，一条链的节点没响应只把这条链记入 `unavailable`，其他链的真实余额照常显示；资产页、转出页、账户详情各自显示"某链余额暂时不可用"并可重试。
+- `BrandMark` 没有 `uri` 时不再画内置几何标；图片下载完成前显示同尺寸骨架。业务页只在拿到下发后挂载，所以"没配 logo"在那一刻已确定，不用骨架冒充。
+

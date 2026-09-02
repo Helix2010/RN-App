@@ -5,4 +5,4 @@ export * from "./controls";
 export * from "./toast";
 export * from "./use-async-action";
 export * from "./charts";
-export { useTheme } from "tamagui";
+export { Spinner, useTheme } from "tamagui";

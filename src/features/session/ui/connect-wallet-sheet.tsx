@@ -381,7 +381,7 @@ function SignConfirm({
   const account = "account" in state ? state.account : undefined;
   const connector = "connector" in state ? state.connector : undefined;
   const balances = useWalletBalances(account?.address);
-  const native = balances.data?.find(
+  const native = balances.data?.items.find(
     (item) =>
       item.token.address === "native" &&
       item.token.chain === account?.chains[0],

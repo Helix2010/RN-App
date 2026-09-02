@@ -85,60 +85,29 @@ export function AppIcon({
 }
 
 /** 品牌标：优先使用租户服务端下发的 logo（uri），否则退回内置几何标。 */
+/**
+ * 租户 logo。`uri` 来自服务端品牌配置：没有配置就什么都不画——不存在"内置几何标"
+ * 这种替身。图片下载完成前显示同尺寸骨架，占位但不冒充内容。
+ */
 export function BrandMark({ size = 48, uri }: { size?: number; uri?: string }) {
-  if (uri) {
-    return (
+  const [loaded, setLoaded] = useState(false);
+  if (!uri) return null;
+  return (
+    <YStack width={size} height={size} testID="brand-mark">
+      {loaded ? null : (
+        <YStack position="absolute" inset={0}>
+          <SkeletonBlock
+            width={size}
+            height={size}
+            borderRadius={size * 0.28}
+          />
+        </YStack>
+      )}
       <Image
         source={{ uri }}
+        onLoad={() => setLoaded(true)}
         style={{ width: size, height: size, borderRadius: size * 0.28 }}
         accessibilityLabel="brand logo"
-      />
-    );
-  }
-  return (
-    <YStack
-      width={size}
-      height={size}
-      alignItems="center"
-      justifyContent="center"
-      borderRadius={size * 0.28}
-      backgroundColor="$primary"
-      shadowColor="$shadowColor"
-      shadowOpacity={0.2}
-      shadowRadius={12}
-      shadowOffset={{ width: 0, height: 6 }}
-      accessibilityLabel="AnyFun 品牌标志"
-    >
-      <YStack
-        position="absolute"
-        left={size * 0.2}
-        bottom={size * 0.16}
-        width={size * 0.15}
-        height={size * 0.62}
-        borderRadius={999}
-        backgroundColor="$onPrimary"
-        opacity={0.9}
-        rotate="-24deg"
-      />
-      <YStack
-        position="absolute"
-        right={size * 0.2}
-        bottom={size * 0.16}
-        width={size * 0.15}
-        height={size * 0.62}
-        borderRadius={999}
-        backgroundColor="$onPrimary"
-        opacity={0.72}
-        rotate="24deg"
-      />
-      <YStack
-        position="absolute"
-        top={size * 0.31}
-        width={size * 0.2}
-        height={size * 0.2}
-        rotate="45deg"
-        borderRadius={size * 0.04}
-        backgroundColor="$onPrimary"
       />
     </YStack>
   );

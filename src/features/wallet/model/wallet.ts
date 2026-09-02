@@ -30,6 +30,23 @@ export type TokenBalance = {
   change24hPct: number;
 };
 
+/**
+ * 某条链的余额这次没拿到。它不是 0，也不是演示数字：界面要单独说明这条链不可用，
+ * 其他链的真实余额照常显示。
+ * - node：节点没有响应 / 返回错误；
+ * - endpoints：真链模式下这条链没有可用的 RPC 端点（配置问题）。
+ */
+export type ChainBalanceFailure = {
+  chain: ChainId;
+  reason: "node" | "endpoints";
+};
+
+/** 一次余额查询的结果：拿到的余额 + 没拿到的链。 */
+export type BalanceSnapshot = {
+  items: TokenBalance[];
+  unavailable: ChainBalanceFailure[];
+};
+
 export type SendRequest = {
   from: string;
   to: string;

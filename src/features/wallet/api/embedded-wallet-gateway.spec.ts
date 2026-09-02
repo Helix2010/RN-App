@@ -11,7 +11,6 @@ import {
   WalletProvisioningUnsupportedError,
 } from "./gateway";
 import {
-  ChainBalanceUnavailableError,
   EmbeddedWalletGateway,
   TokenMetadataMismatchError,
   type ExternalWalletConnector,
@@ -26,6 +25,8 @@ import {
   type DeliveredToken,
 } from "../../../core/wallet/config/wallet-runtime-config";
 import type { SendRequest, TokenBalance } from "../model/wallet";
+
+const snapshot = (items: TokenBalance[]) => ({ items, unavailable: [] });
 
 const PHRASE =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
@@ -144,6 +145,15 @@ function fakeExternal(): ExternalWalletConnector {
       submitTransaction: async () => "0xexternal",
     })),
   };
+}
+
+/** 网关返回按链分好的快照；大多数用例只关心拿到的余额条目 */
+async function balances(
+  gateway: EmbeddedWalletGateway,
+  address: string,
+  chain?: ChainId,
+): Promise<TokenBalance[]> {
+  return (await gateway.getBalances(address, chain)).items;
 }
 
 /** 测试租户：三条主网、演示账本、目录里只有原生币。要别的组合在用例里重新下发。 */
@@ -354,7 +364,7 @@ describe("EmbeddedWalletGateway", () => {
     const { gateway, chainData } = setup();
     const spy = jest.spyOn(chainData, "getBalances");
     const { account } = await gateway.createWallet();
-    await gateway.getBalances(account.address);
+    await balances(gateway, account.address);
     expect(spy).toHaveBeenCalledWith(account.address, undefined);
   });
 });
@@ -462,25 +472,27 @@ describe("EmbeddedWalletGateway token trust", () => {
 
   it("strips a verified flag the chain data claimed for an unknown contract", async () => {
     const { gateway, chainData } = setup();
-    jest.spyOn(chainData, "getBalances").mockResolvedValue([
-      {
-        token: {
-          chain: "bsc",
-          address: FAKE_USDT,
-          symbol: "USDT",
-          name: "USDT",
-          decimals: 18,
-          displayDecimals: 2,
-          logoColor: "#26A17B",
-          verified: true,
+    jest.spyOn(chainData, "getBalances").mockResolvedValue(
+      snapshot([
+        {
+          token: {
+            chain: "bsc",
+            address: FAKE_USDT,
+            symbol: "USDT",
+            name: "USDT",
+            decimals: 18,
+            displayDecimals: 2,
+            logoColor: "#26A17B",
+            verified: true,
+          },
+          amount: money(1n, 18, "USDT"),
+          usdValue: 1,
+          change24hPct: 0,
         },
-        amount: money(1n, 18, "USDT"),
-        usdValue: 1,
-        change24hPct: 0,
-      },
-    ]);
+      ]),
+    );
 
-    const [held] = await gateway.getBalances(ADDRESS);
+    const [held] = await balances(gateway, ADDRESS);
 
     // 下发的 verified 一律不采纳，只有客户端那份表能授予
     expect(held?.token.verified).toBe(false);
@@ -519,16 +531,18 @@ describe("EmbeddedWalletGateway native balances", () => {
     const { port } = fakeOnchain(["bsc"]);
     port.nativeBalance = async () => 5n * 10n ** 17n; // 0.5 BNB
     const { gateway, chainData } = setup({ onchain: port });
-    jest.spyOn(chainData, "getBalances").mockResolvedValue([
-      {
-        token: { ...sendRequest("bsc").token },
-        amount: money(2n * 10n ** 18n, 18, "BNB"),
-        usdValue: 1_200,
-        change24hPct: 0,
-      },
-    ]);
+    jest.spyOn(chainData, "getBalances").mockResolvedValue(
+      snapshot([
+        {
+          token: { ...sendRequest("bsc").token },
+          amount: money(2n * 10n ** 18n, 18, "BNB"),
+          usdValue: 1_200,
+          change24hPct: 0,
+        },
+      ]),
+    );
 
-    const [bnb] = await gateway.getBalances(ADDRESS, "bsc");
+    const [bnb] = await balances(gateway, ADDRESS, "bsc");
 
     expect(bnb?.amount.raw).toBe((5n * 10n ** 17n).toString());
     // 单价沿用账本隐含的 600：金额是真的，单价是演示的，比两者都假强
@@ -539,16 +553,18 @@ describe("EmbeddedWalletGateway native balances", () => {
     const { port } = fakeOnchain(["bsc"]);
     port.nativeBalance = jest.fn(async () => 1n);
     const { gateway, chainData } = setup({ onchain: port });
-    jest.spyOn(chainData, "getBalances").mockResolvedValue([
-      {
-        token: { ...sendRequest("eth").token, symbol: "ETH", chain: "eth" },
-        amount: money(3n, 18, "ETH"),
-        usdValue: 0,
-        change24hPct: 0,
-      },
-    ]);
+    jest.spyOn(chainData, "getBalances").mockResolvedValue(
+      snapshot([
+        {
+          token: { ...sendRequest("eth").token, symbol: "ETH", chain: "eth" },
+          amount: money(3n, 18, "ETH"),
+          usdValue: 0,
+          change24hPct: 0,
+        },
+      ]),
+    );
 
-    const [eth] = await gateway.getBalances(ADDRESS, "eth");
+    const [eth] = await balances(gateway, ADDRESS, "eth");
 
     expect(eth?.amount.raw).toBe("3");
     expect(port.nativeBalance).not.toHaveBeenCalled();
@@ -561,9 +577,9 @@ describe("EmbeddedWalletGateway native balances", () => {
     const { port } = fakeOnchain(["op-sepolia"]);
     port.nativeBalance = async () => 10n ** 18n;
     const { gateway, chainData } = setup({ onchain: port });
-    jest.spyOn(chainData, "getBalances").mockResolvedValue([]);
+    jest.spyOn(chainData, "getBalances").mockResolvedValue(snapshot([]));
 
-    const list = await gateway.getBalances(ADDRESS, "op-sepolia");
+    const list = await balances(gateway, ADDRESS, "op-sepolia");
 
     expect(list).toHaveLength(1);
     expect(list[0]?.token).toMatchObject({
@@ -584,18 +600,21 @@ describe("EmbeddedWalletGateway native balances", () => {
     };
     const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
     const { gateway, chainData } = setup({ onchain: port });
-    jest.spyOn(chainData, "getBalances").mockResolvedValue([
-      {
-        token: { ...sendRequest("bsc").token },
-        amount: money(7n, 18, "BNB"),
-        usdValue: 0,
-        change24hPct: 0,
-      },
-    ]);
-
-    await expect(gateway.getBalances(ADDRESS, "bsc")).rejects.toBeInstanceOf(
-      ChainBalanceUnavailableError,
+    jest.spyOn(chainData, "getBalances").mockResolvedValue(
+      snapshot([
+        {
+          token: { ...sendRequest("bsc").token },
+          amount: money(7n, 18, "BNB"),
+          usdValue: 0,
+          change24hPct: 0,
+        },
+      ]),
     );
+
+    // 这条链进 unavailable，而不是整批抛错让别的链也没了余额
+    const result = await gateway.getBalances(ADDRESS, "bsc");
+    expect(result.items).toEqual([]);
+    expect(result.unavailable).toEqual([{ chain: "bsc", reason: "node" }]);
     warn.mockRestore();
   });
 });
@@ -654,12 +673,11 @@ describe("EmbeddedWalletGateway token balances", () => {
     const { gateway, chainData } = setup({ onchain: port });
     jest
       .spyOn(chainData, "getBalances")
-      .mockResolvedValue([
-        demo("bsc", "native", "BNB"),
-        demo("bsc", PEPE_BSC, "PEPE"),
-      ]);
+      .mockResolvedValue(
+        snapshot([demo("bsc", "native", "BNB"), demo("bsc", PEPE_BSC, "PEPE")]),
+      );
 
-    const list = await gateway.getBalances(ADDRESS, "bsc");
+    const list = await balances(gateway, ADDRESS, "bsc");
 
     // 只问下发目录里的合约；演示币 PEPE 在真链上不再出现，原生币仍在
     expect(port.tokenBalances).toHaveBeenCalledWith("bsc", ADDRESS, [USDT_BSC]);
@@ -684,11 +702,12 @@ describe("EmbeddedWalletGateway token balances", () => {
     const { gateway, chainData } = setup({ onchain: port });
     jest
       .spyOn(chainData, "getBalances")
-      .mockResolvedValue([demo("bsc", PEPE_BSC, "PEPE")]);
+      .mockResolvedValue(snapshot([demo("bsc", PEPE_BSC, "PEPE")]));
 
-    await expect(gateway.getBalances(ADDRESS, "bsc")).rejects.toBeInstanceOf(
-      ChainBalanceUnavailableError,
-    );
+    // 这条链进 unavailable，而不是整批抛错让别的链也没了余额
+    const result = await gateway.getBalances(ADDRESS, "bsc");
+    expect(result.items).toEqual([]);
+    expect(result.unavailable).toEqual([{ chain: "bsc", reason: "node" }]);
     warn.mockRestore();
   });
 
@@ -700,9 +719,9 @@ describe("EmbeddedWalletGateway token balances", () => {
     const { gateway, chainData } = setup({ onchain: port });
     jest
       .spyOn(chainData, "getBalances")
-      .mockResolvedValue([demo("bsc", USDT_BSC, "USDT")]);
+      .mockResolvedValue(snapshot([demo("bsc", USDT_BSC, "USDT")]));
 
-    const list = await gateway.getBalances(ADDRESS, "bsc");
+    const list = await balances(gateway, ADDRESS, "bsc");
 
     expect(list.find((item) => item.token.symbol === "USDT")).toBeUndefined();
     expect(warn).toHaveBeenCalled();
@@ -718,9 +737,11 @@ describe("EmbeddedWalletGateway token balances", () => {
     const { gateway, chainData } = setup({ onchain: port });
     jest
       .spyOn(chainData, "getBalances")
-      .mockResolvedValue([demo("bsc", USDT_BSC.toLowerCase(), "USDT")]);
+      .mockResolvedValue(
+        snapshot([demo("bsc", USDT_BSC.toLowerCase(), "USDT")]),
+      );
 
-    const list = await gateway.getBalances(ADDRESS, "bsc");
+    const list = await balances(gateway, ADDRESS, "bsc");
 
     expect(symbols(list)).toEqual(["BNB"]);
     expect(warn).not.toHaveBeenCalled();
@@ -744,9 +765,9 @@ describe("EmbeddedWalletGateway token balances", () => {
     port.tokenBalances = async () =>
       new Map([["0x000000000000000000000000000000000000beef", 10n ** 18n]]);
     const { gateway, chainData } = setup({ onchain: port });
-    jest.spyOn(chainData, "getBalances").mockResolvedValue([]);
+    jest.spyOn(chainData, "getBalances").mockResolvedValue(snapshot([]));
 
-    const list = await gateway.getBalances(ADDRESS, "bsc");
+    const list = await balances(gateway, ADDRESS, "bsc");
 
     const fake = list.find((item) => item.token.address.endsWith("bEEF"));
     expect(fake?.amount.raw).toBe((10n ** 18n).toString());
@@ -771,9 +792,9 @@ describe("EmbeddedWalletGateway token balances", () => {
     const { gateway, chainData } = setup({ onchain: port });
     jest
       .spyOn(chainData, "getBalances")
-      .mockResolvedValue([demo("eth", UNI_ETH, "UNI")]);
+      .mockResolvedValue(snapshot([demo("eth", UNI_ETH, "UNI")]));
 
-    const list = await gateway.getBalances(ADDRESS, "eth");
+    const list = await balances(gateway, ADDRESS, "eth");
 
     expect(symbols(list)).toEqual(["UNI"]);
     expect(port.tokenBalances).not.toHaveBeenCalled();
@@ -787,12 +808,11 @@ describe("EmbeddedWalletGateway token balances", () => {
     const { gateway, chainData } = setup({ onchain: port });
     jest
       .spyOn(chainData, "getBalances")
-      .mockResolvedValue([
-        demo("bsc", "native", "BNB"),
-        demo("bsc", PEPE_BSC, "PEPE"),
-      ]);
+      .mockResolvedValue(
+        snapshot([demo("bsc", "native", "BNB"), demo("bsc", PEPE_BSC, "PEPE")]),
+      );
 
-    const list = await gateway.getBalances(ADDRESS, "bsc");
+    const list = await balances(gateway, ADDRESS, "bsc");
 
     expect(symbols(list)).toEqual(["BNB"]);
   });
@@ -802,9 +822,9 @@ describe("EmbeddedWalletGateway token balances", () => {
     const { port } = fakeOnchain(["bsc"]);
     port.tokenBalances = async () => new Map([[USDT_BSC.toLowerCase(), 0n]]);
     const { gateway, chainData } = setup({ onchain: port });
-    jest.spyOn(chainData, "getBalances").mockResolvedValue([]);
+    jest.spyOn(chainData, "getBalances").mockResolvedValue(snapshot([]));
 
-    const list = await gateway.getBalances(ADDRESS, "bsc");
+    const list = await balances(gateway, ADDRESS, "bsc");
 
     // 余额为 0 也要在列表里：目录是租户配的，不显示等于把币藏起来
     const usdt = list.find((item) => item.token.symbol === "USDT");
@@ -844,13 +864,15 @@ describe("EmbeddedWalletGateway chain switch", () => {
     const { gateway, chainData } = setup();
     jest
       .spyOn(chainData, "getBalances")
-      .mockResolvedValue([demoNative("bsc", "BNB"), demoNative("eth", "ETH")]);
+      .mockResolvedValue(
+        snapshot([demoNative("bsc", "BNB"), demoNative("eth", "ETH")]),
+      );
 
-    const all = await gateway.getBalances(ADDRESS);
+    const all = await balances(gateway, ADDRESS);
 
     expect(all.map((item) => item.token.chain)).toEqual(["eth"]);
     // 直接问一条关掉的链是调用方的 bug：抛错，不给一个"空"的成功
-    await expect(gateway.getBalances(ADDRESS, "bsc")).rejects.toBeInstanceOf(
+    await expect(balances(gateway, ADDRESS, "bsc")).rejects.toBeInstanceOf(
       ChainNotEnabledError,
     );
   });

@@ -1,3 +1,4 @@
+import { ChainUnavailableNotice } from "../../wallet/ui/chain-unavailable-notice";
 import { useRef, useState } from "react";
 import {
   fill,
@@ -307,6 +308,10 @@ export function AssetsScreen({
             </Row>
             {data ? (
               <>
+                <ChainUnavailableNotice
+                  failures={data.unavailable}
+                  onRetry={() => void overview.refetch()}
+                />
                 {predictUsdc ? (
                   <HoldingRow
                     item={predictUsdc}

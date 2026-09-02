@@ -14,6 +14,9 @@ import { fromDecimal, money } from "../../../core/money/money";
 import { ToastHost } from "../../../design-system";
 import * as LocalAuthentication from "expo-local-authentication";
 
+/** 网关返回的是按链分好的快照；测试里没有不可用的链 */
+const snapshot = (items: TokenBalance[]) => ({ items, unavailable: [] });
+
 const RECIPIENT = "0x9858EfFD232B4033E47d90003D41EC34EcaEda94";
 const USDT_BSC = "0x55d398326f99059ff775485246999027b3197955";
 
@@ -48,13 +51,15 @@ async function openConfirm(options: {
 }) {
   const gateways = createTestGateways();
   await signIn(gateways);
-  gateways.wallet.getBalances = jest.fn(async () => [
-    balance({
-      address: USDT_BSC,
-      symbol: "USDT",
-      verified: options.verified,
-    }),
-  ]);
+  gateways.wallet.getBalances = jest.fn(async () =>
+    snapshot([
+      balance({
+        address: USDT_BSC,
+        symbol: "USDT",
+        verified: options.verified,
+      }),
+    ]),
+  );
   options.prepare?.(gateways);
   const rendered = await renderWithProviders(
     <>
@@ -174,9 +179,11 @@ describe("SendScreen recipient validation", () => {
   async function typeAddress(value: string) {
     const gateways = createTestGateways();
     await signIn(gateways);
-    gateways.wallet.getBalances = jest.fn(async () => [
-      balance({ address: USDT_BSC, symbol: "USDT", verified: true }),
-    ]);
+    gateways.wallet.getBalances = jest.fn(async () =>
+      snapshot([
+        balance({ address: USDT_BSC, symbol: "USDT", verified: true }),
+      ]),
+    );
     const rendered = await renderWithProviders(
       <SendScreen onBack={jest.fn()} initialChain="bsc" />,
       { gateways },
@@ -294,15 +301,17 @@ describe("SendScreen on a real chain", () => {
   it("shows the exact amount that will be signed, not a rounded one", async () => {
     const gateways = createTestGateways();
     await signIn(gateways);
-    gateways.wallet.getBalances = jest.fn(async () => [
-      // 输入框只收展示精度以内的位数，所以这里要给到 6 位才输得进 1.009
-      balance({
-        address: USDT_BSC,
-        symbol: "USDT",
-        verified: true,
-        displayDecimals: 6,
-      }),
-    ]);
+    gateways.wallet.getBalances = jest.fn(async () =>
+      snapshot([
+        // 输入框只收展示精度以内的位数，所以这里要给到 6 位才输得进 1.009
+        balance({
+          address: USDT_BSC,
+          symbol: "USDT",
+          verified: true,
+          displayDecimals: 6,
+        }),
+      ]),
+    );
     await renderWithProviders(
       <SendScreen onBack={jest.fn()} initialChain="bsc" />,
       { gateways },
@@ -377,9 +386,17 @@ describe("SendScreen progress page", () => {
       verified: true,
       prepare: (gateways) => {
         gateways.wallet.getBalances = jest.fn(async () =>
-          sent
-            ? []
-            : [balance({ address: USDT_BSC, symbol: "USDT", verified: true })],
+          snapshot(
+            sent
+              ? []
+              : [
+                  balance({
+                    address: USDT_BSC,
+                    symbol: "USDT",
+                    verified: true,
+                  }),
+                ],
+          ),
         );
         gateways.wallet.send = jest.fn(async () => {
           sent = true;
@@ -408,9 +425,11 @@ describe("SendScreen amount presets", () => {
   it("computes a preset from the exact balance, not a rounded float", async () => {
     const gateways = createTestGateways();
     await signIn(gateways);
-    gateways.wallet.getBalances = jest.fn(async () => [
-      balance({ address: USDT_BSC, symbol: "USDT", verified: true }),
-    ]);
+    gateways.wallet.getBalances = jest.fn(async () =>
+      snapshot([
+        balance({ address: USDT_BSC, symbol: "USDT", verified: true }),
+      ]),
+    );
     await renderWithProviders(
       <SendScreen onBack={jest.fn()} initialChain="bsc" />,
       { gateways },
@@ -432,7 +451,7 @@ describe("SendScreen display precision", () => {
   async function renderWithBalance(item: TokenBalance) {
     const gateways = createTestGateways();
     await signIn(gateways);
-    gateways.wallet.getBalances = jest.fn(async () => [item]);
+    gateways.wallet.getBalances = jest.fn(async () => snapshot([item]));
     return renderWithProviders(
       <SendScreen onBack={jest.fn()} initialChain="bsc" />,
       { gateways },
@@ -529,7 +548,7 @@ describe("SendScreen chain switch", () => {
   it("offers only the chains the tenant enabled and starts on the first of them", async () => {
     const gateways = createTestGateways();
     await signIn(gateways);
-    gateways.wallet.getBalances = jest.fn(async () => []);
+    gateways.wallet.getBalances = jest.fn(async () => snapshot([]));
 
     await renderWithProviders(<SendScreen onBack={jest.fn()} />, {
       gateways,

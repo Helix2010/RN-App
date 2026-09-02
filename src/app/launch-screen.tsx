@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Animated, Image } from "react-native";
 import type { BrandingAsset } from "../core/config/bootstrap.schema";
 import { brandingAssetUrl } from "../core/config/branding-assets";
-import { Body, Page, Stack } from "../design-system";
+import { Body, Page, Spinner, Stack } from "../design-system";
 
 /**
  * 启动页：**严格按服务端下发的品牌配置画**，配置里有什么画什么。
@@ -75,9 +75,10 @@ export function LaunchScreen({
         testID="launch-screen"
         accessibilityLabel={message}
       >
-        <Body fontSize={13} testID="launch-pending">
-          {message}
-        </Body>
+        <Stack alignItems="center" gap="$3" testID="launch-pending">
+          <Spinner size="large" color="$primary" />
+          <Body fontSize={13}>{message}</Body>
+        </Stack>
       </Page>
     );
 

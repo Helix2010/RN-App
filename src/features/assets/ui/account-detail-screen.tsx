@@ -1,3 +1,4 @@
+import { ChainUnavailableNotice } from "../../wallet/ui/chain-unavailable-notice";
 import * as Clipboard from "expo-clipboard";
 import {
   fill,
@@ -329,7 +330,7 @@ function WalletAccount({
     address || undefined,
     chain === "all" ? undefined : chain,
   );
-  const total = (balances.data ?? []).reduce(
+  const total = (balances.data?.items ?? []).reduce(
     (sum, item) => sum + item.usdValue,
     0,
   );
@@ -390,11 +391,15 @@ function WalletAccount({
           onChange={setPicked}
           accessibilityLabel={t("send.network")}
         />
+        <ChainUnavailableNotice
+          failures={balances.data?.unavailable ?? []}
+          onRetry={() => void balances.refetch()}
+        />
         {balances.data ? (
-          balances.data.length === 0 ? (
+          balances.data.items.length === 0 ? (
             <Body>{t("state.empty")}</Body>
           ) : (
-            balances.data.map((item) => (
+            balances.data.items.map((item) => (
               <HoldingRow
                 key={`${item.token.chain}:${item.token.address}`}
                 item={item}

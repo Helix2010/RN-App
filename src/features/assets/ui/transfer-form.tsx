@@ -67,7 +67,7 @@ export function TransferForm({
   const withdraw = usePredictWithdraw(address);
   const tx = usePredictTx(txId);
 
-  const walletUsdc = wallet.data?.find(
+  const walletUsdc = wallet.data?.items.find(
     (item) => item.token.symbol === "USDC" && item.token.chain === "bsc",
   );
   const available: Money =
