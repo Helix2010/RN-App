@@ -7,14 +7,19 @@ import {
 
 describe("wallet deep links", () => {
   it("uses the schemes the wallet vendors actually registered", () => {
-    // okx:// 这个 scheme 不存在，注册表里是 okex://main 和 okxwallet://main。
-    // 写错的话唤起永远失败，用户点了像没反应。
+    // 欧易大陆版 6.187.1 的 APK 同时注册 okex / okx，内部 WalletConnect
+    // 入口使用 requestId；独立 OKX Wallet 仍保留自己的 okxwallet + uri 入口。
     expect(pairingLinks("okx")).toEqual([
-      "okex://main/wc?uri=",
+      "okex://main/wc?requestId=",
+      "okx://main/wc?requestId=",
       "okxwallet://main/wc?uri=",
     ]);
     expect(pairingLinks("metamask")).toEqual(["metamask://wc?uri="]);
-    expect(launchLinks("okx")).toEqual(["okex://main", "okxwallet://main"]);
+    expect(launchLinks("okx")).toEqual([
+      "okex://main",
+      "okx://main",
+      "okxwallet://main",
+    ]);
   });
 
   it("has no link for the generic scan entry", () => {
@@ -69,7 +74,7 @@ describe("openWalletOrFallback", () => {
 
     expect(openURL).toHaveBeenCalledTimes(2);
     expect(openURL).toHaveBeenLastCalledWith(
-      `okxwallet://main/wc?uri=${encodeURIComponent("wc:abc@2")}`,
+      `okx://main/wc?requestId=${encodeURIComponent("wc:abc@2")}`,
     );
     expect(fallback).not.toHaveBeenCalled();
   });

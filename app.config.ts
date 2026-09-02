@@ -16,6 +16,12 @@ type TenantBuildConfig = {
   androidVersionCode: number;
   iosBuildNumber: string;
   iconBackgroundColor?: string;
+  icon: {
+    icon: string;
+    androidForeground: string;
+    androidBackground: string;
+    androidMonochrome: string;
+  };
 };
 
 const tenantSlug = process.env.EXPO_PUBLIC_TENANT;
@@ -28,6 +34,9 @@ if (tenantFile && !existsSync(tenantFile)) {
 const tenant = tenantFile
   ? (JSON.parse(readFileSync(tenantFile, "utf8")) as TenantBuildConfig)
   : null;
+if (tenant && !tenant.icon) {
+  throw new Error("Tenant configuration must define icon assets");
+}
 
 const distributionChannel =
   tenant?.distributionChannel ??
@@ -52,6 +61,12 @@ const applicationId =
   "dex-mobile";
 const tenantAsset = (name: string, fallback: string): string =>
   tenant ? `./assets/tenants/${tenant.slug}/${name}` : fallback;
+const iconAssets = tenant?.icon ?? {
+  icon: "icon.png",
+  androidForeground: "android-icon-foreground.png",
+  androidBackground: "android-icon-background.png",
+  androidMonochrome: "android-icon-monochrome.png",
+};
 const googleServicesFile = process.env.GOOGLE_SERVICES_JSON;
 const appVersion = tenant?.version ?? "0.0.0-dev";
 const androidVersionCode = tenant?.androidVersionCode ?? 1;
@@ -113,7 +128,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   version: appVersion,
   orientation: "portrait",
   userInterfaceStyle: "automatic",
-  icon: tenantAsset("icon.png", "./assets/icon.png"),
+  icon: tenantAsset(iconAssets.icon, "./assets/icon.png"),
   ios: {
     supportsTablet: true,
     bundleIdentifier: tenant?.iosBundleId ?? "com.anyfun.foundation",
@@ -130,14 +145,17 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     adaptiveIcon: {
       backgroundColor: iconBackgroundColor,
       foregroundImage: tenantAsset(
-        "android-icon-foreground.png",
+        iconAssets.androidForeground,
         "./assets/android-icon-foreground.png",
       ),
       backgroundImage: tenantAsset(
-        "android-icon-background.png",
+        iconAssets.androidBackground,
         "./assets/android-icon-background.png",
       ),
-      monochromeImage: "./assets/android-icon-monochrome.png",
+      monochromeImage: tenantAsset(
+        iconAssets.androidMonochrome,
+        "./assets/android-icon-monochrome.png",
+      ),
     },
     permissions: [
       "POST_NOTIFICATIONS",

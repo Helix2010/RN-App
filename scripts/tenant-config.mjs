@@ -32,6 +32,23 @@ export function readTenantConfig(slug) {
       throw new Error(`tenant.json missing ${key}`);
     }
   }
+  const icon = config.icon;
+  for (const key of [
+    "icon",
+    "androidForeground",
+    "androidBackground",
+    "androidMonochrome",
+  ]) {
+    if (
+      !icon ||
+      typeof icon[key] !== "string" ||
+      icon[key] === "" ||
+      icon[key].startsWith("/") ||
+      icon[key].split("/").includes("..")
+    ) {
+      throw new Error(`tenant.json missing icon.${key}`);
+    }
+  }
   return config;
 }
 
@@ -51,4 +68,8 @@ export function tenantEnvironment(config) {
     EXPO_PUBLIC_DISTRIBUTION_CHANNEL: config.distributionChannel,
     EXPO_PUBLIC_OTA_CHANNEL: config.otaChannel,
   };
+}
+
+export function tenantIconAssets(config) {
+  return config.icon;
 }

@@ -24,7 +24,7 @@ const WALLET_PACKAGES = [
   "com.wallet.crypto.trustapp",
 ];
 
-const WALLET_SCHEMES = ["metamask", "okex", "okxwallet", "trust", "wc"];
+const WALLET_SCHEMES = ["metamask", "okex", "okx", "okxwallet", "trust", "wc"];
 
 function mergeQueries(queries) {
   const existing = queries[0] ?? {};

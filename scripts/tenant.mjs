@@ -2,9 +2,9 @@
 /**
  * 租户工厂：为某个租户准备打包输入（每个租户各自域名、各自包）。
  *   node scripts/tenant.mjs <slug> [--pull-branding] [--env-file]
- * - 读取 tenants/<slug>/tenant.json（应用名 / scheme / 包名 / API 域名 / applicationId / 图标底色）
+ * - 读取 tenants/<slug>/tenant.json（应用名 / scheme / 包名 / API 域名 / applicationId / 图标路径 / 图标底色）
  * - --pull-branding：GET <apiBaseUrl>/v1/mobile/bootstrap，把租户服务端 branding 的 logo 下载为
- *   assets/tenants/<slug>/icon.png（桌面图标 + Android 自适应前景），并生成纯色背景 PNG（图标底色）
+ *   tenant.json.icon 中声明的主图标与 Android 前景，并生成纯色背景 PNG（图标底色）
  * - --env-file：只写租户 slug；其他构建字段始终从 tenant.json 读取，避免配置复制与漂移
  * app.config.ts 通过 EXPO_PUBLIC_TENANT=<slug> 读取 tenant.json 生成全部构建配置。
  */
@@ -13,7 +13,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Buffer } from "node:buffer";
 import { deflateSync } from "node:zlib";
-import { readTenantConfig } from "./tenant-config.mjs";
+import { readTenantConfig, tenantIconAssets } from "./tenant-config.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const [slug, ...flags] = process.argv.slice(2);
@@ -24,6 +24,7 @@ if (!slug) {
   process.exit(1);
 }
 const tenant = readTenantConfig(slug);
+const iconAssets = tenantIconAssets(tenant);
 const assetDir = resolve(root, "assets", "tenants", slug);
 mkdirSync(assetDir, { recursive: true });
 
@@ -64,14 +65,15 @@ function solidPng(size, hex) {
   ]);
 }
 
-for (const name of [
-  "icon.png",
-  "android-icon-foreground.png",
-  "android-icon-background.png",
-  "android-icon-monochrome.png",
-]) {
+for (const [name, fallback] of Object.entries({
+  [iconAssets.icon]: "icon.png",
+  [iconAssets.androidForeground]: "android-icon-foreground.png",
+  [iconAssets.androidBackground]: "android-icon-background.png",
+  [iconAssets.androidMonochrome]: "android-icon-monochrome.png",
+})) {
   const target = resolve(assetDir, name);
-  if (!existsSync(target)) copyFileSync(resolve(root, "assets", name), target);
+  if (!existsSync(target))
+    copyFileSync(resolve(root, "assets", fallback), target);
 }
 
 if (flags.includes("--pull-branding")) {
@@ -99,18 +101,18 @@ if (flags.includes("--pull-branding")) {
       process.exit(1);
     }
     const bytes = Buffer.from(await image.arrayBuffer());
-    writeFileSync(resolve(assetDir, "icon.png"), bytes);
-    writeFileSync(resolve(assetDir, "android-icon-foreground.png"), bytes);
+    writeFileSync(resolve(assetDir, iconAssets.icon), bytes);
+    writeFileSync(resolve(assetDir, iconAssets.androidForeground), bytes);
     console.log(
-      `logo → assets/tenants/${slug}/icon.png (${bytes.length} bytes, ${logo.assetId ?? "no id"})`,
+      `logo → assets/tenants/${slug}/${iconAssets.icon} (${bytes.length} bytes, ${logo.assetId ?? "no id"})`,
     );
   }
   writeFileSync(
-    resolve(assetDir, "android-icon-background.png"),
+    resolve(assetDir, iconAssets.androidBackground),
     solidPng(1024, tenant.iconBackgroundColor ?? "#FFFFFF"),
   );
   console.log(
-    `background → assets/tenants/${slug}/android-icon-background.png (${tenant.iconBackgroundColor ?? "#FFFFFF"})`,
+    `background → assets/tenants/${slug}/${iconAssets.androidBackground} (${tenant.iconBackgroundColor ?? "#FFFFFF"})`,
   );
 }
 

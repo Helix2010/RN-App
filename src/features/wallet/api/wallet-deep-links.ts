@@ -7,26 +7,36 @@ import type { WalletConnectorId } from "../../session/model/session";
  * 数据取自 Reown 官方钱包注册表（钱包厂商自己提交）：
  * https://explorer-api.walletconnect.com/v3/wallets
  *
- * 每个钱包是一个候选列表而不是单个地址：OKX 有两个 App（交易所主 App 与独立的
- * Web3 钱包），scheme 不同，装哪个都要能唤起，所以按顺序试。
+ * 每个钱包是一个候选列表而不是单个地址：OKX 大陆版、国际版和独立钱包的 scheme
+ * 与参数名不同，装哪个都要能唤起，所以按顺序试。
  */
-const WALLET_NATIVE_LINKS: Partial<Record<WalletConnectorId, string[]>> = {
-  metamask: ["metamask://"],
-  // okx:// 这个 scheme 并不存在，注册表里是 okex://main 和 okxwallet://main
-  okx: ["okex://main", "okxwallet://main"],
-  trust: ["trust://"],
+type WalletNativeLink = {
+  launch: string;
+  pairing: string;
+};
+
+const WALLET_NATIVE_LINKS: Partial<
+  Record<WalletConnectorId, WalletNativeLink[]>
+> = {
+  metamask: [{ launch: "metamask://", pairing: "metamask://wc?uri=" }],
+  // 欧易大陆版 6.187.1 的 WalletConnect 入口使用 requestId；独立 OKX Wallet
+  // 仍使用 okxwallet://main/wc?uri=，不能把不同客户端混成同一种参数。
+  okx: [
+    { launch: "okex://main", pairing: "okex://main/wc?requestId=" },
+    { launch: "okx://main", pairing: "okx://main/wc?requestId=" },
+    { launch: "okxwallet://main", pairing: "okxwallet://main/wc?uri=" },
+  ],
+  trust: [{ launch: "trust://", pairing: "trust://wc?uri=" }],
 };
 
 /** 唤起钱包并带上配对 URI。 */
 export function pairingLinks(connector: WalletConnectorId): string[] {
-  return (WALLET_NATIVE_LINKS[connector] ?? []).map(
-    (link) => `${link}${link.endsWith("/") ? "" : "/"}wc?uri=`,
-  );
+  return (WALLET_NATIVE_LINKS[connector] ?? []).map((link) => link.pairing);
 }
 
 /** 只把用户切到钱包（签名请求已经通过 relay 发过去了）。 */
 export function launchLinks(connector: WalletConnectorId): string[] {
-  return WALLET_NATIVE_LINKS[connector] ?? [];
+  return (WALLET_NATIVE_LINKS[connector] ?? []).map((link) => link.launch);
 }
 
 /**
@@ -36,5 +46,5 @@ export function launchLinks(connector: WalletConnectorId): string[] {
  * 钱包 App 的用户误标成"未安装"。
  */
 export function probeLinks(connector: WalletConnectorId): string[] {
-  return WALLET_NATIVE_LINKS[connector] ?? [];
+  return (WALLET_NATIVE_LINKS[connector] ?? []).map((link) => link.launch);
 }

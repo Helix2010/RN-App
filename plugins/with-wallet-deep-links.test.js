@@ -44,6 +44,7 @@ describe("wallet deep link plugin", () => {
 
     expect(schemes(result)).toContain("https");
     expect(schemes(result)).toContain("metamask");
+    expect(schemes(result)).toContain("okx");
   });
 
   it("is idempotent", () => {

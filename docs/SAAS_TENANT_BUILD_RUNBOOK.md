@@ -18,14 +18,15 @@ tenants/<tenant-slug>/tenant.json
 - `distributionChannel`、`otaChannel`
 - `version`、`androidVersionCode`、`iosBuildNumber`
 - `iconBackgroundColor`
+- `icon.icon`、`icon.androidForeground`、`icon.androidBackground`、`icon.androidMonochrome`
 
 `app.config.ts`、`eas.json`、CI workflow 和命令行不得复制租户域名、包名、applicationId、版本或 Build。构建环境只选择租户 slug；签名证书、`google-services.json`、OTA 私钥和推送凭证只能使用 Secret。
 
-机器级构建输入统一放在 git 忽略的 `.env.local`（模板见 `.env.example`），不写进 tenant.json，也不在命令行传：
+机器级构建输入统一放在 git 忽略的 `.env.local`（模板见 `.env.example`），不写进 tenant.json，也不在命令行传。Firebase 文件可以放在项目内 git 忽略的 `secrets/<tenant>/`，也可以放在仓库外：
 
 ```text
 ANDROID_HOME=/home/<user>/android-sdk
-GOOGLE_SERVICES_JSON=/home/<user>/fy/secrets/<slug>/google-services.json
+GOOGLE_SERVICES_JSON=/path/to/RN-App/secrets/<slug>/google-services.json
 ```
 
 `pnpm android:release <slug>` 会读取这两项；缺少 `GOOGLE_SERVICES_JSON` 时构建直接失败，只有明确传 `--no-push` 才允许出无推送的包。服务端推送凭证（FCM 服务账号、APNs 密钥）只放部署机的 `.env`，见 RN-Server `deploy/web4/README.md`。
@@ -33,7 +34,7 @@ GOOGLE_SERVICES_JSON=/home/<user>/fy/secrets/<slug>/google-services.json
 ## 2. 新增租户
 
 1. 创建 `tenants/<slug>/tenant.json`。
-2. 为该租户准备独立品牌资源：`assets/tenants/<slug>/`。
+2. 为该租户准备独立品牌资源：`assets/tenants/<slug>/`，并在 `tenant.json.icon` 中逐项指定文件名；不要复用其他租户的包名、签名或品牌资产。
 3. 确认 API 域名指向对应租户，生产环境必须使用 HTTPS。
 4. 运行配置检查：
 

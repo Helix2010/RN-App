@@ -11,5 +11,11 @@
   "version": "1.2.6",
   "androidVersionCode": 20,
   "iosBuildNumber": "7",
-  "iconBackgroundColor": "#E9F0FF"
+  "iconBackgroundColor": "#FFFFFF",
+  "icon": {
+    "icon": "icon.png",
+    "androidForeground": "android-icon-foreground.png",
+    "androidBackground": "android-icon-background.png",
+    "androidMonochrome": "android-icon-monochrome.png"
+  }
 }

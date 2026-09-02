@@ -12,10 +12,17 @@ expo-env.d.ts
 *.key
 *.mobileprovision
 .env*.local
+/secrets/
 /ios
 /android
 /artifacts
 
-# 租户工厂生成物（由 scripts/tenant.mjs 从服务端 branding 拉取）
+# 租户品牌资源可以由 tenant 工厂拉取，也可以由产品直接提交到仓库；
+# 每个租户的 tenant.json 负责声明实际使用的文件名。
 assets/tenants/
 .env.tenant
+
+# Explicitly checked-in tenant branding assets.
+!assets/tenants/
+!assets/tenants/*/
+!assets/tenants/*/*.png
