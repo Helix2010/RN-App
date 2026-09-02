@@ -335,7 +335,7 @@ src/features/predict/model/predict.ts   PredictTx 加 claimableAt / requestId；
 - CLOB 密钥的 `secret`：网页版与 App 都按 base64url 解码（`user-dapp/src/lib/hmac.ts:23-33`），服务端按标准 base64 解（`clob-service/.../middleware/auth.go:54-58`），只在 secret 不含 `-` / `_` 时一致。
 - `USDC_UNDERLYING` / `USDW_WRAPPER` 不是服务端定义的合约名，只是 user-dapp 的查找键（`user-dapp/src/lib/contracts.ts:72-73`），要在平台管理端作为自定义合约行手工添加；缺了 App 报 `PredictPlatformContractMissingError`，不启用。
 
-1. 联调租户：RN-Server 新建 dev 租户 + dev App 包，关联 prax1s。库里目前只有 anyfun（100000001）有 App 包与 bootstrap 配置；`test` 租户（100000003）没有域名 / 包。写库脚本已备好（scratchpad `link-prax1s.sh`：给 anyfun 写 `services.predict` 指向 prax1s、目录加 USDW、`modules.predict` 保持 false），需运维在 web4 执行；开模块前先发新版 App，否则老包会显示 Mock 预测市场。
+1. 联调租户：库里只有 anyfun（100000001）有 App 包与 bootstrap 配置，`test` 租户（100000003）没有域名 / 包，所以联调直接用 anyfun。**已写库（2026-09-03，web4）**：`services.predict = {domain: predict.prax1s.xyz, scopeId: 0xfb05…454a, chain: op-sepolia}`（`mobile-bootstrap` version 12）、op-sepolia 目录加 USDW `0x790e…6098`（id 22，6 位）、`tokens` 锚点 version 3；`modules.predict` 保持 false。线上 bootstrap 已核实：`wallet.tokens` 含 USDW，`services` 为空（模块关着不下发）。**开模块前先发带阶段 6 代码的新版 App**，否则老包会显示 Mock 预测市场。
 2. 转入路径 B 要显示 EOA 的 USDW：租户目录上 USDW（`0x790e…6098`，6 位），管理端操作。
 3. 主网前：平台把 Monad 的 `USDC_UNDERLYING` 加进 relayer 白名单；确认主网限流按租户放宽。
 4. 主网 `unwrapDelay` 2 小时：做「可以领取了」提醒（现有推送链路登记定时提醒，或本地通知）。

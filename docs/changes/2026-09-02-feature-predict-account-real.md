@@ -50,10 +50,10 @@ App 里的预测账户余额、存入 / 取出此前全是 `MockPredictGateway` 
 - 没有任何「平台不可用就用演示数据」的路径：关联缺失显示未配置，public-info 对不上直接报错。
 - 主网 `unwrapDelay` 到期提醒、持仓 / 行情 / 下单接入：后续阶段。
 
-## 运维待办
+## 运维记录
 
-- 新建 dev 租户 + dev App 包，关联 `predict.prax1s.xyz` / scopeId `0xfb05…454a` / op-sepolia；线上租户 anyfun 保持 `modules.predict=false`，不得指向 dev。
-- 租户目录上 USDW（`0x790e…6098`，6 位）以便转入路径 B 显示 EOA 的 USDW。
+- 2026-09-03 直接写库（web4，用户授权）：anyfun（100000001）`services.predict` 指向 `predict.prax1s.xyz` / `0xfb05…454a` / op-sepolia，op-sepolia 目录加 USDW（`0x790e…6098`，6 位），`tokens` 锚点 +1；`modules.predict` 保持 false。线上 bootstrap 已核实 `wallet.tokens` 含 USDW、`services` 仍空。
+- 打开 `modules.predict` 前先发带阶段 6 代码的新版 App（现网 1.2.7 老包会显示 Mock 预测市场）。
 
 ## 验证
 
