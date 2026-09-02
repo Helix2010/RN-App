@@ -234,6 +234,40 @@ describe("FoundationRuntimeProvider startup gate", () => {
     expect(screen.queryByText("暂时无法启动应用")).toBeNull();
   });
 
+  it("marks the balance and portfolio caches for re-read when the delivered wallet config changes", async () => {
+    // 管理端加了一条链 / 上了一个新币之后，下一次配置刷新就要让依赖目录的查询重读；
+    // 只失效余额、漏掉资产总览的话，首页金额会停在改动之前
+    loadBootstrapMock.mockResolvedValueOnce(
+      remote(withWallet(createFallbackConfig("zh-CN"), { chains: ["eth"] })),
+    );
+    await renderProvider();
+    await waitFor(() => expect(screen.getByTestId("probe")).toBeTruthy(), {
+      timeout: 3000,
+    });
+    const keys = [
+      ["wallet-balances", "0xabc", "all"],
+      ["assets", "0xabc", false],
+      ["wallet-recent-recipients", "0xabc"],
+    ];
+    for (const key of keys) {
+      // 这个 client 的默认 gcTime 是 0，没有订阅者的缓存会立刻被回收
+      client?.setQueryDefaults([key[0] as string], { gcTime: 60_000 });
+      client?.setQueryData(key, []);
+    }
+
+    loadBootstrapMock.mockResolvedValueOnce(
+      remote(
+        withWallet(createFallbackConfig("zh-CN"), { chains: ["eth", "bsc"] }),
+      ),
+    );
+    await act(async () => {
+      await client?.refetchQueries({ queryKey: ["mobile-bootstrap"] });
+    });
+
+    for (const key of keys)
+      expect(client?.getQueryState(key)?.isInvalidated).toBe(true);
+  });
+
   it("shows the retry screen when the bootstrap request fails and never enters on stale data", async () => {
     loadCachedBootstrapMock.mockResolvedValue(createFallbackConfig("zh-CN"));
     loadBootstrapMock.mockRejectedValueOnce(new Error("offline"));

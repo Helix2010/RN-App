@@ -43,7 +43,11 @@ export function useSendToken() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["wallet-balances"] });
       void queryClient.invalidateQueries({ queryKey: ["assets"] });
-      void queryClient.invalidateQueries({ queryKey: ["wallet-transfers"] });
+      // 刚转出的地址要立刻出现在"最近转出"里。此前这里失效的是
+      // ["wallet-transfers"]——没有任何查询用这个键
+      void queryClient.invalidateQueries({
+        queryKey: ["wallet-recent-recipients"],
+      });
     },
   });
 }

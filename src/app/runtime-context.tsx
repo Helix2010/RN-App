@@ -334,8 +334,17 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   // 真链上的代币列表来自目录，目录变了余额列表也要重读
   // 钱包运行时配置本身在 bootstrapQueryFn 里随数据一起应用；这里只让依赖它的查询重读
   useEffect(() => {
-    void queryClient.invalidateQueries({ queryKey: ["wallet-connectors"] });
-    void queryClient.invalidateQueries({ queryKey: ["wallet-balances"] });
+    for (const key of [
+      // 链集合 / projectId 变了：外部钱包连接器要重读，否则一直停在"未启用"
+      ["wallet-connectors"],
+      // 真链上的代币列表与端点都来自下发，目录或端点变了余额要重查
+      ["wallet-balances"],
+      // 资产总览按启用的链汇总余额：新上的币、新开的链要一起进总额
+      ["assets"],
+      // 转出记录按启用的链过滤，最近转出地址由它派生
+      ["wallet-recent-recipients"],
+    ])
+      void queryClient.invalidateQueries({ queryKey: key });
   }, [config.wallet, queryClient]);
   // 放行条件：本次拿到了远程下发（不是内置配置）且最短停留已到。没有超时放行：
   // 数据没下来就不进业务页，失败走重试屏。进入过就锁住，后续刷新失败不回门禁
