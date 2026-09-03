@@ -58,7 +58,7 @@ const timeSchema = z
 export async function clobServerTime(
   service: PredictServiceConfig,
 ): Promise<number> {
-  const hosts = platformHosts(service.domain);
+  const hosts = platformHosts(service);
   return platformRequest({
     url: `${hosts.clob}/time`,
     tenantDomain: service.domain,
@@ -108,7 +108,7 @@ export async function obtainClobCredentials(
   signer: WalletSigner,
   context: SignRequestContext,
 ): Promise<ClobCredentials> {
-  const hosts = platformHosts(service.domain);
+  const hosts = platformHosts(service);
   const timestamp = String(await clobServerTime(service));
   const typed = clobAuthTypedData(
     evmChainIdOf(service.chain),
@@ -219,7 +219,7 @@ export async function refreshBalanceAllowance(
   credentials: ClobCredentials,
   address: string,
 ): Promise<void> {
-  const hosts = platformHosts(service.domain);
+  const hosts = platformHosts(service);
   const timestamp = await clobServerTime(service);
   const path = "/balance-allowance/update";
   await platformRequest({
@@ -235,7 +235,7 @@ export async function balanceAllowance(
   credentials: ClobCredentials,
   address: string,
 ): Promise<BalanceAllowance> {
-  const hosts = platformHosts(service.domain);
+  const hosts = platformHosts(service);
   const timestamp = await clobServerTime(service);
   const path = "/balance-allowance";
   const result = await platformRequest({

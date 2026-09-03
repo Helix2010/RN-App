@@ -27,7 +27,7 @@ export type PlatformAgreement = z.infer<typeof agreementSchema>;
 export async function fetchAgreements(
   service: PredictServiceConfig,
 ): Promise<PlatformAgreement[]> {
-  const hosts = platformHosts(service.domain);
+  const hosts = platformHosts(service);
   const result = await platformRequest({
     url: `${hosts.gamma}/agreements`,
     tenantDomain: service.domain,

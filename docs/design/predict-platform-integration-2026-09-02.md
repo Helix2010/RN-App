@@ -201,7 +201,8 @@ App 直连平台，RN-Server 只下发租户级配置：
 ```
 
 - 三个字段都由管理端在开启预测模块时填写。RN-Server 租户 id 与平台租户 id 不假定相同（线上四个租户两边 id 与 scope_id 恰好一致，实测 `rn` 与 `pm` 两库；这是现状不是规则），关联只靠这条配置；不读平台的库。
-- `domain` 只接受主机名；App 按 §2.1 的规则派生服务地址，强制 https / wss；不提供逐个服务的覆盖。
+- `domain` 只接受主机名；App 按 §2.1 的规则派生服务地址，强制 https / wss。
+- `endpoints`（可选，2026-09-03 加）：逐服务覆盖基址 `{gamma, clob, clobWs, data, relayer, faucet}`，每项 `https://主机[:端口][/路径]`（clobWs 用 `wss://`），不带查询串与 `#`；没填的项仍按域名派生。平台自己的前端也允许用 `*_API_URL` 环境变量逐服务指定地址（`serviceUrls.ts`），部署方不一定按子域规则摆服务。服务端校验并归一化（主机小写、去末尾 `/`），管理端「预测市场」页逐项填写并显示派生地址；「测试连接」用 gamma 的有效地址请求 public-info。老版本 App 的 schema 会丢弃未知字段，下发 `endpoints` 不影响 1.2.7 存量包。
 - `scopeId` 格式 `^0x[0-9a-f]{64}$`；`chain` 是本租户启用的链之一。
 - 服务端：`modules.predict = true` 时 `services.predict` 必须完整合法，否则 bootstrap 503；`= false` 时不下发该段。
 - 管理端「预测市场」页：开关 + 域名 + scopeId + 链 + 「测试连接」——服务端请求 `public-info`，回显品牌、chainId、scopeId，scopeId 须等于所填、chainId 须等于所选链，否则不允许保存；修改进审计日志。

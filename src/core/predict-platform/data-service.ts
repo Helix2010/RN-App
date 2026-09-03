@@ -23,7 +23,7 @@ export async function listUnwrapRequests(
   safe: string,
   options: { claimed?: boolean } = {},
 ): Promise<UnwrapRequestRecord[]> {
-  const hosts = platformHosts(service.domain);
+  const hosts = platformHosts(service);
   const claimed =
     options.claimed === undefined ? "" : `&claimed=${options.claimed}`;
   const result = await platformRequest({

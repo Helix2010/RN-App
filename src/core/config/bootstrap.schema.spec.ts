@@ -1,5 +1,6 @@
-import { bootstrapSchema } from "./bootstrap.schema";
+import { bootstrapSchema, predictServiceSchema } from "./bootstrap.schema";
 import { createFallbackConfig } from "./fallback-config";
+import { platformHosts } from "../predict-platform/tenant-client";
 
 describe("bootstrapSchema", () => {
   it("accepts the embedded safe configuration", () => {
@@ -67,6 +68,40 @@ describe("bootstrapSchema", () => {
       label: "日语",
       nativeName: "日本語",
     });
+  });
+
+  it("accepts per-service predict endpoints only as https/wss base URLs and derives the rest", () => {
+    const base = {
+      domain: "predict.prax1s.xyz",
+      scopeId: `0x${"ab".repeat(32)}`,
+      chain: "op-sepolia",
+    };
+    const ok = predictServiceSchema.safeParse({
+      ...base,
+      endpoints: {
+        clob: "https://clob.example.net:8443/api",
+        clobWs: "wss://ws.example.net",
+      },
+    });
+    expect(ok.success).toBe(true);
+    if (!ok.success) return;
+    // 没覆盖的按域名派生，覆盖的原样用
+    expect(platformHosts(ok.data)).toMatchObject({
+      gamma: "https://gamma-api.predict.prax1s.xyz",
+      clob: "https://clob.example.net:8443/api",
+      clobWs: "wss://ws.example.net",
+    });
+    for (const endpoints of [
+      { gamma: "http://gamma.example.net" },
+      { clobWs: "https://ws.example.net" },
+      { data: "https://data.example.net/?x=1" },
+      { relayer: "https://relayer.example.net/" },
+      { faucet: "faucet.example.net" },
+    ]) {
+      expect(
+        predictServiceSchema.safeParse({ ...base, endpoints }).success,
+      ).toBe(false);
+    }
   });
 
   it("requires at least one tenant business module", () => {

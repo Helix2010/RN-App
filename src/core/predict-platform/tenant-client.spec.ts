@@ -22,10 +22,29 @@ afterEach(() => {
 
 describe("platformHosts", () => {
   it("derives the six service hosts from the tenant domain over https/wss", () => {
-    expect(platformHosts("predict.prax1s.xyz")).toEqual({
+    expect(platformHosts({ domain: "predict.prax1s.xyz" })).toEqual({
       gamma: "https://gamma-api.predict.prax1s.xyz",
       clob: "https://clob-api.predict.prax1s.xyz",
       clobWs: "wss://clob-ws.predict.prax1s.xyz",
+      data: "https://data-api.predict.prax1s.xyz",
+      relayer: "https://relayer.predict.prax1s.xyz",
+      faucet: "https://faucet.predict.prax1s.xyz",
+    });
+  });
+
+  it("prefers the per-service endpoints the tenant configured and derives the rest", () => {
+    expect(
+      platformHosts({
+        domain: "predict.prax1s.xyz",
+        endpoints: {
+          clob: "https://clob.example.net:8443/api",
+          clobWs: "wss://ws.example.net",
+        },
+      }),
+    ).toEqual({
+      gamma: "https://gamma-api.predict.prax1s.xyz",
+      clob: "https://clob.example.net:8443/api",
+      clobWs: "wss://ws.example.net",
       data: "https://data-api.predict.prax1s.xyz",
       relayer: "https://relayer.predict.prax1s.xyz",
       faucet: "https://faucet.predict.prax1s.xyz",

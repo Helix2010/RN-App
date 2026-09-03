@@ -64,7 +64,7 @@ export async function fetchPositions(
   safe: string,
   options: { closed?: boolean; limit?: number } = {},
 ): Promise<PlatformPosition[]> {
-  const hosts = platformHosts(service.domain);
+  const hosts = platformHosts(service);
   const path = options.closed ? "/closed-positions" : "/positions";
   const params = options.closed
     ? {
@@ -114,7 +114,7 @@ export async function fetchActivity(
   safe: string,
   options: { limit?: number } = {},
 ): Promise<PlatformActivity[]> {
-  const hosts = platformHosts(service.domain);
+  const hosts = platformHosts(service);
   return platformRequest({
     url: `${hosts.data}/activity?${query({
       user: getAddress(safe),
@@ -142,7 +142,7 @@ export async function fetchUserPnl(
   safe: string,
   interval: PnlInterval,
 ): Promise<{ t: number; p: number }[]> {
-  const hosts = platformHosts(service.domain);
+  const hosts = platformHosts(service);
   return platformRequest({
     url: `${hosts.data}/user-pnl?${query({
       user_address: getAddress(safe),
@@ -172,7 +172,7 @@ export async function fetchLeaderboard(
     limit?: number;
   },
 ): Promise<PlatformLeaderboardEntry[]> {
-  const hosts = platformHosts(service.domain);
+  const hosts = platformHosts(service);
   const result = await platformRequest({
     url: `${hosts.data}/v1/leaderboard?${query({
       limit: input.limit ?? 50,

@@ -49,7 +49,7 @@ export async function fetchOpenOrders(
   auth: ClobAuth,
   marketConditionId?: string,
 ): Promise<ClobOpenOrder[]> {
-  const hosts = platformHosts(service.domain);
+  const hosts = platformHosts(service);
   const timestamp = await clobServerTime(service);
   const path = "/orders";
   const qs = marketConditionId
@@ -74,7 +74,7 @@ export async function cancelOpenOrder(
   auth: ClobAuth,
   orderId: string,
 ): Promise<void> {
-  const hosts = platformHosts(service.domain);
+  const hosts = platformHosts(service);
   const timestamp = await clobServerTime(service);
   const path = "/order";
   const body = { orderID: orderId };

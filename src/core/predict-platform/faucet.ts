@@ -15,7 +15,7 @@ export async function faucetStatus(
   service: PredictServiceConfig,
   token: string,
 ): Promise<FaucetStatus> {
-  const hosts = platformHosts(service.domain);
+  const hosts = platformHosts(service);
   return platformRequest({
     url: `${hosts.faucet}/api/v1/faucet/status`,
     tenantDomain: service.domain,
@@ -28,7 +28,7 @@ export async function claimFaucet(
   service: PredictServiceConfig,
   token: string,
 ): Promise<void> {
-  const hosts = platformHosts(service.domain);
+  const hosts = platformHosts(service);
   await platformRequest({
     url: `${hosts.faucet}/api/v1/faucet/claim`,
     tenantDomain: service.domain,

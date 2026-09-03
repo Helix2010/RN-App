@@ -150,7 +150,7 @@ function query(params: Record<string, string | number | boolean | undefined>) {
 export async function fetchCarouselTags(
   service: PredictServiceConfig,
 ): Promise<GammaTag[]> {
-  const hosts = platformHosts(service.domain);
+  const hosts = platformHosts(service);
   return platformRequest({
     url: `${hosts.gamma}/tags${query({ is_carousel: true, order: "carousel_sort", ascending: true })}`,
     tenantDomain: service.domain,
@@ -163,7 +163,7 @@ export async function fetchEvents(
   service: PredictServiceConfig,
   input: GammaEventsQuery,
 ): Promise<GammaEvent[]> {
-  const hosts = platformHosts(service.domain);
+  const hosts = platformHosts(service);
   const order = input.order ?? "volume";
   return platformRequest({
     url: `${hosts.gamma}/events${query({
@@ -187,7 +187,7 @@ export async function fetchEvent(
   service: PredictServiceConfig,
   slugOrId: string,
 ): Promise<GammaEvent> {
-  const hosts = platformHosts(service.domain);
+  const hosts = platformHosts(service);
   const path = /^\d+$/.test(slugOrId)
     ? `/events/${slugOrId}`
     : `/events/slug/${encodeURIComponent(slugOrId)}`;
@@ -204,7 +204,7 @@ export async function fetchMarketsByCondition(
   conditionIds: string[],
 ): Promise<(GammaMarket & { eventSlug?: string | null })[]> {
   if (conditionIds.length === 0) return [];
-  const hosts = platformHosts(service.domain);
+  const hosts = platformHosts(service);
   return platformRequest({
     url: `${hosts.gamma}/markets/information`,
     tenantDomain: service.domain,

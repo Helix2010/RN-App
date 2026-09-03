@@ -74,7 +74,7 @@ async function fetchLoginNonce(
   service: PredictServiceConfig,
   address: string,
 ): Promise<LoginNonce> {
-  const hosts = platformHosts(service.domain);
+  const hosts = platformHosts(service);
   return platformRequest({
     url: `${hosts.gamma}/auth/nonce?address=${encodeURIComponent(getAddress(address))}`,
     tenantDomain: service.domain,
@@ -138,7 +138,7 @@ async function loginOnce(
     typed.value,
     context,
   );
-  const hosts = platformHosts(service.domain);
+  const hosts = platformHosts(service);
   const result = await platformRequest({
     url: `${hosts.gamma}/auth/login`,
     tenantDomain: service.domain,
@@ -164,7 +164,7 @@ export async function refreshToken(
   service: PredictServiceConfig,
   token: string,
 ): Promise<string> {
-  const hosts = platformHosts(service.domain);
+  const hosts = platformHosts(service);
   const result = await platformRequest({
     url: `${hosts.gamma}/auth/refresh`,
     tenantDomain: service.domain,

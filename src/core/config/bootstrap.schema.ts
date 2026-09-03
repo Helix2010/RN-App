@@ -9,6 +9,32 @@ const chainIdSchema = z.enum(["bsc", "eth", "base", "op-sepolia", "monad"]);
  * 两边的租户 id **不假定相同**（AGENTS.md「租户身份与外部系统的对应」），关联只靠
  * 这三个字段；它们决定用户的登录凭证发往哪里，所以每一项都严格。
  */
+/**
+ * 单个服务的基址：`https://`（clob-ws 用 `wss://`）+ 主机[:端口][/路径]，不带查询串与 `#`，不以 `/` 结尾。
+ * 平台自己的前端也允许按服务单独配地址（user-dapp `serviceUrls.ts` 的 *_API_URL 环境变量），
+ * 部署方不一定按子域规则摆服务。
+ */
+const httpsBaseSchema = z
+  .string()
+  .regex(
+    /^https:\/\/[a-z0-9.-]+(:\d{2,5})?(\/[A-Za-z0-9._~%/-]*[A-Za-z0-9._~%-])?$/,
+  );
+const wssBaseSchema = z
+  .string()
+  .regex(
+    /^wss:\/\/[a-z0-9.-]+(:\d{2,5})?(\/[A-Za-z0-9._~%/-]*[A-Za-z0-9._~%-])?$/,
+  );
+/** 逐服务的地址覆盖；缺的项按域名规则派生（管理端「预测市场」页可见并可填） */
+export const predictEndpointsSchema = z.object({
+  gamma: httpsBaseSchema.optional(),
+  clob: httpsBaseSchema.optional(),
+  clobWs: wssBaseSchema.optional(),
+  data: httpsBaseSchema.optional(),
+  relayer: httpsBaseSchema.optional(),
+  faucet: httpsBaseSchema.optional(),
+});
+export type PredictEndpoints = z.infer<typeof predictEndpointsSchema>;
+
 export const predictServiceSchema = z.object({
   /** 裸主机名；App 按平台规则从它派生 gamma-api / clob-api / data-api / relayer / clob-ws / faucet 子域 */
   domain: z
@@ -17,6 +43,8 @@ export const predictServiceSchema = z.object({
   /** 平台租户 scope：bytes32 的 0x-hex，小写 */
   scopeId: z.string().regex(/^0x[0-9a-f]{64}$/),
   chain: chainIdSchema,
+  /** 可选：逐服务覆盖地址；没有这一段或某项缺失就按域名派生 */
+  endpoints: predictEndpointsSchema.optional(),
 });
 export type PredictServiceConfig = z.infer<typeof predictServiceSchema>;
 

@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import { AppError } from "../network/app-error";
+import type { PredictEndpoints } from "../config/bootstrap.schema";
 
 /**
  * 预测平台的 HTTP 客户端。
@@ -23,14 +24,23 @@ type PlatformHosts = {
   faucet: string;
 };
 
-export function platformHosts(domain: string): PlatformHosts {
+/**
+ * 六个服务的基址：管理端在 `services.predict.endpoints` 里逐项覆盖的优先，没覆盖的按平台规则
+ * 从租户域名派生（同 user-dapp `serviceUrls.ts`：gamma-api / clob-api / data-api / relayer / clob-ws / faucet 子域）。
+ */
+export function platformHosts(service: {
+  domain: string;
+  endpoints?: PredictEndpoints;
+}): PlatformHosts {
+  const { domain } = service;
+  const custom = service.endpoints ?? {};
   return {
-    gamma: `https://gamma-api.${domain}`,
-    clob: `https://clob-api.${domain}`,
-    clobWs: `wss://clob-ws.${domain}`,
-    data: `https://data-api.${domain}`,
-    relayer: `https://relayer.${domain}`,
-    faucet: `https://faucet.${domain}`,
+    gamma: custom.gamma ?? `https://gamma-api.${domain}`,
+    clob: custom.clob ?? `https://clob-api.${domain}`,
+    clobWs: custom.clobWs ?? `wss://clob-ws.${domain}`,
+    data: custom.data ?? `https://data-api.${domain}`,
+    relayer: custom.relayer ?? `https://relayer.${domain}`,
+    faucet: custom.faucet ?? `https://faucet.${domain}`,
   };
 }
 

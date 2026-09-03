@@ -119,6 +119,14 @@ WS 协议用 node `ws` 直连 prax1s 复核过：初始 dump 的 `timestamp` 是
 
 同一回归里第二次提交 1.00 USDW 时面板收起并提示"挂单已提交"，但余额、持仓、历史都没变：平台对一份都没成交的 FAK 回 `status:"canceled"`（`match_dispatcher.go:1922-1930`，两个金额为 0），原实现把它当"挂着"。现在 `OrderResult.status` 多了 `canceled`，面板留在原地并提示"当前价格没有成交，订单已撤销"（`predict.order.unfilled`）。`POST /order` 应答 status 的全部取值：`matched` / `live`（挂着）/ `canceled`（FAK 零成交）/ `delayed`（maker last-look 窗口）。
 
+## 服务地址逐项覆盖（2026-09-03 下午）
+
+用户问到管理端是否能配置预测市场各 API 域名。关联本身（平台接口域名 + scopeId + 链 + 测试连接）此前已有；缺的是逐服务地址——六个服务只能按 `gamma-api.{domain}` 这类子域规则派生，而平台前端 `serviceUrls.ts` 允许部署方用 `*_API_URL` 逐个指定，子域规则不是平台保证。三端补上可选的 `services.predict.endpoints {gamma, clob, clobWs, data, relayer, faucet}`：
+
+- RN-Server：`parsePredictService` 校验每项为 `https://`（clobWs 为 `wss://`）+ 主机[:端口][/路径]，拒绝查询串 / `#` / 用户信息 / 未知键，主机小写、去末尾 `/`，空串视为不覆盖；`asMap` 只在有覆盖时下发 `endpoints`；「测试连接」按 gamma 的有效地址（覆盖优先）请求 public-info。
+- RN-Admin：「预测市场」页新增六个可选地址输入，留空时显示派生地址，填了显示"自定义"；校验同服务端；测试连接的结果键包含服务地址，改了就要重测；概览与确认框标出自定义 / 派生。
+- RN-App：`predictServiceSchema.endpoints` 可选；`platformHosts(service)` 覆盖优先、其余派生，全部平台客户端改为传 service 对象。老包 schema 丢弃未知字段，下发不影响存量 1.2.7。
+
 ## 不做的事
 
 - 没有任何「平台不可用就用演示数据」的路径：关联缺失显示未配置，public-info 对不上直接报错。

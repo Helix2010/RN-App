@@ -55,7 +55,7 @@ export async function deployedSafe(
   auth: Auth,
   signer: string,
 ): Promise<{ deployed: boolean; address: string }> {
-  const hosts = platformHosts(auth.service.domain);
+  const hosts = platformHosts(auth.service);
   const result = await platformRequest({
     url: `${hosts.relayer}/deployed?signer=${encodeURIComponent(getAddress(signer))}&scopeId=${encodeURIComponent(auth.service.scopeId)}`,
     tenantDomain: auth.service.domain,
@@ -66,7 +66,7 @@ export async function deployedSafe(
 }
 
 export async function safeNonce(auth: Auth, safe: string): Promise<bigint> {
-  const hosts = platformHosts(auth.service.domain);
+  const hosts = platformHosts(auth.service);
   const result = await platformRequest({
     url: `${hosts.relayer}/nonce?address=${encodeURIComponent(getAddress(safe))}`,
     tenantDomain: auth.service.domain,
@@ -91,7 +91,7 @@ export async function submitSafeTx(
   auth: Auth,
   submission: SafeSubmission,
 ): Promise<string> {
-  const hosts = platformHosts(auth.service.domain);
+  const hosts = platformHosts(auth.service);
   const result = await platformRequest({
     url: `${hosts.relayer}/submit`,
     tenantDomain: auth.service.domain,
@@ -124,7 +124,7 @@ export async function submitSafeCreate(
     signatureParams: Record<string, string>;
   },
 ): Promise<string> {
-  const hosts = platformHosts(auth.service.domain);
+  const hosts = platformHosts(auth.service);
   const result = await platformRequest({
     url: `${hosts.relayer}/submit`,
     tenantDomain: auth.service.domain,
@@ -149,7 +149,7 @@ async function relayedTransaction(
   auth: Auth,
   id: string,
 ): Promise<RelayerTransaction> {
-  const hosts = platformHosts(auth.service.domain);
+  const hosts = platformHosts(auth.service);
   return platformRequest({
     url: `${hosts.relayer}/transaction?id=${encodeURIComponent(id)}`,
     tenantDomain: auth.service.domain,

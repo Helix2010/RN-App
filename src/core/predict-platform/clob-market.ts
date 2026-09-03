@@ -32,7 +32,7 @@ export async function fetchOrderBook(
   service: PredictServiceConfig,
   tokenId: string,
 ): Promise<ClobOrderBook> {
-  const hosts = platformHosts(service.domain);
+  const hosts = platformHosts(service);
   return platformRequest({
     url: `${hosts.clob}/book?token_id=${encodeURIComponent(tokenId)}`,
     tenantDomain: service.domain,
@@ -44,7 +44,7 @@ export async function fetchTickSize(
   service: PredictServiceConfig,
   tokenId: string,
 ): Promise<number> {
-  const hosts = platformHosts(service.domain);
+  const hosts = platformHosts(service);
   const result = await platformRequest({
     url: `${hosts.clob}/tick-size?token_id=${encodeURIComponent(tokenId)}`,
     tenantDomain: service.domain,
@@ -58,7 +58,7 @@ export async function fetchFeeRateBps(
   service: PredictServiceConfig,
   tokenId: string,
 ): Promise<number> {
-  const hosts = platformHosts(service.domain);
+  const hosts = platformHosts(service);
   const result = await platformRequest({
     url: `${hosts.clob}/fee-rate/${encodeURIComponent(tokenId)}?scope_id=${encodeURIComponent(service.scopeId)}`,
     tenantDomain: service.domain,
@@ -83,7 +83,7 @@ export async function fetchPriceHistory(
     endTs?: number;
   },
 ): Promise<{ t: number; p: number }[]> {
-  const hosts = platformHosts(service.domain);
+  const hosts = platformHosts(service);
   const qs = new URLSearchParams({
     token_id: input.tokenId,
     interval: input.interval,

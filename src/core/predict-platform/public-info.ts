@@ -74,7 +74,7 @@ class PredictPlatformContractMissingError extends Error {
 export async function fetchPublicInfo(
   service: PredictServiceConfig,
 ): Promise<PublicInfo> {
-  const hosts = platformHosts(service.domain);
+  const hosts = platformHosts(service);
   const info = await platformRequest({
     url: `${hosts.gamma}/public-info`,
     tenantDomain: service.domain,

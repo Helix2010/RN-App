@@ -639,7 +639,7 @@ export class HttpPredictGateway implements PredictGateway {
       if (cancelled) return;
       const byToken = new Map(refs.map((ref) => [ref.yesTokenId, ref]));
       // 平台关联（域名）变了就换连接；旧连接由剩余订阅者取消时自行断开
-      const url = `${platformHosts(service.domain).clobWs}/ws/market`;
+      const url = `${platformHosts(service).clobWs}/ws/market`;
       if (!this.ws || this.wsUrl !== url) {
         this.ws = new MarketWsClient({
           url,

@@ -181,7 +181,7 @@ export async function postOrder(
   order: SignedOrderBody,
   orderType: OrderType,
 ): Promise<SendOrderResponse> {
-  const hosts = platformHosts(service.domain);
+  const hosts = platformHosts(service);
   const timestamp = await clobServerTime(service);
   const path = "/order";
   const body = { order, orderType, deferExec: false, postOnly: false };
