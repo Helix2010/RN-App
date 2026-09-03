@@ -105,8 +105,11 @@ export function FoundationNavigator() {
               marketId={props.route.params.marketId}
               initialOutcome={props.route.params.outcome}
               onBack={() => props.navigation.goBack()}
-              onOpenSettlement={(marketId) =>
-                props.navigation.navigate("PredictSettlement", { marketId })
+              onOpenSettlement={(marketId, eventId) =>
+                props.navigation.navigate("PredictSettlement", {
+                  marketId,
+                  eventId,
+                })
               }
               onOpenTransfer={(amount) =>
                 props.navigation.navigate("Transfer", {
@@ -132,8 +135,11 @@ export function FoundationNavigator() {
               onOpenEvent={(eventId, marketId) =>
                 props.navigation.navigate("PredictEvent", { eventId, marketId })
               }
-              onOpenSettlement={(marketId) =>
-                props.navigation.navigate("PredictSettlement", { marketId })
+              onOpenSettlement={(marketId, eventId) =>
+                props.navigation.navigate("PredictSettlement", {
+                  marketId,
+                  eventId,
+                })
               }
               onOpenTransfer={() => props.navigation.navigate("Transfer")}
             />
@@ -143,6 +149,7 @@ export function FoundationNavigator() {
           {(props) => (
             <SettlementScreen
               marketId={props.route.params.marketId}
+              eventId={props.route.params.eventId}
               onBack={() => props.navigation.goBack()}
             />
           )}

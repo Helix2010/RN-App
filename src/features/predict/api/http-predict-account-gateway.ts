@@ -15,6 +15,7 @@ import {
 import {
   balanceAllowance,
   obtainClobCredentials,
+  refreshBalanceAllowance,
 } from "../../../core/predict-platform/clob-auth";
 import {
   isPredictServiceConfigured,
@@ -131,7 +132,7 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
   /** 本次会话提交的链上交易：hash → 链 与快照，供 getTx 轮询 */
   private readonly submitted = new Map<
     string,
-    { chain: PredictServiceConfig["chain"]; tx: PredictTx }
+    { chain: PredictServiceConfig["chain"]; tx: PredictTx; address: string }
   >();
   private installChecked: Promise<void> | null = null;
   private readonly unsubscribe: () => void;
@@ -767,7 +768,7 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
       hash: lastHash,
       updatedAt: new Date(this.deps.now?.() ?? Date.now()).toISOString(),
     };
-    this.submitted.set(lastHash, { chain, tx });
+    this.submitted.set(lastHash, { chain, tx, address });
     return tx;
   }
 
@@ -954,7 +955,9 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
       hash,
       updatedAt: new Date(this.deps.now?.() ?? Date.now()).toISOString(),
     };
-    this.submitted.set(hash, { chain: ctx.service.chain, tx });
+    this.submitted.set(hash, { chain: ctx.service.chain, tx, address });
+    // 领取把 USDW 换回 USDC，clob 那边的可用余额要立刻重读
+    void this.refreshClobBalance(address);
     return tx;
   }
 
@@ -976,7 +979,22 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
       updatedAt: new Date(this.deps.now?.() ?? Date.now()).toISOString(),
     };
     this.submitted.set(id, { ...known, tx: next });
+    // 转入上链后让 clob 立刻重读子图余额，否则"可用"要等它下一轮同步（实测要几分钟）
+    if (status === "confirmed" && known.tx.kind === "deposit")
+      void this.refreshClobBalance(known.address);
     return next;
+  }
+
+  /** `GET /balance-allowance/update`：失败只记日志——余额最终会随 clob 的周期同步跟上 */
+  private async refreshClobBalance(address: string): Promise<void> {
+    try {
+      const { ctx, clob } = await this.enabledContext(address);
+      await this.withClob(ctx, address, () =>
+        refreshBalanceAllowance(ctx.service, clob, address),
+      );
+    } catch (error) {
+      console.warn("[predict] clob balance refresh failed", error);
+    }
   }
 
   // ---- 协议 ----

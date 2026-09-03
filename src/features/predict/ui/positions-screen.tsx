@@ -36,9 +36,9 @@ import {
   Tabs,
   toast,
 } from "../../../design-system";
+import { useGateways } from "../../../core/gateways/gateway-context";
 import { useSession } from "../../session/hooks/use-session";
 import { requestAuth } from "../../session/model/auth-sheet-store";
-import { EVENTS } from "../fixtures/events";
 import {
   useCancelOrder,
   useOpenOrders,
@@ -47,26 +47,10 @@ import {
   usePredictPnl,
   useRedeem,
 } from "../hooks/use-predict";
-import type {
-  Market,
-  Order,
-  Outcome,
-  Position,
-  PredictEvent,
-} from "../model/predict";
+import type { Order, Position } from "../model/predict";
 import { OrderSheet, type OrderSheetHandle } from "./order-sheet";
 import { SplitMergeSheet, type SplitMergeHandle } from "./split-merge-sheet";
 import { StatusBadge, closesText, fill, outcomeLabel } from "./shared";
-
-function findMarket(
-  marketId: string,
-): { event: PredictEvent; market: Market } | undefined {
-  for (const event of EVENTS) {
-    const market = event.markets.find((item) => item.id === marketId);
-    if (market) return { event, market };
-  }
-  return undefined;
-}
 
 /** P-05 持仓：汇总卡 + 持仓 / 挂单 / 历史。双模块时从预测页进入（有返回键），仅 Predict 时是一级页。 */
 export function PositionsScreen({
@@ -77,7 +61,7 @@ export function PositionsScreen({
 }: {
   onBack?: () => void;
   onOpenEvent: (eventId: string, marketId: string) => void;
-  onOpenSettlement: (marketId: string) => void;
+  onOpenSettlement: (marketId: string, eventId: string) => void;
   onOpenTransfer: () => void;
 }) {
   const insets = useSafeAreaInsets();
@@ -85,6 +69,20 @@ export function PositionsScreen({
   const locale = config.localization.selectedLocale;
   const session = useSession();
   const address = session.data?.address;
+  const { predict } = useGateways();
+  // 卖出要拿到 Market（下单页按它读簿、算代币）：按持仓里的事件 id 现取，不再回查静态夹具
+  const sellPosition = async (position: Position) => {
+    try {
+      const event = await predict.getEvent(position.eventId);
+      const market = event.markets.find(
+        (item) => item.id === position.marketId,
+      );
+      if (!market) throw new Error(`market ${position.marketId} not in event`);
+      orderSheet.current?.open(market, position.outcome, "sell");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), "error");
+    }
+  };
   // 今日盈亏来自平台盈亏曲线（1d），没有数据就显示占位而不编数
   const pnlSeries = usePredictPnl(address, "1d");
   const todayPnl = (() => {
@@ -342,9 +340,7 @@ export function PositionsScreen({
                       position={position}
                       locale={locale}
                       onOpen={onOpenEvent}
-                      onSell={(market, outcome) =>
-                        orderSheet.current?.open(market, outcome, "sell")
-                      }
+                      onSell={(item) => void sellPosition(item)}
                       onSettlement={onOpenSettlement}
                       onClaim={() => redeem.mutate([position.id])}
                     />
@@ -396,15 +392,6 @@ export function PositionsScreen({
                     <SectionTitle fontSize={14}>
                       {pickTranslation(item.title, locale)}
                     </SectionTitle>
-                    {item.eventId ? (
-                      <Body fontSize={12} numberOfLines={1}>
-                        {pickTranslation(
-                          EVENTS.find((event) => event.id === item.eventId)
-                            ?.title,
-                          locale,
-                        )}
-                      </Body>
-                    ) : null}
                     <Body fontSize={11}>{formatDateTime(item.at, locale)}</Body>
                   </Stack>
                   <InlineText
@@ -431,7 +418,6 @@ export function PositionsScreen({
       <OrderSheet
         ref={orderSheet}
         event={undefined}
-        feeBps={20}
         onInsufficient={() => onOpenTransfer()}
       />
     </Page>
@@ -449,17 +435,14 @@ function PositionRow({
   position: Position;
   locale: string;
   onOpen: (eventId: string, marketId: string) => void;
-  onSell: (market: Market, outcome: Outcome) => void;
-  onSettlement: (marketId: string) => void;
+  onSell: (position: Position) => void;
+  onSettlement: (marketId: string, eventId: string) => void;
   onClaim: () => void;
 }) {
   const { t } = useFoundationRuntime();
-  const found = findMarket(position.marketId);
-  if (!found) return null;
-  const { event, market } = found;
-  const title = market.outcomeLabel
-    ? `${pickTranslation(event.title, locale)} — ${pickTranslation(market.outcomeLabel, locale)}`
-    : pickTranslation(event.title, locale);
+  const title = position.outcomeLabel
+    ? `${pickTranslation(position.title, locale)} — ${pickTranslation(position.outcomeLabel, locale)}`
+    : pickTranslation(position.title, locale);
   const disputed =
     position.status === "disputed" || position.status === "arbitrating";
   const pnlColor =
@@ -470,7 +453,7 @@ function PositionRow({
       borderRadius="$4"
       backgroundColor="$surfaceVariant"
       gap="$2"
-      onPress={() => onOpen(event.id, market.id)}
+      onPress={() => onOpen(position.eventId, position.marketId)}
       accessibilityRole="button"
       testID={`position-${position.id}`}
     >
@@ -482,8 +465,9 @@ function PositionRow({
             <StatusBadge status={position.status} />
           ) : (
             <Body fontSize={11}>
-              {pickTranslation(event.category, locale).toUpperCase()} ·{" "}
-              {closesText(event.endsAt, locale, t)}
+              {position.endsAt
+                ? closesText(position.endsAt, locale, t)
+                : NO_QUOTE}
             </Body>
           )}
           {position.redeemable ? (
@@ -553,7 +537,7 @@ function PositionRow({
             height={34}
             paddingHorizontal="$3"
             fontSize={13}
-            onPress={() => onSettlement(market.id)}
+            onPress={() => onSettlement(position.marketId, position.eventId)}
           >
             {t("predict.positions.progress")}
           </SecondaryButton>
@@ -562,7 +546,7 @@ function PositionRow({
             height={34}
             paddingHorizontal="$3"
             fontSize={13}
-            onPress={() => onSell(market, position.outcome)}
+            onPress={() => onSell(position)}
             testID={`sell-${position.id}`}
           >
             {t("predict.sell")}
@@ -583,7 +567,6 @@ function OrderRow({
   onCancel: () => void;
 }) {
   const { t } = useFoundationRuntime();
-  const found = findMarket(order.marketId);
   return (
     <Row
       alignItems="center"
@@ -594,12 +577,7 @@ function OrderRow({
     >
       <Stack flex={1} gap="$0.5">
         <SectionTitle fontSize={14} numberOfLines={1}>
-          {found
-            ? pickTranslation(
-                found.market.outcomeLabel ?? found.event.title,
-                locale,
-              )
-            : order.marketId}
+          {pickTranslation(order.outcomeLabel ?? order.title, locale)}
         </SectionTitle>
         <Body fontSize={12}>
           {fill(t("predict.positions.orderRow"), {

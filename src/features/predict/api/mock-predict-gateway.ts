@@ -55,6 +55,8 @@ import type {
 import type { PredictGateway } from "./gateway";
 
 const USDW = { decimals: 6, symbol: "USDW" };
+/** 演示费率 0.2%（真实平台按代币从 clob 读） */
+const MOCK_FEE_BPS = 20;
 const usdc = (text: string) => fromDecimal(text, USDW.decimals, USDW.symbol);
 const BOND = usdc("50");
 /** 交易截止后多久商户"提交结果"（Mock 加速：10 分钟） */
@@ -185,6 +187,8 @@ export class MockPredictGateway implements PredictGateway {
       {
         id: nextId("ord"),
         marketId: "m-btc-120k",
+        title: this.market("m-btc-120k").market.question,
+        outcomeLabel: this.market("m-btc-120k").market.outcomeLabel ?? null,
         eventId: "ev-btc-120k",
         outcome: "yes",
         side: "buy",
@@ -199,6 +203,8 @@ export class MockPredictGateway implements PredictGateway {
       {
         id: nextId("ord"),
         marketId: "m-fomc-25",
+        title: this.market("m-fomc-25").market.question,
+        outcomeLabel: this.market("m-fomc-25").market.outcomeLabel ?? null,
         eventId: "ev-fomc-sep",
         outcome: "yes",
         side: "buy",
@@ -439,7 +445,14 @@ export class MockPredictGateway implements PredictGateway {
         priceCents: Math.min(99, price + 1 + index * (index < 2 ? 0.5 : 1)),
         shares: Math.round(shares * 0.78),
       }));
-      return { marketId, bids, asks, tickCents: 0.5, updatedAt: mockNowIso() };
+      return {
+        marketId,
+        bids,
+        asks,
+        tickCents: 0.5,
+        minOrderShares: 1,
+        updatedAt: mockNowIso(),
+      };
     });
   }
 
@@ -520,7 +533,7 @@ export class MockPredictGateway implements PredictGateway {
   }
 
   async getFeeBps(marketId: string): Promise<number> {
-    return this.market(marketId).event.feeBps;
+    return MOCK_FEE_BPS;
   }
 
   async getAdjudication(marketId: string): Promise<Adjudication> {
@@ -565,7 +578,7 @@ export class MockPredictGateway implements PredictGateway {
   ): Promise<OrderPreview> {
     const state = await this.load();
     this.ensureAccount(state, address);
-    const { event } = this.market(request.marketId);
+    this.market(request.marketId); // 未知市场直接抛错
     const yes = this.priceOf(state, request.marketId);
     const price =
       request.type === "limit" && request.priceCents
@@ -578,7 +591,7 @@ export class MockPredictGateway implements PredictGateway {
         request.type === "market"
           ? (request.amount ?? zero(6, "USDW"))
           : sharesToMoney(request.shares ?? 0, price);
-      const fee = scaleBps(amount, event.feeBps);
+      const fee = scaleBps(amount, MOCK_FEE_BPS);
       const net = sub(amount, fee);
       const shares =
         request.type === "market"
@@ -598,7 +611,7 @@ export class MockPredictGateway implements PredictGateway {
     }
     const shares = request.shares ?? 0;
     const proceeds = sharesToMoney(shares, price);
-    const fee = scaleBps(proceeds, event.feeBps);
+    const fee = scaleBps(proceeds, MOCK_FEE_BPS);
     return {
       estimatedShares: shares,
       avgPriceCents: price,
@@ -616,7 +629,7 @@ export class MockPredictGateway implements PredictGateway {
     return simulate(async () => {
       const state = await this.load();
       this.ensureAccount(state, address);
-      const { event } = this.market(request.marketId);
+      const { event, market } = this.market(request.marketId);
       if (this.adjudicationOf(state, request.marketId).status !== "trading")
         throw new Error("market closed");
       const balance = state.balances[address] as {
@@ -643,6 +656,8 @@ export class MockPredictGateway implements PredictGateway {
             id: nextId("ord"),
             marketId: request.marketId,
             eventId: event.id,
+            title: market.question,
+            outcomeLabel: market.outcomeLabel ?? null,
             outcome: request.outcome,
             side: "buy",
             type: "limit",
@@ -815,7 +830,7 @@ export class MockPredictGateway implements PredictGateway {
   ): Promise<Position[]> {
     this.ensureAccount(state, address);
     return (state.positions[address] ?? []).map((stored) => {
-      const { event } = this.market(stored.marketId);
+      const { event, market } = this.market(stored.marketId);
       const adjudication = this.adjudicationOf(state, stored.marketId);
       const yes = this.priceOf(state, stored.marketId);
       let curPriceCents = stored.outcome === "yes" ? yes : 100 - yes;
@@ -834,6 +849,9 @@ export class MockPredictGateway implements PredictGateway {
         id: stored.id,
         marketId: stored.marketId,
         eventId: event.id,
+        title: market.question,
+        outcomeLabel: market.outcomeLabel ?? null,
+        endsAt: event.endsAt,
         outcome: stored.outcome,
         shares: stored.shares,
         avgPriceCents: stored.avgPriceCents,

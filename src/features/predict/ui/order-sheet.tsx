@@ -7,7 +7,7 @@ import {
   useState,
 } from "react";
 import { useFoundationRuntime } from "../../../app/runtime-context";
-import { formatCents, formatMoney } from "../../../core/i18n/format";
+import { formatCents, formatMoney, NO_QUOTE } from "../../../core/i18n/format";
 import { pickTranslation } from "../../../core/i18n/localized-text";
 import {
   compare,
@@ -35,6 +35,7 @@ import {
   useAuthSheet,
 } from "../../session/model/auth-sheet-store";
 import {
+  useFeeBps,
   useOrderBook,
   useOrderPreview,
   usePlaceOrder,
@@ -67,10 +68,9 @@ export const OrderSheet = forwardRef<
   OrderSheetHandle,
   {
     event: PredictEvent | undefined;
-    feeBps: number;
     onInsufficient: (amount: string) => void;
   }
->(function OrderSheet({ event, feeBps, onInsufficient }, ref) {
+>(function OrderSheet({ event, onInsufficient }, ref) {
   const { config, t } = useFoundationRuntime();
   const requireVerification = useRequireVerification();
   const locale = config.localization.selectedLocale;
@@ -89,6 +89,8 @@ export const OrderSheet = forwardRef<
   const balance = usePredictAccountBalance(address);
   const positions = usePositions(address);
   const book = useOrderBook(market?.id);
+  // 费率按代币从 clob 读（/fee-rate），标签与预览里的手续费金额同源
+  const fee = useFeeBps(market?.id);
   const place = usePlaceOrder(address);
   const consumeIntent = useAuthSheet((state) => state.consumeIntent);
 
@@ -196,11 +198,18 @@ export const OrderSheet = forwardRef<
       ? compare(preview.data.cost, available) > 0
       : false;
   const insufficientShares = side === "sell" && shares > held;
+  // clob 对每个代币有最小下单份数（/book 的 min_order_size），不足会被 400 拒绝
+  const minShares = book.data?.minOrderShares ?? null;
+  const orderShares =
+    side === "buy" ? (preview.data?.estimatedShares ?? 0) : shares;
+  const belowMin =
+    minShares !== null && orderShares > 0 && orderShares < minShares;
   const canSubmit = Boolean(
     active &&
     preview.data &&
     !insufficient &&
     !insufficientShares &&
+    !belowMin &&
     !place.isPending,
   );
 
@@ -211,12 +220,16 @@ export const OrderSheet = forwardRef<
       onSuccess: (result) => {
         sheet.current?.dismiss();
         toast(
-          result.status === "filled"
-            ? fill(t("predict.order.filled"), {
-                shares: result.filledShares,
-                price: formatCents(result.avgPriceCents),
-              })
-            : t("predict.order.placed"),
+          result.status !== "filled"
+            ? t("predict.order.placed")
+            : result.avgPriceCents === null
+              ? fill(t("predict.order.filledShares"), {
+                  shares: result.filledShares,
+                })
+              : fill(t("predict.order.filled"), {
+                  shares: result.filledShares,
+                  price: formatCents(result.avgPriceCents),
+                }),
           "success",
         );
       },
@@ -378,7 +391,13 @@ export const OrderSheet = forwardRef<
           helper={fill(t("predict.order.available"), {
             amount: available ? formatMoney(available, locale) : "—",
           })}
-          error={insufficient ? t("predict.order.insufficient") : undefined}
+          error={
+            insufficient
+              ? t("predict.order.insufficient")
+              : belowMin && minShares !== null
+                ? fill(t("predict.order.minShares"), { n: minShares })
+                : undefined
+          }
           onMax={() =>
             available && setAmountText(toDecimalString(available, 2))
           }
@@ -411,7 +430,9 @@ export const OrderSheet = forwardRef<
               ? t("predict.order.insufficientShares")
               : insufficient
                 ? t("predict.order.insufficient")
-                : undefined
+                : belowMin && minShares !== null
+                  ? fill(t("predict.order.minShares"), { n: minShares })
+                  : undefined
           }
           onMax={() =>
             side === "sell"
@@ -519,7 +540,10 @@ export const OrderSheet = forwardRef<
         ) : null}
         <DetailRow
           label={fill(t("predict.order.fee"), {
-            pct: `${(feeBps / 100).toFixed(2)}%`,
+            pct:
+              fee.data === undefined
+                ? NO_QUOTE
+                : `${(fee.data / 100).toFixed(2)}%`,
           })}
           value={preview.data ? formatMoney(preview.data.fee, locale) : "—"}
         />

@@ -87,6 +87,8 @@ function errorDetail(
   status: number,
   payload: unknown,
 ): { code: string; detail: string } {
+  if (typeof payload === "string" && payload.trim().length > 0)
+    return { code: `HTTP_${status}`, detail: payload.trim().slice(0, 200) };
   if (payload && typeof payload === "object") {
     const record = payload as Record<string, unknown>;
     const code =
@@ -154,7 +156,8 @@ async function platformRequestOnce<T>(request: PlatformRequest<T>): Promise<T> {
       try {
         payload = JSON.parse(text) as unknown;
       } catch {
-        payload = null;
+        // 不是 JSON（clob 的 400 是纯文本）：原文留作错误详情
+        payload = text;
       }
     }
     if (response.status === 429)

@@ -224,6 +224,11 @@ type MarketRef = {
   noTokenId: string;
   eventId: string;
   negRisk: boolean;
+  /** 市场问题与多结果选项名，给挂单 / 持仓行显示用 */
+  question: LocalizedText;
+  outcomeLabel: LocalizedText | null;
+  /** gamma 的 orderMinSize；WS 簿事件没有 min_order_size 时用它 */
+  minOrderShares: number | null;
 };
 
 /** 沿簿吃单的估算：市价买按预算吃卖单，卖出按份数吃买单 */
@@ -303,24 +308,28 @@ export class HttpPredictGateway implements PredictGateway {
     // 没有两个 CLOB 代币的市场无法交易也无法看簿，不列出来
     if (!yesTokenId || !noTokenId) return null;
     const negRisk = market.negRisk ?? event.negRisk ?? false;
+    const question = translationOf(
+      market.questionTranslation,
+      market.question ?? event.title ?? "",
+    );
+    const outcomeLabel =
+      multi && market.groupItemTitle
+        ? { default: market.groupItemTitle }
+        : undefined;
     this.markets.set(market.conditionId, {
       conditionId: market.conditionId,
       yesTokenId,
       noTokenId,
       eventId: event.id,
       negRisk,
+      minOrderShares: market.orderMinSize,
+      question,
+      outcomeLabel: outcomeLabel ?? null,
     });
-    const question = translationOf(
-      market.questionTranslation,
-      market.question ?? event.title ?? "",
-    );
     return {
       id: market.conditionId,
       eventId: event.id,
-      outcomeLabel:
-        multi && market.groupItemTitle
-          ? { default: market.groupItemTitle }
-          : undefined,
+      outcomeLabel,
       question,
       yesPriceCents: centsOrNull(displayPrice(market)),
       volumeUsd: market.volume ?? 0,
@@ -359,8 +368,6 @@ export class HttpPredictGateway implements PredictGateway {
       featured: event.featured ?? false,
       rules: { default: event.description ?? "" },
       resolutionSource: { default: event.resolutionSource ?? "" },
-      // 费率按代币从 clob 读（getFeeBps），事件级没有
-      feeBps: 0,
       disputeWindowSec: primary?.adjudication?.livenessSecs ?? 0,
     };
   }
@@ -381,6 +388,14 @@ export class HttpPredictGateway implements PredictGateway {
       noTokenId,
       eventId: market.eventSlug ?? "",
       negRisk: market.negRisk ?? false,
+      minOrderShares: market.orderMinSize,
+      question: translationOf(
+        market.questionTranslation,
+        market.question ?? "",
+      ),
+      outcomeLabel: market.groupItemTitle
+        ? { default: market.groupItemTitle }
+        : null,
     };
     this.markets.set(conditionId, ref);
     return ref;
@@ -402,6 +417,10 @@ export class HttpPredictGateway implements PredictGateway {
       id: `${position.conditionId}:${position.asset}`,
       marketId: position.conditionId,
       eventId: position.eventSlug ?? position.slug ?? "",
+      title: translationOf(position.questionTranslation, position.title ?? ""),
+      // 持仓接口只给 outcome（Yes / No），没有多结果事件的选项名
+      outcomeLabel: null,
+      endsAt: position.endDate ?? null,
       outcome,
       shares: position.size,
       avgPriceCents: cents(position.avgPrice),
@@ -443,7 +462,7 @@ export class HttpPredictGateway implements PredictGateway {
     };
   }
 
-  private mapOrder(order: ClobOpenOrder, eventId: string): Order {
+  private mapOrder(order: ClobOpenOrder, ref: MarketRef): Order {
     const type = (order.order_type ?? "").toUpperCase();
     const createdAt =
       typeof order.created_at === "number"
@@ -453,7 +472,9 @@ export class HttpPredictGateway implements PredictGateway {
     return {
       id: order.id,
       marketId: order.market,
-      eventId,
+      eventId: ref.eventId,
+      title: ref.question,
+      outcomeLabel: ref.outcomeLabel,
       outcome: outcomeFromText(order.outcome) ?? "yes",
       side: order.side.toUpperCase() === "SELL" ? "sell" : "buy",
       type: type === "MARKET" || type === "FAK" ? "market" : "limit",
@@ -468,7 +489,11 @@ export class HttpPredictGateway implements PredictGateway {
     };
   }
 
-  private mapBook(marketId: string, book: ClobOrderBook): OrderBook {
+  private mapBook(
+    marketId: string,
+    book: ClobOrderBook,
+    fallbackMinOrderShares = 1,
+  ): OrderBook {
     const updatedAt = bookTimestamp(book.timestamp);
     const level = (item: { price: number; size: number }) => ({
       priceCents: cents(item.price),
@@ -479,6 +504,8 @@ export class HttpPredictGateway implements PredictGateway {
       bids: book.bids.map(level),
       asks: book.asks.map(level),
       tickCents: (book.tick_size ?? 0.01) * 100,
+      // marketdata.go:65 默认 "1"；WS 簿事件不带这个字段，用 gamma 的 orderMinSize 兜住
+      minOrderShares: book.min_order_size ?? fallbackMinOrderShares,
       updatedAt,
     };
   }
@@ -529,6 +556,7 @@ export class HttpPredictGateway implements PredictGateway {
     return this.mapBook(
       marketId,
       await fetchOrderBook(service, ref.yesTokenId),
+      ref.minOrderShares ?? 1,
     );
   }
 
@@ -594,14 +622,18 @@ export class HttpPredictGateway implements PredictGateway {
           return;
         }
         if (event.kind === "book") {
-          const book = this.mapBook(ref.conditionId, {
-            market: ref.conditionId,
-            asset_id: event.assetId,
-            bids: event.book.bids,
-            asks: event.book.asks,
-            tick_size: event.book.tick_size,
-            timestamp: event.book.timestamp,
-          });
+          const book = this.mapBook(
+            ref.conditionId,
+            {
+              market: ref.conditionId,
+              asset_id: event.assetId,
+              bids: event.book.bids,
+              asks: event.book.asks,
+              tick_size: event.book.tick_size,
+              timestamp: event.book.timestamp,
+            },
+            ref.minOrderShares ?? 1,
+          );
           onEvent({ type: "book", book });
           // 网页版的概率来自订单簿；gamma 没缓存价时靠这一条把列表 / 详情的价格补上
           const fromBook = bookMidCents(book);
@@ -834,11 +866,12 @@ export class HttpPredictGateway implements PredictGateway {
       signed,
       orderType,
     );
-    // 平台按十进制返回成交量（handlers.go:181-182）：BUY 的 taking 是份数、making 是 USDC；SELL 反之
+    // 平台按十进制返回成交量：takingAmount = Σ 抵押品、makingAmount = Σ 结果 token，与买卖方向无关
+    // （match_dispatcher.go:1915-1921）。实测 prax1s 两个字段都等于份数，成交额拿不到就不编价。
     const making = Number(response.makingAmount ?? "0");
     const taking = Number(response.takingAmount ?? "0");
-    const filledShares = side === "BUY" ? taking : making;
-    const filledUsdc = side === "BUY" ? making : taking;
+    const filledShares = making;
+    const filledUsdc = taking !== making ? taking : null;
     const requestedShares =
       Number(side === "BUY" ? takerAmount : makerAmount) / Number(ONE_USDC);
     const status: OrderResult["status"] =
@@ -854,9 +887,12 @@ export class HttpPredictGateway implements PredictGateway {
       status,
       filledShares,
       avgPriceCents:
-        filledShares > 0 ? Math.round((filledUsdc / filledShares) * 100) : 0,
-      fee: usdw((filledUsdc * feeRateBps) / 10_000),
-      cost: usdw(filledUsdc),
+        filledUsdc !== null && filledShares > 0
+          ? Math.round((filledUsdc / filledShares) * 100)
+          : null,
+      fee:
+        filledUsdc !== null ? usdw((filledUsdc * feeRateBps) / 10_000) : null,
+      cost: filledUsdc !== null ? usdw(filledUsdc) : null,
     };
   }
 
@@ -870,7 +906,7 @@ export class HttpPredictGateway implements PredictGateway {
     const result: Order[] = [];
     for (const order of orders) {
       const ref = await this.marketRef(order.market);
-      result.push(this.mapOrder(order, ref.eventId));
+      result.push(this.mapOrder(order, ref));
     }
     return result;
   }

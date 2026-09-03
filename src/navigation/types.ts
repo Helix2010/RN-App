@@ -6,7 +6,7 @@ export type RootStackParamList = {
   LanguageSettings: undefined;
   AppearanceSettings: undefined;
   PredictEvent: { eventId: string; marketId?: string; outcome?: "yes" | "no" };
-  PredictSettlement: { marketId: string };
+  PredictSettlement: { marketId: string; eventId: string };
   PredictEnable: undefined;
   Leaderboard: undefined;
   Positions: undefined;

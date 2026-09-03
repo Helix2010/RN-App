@@ -101,7 +101,6 @@ export const EVENTS: PredictEvent[] = [
     featured: false,
     rules: rulesCrypto,
     resolutionSource: localized("Binance 收盘价", "Binance close price"),
-    feeBps: 20,
     disputeWindowSec: 86_400,
   },
   {
@@ -153,7 +152,6 @@ export const EVENTS: PredictEvent[] = [
       "Resolves per the official FOMC statement.",
     ),
     resolutionSource: localized("美联储官网", "federalreserve.gov"),
-    feeBps: 20,
     disputeWindowSec: 86_400,
   },
   {
@@ -211,7 +209,6 @@ export const EVENTS: PredictEvent[] = [
       "Resolves per the official FIFA final result.",
     ),
     resolutionSource: localized("FIFA 官网", "fifa.com"),
-    feeBps: 20,
     disputeWindowSec: 86_400,
   },
   {
@@ -247,7 +244,6 @@ export const EVENTS: PredictEvent[] = [
       "Resolves per Farside Investors weekly flow data.",
     ),
     resolutionSource: localized("Farside Investors", "Farside Investors"),
-    feeBps: 20,
     disputeWindowSec: 86_400,
   },
   {
@@ -296,7 +292,6 @@ export const EVENTS: PredictEvent[] = [
       "Resolves per the official Premier League full-time score.",
     ),
     resolutionSource: localized("英超官网", "premierleague.com"),
-    feeBps: 20,
     disputeWindowSec: 86_400,
     sports: {
       home: localized("曼城", "Man City"),
@@ -336,7 +331,6 @@ export const EVENTS: PredictEvent[] = [
       "Resolves per the BLS CPI release.",
     ),
     resolutionSource: localized("BLS", "BLS"),
-    feeBps: 20,
     disputeWindowSec: 86_400,
   },
   {
@@ -369,7 +363,6 @@ export const EVENTS: PredictEvent[] = [
       "Resolves per the official Premier League full-time score.",
     ),
     resolutionSource: localized("英超官网", "premierleague.com"),
-    feeBps: 20,
     disputeWindowSec: 86_400,
   },
   {
@@ -399,7 +392,6 @@ export const EVENTS: PredictEvent[] = [
     featured: false,
     rules: rulesCrypto,
     resolutionSource: localized("Binance 收盘价", "Binance close price"),
-    feeBps: 20,
     disputeWindowSec: 86_400,
   },
 ];

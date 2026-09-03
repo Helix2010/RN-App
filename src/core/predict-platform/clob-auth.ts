@@ -209,6 +209,27 @@ export type BalanceAllowance = {
   locked: bigint;
 };
 
+/**
+ * 让 clob 立刻重读该地址（服务端按 scopeId 推导 Safe）的子图余额：`GET /balance-allowance/update`
+ * （`handlers.go` UpdateBalanceAllowance）。clob 平时按周期同步，转入 / 领取后不调这一下，
+ * "可用余额"要等下一轮才变。只返回 200，无正文。
+ */
+export async function refreshBalanceAllowance(
+  service: PredictServiceConfig,
+  credentials: ClobCredentials,
+  address: string,
+): Promise<void> {
+  const hosts = platformHosts(service.domain);
+  const timestamp = await clobServerTime(service);
+  const path = "/balance-allowance/update";
+  await platformRequest({
+    url: `${hosts.clob}${path}`,
+    tenantDomain: service.domain,
+    headers: l2Headers(credentials, address, "GET", path, timestamp),
+    schema: z.unknown(),
+  });
+}
+
 export async function balanceAllowance(
   service: PredictServiceConfig,
   credentials: ClobCredentials,

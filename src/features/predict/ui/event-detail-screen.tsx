@@ -28,6 +28,7 @@ import {
 } from "../../../design-system";
 import {
   useAdjudication,
+  useFeeBps,
   useMarketStream,
   useOrderBook,
   usePredictEvent,
@@ -52,7 +53,7 @@ export function EventDetailScreen({
   marketId?: string;
   initialOutcome?: Outcome;
   onBack: () => void;
-  onOpenSettlement: (marketId: string) => void;
+  onOpenSettlement: (marketId: string, eventId: string) => void;
   onOpenTransfer: (amount?: string) => void;
 }) {
   const insets = useSafeAreaInsets();
@@ -72,6 +73,8 @@ export function EventDetailScreen({
   );
   const history = usePriceHistory(market?.id, range);
   const book = useOrderBook(market?.id);
+  // 费率按代币从 clob 读，事件级没有
+  const fee = useFeeBps(market?.id);
   // 详情页所有结果走实时行情（簿 + 价格）
   useMarketStream(event.data?.markets.map((item) => item.id) ?? []);
   const adjudication = useAdjudication(market?.id);
@@ -257,7 +260,7 @@ export function EventDetailScreen({
                   padding="$3"
                   borderRadius="$4"
                   backgroundColor="$surfaceVariant"
-                  onPress={() => onOpenSettlement(market.id)}
+                  onPress={() => onOpenSettlement(market.id, event.data.id)}
                   accessibilityRole="button"
                   testID="detail-settlement"
                 >
@@ -355,7 +358,10 @@ export function EventDetailScreen({
                   <DetailRow
                     label={t("predict.rules.fee")}
                     value={fill(t("predict.rules.feeValue"), {
-                      pct: `${(event.data.feeBps / 100).toFixed(2)}%`,
+                      pct:
+                        fee.data === undefined
+                          ? NO_QUOTE
+                          : `${(fee.data / 100).toFixed(2)}%`,
                     })}
                   />
                   <Body fontSize={12}>
@@ -472,7 +478,6 @@ export function EventDetailScreen({
       <OrderSheet
         ref={orderSheet}
         event={event.data}
-        feeBps={event.data?.feeBps ?? 20}
         onInsufficient={onOpenTransfer}
       />
     </Page>

@@ -333,6 +333,10 @@ src/features/predict/model/predict.ts   PredictTx 加 claimableAt / requestId；
 
 - 登录 EIP-712 域名 `name: "PredictMarket"` 是 gamma 的配置项 `app_name`（`gamma-service/internal/config/config.go:90-91`，默认值 `:251`），**不在 `public-info` 里**。部署把它改掉，所有登录签名都会验签失败且 App 无从发现。要么平台在 `public-info` 暴露它，要么当作部署硬约束写进运维手册。
 - CLOB 密钥的 `secret`：网页版与 App 都按 base64url 解码（`user-dapp/src/lib/hmac.ts:23-33`），服务端按标准 base64 解（`clob-service/.../middleware/auth.go:54-58`），只在 secret 不含 `-` / `_` 时一致。
+- `POST /order` 应答的 `takingAmount` / `makingAmount`：源码里是 Σ 抵押品 / Σ 结果 token（`match_dispatcher.go:1915-1921`，与方向无关），但 prax1s 实测（2026-09-03，三笔市价买）两者都等于份数（如 `7.4` / `7.4`），成交额拿不到；网页版根本不读这两个字段。App 按 making 当份数、两者相等就不显示均价，成交明细以 data-service `/activity` 为准。
+- clob 每个代币有最小下单份数：`/book` 的 `min_order_size`（该市场 5；gamma `orderMinSize` 同值；`marketdata.go:65` 默认 1），不足时 `POST /order` 返 400 纯文本。App 在下单页校验并提示。
+- clob 虚拟余额按周期从子图同步；`GET /balance-allowance/update`（L2 鉴权，`handlers.go` UpdateBalanceAllowance）可强制刷新，App 在转入确认 / 领取后调用；链上 `balanceOf` 也可能因公共 RPC 落后几秒读到旧值。
+- dev 水龙头：EOA 持有 800 测试 USDC 仍报 "USDC balance must exceed the required minimum"（`faucet.go:137-142` 检查的是 EOA 在 `chain.usdcAddress` 上的余额 > `minUsdcBalanceRaw`，默认 10 USDC）——疑为 dev 配置的 USDC 地址与 `public-info` 的 `USDC_UNDERLYING` 不同或阈值过高，需平台侧核对。
 - `USDC_UNDERLYING` / `USDW_WRAPPER` 不是服务端定义的合约名，只是 user-dapp 的查找键（`user-dapp/src/lib/contracts.ts:72-73`），要在平台管理端作为自定义合约行手工添加；缺了 App 报 `PredictPlatformContractMissingError`，不启用。（2026-09-03 实测 prax1s 的 `public-info.chain.contracts` 已含两行：`USDW_WRAPPER 0x7deB…F740`、`USDC_UNDERLYING 0x2eA6…c3AD`；该测试 USDC 的 `mint(address,uint256)` 无权限限制（eth_call 从任意地址模拟成功，约 51k gas），联调时 EOA 只要有少量 OP Sepolia ETH 就能自铸。）
 
 1. 联调租户：库里只有 anyfun（100000001）有 App 包与 bootstrap 配置，`test` 租户（100000003）没有域名 / 包，所以联调直接用 anyfun。**已写库（2026-09-03，web4）**：`services.predict = {domain: predict.prax1s.xyz, scopeId: 0xfb05…454a, chain: op-sepolia}`（`mobile-bootstrap` version 12）、op-sepolia 目录加 USDW `0x790e…6098`（id 22，6 位）、`tokens` 锚点 version 3；`modules.predict` 保持 false。线上 bootstrap 已核实：`wallet.tokens` 含 USDW，`services` 为空（模块关着不下发）。**开模块前先发带阶段 6 代码的新版 App**，否则老包会显示 Mock 预测市场。

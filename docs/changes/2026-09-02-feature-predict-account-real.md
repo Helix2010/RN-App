@@ -66,6 +66,17 @@ WS 协议用 node `ws` 直连 prax1s 复核过：初始 dump 的 `timestamp` 是
 - **两处演示数字残留**：持仓页"今日盈亏"写死 `+$41.20`，改为平台盈亏曲线（`/user-pnl` 1d 序列末值 − 首值，新 hook `usePredictPnl`），没数据显示 "—"；排行榜"我的排名 #1,204 · 本周盈亏 +$312.40 · Vol $4,860" 全是写死的，改为在返回榜单里按 Safe（`proxyWallet`）找自己，找不到显示"暂未上榜"与 "—"（平台没有查单人名次的接口）。
 - **备份助记词页报重复 key**：12 词里同一个词出现两次是合法的，列表 key 改为带位置。
 
+**交易流程联调（2026-09-03，铸 1000 测试 USDC 后）**：转入 100 USDC × 2（approve + wrap，EOA 付 gas）→ 账户 200 USDW；市价买 Yes 三笔（5 / 2 / 2 USDW，全部成交，平台活动与持仓核对一致）。又修了六处：
+
+- **成交 toast 显示 "@ 100¢"**：`POST /order` 应答的 `takingAmount` / `makingAmount` 按 `match_dispatcher.go:1915-1921` 应是 Σ 抵押品 / Σ 结果 token，与方向无关（原代码按方向对调）；且 prax1s 实测两者都等于份数，成交额拿不到。现在 making 当份数，两者相等就不编价：`OrderResult.avgPriceCents / cost / fee` 可空，toast 只说"已成交 N 份"。
+- **小额单被 400 拒绝**：clob 对每个代币有最小下单份数（`/book` 的 `min_order_size`，该市场 5 份；gamma `orderMinSize` 同值）。`OrderBook` 新增 `minOrderShares`，下单页不足时提示"最少 N 份"并禁用提交；WS 簿事件不带该字段，保留 REST 拉到的值。
+- **平台纯文本错误被吞**：clob 的 400 是纯文本，原来解析不成 JSON 就丢掉，toast 只剩 "HTTP 400"。现在原文留作错误详情。
+- **持仓 / 挂单 / 历史 / 结算 / 拆合全都回查静态夹具**：真实持仓因为 conditionId 不在夹具里而整行不渲染（头部却显示 1 笔）。`Position` / `Order` 自带 `title` / `outcomeLabel` / `endsAt`，结算页由来路传 `eventId`，拆合从持仓里选市场，卖出按持仓的事件 id 现取 `Market`；`fixtures/events` 只剩 Mock 用。
+- **手续费标签写死**：事件级 `feeBps` 恒为 0 / 20，与预览里按 clob `/fee-rate` 算出的金额不一致（实测 5%）。删掉事件级字段，新 hook `useFeeBps(marketId)`，下单页与规则页同源。
+- **转入后"可用"要等几分钟**：clob 的虚拟余额按周期从子图同步，平台有 `GET /balance-allowance/update` 强制刷新（网页版没用）。转入确认、领取完成后调一次。
+
+平台侧观察：dev 水龙头对持有 800 USDC 的 EOA 仍报 "USDC balance must exceed the required minimum"，与 `faucet.go` 的检查（EOA 的 `chain.usdcAddress` 余额 > `minUsdcBalanceRaw`）对不上，疑为 dev 配置的 USDC 地址或阈值——App 侧无事可做，已记入设计文档 §5。
+
 联调环境事实：prax1s `public-info.chain.contracts` 已含 `USDW_WRAPPER` / `USDC_UNDERLYING`；测试 USDC（`0x2eA6…c3AD`）的 `mint(address,uint256)` 无权限限制，EOA 有少量 OP Sepolia ETH 即可自铸后联调转入 / 下单。
 
 ## 不做的事

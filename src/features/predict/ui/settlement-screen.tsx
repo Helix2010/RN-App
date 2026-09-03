@@ -35,15 +35,17 @@ import {
   usePredictEvent,
   useSubmitDispute,
 } from "../hooks/use-predict";
-import { EVENTS } from "../fixtures/events";
 import { StatusBadge, fill, outcomeLabel } from "./shared";
 
 /** P-04 结算进度与争议：四步进度条（倒计时是唯一 warn 色）、你的持仓、提出争议（押金）。 */
 export function SettlementScreen({
   marketId,
+  eventId,
   onBack,
 }: {
   marketId: string;
+  /** 市场所属事件（来路知道，不再回查静态夹具） */
+  eventId: string;
   onBack: () => void;
 }) {
   const insets = useSafeAreaInsets();
@@ -51,9 +53,6 @@ export function SettlementScreen({
   const locale = config.localization.selectedLocale;
   const session = useSession();
   const address = session.data?.address;
-  const eventId = EVENTS.find((event) =>
-    event.markets.some((market) => market.id === marketId),
-  )?.id;
   const event = usePredictEvent(eventId);
   const adjudication = useAdjudication(marketId);
   const positions = usePositions(address, true);

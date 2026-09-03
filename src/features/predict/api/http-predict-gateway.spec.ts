@@ -106,15 +106,30 @@ function platform() {
       if (path === "/tick-size") return json({ minimum_tick_size: "0.01" });
       if (path === "/order" && method === "POST") {
         const body = JSON.parse(String(init?.body)) as {
-          order: { makerAmount: string; takerAmount: string };
+          order: { makerAmount: string; takerAmount: string; side: string };
         };
         return json({
           success: true,
           errorMsg: "",
           orderID: "o-new",
-          // 全部成交：BUY 的 taking 是份数、making 是 USDC（十进制字符串）
-          takingAmount: String(Number(body.order.takerAmount) / 1e6),
-          makingAmount: String(Number(body.order.makerAmount) / 1e6),
+          // match_dispatcher.go:1915-1921：taking = Σ 抵押品、making = Σ 结果 token，与方向无关
+          // BUY 单 makerAmount 是抵押品、takerAmount 是份数；SELL 反之
+          takingAmount: String(
+            Number(
+              collapseFillAmounts
+                ? body.order.takerAmount
+                : body.order.side === "BUY"
+                  ? body.order.makerAmount
+                  : body.order.takerAmount,
+            ) / 1e6,
+          ),
+          makingAmount: String(
+            Number(
+              body.order.side === "BUY"
+                ? body.order.takerAmount
+                : body.order.makerAmount,
+            ) / 1e6,
+          ),
           status: "matched",
           transactionsHashes: [`0x${"cd".repeat(32)}`],
           tradeIDs: ["t-1"],
@@ -285,8 +300,11 @@ function build() {
 afterEach(() => setPlatformFetch(null));
 
 const cleanup: (() => void)[] = [];
+/** 置 true 模拟 prax1s 实测：taking 与 making 都等于份数，成交额拿不到 */
+let collapseFillAmounts = false;
 afterEach(() => {
   for (const stop of cleanup.splice(0)) stop();
+  collapseFillAmounts = false;
 });
 
 describe("HttpPredictGateway", () => {
@@ -326,6 +344,36 @@ describe("HttpPredictGateway", () => {
     });
     for (const request of seen)
       expect(request.headers["X-Tenant-Domain"]).toBe(DOMAIN);
+  });
+
+  it("reports no fill price when the platform returns identical taking / making amounts", async () => {
+    // prax1s 实测：POST /order 应答的 takingAmount 与 makingAmount 都等于份数，成交额拿不到
+    collapseFillAmounts = true;
+    const { gateway } = build();
+    const result = await gateway.placeOrder(EOA, {
+      marketId: CONDITION,
+      outcome: "yes",
+      side: "buy",
+      type: "market",
+      amount: fromDecimal("10", 6, "USDW"),
+      tif: "GTC",
+    });
+    expect(result.status).toBe("filled");
+    expect(result.filledShares).toBeCloseTo(15.62, 2);
+    expect(result.avgPriceCents).toBeNull();
+    expect(result.cost).toBeNull();
+    expect(result.fee).toBeNull();
+  });
+
+  it("positions and open orders carry the market question so the UI needs no fixture lookup", async () => {
+    const { gateway } = build();
+    const [position] = await gateway.listPositions(EOA);
+    expect(position?.title).toEqual({ default: "Will BTC hit 120k?" });
+    expect(position?.outcomeLabel).toBeNull();
+    expect(position?.endsAt).toBeNull();
+    const orders = await gateway.listOpenOrders(EOA);
+    expect(orders[0]?.title).toEqual({ default: "Will BTC hit 120k?" });
+    expect(orders[0]?.eventId).toBe("btc-120k");
   });
 
   it("reads the YES-token order book and price history for a market", async () => {
@@ -637,6 +685,7 @@ describe("HttpPredictGateway", () => {
           bids: [{ priceCents: 60, shares: 1 }],
           asks: [{ priceCents: 66, shares: 2 }],
           tickCents: 1,
+          minOrderShares: 1,
           updatedAt: "2027-01-15T08:00:00.000Z",
         },
       },

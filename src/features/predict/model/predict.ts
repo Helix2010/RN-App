@@ -53,7 +53,6 @@ export type PredictEvent = {
   featured: boolean;
   rules: LocalizedText;
   resolutionSource: LocalizedText;
-  feeBps: number;
   disputeWindowSec: number;
   sports?: {
     home: LocalizedText;
@@ -79,6 +78,8 @@ export type OrderBook = {
   bids: OrderBookLevel[];
   asks: OrderBookLevel[];
   tickCents: number;
+  /** clob 对该代币的最小下单份数（`/book` 的 min_order_size；不足会被 400 拒绝） */
+  minOrderShares: number;
   updatedAt: string;
 };
 export type PricePoint = { t: string; priceCents: number };
@@ -120,15 +121,20 @@ export type OrderResult = {
   orderId: string;
   status: "filled" | "open" | "partial" | "delayed";
   filledShares: number;
-  avgPriceCents: number;
-  fee: Money;
-  cost: Money;
+  /** 成交均价；平台应答里没有可用的成交额时为 null（实测 prax1s 的 taking / making 都是份数） */
+  avgPriceCents: number | null;
+  fee: Money | null;
+  cost: Money | null;
 };
 
 export type Order = {
   id: string;
   marketId: string;
   eventId: string;
+  /** 市场问题（多结果事件里是该选项的问题） */
+  title: LocalizedText;
+  /** 多结果事件中的选项名；二元市场为 null */
+  outcomeLabel: LocalizedText | null;
   outcome: Outcome;
   side: OrderSide;
   type: OrderType;
@@ -145,6 +151,12 @@ export type Position = {
   id: string;
   marketId: string;
   eventId: string;
+  /** 市场问题；界面直接用它，不再回查静态夹具 */
+  title: LocalizedText;
+  /** 多结果事件中的选项名；平台持仓接口不给时为 null */
+  outcomeLabel: LocalizedText | null;
+  /** 市场截止时间；平台不给时为 null */
+  endsAt: string | null;
   outcome: Outcome;
   shares: number;
   avgPriceCents: number;

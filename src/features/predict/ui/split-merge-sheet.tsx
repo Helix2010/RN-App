@@ -3,7 +3,6 @@ import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import { formatMoney } from "../../../core/i18n/format";
 import { pickTranslation } from "../../../core/i18n/localized-text";
-import { mockNow } from "../../../core/mock/mock-runtime";
 import {
   compare,
   fromDecimal,
@@ -21,7 +20,6 @@ import {
   toast,
 } from "../../../design-system";
 import { TxProgress } from "../../assets/ui/tx-progress";
-import { EVENTS } from "../fixtures/events";
 import {
   usePositions,
   usePredictTx,
@@ -60,13 +58,20 @@ export const SplitMergeSheet = forwardRef<
     },
   }));
 
-  const markets = EVENTS.filter(
-    (event) =>
-      event.kind === "binary" && new Date(event.endsAt).getTime() > mockNow(),
-  ).map((event) => ({
-    value: event.markets[0]?.id ?? event.id,
-    label: pickTranslation(event.title, locale).slice(0, 14),
-  }));
+  // 可拆合的市场 = 当前持有的市场（合并要两边都有份额；拆分也从持仓里选）
+  const markets = (positions.data ?? [])
+    .filter(
+      (item, index, all) =>
+        !item.closed &&
+        all.findIndex((other) => other.marketId === item.marketId) === index,
+    )
+    .map((item) => ({
+      value: item.marketId,
+      label: pickTranslation(item.outcomeLabel ?? item.title, locale).slice(
+        0,
+        14,
+      ),
+    }));
   const yes =
     positions.data?.find(
       (item) => item.marketId === marketId && item.outcome === "yes",

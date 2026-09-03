@@ -54,8 +54,8 @@ function PredictPositionsTab() {
       onOpenEvent={(eventId, marketId) =>
         navigation.navigate("PredictEvent", { eventId, marketId })
       }
-      onOpenSettlement={(marketId) =>
-        navigation.navigate("PredictSettlement", { marketId })
+      onOpenSettlement={(marketId, eventId) =>
+        navigation.navigate("PredictSettlement", { marketId, eventId })
       }
       onOpenTransfer={() => navigation.navigate("Transfer")}
     />

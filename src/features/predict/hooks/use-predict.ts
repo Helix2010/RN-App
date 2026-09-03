@@ -6,6 +6,7 @@ import type { Money } from "../../../core/money/money";
 import type {
   EventQuery,
   LeaderboardPeriod,
+  OrderBook,
   PlaceOrderRequest,
   PredictEvent,
   PriceRange,
@@ -51,9 +52,13 @@ export function useMarketStream(marketIds: string[]) {
     if (!key) return;
     return predict.subscribeMarkets(key.split(","), (event) => {
       if (event.type === "book") {
-        queryClient.setQueryData(
+        // WS 簿事件不带 min_order_size，网关只能按 gamma 兜底；REST 拉到过的值更准，保留
+        queryClient.setQueryData<OrderBook>(
           ["predict-book", event.book.marketId],
-          event.book,
+          (old) => ({
+            ...event.book,
+            minOrderShares: old?.minOrderShares ?? event.book.minOrderShares,
+          }),
         );
         return;
       }
@@ -116,6 +121,17 @@ export function useAdjudication(marketId: string | undefined) {
     queryFn: () => predict.getAdjudication(marketId as string),
     enabled: Boolean(marketId),
     refetchInterval: 15_000,
+  });
+}
+
+/** 该市场（YES 代币）的手续费 bps，来自 clob `/fee-rate`；事件级没有费率 */
+export function useFeeBps(marketId: string | undefined) {
+  const { predict } = useGateways();
+  return useQuery({
+    queryKey: ["predict-fee", marketId],
+    queryFn: () => predict.getFeeBps(marketId as string),
+    enabled: Boolean(marketId),
+    staleTime: 10 * 60_000,
   });
 }
 

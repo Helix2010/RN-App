@@ -396,6 +396,8 @@ const zhCN = {
   "predict.order.limitNote":
     "限价单进入盘口等待成交，支持部分成交；可在持仓 → 挂单中撤销",
   "predict.order.filled": "已成交 {shares} 份 @ {price}",
+  "predict.order.filledShares": "已成交 {shares} 份",
+  "predict.order.minShares": "最少 {n} 份",
   "predict.order.placed": "挂单已提交",
   "predict.order.insufficient": "余额不足",
   "predict.order.insufficientShares": "持有份额不足",
@@ -1285,6 +1287,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "predict.order.limitNote":
     "Limit orders wait in the book and may partially fill; cancel under Positions → Orders",
   "predict.order.filled": "Filled {shares} shares @ {price}",
+  "predict.order.filledShares": "Filled {shares} shares",
+  "predict.order.minShares": "Minimum {n} shares",
   "predict.order.placed": "Order placed",
   "predict.order.insufficient": "Insufficient balance",
   "predict.order.insufficientShares": "Not enough shares",
