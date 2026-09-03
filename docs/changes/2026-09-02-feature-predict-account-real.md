@@ -81,6 +81,8 @@ WS 协议用 node `ws` 直连 prax1s 复核过：初始 dump 的 `timestamp` 是
 
 **卖出 / 拆合联调（同日）**：持仓页 Sell → 市价卖 10 份 @ 买一 25¢，可用余额 +2.33 USDW（2.45 − 5% 手续费），平台持仓 31.64 → 21.64（data-service 索引约 15–30 秒后跟上）。拆分 5 USDW（relayer SafeTx 直接调 CTF）约 10 秒 Submitted → Confirmed → Done，平台持仓多出 No 5；再合并 5 份，No 归零、活动记录 SPLIT / MERGE 各一条。顺手修了拆合 sheet 的两处：默认市场写死 Mock 夹具 id `m-btc-120k`（平台报 unknown market，toast 只说"加载失败"）→ 默认第一个持有的市场、错误显示原文；提示文案 USDC → USDW。
 
+**显示精度（同日）**：价格从整数分改为保留一位小数（`cents = round(price × 1000) / 10`）——簿的 tick 到 0.1¢，24.5¢ 的档位原来显示成 25¢，0.1¢ 的价显示成 0%；概率格式同网页版 `formatProbability`（最多一位小数）。转入报价小于显示精度时显示 "< 0.000001 ETH" 而不是 "≈ 0 ETH"。
+
 平台侧观察：dev 水龙头对持有 800 USDC 的 EOA 仍报 "USDC balance must exceed the required minimum"，与 `faucet.go` 的检查（EOA 的 `chain.usdcAddress` 余额 > `minUsdcBalanceRaw`）对不上，疑为 dev 配置的 USDC 地址或阈值——App 侧无事可做，已记入设计文档 §5。
 
 联调环境事实：prax1s `public-info.chain.contracts` 已含 `USDW_WRAPPER` / `USDC_UNDERLYING`；测试 USDC（`0x2eA6…c3AD`）的 `mint(address,uint256)` 无权限限制，EOA 有少量 OP Sepolia ETH 即可自铸后联调转入 / 下单。

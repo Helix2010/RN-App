@@ -107,8 +107,9 @@ const SIGN_REASON = "predict.sign.reason";
 const USDW_DECIMALS = 6;
 const ONE_USDC = 1_000_000n;
 
+/** 价格（0–1）→ 分，保留一位小数：簿的 tick 可到 0.1¢，网页版概率也显示一位小数（utils.ts formatProbability） */
 function cents(price: number): number {
-  return Math.round(price * 100);
+  return Math.round(price * 1000) / 10;
 }
 
 /** 展示价可能缺失（gamma 没缓存买卖盘也没成交价），缺就 null 不编数 */
@@ -148,7 +149,8 @@ function bookMidCents(book: OrderBook): number | null {
   const asks = book.asks.filter(tradable).map((level) => level.priceCents);
   const bid = bids.length > 0 ? Math.max(...bids) : null;
   const ask = asks.length > 0 ? Math.min(...asks) : null;
-  if (bid !== null && ask !== null) return Math.round((bid + ask) / 2);
+  if (bid !== null && ask !== null)
+    return Math.round(((bid + ask) / 2) * 10) / 10;
   return ask ?? bid;
 }
 

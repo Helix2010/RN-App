@@ -5,6 +5,7 @@ import {
   fill,
   formatCountdown,
   formatMoney,
+  formatMoneyApprox,
   shortenAddress,
 } from "../../../core/i18n/format";
 import {
@@ -485,7 +486,7 @@ export function TransferForm({
             label={t("transfer.networkFee")}
             value={
               quote.data
-                ? `≈ ${formatMoney(quote.data, locale, { maxFraction: 6 })}`
+                ? `≈ ${formatMoneyApprox(quote.data, locale)}`
                 : quote.isFetching
                   ? "…"
                   : "—"

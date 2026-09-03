@@ -1,9 +1,12 @@
 import { fromDecimal, money } from "../money/money";
+import type { Money } from "../money/money";
 import {
   formatCents,
   formatCountdown,
   formatMoney,
+  formatMoneyApprox,
   formatPercent,
+  formatPercentCents,
   formatProbability,
   formatTimeUntil,
   formatTokenAmount,
@@ -17,6 +20,11 @@ describe("format helpers", () => {
   it("formats prediction prices and probabilities", () => {
     expect(formatCents(62)).toBe("62¢");
     expect(formatCents(61.5)).toBe("61.5¢");
+    // 概率最多一位小数（同网页版 formatProbability），0.1¢ 的价不再显示成 0%
+    expect(formatPercentCents(26.5)).toBe("26.5%");
+    expect(formatPercentCents(0.1)).toBe("0.1%");
+    expect(formatPercentCents(62)).toBe("62%");
+    expect(formatPercentCents(null)).toBe("—");
     expect(formatProbability(0.624)).toBe("62%");
   });
 
@@ -139,5 +147,17 @@ describe("formatTokenAmount with a broken display precision", () => {
     expect(
       formatTokenAmount(value, undefined as unknown as number, "en-US"),
     ).toBe("1.5 USDC");
+  });
+
+  it("shows sub-resolution fees as a lower bound instead of 0", () => {
+    const wei = (raw: string) =>
+      ({ raw, decimals: 18, symbol: "ETH" }) as Money;
+    expect(formatMoneyApprox(wei("100000000000"), "en-US")).toBe(
+      "< 0.000001 ETH",
+    ); // 1e-7 ETH
+    expect(formatMoneyApprox(wei("1200000000000000"), "en-US")).toBe(
+      "0.0012 ETH",
+    );
+    expect(formatMoneyApprox(wei("0"), "en-US")).toBe("0 ETH");
   });
 });

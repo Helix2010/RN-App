@@ -74,9 +74,25 @@ export function formatCents(cents: number | null): string {
 /** 无报价占位（平台既无买卖盘也无成交时不编数） */
 export const NO_QUOTE = "—";
 
-/** 概率（分）："62%"；无报价显示占位 */
+/** 概率（分）："62%" / "26.5%"（最多一位小数，同网页版 formatProbability）；无报价显示占位 */
 export function formatPercentCents(cents: number | null): string {
-  return cents === null ? NO_QUOTE : `${cents}%`;
+  return cents === null ? NO_QUOTE : `${Number(cents.toFixed(1))}%`;
+}
+
+/**
+ * 金额小到显示精度以下但不为零时显示 "< 0.000001 ETH"，不显示误导性的 "0 ETH"
+ * （OP Sepolia 的 gas 费常在 1e-7 ETH 量级）。
+ */
+export function formatMoneyApprox(
+  value: Money,
+  locale: string,
+  maxFraction = 6,
+): string {
+  const text = formatMoney(value, locale, { maxFraction });
+  const approx = toApproxNumber(value);
+  if (approx > 0 && /^0([.,]0+)?\s/.test(text))
+    return `< ${(10 ** -maxFraction).toFixed(maxFraction)} ${value.symbol}`;
+  return text;
 }
 
 /** 概率：0–1 → "62%" */

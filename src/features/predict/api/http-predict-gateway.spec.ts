@@ -98,7 +98,11 @@ function platform() {
           market: CONDITION,
           asset_id: url.searchParams.get("token_id"),
           bids: [{ price: "0.60", size: "150.5" }],
-          asks: [{ price: "0.64", size: "80" }],
+          // 簿的 tick 可到 0.1¢：0.645 要显示成 64.5¢，不能四舍五入成 65¢
+          asks: [
+            { price: "0.64", size: "80" },
+            { price: "0.645", size: "1" },
+          ],
           tick_size: "0.01",
           timestamp: "1800000000000",
         });
@@ -380,7 +384,10 @@ describe("HttpPredictGateway", () => {
     const { gateway, seen } = build();
     const book = await gateway.getOrderBook(CONDITION);
     expect(book.bids).toEqual([{ priceCents: 60, shares: 150.5 }]);
-    expect(book.asks).toEqual([{ priceCents: 64, shares: 80 }]);
+    expect(book.asks).toEqual([
+      { priceCents: 64, shares: 80 },
+      { priceCents: 64.5, shares: 1 },
+    ]);
     expect(book.tickCents).toBe(1);
     expect(book.updatedAt).toBe("2027-01-15T08:00:00.000Z");
     const bookRequest = seen.find((r) => r.url.pathname === "/book");
