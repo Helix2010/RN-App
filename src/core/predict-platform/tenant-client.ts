@@ -97,12 +97,15 @@ function errorDetail(
         : typeof record.error === "string"
           ? record.error
           : `HTTP_${status}`;
+    // clob 的 400 体是 {"success":false,"errorMsg":"…"}（实测 2026-09-03），拒单原因在 errorMsg
     const detail =
-      typeof record.message === "string"
-        ? record.message
-        : typeof record.error === "string"
-          ? record.error
-          : `platform answered HTTP ${status}`;
+      typeof record.errorMsg === "string" && record.errorMsg.length > 0
+        ? record.errorMsg
+        : typeof record.message === "string"
+          ? record.message
+          : typeof record.error === "string"
+            ? record.error
+            : `platform answered HTTP ${status}`;
     return { code, detail };
   }
   return { code: `HTTP_${status}`, detail: `platform answered HTTP ${status}` };

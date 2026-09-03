@@ -66,6 +66,21 @@ describe("platformRequest", () => {
       message: "nonce expired",
     });
 
+    // clob 的拒单体：{"success":false,"errorMsg":"…"}
+    setPlatformFetch(async () =>
+      respond(400, { success: false, errorMsg: "ORDER_PRICE_NOT_ALIGNED" }),
+    );
+    await expect(
+      platformRequest({
+        url: "https://x",
+        tenantDomain: "d",
+        schema: z.unknown(),
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      message: "ORDER_PRICE_NOT_ALIGNED",
+    });
+
     setPlatformFetch(async () => respond(403, { error: "scopeId mismatch" }));
     const error = await platformRequest({
       url: "https://x",

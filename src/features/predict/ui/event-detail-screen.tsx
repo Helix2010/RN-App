@@ -306,11 +306,13 @@ export function EventDetailScreen({
                         {t("predict.book.yes")} ·{" "}
                         {fill(t("predict.book.spread"), {
                           spread: formatCents(
-                            Math.round(
-                              ((book.data.asks[0]?.priceCents ?? 0) -
-                                (book.data.bids[0]?.priceCents ?? 0)) *
-                                10,
-                            ) / 10,
+                            book.data.asks[0] && book.data.bids[0]
+                              ? Math.round(
+                                  (book.data.asks[0].priceCents -
+                                    book.data.bids[0].priceCents) *
+                                    10,
+                                ) / 10
+                              : null,
                           ),
                         })}
                       </Body>

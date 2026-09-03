@@ -486,7 +486,8 @@ export function TransferForm({
             label={t("transfer.networkFee")}
             value={
               quote.data
-                ? `≈ ${formatMoneyApprox(quote.data, locale)}`
+                ? // 已经是"< 0.000001 ETH"这种下界写法时不再加 ≈
+                  formatMoneyApprox(quote.data, locale).replace(/^(?!<)/, "≈ ")
                 : quote.isFetching
                   ? "…"
                   : "—"

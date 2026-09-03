@@ -19,6 +19,7 @@ const SCOPE = `0x${"fb".repeat(32)}`;
 const SAFE = "0x79ec2b3b2C34b583c1a4c1408f45AC01B5731740";
 const EOA = getAddress("0xb38b3e94803b22facb0bb488192eaf2032dffc7c");
 const CONDITION = `0x${"c1".repeat(32)}`;
+const SETTLED_CONDITION = `0x${"ee".repeat(32)}`;
 const service = {
   domain: DOMAIN,
   scopeId: SCOPE,
@@ -116,15 +117,12 @@ function platform() {
           success: true,
           errorMsg: "",
           orderID: "o-new",
-          // match_dispatcher.go:1915-1921：taking = Σ 抵押品、making = Σ 结果 token，与方向无关
-          // BUY 单 makerAmount 是抵押品、takerAmount 是份数；SELL 反之
+          // matcher.go 把 CollateralAmount / OutcomeAmount 都写成 fillAmount（份数）：两个字段一样，拿不到成交额
           takingAmount: String(
             Number(
-              collapseFillAmounts
+              body.order.side === "BUY"
                 ? body.order.takerAmount
-                : body.order.side === "BUY"
-                  ? body.order.makerAmount
-                  : body.order.takerAmount,
+                : body.order.makerAmount,
             ) / 1e6,
           ),
           makingAmount: String(
@@ -174,6 +172,29 @@ function platform() {
             size_matched: "1",
             price: "0.5",
           },
+          {
+            id: "o-3",
+            status: "ORDER_STATUS_LIVE",
+            market: CONDITION,
+            asset_id: "222",
+            side: "SELL",
+            // 文案故意写错：方向必须按 token id 对回市场
+            outcome: "Yes",
+            original_size: "3",
+            size_matched: "0",
+            price: "0.4",
+            order_type: "GTC",
+          },
+          {
+            id: "o-4",
+            status: "ORDER_STATUS_LIVE",
+            market: CONDITION,
+            asset_id: "999",
+            side: "BUY",
+            original_size: "1",
+            size_matched: "0",
+            price: "0.5",
+          },
         ]);
     }
     if (host === "data-api") {
@@ -198,6 +219,26 @@ function platform() {
               outcome: "Yes",
               outcomeIndex: 0,
             },
+            {
+              proxyWallet: SAFE,
+              asset: "333",
+              conditionId: SETTLED_CONDITION,
+              size: "4",
+              avgPrice: "0.30",
+              initialValue: "1.2",
+              currentValue: "4",
+              cashPnl: "2.8",
+              percentPnl: "233.3",
+              // 结算后 data-service 把 curPrice 换成结算价（positions.go:426-455）：赢 1
+              curPrice: "1",
+              redeemable: true,
+              marketClosed: true,
+              title: "Did ETH flip BTC?",
+              // 只有市场 slug、没有事件 slug
+              slug: "eth-flip-market",
+              outcome: "Yes",
+              outcomeIndex: 0,
+            },
           ],
         });
       if (path === "/activity")
@@ -214,6 +255,17 @@ function platform() {
             title: "Will BTC hit 120k?",
             outcome: "Yes",
             outcomeIndex: 0,
+          },
+          {
+            // 平台新增的类型：跳过，不硬按成交显示
+            type: "AIRDROP",
+            conditionId: CONDITION,
+            asset: "111",
+            price: 0,
+            size: 1,
+            usdcSize: 1,
+            timestamp: 1_799_990_001,
+            title: "Will BTC hit 120k?",
           },
         ]);
       if (path === "/v1/leaderboard")
@@ -304,11 +356,9 @@ function build() {
 afterEach(() => setPlatformFetch(null));
 
 const cleanup: (() => void)[] = [];
-/** 置 true 模拟 prax1s 实测：taking 与 making 都等于份数，成交额拿不到 */
-let collapseFillAmounts = false;
 afterEach(() => {
   for (const stop of cleanup.splice(0)) stop();
-  collapseFillAmounts = false;
+  jest.restoreAllMocks();
 });
 
 describe("HttpPredictGateway", () => {
@@ -350,26 +400,27 @@ describe("HttpPredictGateway", () => {
       expect(request.headers["X-Tenant-Domain"]).toBe(DOMAIN);
   });
 
-  it("reports no fill price when the platform returns identical taking / making amounts", async () => {
-    // prax1s 实测：POST /order 应答的 takingAmount 与 makingAmount 都等于份数，成交额拿不到
-    collapseFillAmounts = true;
-    const { gateway } = build();
-    const result = await gateway.placeOrder(EOA, {
-      marketId: CONDITION,
-      outcome: "yes",
-      side: "buy",
-      type: "market",
-      amount: fromDecimal("10", 6, "USDW"),
-      tif: "GTC",
-    });
-    expect(result.status).toBe("filled");
-    expect(result.filledShares).toBeCloseTo(15.62, 2);
-    expect(result.avgPriceCents).toBeNull();
-    expect(result.cost).toBeNull();
-    expect(result.fee).toBeNull();
+  it("rejects a limit price off the book's tick grid before signing or posting anything", async () => {
+    const { gateway, seen } = build();
+    await expect(
+      gateway.placeOrder(EOA, {
+        marketId: CONDITION,
+        outcome: "yes",
+        side: "buy",
+        type: "limit",
+        shares: 10,
+        // 簿 tick 1¢，62.3¢ 不在网格上（平台会 400 ORDER_PRICE_NOT_ALIGNED）
+        priceCents: 62.3,
+        tif: "GTC",
+      }),
+    ).rejects.toThrow(/multiple of the market tick/);
+    expect(
+      seen.some((r) => r.url.pathname === "/order" && r.method === "POST"),
+    ).toBe(false);
   });
 
   it("positions and open orders carry the market question so the UI needs no fixture lookup", async () => {
+    jest.spyOn(console, "warn").mockImplementation(() => {});
     const { gateway } = build();
     const [position] = await gateway.listPositions(EOA);
     expect(position?.title).toEqual({ default: "Will BTC hit 120k?" });
@@ -403,7 +454,15 @@ describe("HttpPredictGateway", () => {
   it("lists positions, activity and open orders for the Safe with L2 headers on the CLOB call", async () => {
     const { gateway, seen } = build();
     const positions = await gateway.listPositions(EOA);
-    expect(positions).toHaveLength(1);
+    expect(positions).toHaveLength(2);
+    // 结算赢家：结算价 1 → 可领 100¢；接口只有市场 slug 时不拿它充当事件 id
+    expect(positions[1]).toMatchObject({
+      marketId: SETTLED_CONDITION,
+      eventId: "",
+      status: "settled",
+      redeemable: true,
+      settledPayoutCents: 100,
+    });
     expect(positions[0]).toMatchObject({
       id: `${CONDITION}:111`,
       marketId: CONDITION,
@@ -422,14 +481,23 @@ describe("HttpPredictGateway", () => {
         ?.url.searchParams.get("user"),
     ).toBe(SAFE);
 
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
     const activity = await gateway.listActivity(EOA);
+    // 未知类型 AIRDROP 被跳过并留痕
+    expect(activity).toHaveLength(1);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("unknown activity type AIRDROP"),
+    );
     expect(activity[0]).toMatchObject({ type: "TRADE", marketId: CONDITION });
     // 买入是出账
     expect(activity[0]?.amount).toEqual(fromDecimal("-6.875", 6, "USDW"));
 
     const orders = await gateway.listOpenOrders(EOA);
-    // MATCHED 的不算未完成
-    expect(orders.map((order) => order.id)).toEqual(["o-1"]);
+    // MATCHED 的不算未完成；asset 不属于该市场的（o-4）跳过
+    expect(orders.map((order) => order.id)).toEqual(["o-1", "o-3"]);
+    // 方向按 token id：222 是 NO token，不信 outcome 文案
+    expect(orders[1]).toMatchObject({ outcome: "no", side: "sell" });
+    warn.mockRestore();
     expect(orders[0]).toMatchObject({
       marketId: CONDITION,
       outcome: "yes",
@@ -474,16 +542,15 @@ describe("HttpPredictGateway", () => {
     );
     expect(post?.headers.PRED_API_KEY).toBe("key");
     expect(post?.headers.PRED_ADDRESS).toBe(EOA);
-    // 卖一 0.64 → 10 USDC 买到 15.62 份，maker = 0.64 × 15.62 = 9.9968
+    // 卖一 0.64 → 10 USDC 买到 15.62 份；应答只给份数（taking = making），均价 / 成本 / 手续费不编
     expect(result).toMatchObject({
       orderId: "o-new",
       status: "filled",
       filledShares: 15.62,
-      avgPriceCents: 64,
+      avgPriceCents: null,
+      cost: null,
+      fee: null,
     });
-    expect(result.cost).toEqual(fromDecimal("9.9968", 6, "USDW"));
-    // 手续费 20 bps
-    expect(result.fee).toEqual(fromDecimal("0.019994", 6, "USDW"));
     // 订单的 signer 是钱包地址（EOA），maker 是 Safe
     const sentBody = JSON.parse(
       String((post as unknown as { body?: string }).body ?? "{}"),
@@ -503,9 +570,13 @@ describe("HttpPredictGateway", () => {
       type: "market",
       amount: fromDecimal("10", 6, "USDW"),
     });
-    expect(buy.estimatedShares).toBe(15.62);
+    // 沿卖一 0.64 吃到 15.62 份；手续费 = 15.62 × min(0.64, 0.36) × 20 / 1e4 = 0.0112464 USDW，
+    // 买入从份额里扣（÷ 0.64 ≈ 0.0176 份）→ 到手 15.60 份
+    expect(buy.estimatedShares).toBe(15.6);
     expect(buy.avgPriceCents).toBe(64);
-    expect(buy.potentialPayout).toEqual(fromDecimal("15.62", 6, "USDW"));
+    expect(buy.fee).toEqual(fromDecimal("0.011246", 6, "USDW"));
+    expect(buy.potentialPayout).toEqual(fromDecimal("15.6", 6, "USDW"));
+    expect(buy.potentialReturnPct).toBeCloseTo(56, 0);
     const sell = await gateway.previewOrder(EOA, {
       marketId: CONDITION,
       outcome: "yes",
@@ -516,6 +587,10 @@ describe("HttpPredictGateway", () => {
     // 买一 0.60 只有 150.5 份，20 份全吃得到
     expect(sell.estimatedShares).toBe(20);
     expect(sell.cost).toEqual(fromDecimal("12", 6, "USDW"));
+    // 卖出手续费 = 20 × min(0.60, 0.40) × 20 / 1e4 = 0.016 USDW，从回款里扣
+    expect(sell.fee).toEqual(fromDecimal("0.016", 6, "USDW"));
+    expect(sell.potentialPayout).toEqual(fromDecimal("11.984", 6, "USDW"));
+    expect(sell.potentialReturnPct).toBeNull();
   });
 
   it("redeems settled positions with one MultiSend of CTF.redeemPositions per condition", async () => {

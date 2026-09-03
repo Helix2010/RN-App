@@ -119,10 +119,6 @@ function centsOrNull(price: number | null): number | null {
 }
 
 /**
- * 订单簿推出的 YES 概率（分）：mid → ask → bid，只认 0 < p < 100 的可成交价，
- * 同网页版 `orderbookPricing.ts` resolveFirstOptionProbability。
- */
-/**
  * 簿时间戳：REST `/book` 给毫秒串，WS 初始 dump 给 ISO 串（实测 2026-09-03）；都解析不了就用收到的时刻。
  */
 function bookTimestamp(raw: string | number | null | undefined): string {
@@ -138,6 +134,10 @@ function bookTimestamp(raw: string | number | null | undefined): string {
   return new Date().toISOString();
 }
 
+/**
+ * 订单簿推出的 YES 概率（分）：mid → ask → bid，只认 0 < p < 100 的可成交价，
+ * 同网页版 `orderbookPricing.ts` resolveFirstOptionProbability。
+ */
 function bookMidCents(book: OrderBook): number | null {
   const tradable = (level: { priceCents: number }) =>
     level.priceCents > 0 && level.priceCents < 100;
@@ -414,7 +414,8 @@ export class HttpPredictGateway implements PredictGateway {
     return {
       id: `${position.conditionId}:${position.asset}`,
       marketId: position.conditionId,
-      eventId: position.eventSlug ?? position.slug ?? "",
+      // 只有事件 slug 能打开事件页；持仓接口的 slug 是市场 slug，不能当事件用
+      eventId: position.eventSlug ?? "",
       title: translationOf(position.questionTranslation, position.title ?? ""),
       // 持仓接口只给 outcome（Yes / No），没有多结果事件的选项名
       outcomeLabel: null,
@@ -428,13 +429,24 @@ export class HttpPredictGateway implements PredictGateway {
       pnl: usdw(position.cashPnl),
       pnlPct: position.percentPnl,
       status,
-      redeemable: position.redeemable ?? false,
+      // 市场结算后 data-service 把 curPrice 换成结算价（positions.go:426-455）：赢 1 / 输 0
+      settledPayoutCents: closed ? cents(position.curPrice) : undefined,
+      // 还持有、且结算价 > 0 的仓位才有东西可领
+      redeemable:
+        (position.redeemable ?? false) &&
+        position.size > 0 &&
+        position.curPrice > 0,
       closed: position.size <= 0,
     };
   }
 
-  private mapActivity(item: PlatformActivity, index: number): Activity {
-    const type = ACTIVITY_TYPES[item.type.toUpperCase()] ?? "TRADE";
+  private mapActivity(item: PlatformActivity, index: number): Activity | null {
+    const type = ACTIVITY_TYPES[item.type.toUpperCase()];
+    if (type === undefined) {
+      // 平台新增的活动类型先跳过并留痕，不硬按成交显示
+      console.warn(`[predict] unknown activity type ${item.type}`);
+      return null;
+    }
     const side = (item.side ?? "").toUpperCase();
     // 正为入账：卖出 / 领取 / 合并 / 返佣进来，买入 / 拆分出去
     const inflow =
@@ -460,7 +472,20 @@ export class HttpPredictGateway implements PredictGateway {
     };
   }
 
-  private mapOrder(order: ClobOpenOrder, ref: MarketRef): Order {
+  private mapOrder(order: ClobOpenOrder, ref: MarketRef): Order | null {
+    // 方向按 token id 对回市场，不信 outcome 文案（多语言 / 大小写都可能变）
+    const outcome: Outcome | null =
+      order.asset_id === ref.yesTokenId
+        ? "yes"
+        : order.asset_id === ref.noTokenId
+          ? "no"
+          : null;
+    if (outcome === null) {
+      console.warn(
+        `[predict] order ${order.id} asset ${order.asset_id} is not a token of market ${order.market}`,
+      );
+      return null;
+    }
     const type = (order.order_type ?? "").toUpperCase();
     const createdAt =
       typeof order.created_at === "number"
@@ -473,7 +498,7 @@ export class HttpPredictGateway implements PredictGateway {
       eventId: ref.eventId,
       title: ref.question,
       outcomeLabel: ref.outcomeLabel,
-      outcome: outcomeFromText(order.outcome) ?? "yes",
+      outcome,
       side: order.side.toUpperCase() === "SELL" ? "sell" : "buy",
       type: type === "MARKET" || type === "FAK" ? "market" : "limit",
       priceCents: cents(order.price),
@@ -802,19 +827,34 @@ export class HttpPredictGateway implements PredictGateway {
         : request.side === "buy"
           ? { shares: size / price, cost: size }
           : { shares: size, cost: size * price };
-    const shares = Math.floor(filled.shares * 100) / 100;
-    const cost = usdw(filled.cost);
-    const fee = usdw((filled.cost * feeRateBps) / 10_000);
-    const payout = usdw(shares);
+    const grossShares = Math.floor(filled.shares * 100) / 100;
+    // 均价用未截断的成交量算，否则截到 0.01 份会把 0.64 算成 0.6402
+    const avgPrice = filled.shares > 0 ? filled.cost / filled.shares : null;
+    // 平台手续费（plan.go calcExchangeFee）：bps × min(p, 1 − p) × 份数 / 1e4，
+    // 买入从到手份额里扣、卖出从回款里扣；估算按平均成交价
+    const feeUsdw =
+      avgPrice === null
+        ? 0
+        : (grossShares * Math.min(avgPrice, 1 - avgPrice) * feeRateBps) /
+          10_000;
+    const netShares =
+      request.side === "buy" && avgPrice
+        ? Math.floor((grossShares - feeUsdw / avgPrice) * 100) / 100
+        : grossShares;
     const costNumber = filled.cost;
     return {
-      estimatedShares: shares,
-      avgPriceCents: shares > 0 ? Math.round((filled.cost / shares) * 100) : 0,
-      fee,
-      cost,
-      potentialPayout: payout,
+      estimatedShares: netShares,
+      avgPriceCents: avgPrice === null ? null : cents(avgPrice),
+      fee: usdw(feeUsdw),
+      cost: usdw(costNumber),
+      // 买入：赢了每份兑 1 USDW；卖出：回款扣掉手续费
+      potentialPayout: usdw(
+        request.side === "buy" ? netShares : costNumber - feeUsdw,
+      ),
       potentialReturnPct:
-        costNumber > 0 ? ((shares - costNumber) / costNumber) * 100 : 0,
+        request.side === "buy" && costNumber > 0
+          ? ((netShares - costNumber) / costNumber) * 100
+          : null,
     };
   }
 
@@ -822,8 +862,31 @@ export class HttpPredictGateway implements PredictGateway {
     address: string,
     request: PlaceOrderRequest,
   ): Promise<OrderResult> {
-    const { ctx, ref, tokenId, orderType, price, size, feeRateBps, tickSize } =
-      await this.draft(address, request);
+    const {
+      ctx,
+      ref,
+      tokenId,
+      orderType,
+      price,
+      size,
+      feeRateBps,
+      tickSize,
+      book,
+    } = await this.draft(address, request);
+    // 限价必须落在市场 tick 网格上且在 [tick, 1 − tick] 内，否则平台 400 ORDER_PRICE_NOT_ALIGNED；
+    // tick 取 /book 的 tick_size（与订单簿页展示的同一来源），簿没给就交给平台校验（拒单原因会原样透出）
+    const bookTick = book.tick_size;
+    if (request.type === "limit" && typeof bookTick === "number") {
+      const units = price / bookTick;
+      if (
+        price < bookTick ||
+        price > 1 - bookTick ||
+        Math.abs(units - Math.round(units)) > 1e-6
+      )
+        throw new Error(
+          `limit price ${price} must be a multiple of the market tick ${bookTick} within [${bookTick}, ${1 - bookTick}]`,
+        );
+    }
     const side = request.side === "buy" ? "BUY" : "SELL";
     const { makerAmount, takerAmount } = computeOrderAmounts({
       side,
@@ -864,12 +927,9 @@ export class HttpPredictGateway implements PredictGateway {
       signed,
       orderType,
     );
-    // 平台按十进制返回成交量：takingAmount = Σ 抵押品、makingAmount = Σ 结果 token，与买卖方向无关
-    // （match_dispatcher.go:1915-1921）。实测 prax1s 两个字段都等于份数，成交额拿不到就不编价。
-    const making = Number(response.makingAmount ?? "0");
-    const taking = Number(response.takingAmount ?? "0");
-    const filledShares = making;
-    const filledUsdc = taking !== making ? taking : null;
+    // 平台按十进制返回成交量，但 matcher.go 把 CollateralAmount 与 OutcomeAmount 都写成 fillAmount（份数），
+    // 应答里拿不到成交额，所以只报份数，不编均价 / 手续费 / 成本（记在设计文档 §5 平台侧隐患）
+    const filledShares = Number(response.makingAmount ?? "0");
     const requestedShares =
       Number(side === "BUY" ? takerAmount : makerAmount) / Number(ONE_USDC);
     const status: OrderResult["status"] =
@@ -884,13 +944,9 @@ export class HttpPredictGateway implements PredictGateway {
       orderId: response.orderID,
       status,
       filledShares,
-      avgPriceCents:
-        filledUsdc !== null && filledShares > 0
-          ? Math.round((filledUsdc / filledShares) * 100)
-          : null,
-      fee:
-        filledUsdc !== null ? usdw((filledUsdc * feeRateBps) / 10_000) : null,
-      cost: filledUsdc !== null ? usdw(filledUsdc) : null,
+      avgPriceCents: null,
+      fee: null,
+      cost: null,
     };
   }
 
@@ -904,7 +960,8 @@ export class HttpPredictGateway implements PredictGateway {
     const result: Order[] = [];
     for (const order of orders) {
       const ref = await this.marketRef(order.market);
-      result.push(this.mapOrder(order, ref));
+      const mapped = this.mapOrder(order, ref);
+      if (mapped) result.push(mapped);
     }
     return result;
   }
@@ -938,7 +995,10 @@ export class HttpPredictGateway implements PredictGateway {
   async listActivity(address: string): Promise<Activity[]> {
     const ctx = await this.deps.account.tradingContext(address);
     const items = await fetchActivity(ctx.service, ctx.safe);
-    return items.map((item, index) => this.mapActivity(item, index));
+    return items.flatMap((item, index) => {
+      const activity = this.mapActivity(item, index);
+      return activity ? [activity] : [];
+    });
   }
 
   async getPnl(address: string, range: PriceRange): Promise<PnlPoint[]> {

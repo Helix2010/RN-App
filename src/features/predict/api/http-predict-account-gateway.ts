@@ -957,7 +957,7 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
     };
     this.submitted.set(hash, { chain: ctx.service.chain, tx, address });
     // 领取把 USDW 换回 USDC，clob 那边的可用余额要立刻重读
-    void this.refreshClobBalance(address);
+    await this.refreshClobBalance(address);
     return tx;
   }
 
@@ -981,7 +981,7 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
     this.submitted.set(id, { ...known, tx: next });
     // 转入上链后让 clob 立刻重读子图余额，否则"可用"要等它下一轮同步（实测要几分钟）
     if (status === "confirmed" && known.tx.kind === "deposit")
-      void this.refreshClobBalance(known.address);
+      await this.refreshClobBalance(known.address);
     return next;
   }
 

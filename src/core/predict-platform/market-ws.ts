@@ -152,8 +152,10 @@ export class MarketWsClient {
     };
     socket.onmessage = (event) => this.handleMessage(event.data);
     socket.onclose = () => {
+      // 旧连接迟到的 close 不能动新连接的心跳，也不能触发重连
+      if (this.socket !== socket) return;
+      this.socket = null;
       this.stopPing();
-      if (this.socket === socket) this.socket = null;
       if (!this.closed && this.listeners.size > 0) this.scheduleReconnect();
     };
     socket.onerror = () => socket.close();
@@ -168,7 +170,13 @@ export class MarketWsClient {
     }
     const socket = this.socket;
     this.socket = null;
-    socket?.close();
+    if (socket) {
+      socket.onopen = null;
+      socket.onmessage = null;
+      socket.onclose = null;
+      socket.onerror = null;
+      socket.close();
+    }
   }
 
   private scheduleReconnect(): void {

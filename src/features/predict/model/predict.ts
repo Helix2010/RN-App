@@ -108,13 +108,16 @@ export type PlaceOrderRequest = {
 };
 
 export type OrderPreview = {
+  /** 买入为扣完手续费到手的份数（平台买入手续费从份额里扣） */
   estimatedShares: number;
-  avgPriceCents: number;
+  /** 沿簿吃不到任何一档时为 null */
+  avgPriceCents: number | null;
   fee: Money;
   cost: Money;
-  /** 若结果为该 outcome 可得（每份 1 USDC） */
+  /** 买入：若结果为该 outcome 可得（每份 1 USDW）；卖出：扣费后的回款 */
   potentialPayout: Money;
-  potentialReturnPct: number;
+  /** 只对买入有意义，卖出 / 无成交为 null */
+  potentialReturnPct: number | null;
 };
 
 export type OrderResult = {

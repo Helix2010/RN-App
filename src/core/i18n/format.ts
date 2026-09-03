@@ -52,19 +52,6 @@ export function splitLeadingZeros(formatted: string): {
   return { head: match[1] ?? formatted, tail: match[2] ?? "" };
 }
 
-export function formatPercent(
-  value: number,
-  locale: string,
-  options?: { sign?: boolean; digits?: number },
-): string {
-  return new Intl.NumberFormat(intlLocale(locale), {
-    style: "percent",
-    maximumFractionDigits: options?.digits ?? 2,
-    minimumFractionDigits: options?.digits ?? 2,
-    signDisplay: options?.sign ? "exceptZero" : "auto",
-  }).format(value / 100);
-}
-
 /** 预测价格：0–100 的整数分 → "62¢"，支持 0.5 档。 */
 export function formatCents(cents: number | null): string {
   if (cents === null) return NO_QUOTE;

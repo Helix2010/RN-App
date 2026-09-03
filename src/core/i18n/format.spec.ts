@@ -5,7 +5,6 @@ import {
   formatCountdown,
   formatMoney,
   formatMoneyApprox,
-  formatPercent,
   formatPercentCents,
   formatProbability,
   formatTimeUntil,
@@ -47,13 +46,6 @@ describe("format helpers", () => {
         withSymbol: false,
       }),
     ).toBe("0.000123");
-  });
-
-  it("formats percent with explicit sign", () => {
-    expect(formatPercent(12.4, "en-US", { sign: true })).toBe("+12.40%");
-    expect(formatPercent(-3.8, "en-US", { sign: true, digits: 1 })).toBe(
-      "-3.8%",
-    );
   });
 
   it("formats countdown and relative deadlines", () => {

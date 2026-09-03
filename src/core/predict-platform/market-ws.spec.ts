@@ -211,6 +211,25 @@ describe("MarketWsClient", () => {
     expect(FakeSocket.instances).toHaveLength(4);
   });
 
+  it("ignores a late close from a superseded socket: no ping stop, no extra reconnect", () => {
+    const ws = client();
+    ws.subscribe(["111"], 2, () => {});
+    const first = FakeSocket.instances[0]!;
+    first.open();
+    first.drop();
+    jest.advanceTimersByTime(1_000);
+    const second = FakeSocket.instances[1]!;
+    second.open();
+    // 旧 socket 的 close 事件迟到（真机上 onclose 可能在新连接建立后才回调）
+    first.drop();
+    jest.advanceTimersByTime(10_000);
+    // 新连接的心跳还在
+    expect(second.sent.filter((item) => item === "PING")).toHaveLength(1);
+    // 也没有因为旧 close 再开一条连接
+    jest.advanceTimersByTime(30_000);
+    expect(FakeSocket.instances).toHaveLength(2);
+  });
+
   it("closes the socket when the last subscriber leaves and does not reconnect", () => {
     const ws = client();
     const stop = ws.subscribe(["111"], 2, () => {});

@@ -93,6 +93,25 @@ WS 协议用 node `ws` 直连 prax1s 复核过：初始 dump 的 `timestamp` 是
 - 删掉 8 个无引用的文案键（`assets.activity / claims / positions / positionsValue`、`transfer.eta / etaValue / note / withdrawTitle`），i18n seed 同步。
 - "可成交价 0 < p < 1" 的判定合并为 `gamma.ts` 的 `tradablePrice`，网关不再自带一份。
 - `runtime-context.spec` 里"配置变化后失效缓存"的断言改为等待——失效在 effect 里发生，全量跑时偶发跑在断言之后。
+- 2026-09-03 下午再扫一遍（`src/features/predict`、`src/core/predict-platform`、`format.ts`、`money.ts` 的导出对全仓引用计数）：删掉无引用的 `formatPercent` 与文案键 `predict.leaderboard.weekPnl`（seed 同步，822 键）；其余"只有测试引用"的导出都是测试注入点（`setPlatformFetch` 等）或本文件内在用的 schema / 常量，保留。
+
+## 全面评审修正（2026-09-03 下午）
+
+对本轮预测市场改动逐文件评审，并对照平台源码（`match_dispatcher.go:370-400`、`plan.go:108-196`、`positions.go:426-455`、`matcher.go`、`market_channel.go:376-432`）核实规则后修正：
+
+- 下单规则按平台 `validateOrderAmounts` 重写：限价单份数 ≥ `/book` 的 `min_order_size`；市价买入金额 ≥ 1 USDW；市价卖出份数 ≥ 0.01。原来把 `min_order_size` 套在市价买入的估算份数上，规则错了。限价必须落在 tick 网格且在 [tick, 100 − tick]（`ORDER_PRICE_NOT_ALIGNED`）：面板输入时提示并禁提交，网关下单前拒绝，不签名不发请求。
+- 无报价不再编 50¢：Yes / No 报价与限价占位为 null 时显示 "—"；限价单只认用户输入的价格（没输就不能提交），预填取整到 1¢（所有 tick 的公倍数）。
+- 手续费估算改为平台公式 `calcExchangeFee`：bps × min(p, 1 − p) × 份数 / 1e4，买入从份额里扣（预览显示扣费后到手份数）、卖出从回款里扣。原来按成交额 × bps 算，在 64¢ 上把买入手续费高估近一倍。
+- `POST /order` 应答只信份数：`matcher.go` 把抵押品量与结果 token 量都写成 fillAmount，均价 / 成本 / 手续费统一为 null，不再用"两个字段相等就当没有成交额"的猜测。
+- 平台拒单原因透出：clob 400 体 `{"success":false,"errorMsg":"…"}` 的 `errorMsg` 进 `PlatformHttpError.message`，下单 toast 显示它，不再一律"出错了"。
+- 持仓映射：结算后 `curPrice` 是结算价 → `settledPayoutCents`；`redeemable` 还要求持有份数 > 0 且结算价 > 0；接口只有市场 slug 时 `eventId` 为空，不拿市场 slug 充当事件 id。
+- 挂单方向按 `asset_id` 对回市场的 YES / NO token，不信 `outcome` 文案；不属于该市场的挂单与未知类型的活动跳过并 `console.warn`，不硬按成交显示。
+- WS：被替换的旧 socket 迟到的 `onclose` 不再停掉新连接的心跳或触发重连；`disconnect` 清空旧 socket 回调。
+- 转入确认 / 领取取回后 `await` clob 余额强刷（原来 fire-and-forget，界面的失效查询可能先于平台刷新到）。
+- 订单簿页 spread 单边为空显示 "—"；gas 报价已是 "< 0.000001 ETH" 下界写法时不再加 "≈"；从持仓打开下单面板时标题用市场问题。
+- spec：`order-sheet.spec.tsx` 改写为三条平台规则（市价 1 USDW 下限、限价 min_order_size、tick 网格）；`http-predict-gateway.spec.ts` 加 tick 拒单、手续费公式、结算持仓、token 判方向、未知活动跳过；`market-ws.spec.ts` 加旧 socket 迟到 close；`tenant-client.spec.ts` 加 `errorMsg` 体。
+
+评审中确认但未改，记为遗留：增量订阅帧（`operation:"subscribe"`）平台不推初始 dump，新订的市场要等第一笔变动才有簿；No 侧限价输入旁的簿提示用的是 Yes 簿；拆分需要至少一个持仓市场；`/book` 没给 `tick_size` 时本地不做 tick 预判，交给平台校验；本轮修正只跑了 `pnpm check`，模拟器回归待下一轮。
 
 ## 不做的事
 
@@ -108,5 +127,6 @@ WS 协议用 node `ws` 直连 prax1s 复核过：初始 dump 的 `timestamp` 是
 
 ## 验证
 
+- 2026-09-03 下午评审修正后 `pnpm check` 全绿（85 suites / 604 tests）。
 - RN-App `pnpm check` 全绿；新增 spec：`http-predict-account-gateway.spec.ts`（假平台 + 假链，覆盖启用 / 余额 / 转入 / 两阶段转出 / 关联变化清凭证）、`transfer-form.spec.tsx`、`predict-enable-screen.spec.tsx`，`market-list-screen.spec.tsx` 改为账户网关状态驱动。
 - 真机对 dev 环境的端到端联调待 dev 租户建好后进行。

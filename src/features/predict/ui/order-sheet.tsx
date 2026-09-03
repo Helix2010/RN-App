@@ -54,6 +54,9 @@ import type {
 import { fill, outcomeLabel } from "./shared";
 import { useRequireVerification } from "../../security/use-require-verification";
 
+// 平台市价买入的最小金额（match_dispatcher.go validateOrderAmounts：makerAmount ≥ 1 USDC）
+const MIN_MARKET_BUY = fromDecimal("1", 6, "USDW");
+
 export type OrderSheetHandle = {
   open: (market: Market, outcome: Outcome, side?: OrderSide) => void;
   dismiss: () => void;
@@ -110,14 +113,22 @@ export const OrderSheet = forwardRef<
       setType("market");
       setAmountText("");
       setSharesText("");
-      // 无报价时不预填限价，由用户输入
+      // 无报价时不预填限价，由用户输入；预填落在整数分上（是所有 tick 的公倍数，簿还没到也不会掉到 tick 外）
       setPriceText(
         nextMarket.yesPriceCents === null
           ? ""
           : String(
-              nextOutcome === "yes"
-                ? nextMarket.yesPriceCents - 0.5
-                : 100 - nextMarket.yesPriceCents - 0.5,
+              Math.min(
+                99,
+                Math.max(
+                  1,
+                  Math.floor(
+                    (nextOutcome === "yes"
+                      ? nextMarket.yesPriceCents
+                      : 100 - nextMarket.yesPriceCents) - 0.5,
+                  ),
+                ),
+              ),
             ),
       );
       sheet.current?.present();
@@ -144,21 +155,32 @@ export const OrderSheet = forwardRef<
 
   // 从持仓等入口打开时传进来的 market 是打开那一刻的快照，这里以实时事件价格为准
   const liveEvent = usePredictEvent(market?.eventId);
-  // 价格来源顺序同网页版：实时事件价 → 打开时的市场价 → 订单簿 mid / 单边 → 都没有才用 50 当占位
+  // 价格来源顺序同网页版：实时事件价 → 打开时的市场价 → 订单簿 mid / 单边；都没有就是无报价，不编数
   const bestBid = book.data?.bids[0]?.priceCents;
   const bestAsk = book.data?.asks[0]?.priceCents;
   const bookYes =
     bestBid !== undefined && bestAsk !== undefined
-      ? Math.round((bestBid + bestAsk) / 2)
+      ? Math.round(((bestBid + bestAsk) / 2) * 10) / 10
       : (bestAsk ?? bestBid ?? null);
-  const yes =
+  const yes: number | null =
     liveEvent.data?.markets.find((item) => item.id === market?.id)
       ?.yesPriceCents ??
     market?.yesPriceCents ??
-    bookYes ??
-    50;
-  const marketPrice = outcome === "yes" ? yes : 100 - yes;
-  const limitPrice = Number(priceText) || marketPrice;
+    bookYes;
+  const marketPrice = yes === null ? null : outcome === "yes" ? yes : 100 - yes;
+  // 限价只认用户输入；平台要求价格落在 tick 网格上且在 [tick, 100 − tick] 内（ORDER_PRICE_NOT_ALIGNED）
+  const tick = book.data?.tickCents ?? null;
+  const typedPrice = Number(priceText);
+  const limitPrice =
+    priceText !== "" && Number.isFinite(typedPrice) && typedPrice > 0
+      ? typedPrice
+      : null;
+  const offTick =
+    limitPrice !== null &&
+    tick !== null &&
+    (limitPrice < tick ||
+      limitPrice > 100 - tick ||
+      Math.abs(limitPrice / tick - Math.round(limitPrice / tick)) > 1e-6);
   const held =
     positions.data?.find(
       (item) =>
@@ -174,15 +196,17 @@ export const OrderSheet = forwardRef<
       ? { marketId: market.id, outcome, side, type: "market", shares }
       : type === "market"
         ? { marketId: market.id, outcome, side, type, amount }
-        : {
-            marketId: market.id,
-            outcome,
-            side,
-            type,
-            shares,
-            priceCents: limitPrice,
-            tif,
-          }
+        : limitPrice === null
+          ? null
+          : {
+              marketId: market.id,
+              outcome,
+              side,
+              type,
+              shares,
+              priceCents: limitPrice,
+              tif,
+            }
     : null;
   const active =
     request &&
@@ -190,7 +214,7 @@ export const OrderSheet = forwardRef<
       ? shares > 0
       : type === "market"
         ? !isZero(amount)
-        : shares > 0);
+        : shares > 0 && !offTick);
   const preview = useOrderPreview(address, active ? request : null);
   const available = balance.data?.available;
   const insufficient =
@@ -198,18 +222,27 @@ export const OrderSheet = forwardRef<
       ? compare(preview.data.cost, available) > 0
       : false;
   const insufficientShares = side === "sell" && shares > held;
-  // clob 对每个代币有最小下单份数（/book 的 min_order_size），不足会被 400 拒绝
+  // 平台校验（match_dispatcher.go validateOrderAmounts）：限价单份数 ≥ /book 的 min_order_size；
+  // 市价买入金额 ≥ 1 USDW；市价卖出份数 ≥ 0.01（这里份数输入是整数，天然满足）
   const minShares = book.data?.minOrderShares ?? null;
-  const orderShares =
-    side === "buy" ? (preview.data?.estimatedShares ?? 0) : shares;
   const belowMin =
-    minShares !== null && orderShares > 0 && orderShares < minShares;
+    type === "limit" &&
+    side === "buy" &&
+    minShares !== null &&
+    shares > 0 &&
+    shares < minShares;
+  const belowMinAmount =
+    side === "buy" &&
+    type === "market" &&
+    !isZero(amount) &&
+    compare(amount, MIN_MARKET_BUY) < 0;
   const canSubmit = Boolean(
     active &&
     preview.data &&
     !insufficient &&
     !insufficientShares &&
     !belowMin &&
+    !belowMinAmount &&
     !place.isPending,
   );
 
@@ -233,11 +266,12 @@ export const OrderSheet = forwardRef<
           "success",
         );
       },
+      // 平台的拒单原因（errorMsg）直接给用户看，不一律糊成"出错了"
       onError: (error) =>
         toast(
           /closed/i.test(error.message)
             ? t("predict.order.closed")
-            : t("state.error"),
+            : error.message || t("state.error"),
           "error",
         ),
     });
@@ -267,7 +301,9 @@ export const OrderSheet = forwardRef<
       title={
         market && event
           ? pickTranslation(market.outcomeLabel ?? event.title, locale)
-          : ""
+          : market
+            ? pickTranslation(market.question, locale)
+            : ""
       }
       subtitle={
         market?.outcomeLabel && event
@@ -325,7 +361,8 @@ export const OrderSheet = forwardRef<
       <Row gap="$2">
         {(["yes", "no"] as const).map((option) => {
           const selected = outcome === option;
-          const price = option === "yes" ? yes : 100 - yes;
+          const price =
+            yes === null ? null : option === "yes" ? yes : 100 - yes;
           return (
             <Stack
               key={option}
@@ -365,7 +402,12 @@ export const OrderSheet = forwardRef<
           value={priceText}
           onChangeText={(text) => setPriceText(text.replace(/[^\d.]/g, ""))}
           keyboardType="decimal-pad"
-          placeholder={String(marketPrice)}
+          placeholder={marketPrice === null ? "" : String(marketPrice)}
+          error={
+            offTick && tick !== null
+              ? fill(t("predict.order.tickHint"), { tick })
+              : undefined
+          }
           accessibilityLabel={t("predict.order.limitPrice")}
           testID="order-limit-price"
           leading={<Body fontSize={12}>{t("predict.order.limitPrice")}</Body>}
@@ -394,8 +436,10 @@ export const OrderSheet = forwardRef<
           error={
             insufficient
               ? t("predict.order.insufficient")
-              : belowMin && minShares !== null
-                ? fill(t("predict.order.minShares"), { n: minShares })
+              : belowMinAmount
+                ? fill(t("predict.order.minAmount"), {
+                    amount: formatMoney(MIN_MARKET_BUY, locale),
+                  })
                 : undefined
           }
           onMax={() =>
@@ -438,6 +482,7 @@ export const OrderSheet = forwardRef<
             side === "sell"
               ? setSharesText(String(Math.floor(held)))
               : available &&
+                limitPrice !== null &&
                 setSharesText(
                   String(
                     Math.floor(
@@ -554,8 +599,10 @@ export const OrderSheet = forwardRef<
             })}
             value={
               preview.data
-                ? `${formatMoney(preview.data.potentialPayout, locale)} (+${preview.data.potentialReturnPct.toFixed(1)}%)`
-                : "—"
+                ? preview.data.potentialReturnPct === null
+                  ? formatMoney(preview.data.potentialPayout, locale)
+                  : `${formatMoney(preview.data.potentialPayout, locale)} (+${preview.data.potentialReturnPct.toFixed(1)}%)`
+                : NO_QUOTE
             }
             tone="positive"
           />
