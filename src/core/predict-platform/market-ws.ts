@@ -4,8 +4,10 @@ import { bookLevelSchema } from "./clob-market";
 /**
  * clob-ws 行情频道 `wss://clob-ws.{domain}/ws/market`，协议照 `wsservice/market_channel.go`
  * 与 user-dapp `lib/ws/polymarket.ts`：
- * - 首帧订阅 `{assets_ids, type:"market", custom_feature_enabled:true, initial_dump:true, level}`，
- *   之后增量 `{operation:"subscribe"|"unsubscribe", assets_ids, level}`；level 1 = quote、2 = depth；
+ * - 订阅帧 `{assets_ids, type:"market", custom_feature_enabled:true, initial_dump:true, level}`：服务端把
+ *   assets 并进已有订阅并给这些代币推初始 dump（`market_channel.go` `case sub.Type == "market"` 只增不清），
+ *   所以新增代币也用它，而不用 `{operation:"subscribe"}`（那条不推初始簿）；退订 `{operation:"unsubscribe", assets_ids}`；
+ *   level 1 = quote、2 = depth；
  * - 服务端每 10 秒 ping、15 秒等 pong（协议帧，RN 的 WebSocket 自动应答）；客户端另外每 10 秒发文本
  *   `PING`，服务端回文本 `PONG`；
  * - 事件：`book`（初始 dump 把簿放在 `data` 里，`timestamp` 是 ISO 串；实时事件平铺 bids / asks，形态同 REST `/book`）、
@@ -115,9 +117,12 @@ export class MarketWsClient {
     this.closed = false;
     if (!this.socket) this.connect();
     else if (this.socket.readyState === OPEN && fresh.length > 0)
+      // 新增代币也发 market 帧：服务端只增不清已有订阅，并立刻推这些代币的初始簿
       this.send({
-        operation: "subscribe",
         assets_ids: fresh,
+        type: "market",
+        custom_feature_enabled: true,
+        initial_dump: true,
         level,
       });
     return () => {

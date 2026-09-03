@@ -68,7 +68,7 @@ afterEach(() => {
 });
 
 describe("MarketWsClient", () => {
-  it("sends the initial market subscription with initial_dump and level, then increments per token", () => {
+  it("sends the market subscription with initial_dump and level, and again for tokens added later", () => {
     const ws = client();
     const events: MarketWsEvent[] = [];
     ws.subscribe(["111"], 2, (event) => events.push(event));
@@ -85,9 +85,12 @@ describe("MarketWsClient", () => {
       },
     ]);
     const stop = ws.subscribe(["222"], 1, () => {});
+    // 新增代币也走 market 帧：服务端只增不清，并推它的初始 dump（operation:"subscribe" 不推）
     expect(socket.frames().at(-1)).toEqual({
-      operation: "subscribe",
       assets_ids: ["222"],
+      type: "market",
+      custom_feature_enabled: true,
+      initial_dump: true,
       level: 1,
     });
     stop();

@@ -81,6 +81,23 @@ describe("OrderSheet", () => {
     await waitFor(() => expect(submitDisabled()).toBeFalsy());
   });
 
+  it("shows the No side's book as the mirror of the Yes book", async () => {
+    await openSheet();
+    await fireEvent.press(screen.getByTestId("order-type-limit"));
+    // mock 簿：买一 = 市场价、卖一 = 市场价 + 1
+    const yes = MARKET.yesPriceCents!;
+    await waitFor(() =>
+      expect(screen.getByText(`盘口 ${yes} / ${yes + 1}`)).toBeTruthy(),
+    );
+    await fireEvent.press(screen.getByTestId("order-outcome-no"));
+    // 买 No @ p ≡ 卖 Yes @ 100 − p：No 的买一 = 100 − Yes 卖一，卖一 = 100 − Yes 买一
+    await waitFor(() =>
+      expect(
+        screen.getByText(`盘口 ${100 - (yes + 1)} / ${100 - yes}`),
+      ).toBeTruthy(),
+    );
+  });
+
   it("refuses a limit price off the tick grid and accepts one on it", async () => {
     await openSheet();
     await fireEvent.press(screen.getByTestId("order-type-limit"));

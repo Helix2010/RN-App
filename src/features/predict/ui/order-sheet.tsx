@@ -168,6 +168,20 @@ export const OrderSheet = forwardRef<
     market?.yesPriceCents ??
     bookYes;
   const marketPrice = yes === null ? null : outcome === "yes" ? yes : 100 - yes;
+  // 订单簿是 YES 代币的；No 侧盘口取镜像（买 No @ p 等价于卖 Yes @ 100 − p）
+  const mirror = (cents: number) => Math.round((100 - cents) * 10) / 10;
+  const sideBid =
+    bestBid === undefined || bestAsk === undefined
+      ? undefined
+      : outcome === "yes"
+        ? bestBid
+        : mirror(bestAsk);
+  const sideAsk =
+    bestBid === undefined || bestAsk === undefined
+      ? undefined
+      : outcome === "yes"
+        ? bestAsk
+        : mirror(bestBid);
   // 限价只认用户输入；平台要求价格落在 tick 网格上且在 [tick, 100 − tick] 内（ORDER_PRICE_NOT_ALIGNED）
   const tick = book.data?.tickCents ?? null;
   const typedPrice = Number(priceText);
@@ -420,10 +434,10 @@ export const OrderSheet = forwardRef<
           leading={<Body fontSize={12}>{t("predict.order.limitPrice")}</Body>}
           trailing={
             <Body fontSize={11}>
-              {bestBid !== undefined && bestAsk !== undefined
+              {sideBid !== undefined && sideAsk !== undefined
                 ? fill(t("predict.order.bookHint"), {
-                    bid: bestBid,
-                    ask: bestAsk,
+                    bid: sideBid,
+                    ask: sideAsk,
                   })
                 : ""}
             </Body>
