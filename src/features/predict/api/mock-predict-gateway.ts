@@ -601,6 +601,7 @@ export class MockPredictGateway implements PredictGateway {
       const cost = toApproxNumber(amount);
       return {
         estimatedShares: shares,
+        minAmount: null,
         avgPriceCents: price,
         fee,
         cost: amount,
@@ -619,6 +620,7 @@ export class MockPredictGateway implements PredictGateway {
       cost: sub(proceeds, fee),
       potentialPayout: sub(proceeds, fee),
       potentialReturnPct: 0,
+      minAmount: null,
     };
   }
 

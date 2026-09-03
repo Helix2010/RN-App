@@ -111,7 +111,11 @@ WS 协议用 node `ws` 直连 prax1s 复核过：初始 dump 的 `timestamp` 是
 - 订单簿页 spread 单边为空显示 "—"；gas 报价已是 "< 0.000001 ETH" 下界写法时不再加 "≈"；从持仓打开下单面板时标题用市场问题。
 - spec：`order-sheet.spec.tsx` 改写为三条平台规则（市价 1 USDW 下限、限价 min_order_size、tick 网格）；`http-predict-gateway.spec.ts` 加 tick 拒单、手续费公式、结算持仓、token 判方向、未知活动跳过；`market-ws.spec.ts` 加旧 socket 迟到 close；`tenant-client.spec.ts` 加 `errorMsg` 体。
 
-评审中确认但未改，记为遗留：增量订阅帧（`operation:"subscribe"`）平台不推初始 dump，新订的市场要等第一笔变动才有簿；No 侧限价输入旁的簿提示用的是 Yes 簿；拆分需要至少一个持仓市场；`/book` 没给 `tick_size` 时本地不做 tick 预判，交给平台校验；本轮修正只跑了 `pnpm check`，模拟器回归待下一轮。
+评审中确认但未改，记为遗留：增量订阅帧（`operation:"subscribe"`）平台不推初始 dump，新订的市场要等第一笔变动才有簿；No 侧限价输入旁的簿提示用的是 Yes 簿；拆分需要至少一个持仓市场；`/book` 没给 `tick_size` 时本地不做 tick 预判，交给平台校验。
+
+**模拟器回归（同日，prax1s 真实市场 "Strait of Hormuz…"，tick 0.1¢，min_order_size 5）**：下单面板 Yes / No 显示实时价 27.7¢ / 72.3¢；市价 0.5 USDW 出现 "Market buys need at least 1.00 USDW" 且不可提交；限价预填 27¢（整数分）、3 份出现 "Minimum 5 shares"、27.35¢ 出现 "Limit price must be a multiple of 0.1¢"；5 份 @ 20¢ 下单成功（toast "Order placed"，挂单页显示 `GTC · Filled 0/5`），撤单成功（"Order cancelled" → "Nothing here yet"）。
+
+回归中发现并修掉：**输入正好 1.00 USDW 的市价买第一次被平台拒**——FAK 买单份数向下对齐 0.01 后 makerAmount = price × shares 常略小于 1 USDC（卖一 0.29 时 3.44 × 0.29 = 0.9976），撞平台 `makerAmount ≥ 1_000_000` 下限。现在 `previewOrder` 按当前对手价与 tick 反推"对齐后仍 ≥ 1 USDC"的最小金额（`OrderPreview.minAmount`，卖一 0.64 时是 1.01），面板的下限提示用它；`placeOrder` 在签名前检查 makerAmount，不够就抛出带最小金额的错误，不再把请求发给平台。
 
 ## 不做的事
 

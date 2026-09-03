@@ -42,7 +42,10 @@ import {
   tradablePrice,
   translationOf,
 } from "../../../core/predict-platform/gamma";
-import { computeOrderAmounts } from "../../../core/predict-platform/order-amounts";
+import {
+  alignBuyPriceToTick,
+  computeOrderAmounts,
+} from "../../../core/predict-platform/order-amounts";
 import {
   postOrder,
   signOrder,
@@ -138,6 +141,22 @@ function bookTimestamp(raw: string | number | null | undefined): string {
  * 订单簿推出的 YES 概率（分）：mid → ask → bid，只认 0 < p < 100 的可成交价，
  * 同网页版 `orderbookPricing.ts` resolveFirstOptionProbability。
  */
+/**
+ * 市价买入的最小预算：平台要求 makerAmount ≥ 1 USDC（match_dispatcher.go validateOrderAmounts），
+ * 而 FAK 买单的份数向下对齐 0.01 share 后 makerAmount = price × shares 往往略小于输入金额，
+ * 输入正好 1.00 常被 400 拒掉。这里反推：先算 ≥ 1 USDC 所需的对齐份数，再把预算向上取到 0.01 USDC。
+ */
+function minMarketBuyUsdc(price: number, tickSize?: number): number {
+  const priceInt = alignBuyPriceToTick(price, tickSize);
+  const scale = 1_000_000n;
+  const shareUnit = 10_000n;
+  const ceilDiv = (a: bigint, b: bigint) => (a + b - 1n) / b;
+  const shares =
+    ceilDiv(ceilDiv(ONE_USDC * scale, priceInt), shareUnit) * shareUnit;
+  const maker = (priceInt * shares) / scale;
+  return Number(ceilDiv(maker, shareUnit) * shareUnit) / Number(scale);
+}
+
 function bookMidCents(book: OrderBook): number | null {
   const tradable = (level: { priceCents: number }) =>
     level.priceCents > 0 && level.priceCents < 100;
@@ -814,7 +833,7 @@ export class HttpPredictGateway implements PredictGateway {
     address: string,
     request: PlaceOrderRequest,
   ): Promise<OrderPreview> {
-    const { book, feeRateBps, price, size } = await this.draft(
+    const { book, feeRateBps, price, size, tickSize } = await this.draft(
       address,
       request,
     );
@@ -854,6 +873,10 @@ export class HttpPredictGateway implements PredictGateway {
       potentialReturnPct:
         request.side === "buy" && costNumber > 0
           ? ((netShares - costNumber) / costNumber) * 100
+          : null,
+      minAmount:
+        request.type === "market" && request.side === "buy"
+          ? usdw(minMarketBuyUsdc(price, tickSize))
           : null,
     };
   }
@@ -897,6 +920,11 @@ export class HttpPredictGateway implements PredictGateway {
     });
     if (makerAmount <= 0n || takerAmount <= 0n)
       throw new Error("the order is too small for the market precision");
+    // 平台市价买下限 makerAmount ≥ 1 USDC：份数对齐后略低于 1 也会被 400，先在本地说清楚要多少
+    if (side === "BUY" && orderType === "FAK" && makerAmount < ONE_USDC)
+      throw new Error(
+        `market buys need at least ${minMarketBuyUsdc(price, tickSize)} USDW at the current price`,
+      );
     const expirationSeconds =
       orderType === "GTD" && request.expiresAt
         ? Math.floor(new Date(request.expiresAt).getTime() / 1000)

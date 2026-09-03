@@ -231,11 +231,13 @@ export const OrderSheet = forwardRef<
     minShares !== null &&
     shares > 0 &&
     shares < minShares;
+  // 预览会按当前对手价把下限精确到"份数对齐后仍 ≥ 1 USDC"的金额（常是 1.01 左右）
+  const minAmount = preview.data?.minAmount ?? MIN_MARKET_BUY;
   const belowMinAmount =
     side === "buy" &&
     type === "market" &&
     !isZero(amount) &&
-    compare(amount, MIN_MARKET_BUY) < 0;
+    compare(amount, minAmount) < 0;
   const canSubmit = Boolean(
     active &&
     preview.data &&
@@ -438,7 +440,7 @@ export const OrderSheet = forwardRef<
               ? t("predict.order.insufficient")
               : belowMinAmount
                 ? fill(t("predict.order.minAmount"), {
-                    amount: formatMoney(MIN_MARKET_BUY, locale),
+                    amount: formatMoney(minAmount, locale),
                   })
                 : undefined
           }

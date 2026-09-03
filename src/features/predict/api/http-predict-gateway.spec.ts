@@ -400,6 +400,22 @@ describe("HttpPredictGateway", () => {
       expect(request.headers["X-Tenant-Domain"]).toBe(DOMAIN);
   });
 
+  it("rejects a market buy whose tick-aligned makerAmount falls under the platform's 1 USDC floor", async () => {
+    const { gateway, seen } = build();
+    await expect(
+      gateway.placeOrder(EOA, {
+        marketId: CONDITION,
+        outcome: "yes",
+        side: "buy",
+        type: "market",
+        amount: fromDecimal("1", 6, "USDW"),
+      }),
+    ).rejects.toThrow(/at least 1.01 USDW/);
+    expect(
+      seen.some((r) => r.url.pathname === "/order" && r.method === "POST"),
+    ).toBe(false);
+  });
+
   it("rejects a limit price off the book's tick grid before signing or posting anything", async () => {
     const { gateway, seen } = build();
     await expect(
@@ -577,6 +593,8 @@ describe("HttpPredictGateway", () => {
     expect(buy.fee).toEqual(fromDecimal("0.011246", 6, "USDW"));
     expect(buy.potentialPayout).toEqual(fromDecimal("15.6", 6, "USDW"));
     expect(buy.potentialReturnPct).toBeCloseTo(56, 0);
+    // 卖一 0.64：1.00 USDW 对齐后 makerAmount = 0.64 × 1.56 = 0.9984 < 1 USDC 会被平台拒，最小要 1.01
+    expect(buy.minAmount).toEqual(fromDecimal("1.01", 6, "USDW"));
     const sell = await gateway.previewOrder(EOA, {
       marketId: CONDITION,
       outcome: "yes",
@@ -591,6 +609,7 @@ describe("HttpPredictGateway", () => {
     expect(sell.fee).toEqual(fromDecimal("0.016", 6, "USDW"));
     expect(sell.potentialPayout).toEqual(fromDecimal("11.984", 6, "USDW"));
     expect(sell.potentialReturnPct).toBeNull();
+    expect(sell.minAmount).toBeNull();
   });
 
   it("redeems settled positions with one MultiSend of CTF.redeemPositions per condition", async () => {

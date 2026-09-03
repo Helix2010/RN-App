@@ -118,6 +118,11 @@ export type OrderPreview = {
   potentialPayout: Money;
   /** 只对买入有意义，卖出 / 无成交为 null */
   potentialReturnPct: number | null;
+  /**
+   * 市价买入：按当前对手价与 tick 取整后仍满足平台 1 USDC 下限的最小金额
+   * （份数向下对齐 0.01 后 price × shares 常常略小于输入金额）；其它单类为 null
+   */
+  minAmount: Money | null;
 };
 
 export type OrderResult = {
