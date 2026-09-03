@@ -13,7 +13,7 @@ const numeric = z.union([z.number(), z.string()]).transform((value) => {
   return Number.isFinite(parsed) ? parsed : 0;
 });
 
-export const openOrderSchema = z.object({
+const openOrderSchema = z.object({
   id: z.string(),
   status: z.string(),
   owner: z.string().nullish(),
@@ -35,7 +35,7 @@ export type ClobOpenOrder = z.infer<typeof openOrderSchema>;
 export type ClobAuth = { credentials: ClobCredentials; address: string };
 
 /** 未完成 = LIVE，或原量减成交量还有余（`useOpenOrders.ts:70-79`） */
-export function isOpenOrder(order: ClobOpenOrder): boolean {
+function isOpenOrder(order: ClobOpenOrder): boolean {
   const status = order.status
     .replace(/^ORDER_STATUS_/, "")
     .replace(/^CANCELED$/, "CANCELLED");

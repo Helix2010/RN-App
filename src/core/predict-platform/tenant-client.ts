@@ -14,7 +14,7 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 const RATE_LIMIT_RETRIES = 3;
 const RATE_LIMIT_BASE_DELAY_MS = 500;
 
-export type PlatformHosts = {
+type PlatformHosts = {
   gamma: string;
   clob: string;
   clobWs: string;
@@ -54,7 +54,7 @@ export class PlatformRateLimitedError extends PlatformHttpError {
   }
 }
 
-export type PlatformRequest<T> = {
+type PlatformRequest<T> = {
   url: string;
   tenantDomain: string;
   schema: z.ZodType<T>;

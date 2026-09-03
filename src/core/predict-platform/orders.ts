@@ -35,7 +35,7 @@ export const ORDER_TYPES: Record<string, TypedDataField[]> = {
 };
 
 /** `signatureType` 枚举里的 POLY_GNOSIS_SAFE（`useOrderSigning.ts:185`） */
-export const SIGNATURE_TYPE_SAFE = 2;
+const SIGNATURE_TYPE_SAFE = 2;
 
 export type OrderType = "FAK" | "GTC" | "GTD";
 export type OrderSide = "BUY" | "SELL";
@@ -105,7 +105,7 @@ export function orderValue(
 }
 
 /** 提交体里的订单：数字全是字符串，`tokenID` 大写 ID，side 是文字 */
-export type SignedOrderBody = {
+type SignedOrderBody = {
   salt: string;
   maker: string;
   signer: string;
@@ -153,7 +153,7 @@ export async function signOrder(
 }
 
 /** `apidoc/types.go:89-98`；`status` 是 `live` / `matched`（`shared/types/order.go:112-114`），延迟撮合时为 `delayed` */
-export const sendOrderResponseSchema = z.object({
+const sendOrderResponseSchema = z.object({
   success: z.boolean(),
   errorMsg: z.string().nullish(),
   orderID: z.string(),
@@ -163,7 +163,7 @@ export const sendOrderResponseSchema = z.object({
   transactionsHashes: z.array(z.string()).nullish(),
   tradeIDs: z.array(z.string()).nullish(),
 });
-export type SendOrderResponse = z.infer<typeof sendOrderResponseSchema>;
+type SendOrderResponse = z.infer<typeof sendOrderResponseSchema>;
 
 export class OrderRejectedError extends Error {
   constructor(

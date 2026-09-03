@@ -36,11 +36,11 @@ const nonceSchema = z.object({
   chainId: z.number().int().positive(),
   statement: z.string(),
 });
-export type LoginNonce = z.infer<typeof nonceSchema>;
+type LoginNonce = z.infer<typeof nonceSchema>;
 
 const tokenSchema = z.object({ token: z.string().min(1) });
 
-export type LoginMessageParams = {
+type LoginMessageParams = {
   address: string;
   nonce: string;
   scopeId: string;
@@ -70,7 +70,7 @@ export function loginTypedData(params: LoginMessageParams): {
   };
 }
 
-export async function fetchLoginNonce(
+async function fetchLoginNonce(
   service: PredictServiceConfig,
   address: string,
 ): Promise<LoginNonce> {
@@ -176,7 +176,7 @@ export async function refreshToken(
   return result.token;
 }
 
-export type JwtClaims = {
+type JwtClaims = {
   sub: string;
   exp: number;
   iat: number;

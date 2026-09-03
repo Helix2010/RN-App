@@ -142,7 +142,7 @@ export const OrderSheet = forwardRef<
     return () => clearTimeout(timer);
   }, [address, consumeIntent, event, fulfilled]);
 
-  // 从持仓等入口打开时 market 可能来自静态夹具，这里以实时事件价格为准
+  // 从持仓等入口打开时传进来的 market 是打开那一刻的快照，这里以实时事件价格为准
   const liveEvent = usePredictEvent(market?.eventId);
   // 价格来源顺序同网页版：实时事件价 → 打开时的市场价 → 订单簿 mid / 单边 → 都没有才用 50 当占位
   const bestBid = book.data?.bids[0]?.priceCents;

@@ -31,7 +31,7 @@ function query(params: Record<string, string | number | undefined>) {
   return qs.toString();
 }
 
-export const positionSchema = z.object({
+const positionSchema = z.object({
   proxyWallet: z.string().nullish(),
   asset: z.string(),
   conditionId: z.string(),
@@ -89,7 +89,7 @@ export async function fetchPositions(
   });
 }
 
-export const activitySchema = z.object({
+const activitySchema = z.object({
   id: z.string().nullish(),
   type: z.string(),
   conditionId: z.string().nullish(),
@@ -130,7 +130,7 @@ export async function fetchActivity(
 
 export type PnlInterval = "1d" | "1w" | "1m" | "all";
 /** 与 user-dapp `data.ts` PNL_PARAMS 一致 */
-export const PNL_FIDELITY: Record<PnlInterval, string> = {
+const PNL_FIDELITY: Record<PnlInterval, string> = {
   "1d": "1h",
   "1w": "3h",
   "1m": "18h",
@@ -154,7 +154,7 @@ export async function fetchUserPnl(
   });
 }
 
-export const leaderboardEntrySchema = z.object({
+const leaderboardEntrySchema = z.object({
   rank: num,
   proxyWallet: z.string(),
   userName: z.string().nullish(),
@@ -162,7 +162,7 @@ export const leaderboardEntrySchema = z.object({
   pnl: num,
   vol: num,
 });
-export type PlatformLeaderboardEntry = z.infer<typeof leaderboardEntrySchema>;
+type PlatformLeaderboardEntry = z.infer<typeof leaderboardEntrySchema>;
 
 export async function fetchLeaderboard(
   service: PredictServiceConfig,

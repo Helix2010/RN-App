@@ -2,7 +2,7 @@ import type { LocalizedText } from "../../../core/i18n/localized-text";
 import type { Tx } from "../../../core/gateways/types";
 import type { Money } from "../../../core/money/money";
 
-export type EventKind = "binary" | "multi" | "sports";
+type EventKind = "binary" | "multi" | "sports";
 
 /** 市场生命周期：交易截止与争议状态是两个独立维度，这里合成为展示状态。 */
 export type MarketStatus =
@@ -72,7 +72,7 @@ export type EventQuery = {
   limit?: number;
 };
 
-export type OrderBookLevel = { priceCents: number; shares: number };
+type OrderBookLevel = { priceCents: number; shares: number };
 export type OrderBook = {
   marketId: string;
   bids: OrderBookLevel[];

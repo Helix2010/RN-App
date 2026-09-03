@@ -19,7 +19,7 @@ const multiSendInterface = new Interface([
 ]);
 
 /** 内层调用只有 call（operation 0）且不带 value：relayer 两者都拒绝（`handler.go:701-720`） */
-export type MultiSendOp = { to: string; data: string };
+type MultiSendOp = { to: string; data: string };
 
 export function encodeMultiSend(ops: MultiSendOp[]): string {
   const packed = ops
@@ -33,7 +33,7 @@ export function encodeMultiSend(ops: MultiSendOp[]): string {
   return multiSendInterface.encodeFunctionData("multiSend", [`0x${packed}`]);
 }
 
-export const SAFE_TX_TYPES: Record<string, TypedDataField[]> = {
+const SAFE_TX_TYPES: Record<string, TypedDataField[]> = {
   SafeTx: [
     { name: "to", type: "address" },
     { name: "value", type: "uint256" },
@@ -97,7 +97,7 @@ export function safeTxSignatureParams(
   };
 }
 
-export const CREATE_PROXY_TYPES: Record<string, TypedDataField[]> = {
+const CREATE_PROXY_TYPES: Record<string, TypedDataField[]> = {
   CreateProxy: [
     { name: "paymentToken", type: "address" },
     { name: "payment", type: "uint256" },

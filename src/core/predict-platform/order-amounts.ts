@@ -10,12 +10,12 @@
  * 价格与数量都是 6 位小数的整数（USDC / CTF 份额精度）。
  */
 
-export const PRICE_SCALE = 1_000_000n;
+const PRICE_SCALE = 1_000_000n;
 
-export type OrderAmountSide = "BUY" | "SELL";
-export type OrderAmountType = "FAK" | "GTC" | "GTD";
+type OrderAmountSide = "BUY" | "SELL";
+type OrderAmountType = "FAK" | "GTC" | "GTD";
 
-export type OrderAmountsInput = {
+type OrderAmountsInput = {
   side: OrderAmountSide;
   orderType: OrderAmountType;
   /** 0–1 的价格 */
@@ -26,11 +26,11 @@ export type OrderAmountsInput = {
   tickSize?: number;
 };
 
-export function ceilDiv(a: bigint, b: bigint): bigint {
+function ceilDiv(a: bigint, b: bigint): bigint {
   return (a + b - 1n) / b;
 }
 
-export function priceToInt(price: number): bigint {
+function priceToInt(price: number): bigint {
   return BigInt(Math.round(price * 1_000_000));
 }
 

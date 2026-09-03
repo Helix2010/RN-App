@@ -16,7 +16,7 @@ const unwrapRequestSchema = z.object({
   initTimestamp: z.string(),
   claimTxHash: z.string().optional(),
 });
-export type UnwrapRequestRecord = z.infer<typeof unwrapRequestSchema>;
+type UnwrapRequestRecord = z.infer<typeof unwrapRequestSchema>;
 
 export async function listUnwrapRequests(
   service: PredictServiceConfig,

@@ -64,7 +64,7 @@ export class PredictPlatformMismatchError extends Error {
   }
 }
 
-export class PredictPlatformContractMissingError extends Error {
+class PredictPlatformContractMissingError extends Error {
   constructor(readonly contract: string) {
     super(`public-info does not list the ${contract} contract`);
     this.name = "PredictPlatformContractMissingError";

@@ -59,7 +59,7 @@ export function translationOf(
   return text;
 }
 
-export const gammaTagSchema = z.object({
+const gammaTagSchema = z.object({
   id: z.union([z.string(), z.number()]).transform(String),
   label: z.string().nullish(),
   labelTranslation: z.string().nullish(),
@@ -69,7 +69,7 @@ export const gammaTagSchema = z.object({
 });
 export type GammaTag = z.infer<typeof gammaTagSchema>;
 
-export const gammaAdjudicationSchema = z.object({
+const gammaAdjudicationSchema = z.object({
   status: z.string(),
   settledOutcome: z.string().nullish(),
   resolvedAt: z.string().nullish(),
@@ -108,7 +108,7 @@ export const gammaMarketSchema = z.object({
 });
 export type GammaMarket = z.infer<typeof gammaMarketSchema>;
 
-export const gammaEventSchema = z.object({
+const gammaEventSchema = z.object({
   id: z.union([z.string(), z.number()]).transform(String),
   slug: z.string().nullish(),
   title: z.string().nullish(),
@@ -129,7 +129,7 @@ export const gammaEventSchema = z.object({
 });
 export type GammaEvent = z.infer<typeof gammaEventSchema>;
 
-export type GammaEventsQuery = {
+type GammaEventsQuery = {
   tagId?: string;
   featured?: boolean;
   /** 与 user-dapp 一致：volume 降序、end_date_iso 升序、created_at 降序 */
@@ -220,10 +220,18 @@ export async function fetchMarketsByCondition(
  * 展示价：`(bestBid+bestAsk)/2`，缺一取另一个，都缺取最新成交价（`marketSorting.ts:23-30`）。
  * 都没有返回 null，不编一个 0.5。
  */
+/**
+ * 可成交价：0 < p < 1。网页版 adapters.ts:566-567 / orderbookPricing.ts isTradablePrice 同规则；
+ * gamma 用 0 表示没数据，1 也不是概率。
+ */
+export function tradablePrice(value: number | null | undefined): number | null {
+  return value !== null && value !== undefined && value > 0 && value < 1
+    ? value
+    : null;
+}
+
 export function displayPrice(market: GammaMarket): number | null {
-  // 网页版 adapters.ts:566-567 / orderbookPricing.ts isTradablePrice：0 和 1 不是可成交价（gamma 用 0 表示没数据）
-  const valid = (value: number | null) =>
-    value !== null && value > 0 && value < 1 ? value : null;
+  const valid = tradablePrice;
   const bid = valid(market.bestBid);
   const ask = valid(market.bestAsk);
   if (bid !== null && ask !== null) return (bid + ask) / 2;

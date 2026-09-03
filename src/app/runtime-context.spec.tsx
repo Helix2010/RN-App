@@ -264,8 +264,11 @@ describe("FoundationRuntimeProvider startup gate", () => {
       await client?.refetchQueries({ queryKey: ["mobile-bootstrap"] });
     });
 
-    for (const key of keys)
-      expect(client?.getQueryState(key)?.isInvalidated).toBe(true);
+    // 失效发生在新配置生效后的 effect 里，全量跑时可能晚于这里的断言，所以等待而不是同步断言
+    await waitFor(() => {
+      for (const key of keys)
+        expect(client?.getQueryState(key)?.isInvalidated).toBe(true);
+    });
   });
 
   it("shows the retry screen when the bootstrap request fails and never enters on stale data", async () => {

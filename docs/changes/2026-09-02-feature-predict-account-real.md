@@ -87,6 +87,13 @@ WS 协议用 node `ws` 直连 prax1s 复核过：初始 dump 的 `timestamp` 是
 
 联调环境事实：prax1s `public-info.chain.contracts` 已含 `USDW_WRAPPER` / `USDC_UNDERLYING`；测试 USDC（`0x2eA6…c3AD`）的 `mint(address,uint256)` 无权限限制，EOA 有少量 OP Sepolia ETH 即可自铸后联调转入 / 下单。
 
+## 死代码清理（2026-09-03）
+
+- 46 个只在本文件内使用的导出（平台客户端的 zod schema、typed-data 常量、内部类型等）去掉 `export`，保留给测试用的注入点（`setPlatformFetch` / `setPlatformSleep` / `resetDeliveredServices` 等）不动。
+- 删掉 8 个无引用的文案键（`assets.activity / claims / positions / positionsValue`、`transfer.eta / etaValue / note / withdrawTitle`），i18n seed 同步。
+- "可成交价 0 < p < 1" 的判定合并为 `gamma.ts` 的 `tradablePrice`，网关不再自带一份。
+- `runtime-context.spec` 里"配置变化后失效缓存"的断言改为等待——失效在 effect 里发生，全量跑时偶发跑在断言之后。
+
 ## 不做的事
 
 - 没有任何「平台不可用就用演示数据」的路径：关联缺失显示未配置，public-info 对不上直接报错。

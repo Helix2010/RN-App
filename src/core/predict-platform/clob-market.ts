@@ -15,7 +15,7 @@ const numeric = z.union([z.number(), z.string()]).transform((value) => {
 
 export const bookLevelSchema = z.object({ price: numeric, size: numeric });
 
-export const orderBookSchema = z.object({
+const orderBookSchema = z.object({
   market: z.string(),
   asset_id: z.string(),
   bids: z.array(bookLevelSchema),
@@ -69,7 +69,7 @@ export async function fetchFeeRateBps(
 
 export type PriceHistoryInterval = "1d" | "1w" | "1m" | "max";
 
-export const priceHistorySchema = z.object({
+const priceHistorySchema = z.object({
   history: z.array(z.object({ t: numeric, p: numeric })),
 });
 

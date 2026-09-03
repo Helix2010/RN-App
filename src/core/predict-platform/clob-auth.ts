@@ -76,7 +76,7 @@ const CLOB_AUTH_TYPES: Record<string, TypedDataField[]> = {
   ],
 };
 
-export const CLOB_AUTH_MESSAGE =
+const CLOB_AUTH_MESSAGE =
   "This message attests that I control the given wallet";
 
 export function clobAuthTypedData(
@@ -198,7 +198,7 @@ const balanceAllowanceSchema = z.object({
   virtual_available: z.string().optional(),
   locked: z.string().optional(),
 });
-export type BalanceAllowance = {
+type BalanceAllowance = {
   balance: bigint;
   /**
    * 扣掉挂单冻结后的可用额度。平台把 `virtual_available` / `locked` 标成 omitempty，

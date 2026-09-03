@@ -38,7 +38,7 @@ export class RelayerTransactionFailedError extends Error {
   }
 }
 
-export class RelayerTimeoutError extends Error {
+class RelayerTimeoutError extends Error {
   constructor(readonly transactionID: string) {
     super(`relayed transaction ${transactionID} is still pending`);
     this.name = "RelayerTimeoutError";

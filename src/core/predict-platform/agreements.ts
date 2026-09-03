@@ -13,7 +13,7 @@ import { platformHosts, platformRequest } from "./tenant-client";
  * `{type: version}`，`required` 且版本对不上的就是待接受。
  */
 
-export const agreementSchema = z.object({
+const agreementSchema = z.object({
   type: z.string().min(1),
   titleTranslation: z.string(),
   version: z.string().min(1),
@@ -78,7 +78,7 @@ export function pickAgreementText(
   );
 }
 
-export type AcceptedAgreements = Record<string, string>;
+type AcceptedAgreements = Record<string, string>;
 
 export function pendingAgreements(
   agreements: PlatformAgreement[],

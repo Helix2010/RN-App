@@ -24,7 +24,7 @@ export const PREDICT_ACCOUNT_KEY = "predict-account";
  * 与限流不重试——重试只会把错误配置打到别的租户上或撞限流；未启用是状态不是错误；
  * 其它（网络抖动）最多再试一次。
  */
-export function predictRetry(count: number, error: unknown): boolean {
+function predictRetry(count: number, error: unknown): boolean {
   if (error instanceof PredictNotEnabledError) return false;
   if (error instanceof PredictServiceNotConfiguredError) return false;
   if (error instanceof PredictPlatformMismatchError) return false;
@@ -33,7 +33,7 @@ export function predictRetry(count: number, error: unknown): boolean {
   return count < 1;
 }
 
-export function useInvalidatePredictAccount() {
+function useInvalidatePredictAccount() {
   const queryClient = useQueryClient();
   return () => {
     void queryClient.invalidateQueries({ queryKey: [PREDICT_ACCOUNT_KEY] });

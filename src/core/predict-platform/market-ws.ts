@@ -48,7 +48,7 @@ const lastTradeSchema = z.object({
   data: z.object({ price: numeric }),
 });
 
-export type MarketWsBook = z.infer<typeof bookPayloadSchema>;
+type MarketWsBook = z.infer<typeof bookPayloadSchema>;
 export type MarketWsEvent =
   | { kind: "book"; assetId: string; book: MarketWsBook }
   | {
@@ -60,7 +60,7 @@ export type MarketWsEvent =
     }
   | { kind: "last_trade"; assetId: string; price: number | null };
 
-export type MarketWsLevel = 1 | 2;
+type MarketWsLevel = 1 | 2;
 
 /** 与浏览器 / RN 全局 `WebSocket` 相同的最小面 */
 export type SocketLike = {

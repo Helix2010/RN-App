@@ -36,10 +36,11 @@ import {
   fetchEvent,
   fetchEvents,
   fetchMarketsByCondition,
-  translationOf,
   type GammaEvent,
   type GammaMarket,
   type GammaTag,
+  tradablePrice,
+  translationOf,
 } from "../../../core/predict-platform/gamma";
 import { computeOrderAmounts } from "../../../core/predict-platform/order-amounts";
 import {
@@ -135,11 +136,6 @@ function bookTimestamp(raw: string | number | null | undefined): string {
     if (Number.isFinite(ms) && ms > 0) return new Date(ms).toISOString();
   }
   return new Date().toISOString();
-}
-
-/** 可成交价：0 < p < 1（同网页版 isTradablePrice） */
-function tradable(value: number | null): number | null {
-  return value !== null && value > 0 && value < 1 ? value : null;
 }
 
 function bookMidCents(book: OrderBook): number | null {
@@ -613,7 +609,7 @@ export class HttpPredictGateway implements PredictGateway {
         const ref = byToken.get(event.assetId);
         if (!ref) return;
         if (event.kind === "last_trade") {
-          const last = tradable(event.price);
+          const last = tradablePrice(event.price);
           if (last === null || (bookPrice.get(event.assetId) ?? null) !== null)
             return;
           onEvent({
@@ -648,12 +644,12 @@ export class HttpPredictGateway implements PredictGateway {
             });
           return;
         }
-        const bid = tradable(event.bestBid);
-        const ask = tradable(event.bestAsk);
+        const bid = tradablePrice(event.bestBid);
+        const ask = tradablePrice(event.bestAsk);
         const mid =
           bid !== null && ask !== null
             ? (bid + ask) / 2
-            : (ask ?? bid ?? tradable(event.price));
+            : (ask ?? bid ?? tradablePrice(event.price));
         if (mid === null) return;
         onEvent({
           type: "price_change",

@@ -10,7 +10,7 @@ import type { ClobCredentials } from "./clob-auth";
  * 这里不做任何"过期了就先用着"的事：能不能用由 `jwtUsable` 判断，不能用就重新登录。
  */
 
-export type PredictCredentials = {
+type PredictCredentials = {
   jwt?: string;
   clob?: ClobCredentials;
   safe?: string;
