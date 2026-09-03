@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import type { Page } from "../../../core/gateways/types";
 import { useGateways } from "../../../core/gateways/gateway-context";
+import { PREDICT_ACCOUNT_KEY } from "./use-predict-account";
 import type { Money } from "../../../core/money/money";
 import type {
   EventQuery,
@@ -161,6 +162,10 @@ function useInvalidateAccount() {
       "predict-pnl",
     ])
       void queryClient.invalidateQueries({ queryKey: [key, address] });
+    // 下单 / 撤单改变 clob 的可用 / 冻结，账户余额查询挂在 predict-account 键下
+    void queryClient.invalidateQueries({
+      queryKey: [PREDICT_ACCOUNT_KEY, "balance", address],
+    });
     void queryClient.invalidateQueries({ queryKey: ["assets"] });
     void queryClient.invalidateQueries({ queryKey: ["predict-events"] });
     void queryClient.invalidateQueries({ queryKey: ["predict-event"] });

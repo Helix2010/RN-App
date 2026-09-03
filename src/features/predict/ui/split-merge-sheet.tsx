@@ -40,7 +40,8 @@ export const SplitMergeSheet = forwardRef<
   const locale = config.localization.selectedLocale;
   const sheet = useRef<SheetHandle>(null);
   const [direction, setDirection] = useState<"split" | "merge">("split");
-  const [marketId, setMarketId] = useState<string>("m-btc-120k");
+  // 没指定就用第一个持有的市场；没有持仓时没有可选市场，不能提交
+  const [pickedMarketId, setMarketId] = useState<string | undefined>();
   const [text, setText] = useState("");
   const [txId, setTxId] = useState<string | undefined>();
   const balance = usePredictAccountBalance(address);
@@ -51,7 +52,7 @@ export const SplitMergeSheet = forwardRef<
   useImperativeHandle(ref, () => ({
     open: (nextDirection = "split", nextMarket) => {
       setDirection(nextDirection);
-      if (nextMarket) setMarketId(nextMarket);
+      setMarketId(nextMarket);
       setText("");
       setTxId(undefined);
       sheet.current?.present();
@@ -72,6 +73,7 @@ export const SplitMergeSheet = forwardRef<
         14,
       ),
     }));
+  const marketId = pickedMarketId ?? markets[0]?.value;
   const yes =
     positions.data?.find(
       (item) => item.marketId === marketId && item.outcome === "yes",
@@ -88,9 +90,14 @@ export const SplitMergeSheet = forwardRef<
     direction === "split"
       ? Boolean(available && compare(amount, available) > 0)
       : Number(text || 0) > mergeable;
-  const canSubmit = !isZero(amount) && !insufficient && !mutation.isPending;
+  const canSubmit =
+    marketId !== undefined &&
+    !isZero(amount) &&
+    !insufficient &&
+    !mutation.isPending;
 
   const submit = () => {
+    if (!marketId) return;
     mutation.mutate(
       { marketId, direction, amount },
       {
@@ -98,7 +105,13 @@ export const SplitMergeSheet = forwardRef<
           setTxId(result.id);
           toast(t("split.submitted"), "success");
         },
-        onError: () => toast(t("state.error"), "error"),
+        onError: (error) =>
+          toast(
+            error instanceof Error && error.message
+              ? error.message
+              : t("state.error"),
+            "error",
+          ),
       },
     );
   };
@@ -135,7 +148,7 @@ export const SplitMergeSheet = forwardRef<
           <Stack gap="$1.5">
             <Body fontSize={12}>{t("split.market")}</Body>
             <SegmentedControl
-              value={marketId}
+              value={marketId ?? ""}
               options={markets}
               onChange={setMarketId}
               accessibilityLabel={t("split.market")}

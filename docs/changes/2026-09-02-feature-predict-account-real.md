@@ -75,6 +75,12 @@ WS 协议用 node `ws` 直连 prax1s 复核过：初始 dump 的 `timestamp` 是
 - **手续费标签写死**：事件级 `feeBps` 恒为 0 / 20，与预览里按 clob `/fee-rate` 算出的金额不一致（实测 5%）。删掉事件级字段，新 hook `useFeeBps(marketId)`，下单页与规则页同源。
 - **转入后"可用"要等几分钟**：clob 的虚拟余额按周期从子图同步，平台有 `GET /balance-allowance/update` 强制刷新（网页版没用）。转入确认、领取完成后调一次。
 
+**限价挂单 / 撤单 / 两阶段取回（同日稍后）**：限价买 Yes 10 份 @ 20¢（GTC）挂上，Positions → Orders 显示 "Buy Yes · 10 @ 20¢ · Filled 0/10"，可用减 2 USDW；撤单后列表清空、可用恢复。取回 50 USDW：relayer MultiSend [approve, initiateUnwrap] 上链后待领取列表出现 "50.00 USDC" 与倒计时（dev `unwrapDelay` 60 秒、`minUnwrapUsdw` 0.001），到期按 Claim，[claimUnwrap, USDC.transfer] 上链后钱包 USDC 800 → 850、列表清空。观察：撤单后几分钟内 clob 的 `/balance-allowance` 曾把已撤订单的 2 USDW 重新算进 locked（子图周期同步覆盖了内存状态），领取后调 `/balance-allowance/update` 即恢复——平台侧现象，App 已在下单 / 撤单后同时失效 `predict-account` 余额查询以便及时重读。
+
+**挂单 / 撤单 / 取回联调（同日稍后）**：限价买 10 份 @ 20¢（低于买一，挂在簿上）→ Positions › Orders 显示 "Buy Yes · 10 @ 20¢ · GTC · Filled 0/10"，可用余额扣 2 USDW → 撤单后列表清空、余额回补。取回：initiate-unwrap 50 USDW 后账户页"待领取"显示 "50.00 USDC · Ready to claim"（dev `unwrapDelay` 链上读到 60 秒）→ Claim 约 7 秒完成，待领取清空，钱包 USDC 链上 800 → 850。
+
+**卖出 / 拆合联调（同日）**：持仓页 Sell → 市价卖 10 份 @ 买一 25¢，可用余额 +2.33 USDW（2.45 − 5% 手续费），平台持仓 31.64 → 21.64（data-service 索引约 15–30 秒后跟上）。拆分 5 USDW（relayer SafeTx 直接调 CTF）约 10 秒 Submitted → Confirmed → Done，平台持仓多出 No 5；再合并 5 份，No 归零、活动记录 SPLIT / MERGE 各一条。顺手修了拆合 sheet 的两处：默认市场写死 Mock 夹具 id `m-btc-120k`（平台报 unknown market，toast 只说"加载失败"）→ 默认第一个持有的市场、错误显示原文；提示文案 USDC → USDW。
+
 平台侧观察：dev 水龙头对持有 800 USDC 的 EOA 仍报 "USDC balance must exceed the required minimum"，与 `faucet.go` 的检查（EOA 的 `chain.usdcAddress` 余额 > `minUsdcBalanceRaw`）对不上，疑为 dev 配置的 USDC 地址或阈值——App 侧无事可做，已记入设计文档 §5。
 
 联调环境事实：prax1s `public-info.chain.contracts` 已含 `USDW_WRAPPER` / `USDC_UNDERLYING`；测试 USDC（`0x2eA6…c3AD`）的 `mint(address,uint256)` 无权限限制，EOA 有少量 OP Sepolia ETH 即可自铸后联调转入 / 下单。

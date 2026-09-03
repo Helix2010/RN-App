@@ -710,8 +710,8 @@ const zhCN = {
   "split.market": "市场",
   "split.amount": "数量",
   "split.hint.split":
-    "用 USDC 按 1:1 铸造等量 Yes + No 份额（每份合计 1 USDC）",
-  "split.hint.merge": "把等量的 Yes + No 份额合并赎回为 USDC",
+    "用 USDW 按 1:1 铸造等量 Yes + No 份额（每份合计 1 USDW）",
+  "split.hint.merge": "把等量的 Yes + No 份额合并赎回为 USDW",
   "split.available": "可用 {amount}",
   "split.holding": "可合并 {n} 份",
   "split.submitSplit": "拆分 {amount}",
@@ -1613,8 +1613,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "split.market": "Market",
   "split.amount": "Amount",
   "split.hint.split":
-    "Mint equal Yes + No shares from USDC 1:1 (each pair = 1 USDC)",
-  "split.hint.merge": "Merge equal Yes + No shares back into USDC",
+    "Mint equal Yes + No shares from USDW 1:1 (each pair = 1 USDW)",
+  "split.hint.merge": "Merge equal Yes + No shares back into USDW",
   "split.available": "Available {amount}",
   "split.holding": "Mergeable {n} shares",
   "split.submitSplit": "Split {amount}",
