@@ -127,7 +127,8 @@ export type OrderPreview = {
 
 export type OrderResult = {
   orderId: string;
-  status: "filled" | "open" | "partial" | "delayed";
+  /** canceled：市价（FAK）单一份都没成交，平台已撤单（match_dispatcher.go:1922-1930） */
+  status: "filled" | "open" | "partial" | "delayed" | "canceled";
   filledShares: number;
   /** 成交均价；平台应答里没有可用的成交额时为 null（实测 prax1s 的 taking / making 都是份数） */
   avgPriceCents: number | null;

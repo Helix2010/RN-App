@@ -960,14 +960,17 @@ export class HttpPredictGateway implements PredictGateway {
     const filledShares = Number(response.makingAmount ?? "0");
     const requestedShares =
       Number(side === "BUY" ? takerAmount : makerAmount) / Number(ONE_USDC);
+    // 平台应答 status：matched / live（挂着）/ canceled（FAK 零成交已撤）/ delayed（maker last-look 窗口）
     const status: OrderResult["status"] =
       response.status === "delayed"
         ? "delayed"
-        : filledShares <= 0
-          ? "open"
-          : filledShares + 1e-6 >= requestedShares
-            ? "filled"
-            : "partial";
+        : response.status === "canceled"
+          ? "canceled"
+          : filledShares <= 0
+            ? "open"
+            : filledShares + 1e-6 >= requestedShares
+              ? "filled"
+              : "partial";
     return {
       orderId: response.orderID,
       status,

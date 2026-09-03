@@ -392,6 +392,7 @@ const zhCN = {
   "predict.order.minAmount": "市价买入至少 {amount}",
   "predict.order.tickHint": "限价须为 {tick}¢ 的整数倍",
   "predict.order.placed": "挂单已提交",
+  "predict.order.unfilled": "当前价格没有成交，订单已撤销，可调整后重试",
   "predict.order.insufficient": "余额不足",
   "predict.order.insufficientShares": "持有份额不足",
   "predict.order.closed": "市场已截止",
@@ -1275,6 +1276,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "predict.order.minAmount": "Market buys need at least {amount}",
   "predict.order.tickHint": "Limit price must be a multiple of {tick}¢",
   "predict.order.placed": "Order placed",
+  "predict.order.unfilled":
+    "Nothing filled at the current price; the order was cancelled",
   "predict.order.insufficient": "Insufficient balance",
   "predict.order.insufficientShares": "Not enough shares",
   "predict.order.closed": "Market closed",

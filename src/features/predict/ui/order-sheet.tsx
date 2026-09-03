@@ -253,6 +253,11 @@ export const OrderSheet = forwardRef<
     if (!(await requireVerification())) return;
     place.mutate(request, {
       onSuccess: (result) => {
+        // 市价单一份都没吃到（平台已撤）：留在面板上让用户改价 / 改量，不能说"已提交"
+        if (result.status === "canceled") {
+          toast(t("predict.order.unfilled"), "error");
+          return;
+        }
         sheet.current?.dismiss();
         toast(
           result.status !== "filled"

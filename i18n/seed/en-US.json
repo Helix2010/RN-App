@@ -337,6 +337,7 @@
     "predict.order.tif": "Time in force",
     "predict.order.title": "Confirm prediction order",
     "predict.order.total": "Order total",
+    "predict.order.unfilled": "Nothing filled at the current price; the order was cancelled",
     "predict.outcomes": "{n} outcomes",
     "predict.positions.allMarkets": "All markets",
     "predict.positions.avg": "Avg {price}",

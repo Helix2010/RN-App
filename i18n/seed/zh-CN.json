@@ -337,6 +337,7 @@
     "predict.order.tif": "有效期",
     "predict.order.title": "确认预测订单",
     "predict.order.total": "订单金额",
+    "predict.order.unfilled": "当前价格没有成交，订单已撤销，可调整后重试",
     "predict.outcomes": "{n} 个结果",
     "predict.positions.allMarkets": "全部市场",
     "predict.positions.avg": "均价 {price}",

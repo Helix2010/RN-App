@@ -113,26 +113,25 @@ function platform() {
         const body = JSON.parse(String(init?.body)) as {
           order: { makerAmount: string; takerAmount: string; side: string };
         };
+        // FAK 零成交时平台回 status canceled、两个金额都是 0（match_dispatcher.go:1922-1930）
+        const fill =
+          orderStatus === "canceled"
+            ? "0"
+            : String(
+                Number(
+                  body.order.side === "BUY"
+                    ? body.order.takerAmount
+                    : body.order.makerAmount,
+                ) / 1e6,
+              );
         return json({
           success: true,
           errorMsg: "",
           orderID: "o-new",
           // matcher.go 把 CollateralAmount / OutcomeAmount 都写成 fillAmount（份数）：两个字段一样，拿不到成交额
-          takingAmount: String(
-            Number(
-              body.order.side === "BUY"
-                ? body.order.takerAmount
-                : body.order.makerAmount,
-            ) / 1e6,
-          ),
-          makingAmount: String(
-            Number(
-              body.order.side === "BUY"
-                ? body.order.takerAmount
-                : body.order.makerAmount,
-            ) / 1e6,
-          ),
-          status: "matched",
+          takingAmount: fill,
+          makingAmount: fill,
+          status: orderStatus,
           transactionsHashes: [`0x${"cd".repeat(32)}`],
           tradeIDs: ["t-1"],
         });
@@ -356,8 +355,11 @@ function build() {
 afterEach(() => setPlatformFetch(null));
 
 const cleanup: (() => void)[] = [];
+/** 假平台 POST /order 的应答状态：matched（默认）/ canceled（FAK 零成交） */
+let orderStatus = "matched";
 afterEach(() => {
   for (const stop of cleanup.splice(0)) stop();
+  orderStatus = "matched";
   jest.restoreAllMocks();
 });
 
@@ -398,6 +400,19 @@ describe("HttpPredictGateway", () => {
     });
     for (const request of seen)
       expect(request.headers["X-Tenant-Domain"]).toBe(DOMAIN);
+  });
+
+  it("reports a market order that filled nothing as canceled instead of open", async () => {
+    orderStatus = "canceled";
+    const { gateway } = build();
+    const result = await gateway.placeOrder(EOA, {
+      marketId: CONDITION,
+      outcome: "yes",
+      side: "buy",
+      type: "market",
+      amount: fromDecimal("10", 6, "USDW"),
+    });
+    expect(result).toMatchObject({ status: "canceled", filledShares: 0 });
   });
 
   it("rejects a market buy whose tick-aligned makerAmount falls under the platform's 1 USDC floor", async () => {

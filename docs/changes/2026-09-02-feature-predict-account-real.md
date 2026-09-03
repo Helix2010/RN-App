@@ -117,6 +117,8 @@ WS 协议用 node `ws` 直连 prax1s 复核过：初始 dump 的 `timestamp` 是
 
 回归中发现并修掉：**输入正好 1.00 USDW 的市价买第一次被平台拒**——FAK 买单份数向下对齐 0.01 后 makerAmount = price × shares 常略小于 1 USDC（卖一 0.29 时 3.44 × 0.29 = 0.9976），撞平台 `makerAmount ≥ 1_000_000` 下限。现在 `previewOrder` 按当前对手价与 tick 反推"对齐后仍 ≥ 1 USDC"的最小金额（`OrderPreview.minAmount`，卖一 0.64 时是 1.01），面板的下限提示用它；`placeOrder` 在签名前检查 makerAmount，不够就抛出带最小金额的错误，不再把请求发给平台。
 
+同一回归里第二次提交 1.00 USDW 时面板收起并提示"挂单已提交"，但余额、持仓、历史都没变：平台对一份都没成交的 FAK 回 `status:"canceled"`（`match_dispatcher.go:1922-1930`，两个金额为 0），原实现把它当"挂着"。现在 `OrderResult.status` 多了 `canceled`，面板留在原地并提示"当前价格没有成交，订单已撤销"（`predict.order.unfilled`）。`POST /order` 应答 status 的全部取值：`matched` / `live`（挂着）/ `canceled`（FAK 零成交）/ `delayed`（maker last-look 窗口）。
+
 ## 不做的事
 
 - 没有任何「平台不可用就用演示数据」的路径：关联缺失显示未配置，public-info 对不上直接报错。
