@@ -24,6 +24,10 @@ import type { RootStackParamList } from "../../navigation/types";
 import { useApprovals } from "../dex/hooks/use-dex";
 import { Group, SRow } from "../profile/profile-screen";
 import { useAppLockToggle } from "../security/use-app-lock-toggle";
+import {
+  TxVerificationSheet,
+  useTxVerificationLabel,
+} from "../security/tx-verification-sheet";
 import { useSession, useSignOut } from "../session/hooks/use-session";
 import { useWalletAccounts } from "../wallet/hooks/use-wallet";
 
@@ -42,13 +46,19 @@ export function SecurityCenterScreen({
   const signOut = useSignOut();
   const { enrolled, toggle: toggleAppLock } = useAppLockToggle();
   const confirm = useRef<SheetHandle>(null);
+  const txVerification = useRef<SheetHandle>(null);
+  const txVerificationLabel = useTxVerificationLabel();
 
   const embedded = (accounts.data ?? []).find(
     (item) => item.connector === "embedded",
   );
   const backedUp = embedded ? embedded.backedUp : true;
   // 设备没录入凭据时应用锁不生效，不能算作已开启的保护
-  const checks = [prefs.appLockEnabled && enrolled, prefs.txConfirm, backedUp];
+  const checks = [
+    prefs.appLockEnabled && enrolled,
+    prefs.txVerification !== "off",
+    backedUp,
+  ];
   const passed = checks.filter(Boolean).length;
   const level = passed === 3 ? "high" : passed === 2 ? "medium" : "low";
   // 锁开着但设备没凭据时，"建议开启应用锁"是错的——该提示的是去系统里设锁屏
@@ -58,7 +68,7 @@ export function SecurityCenterScreen({
       ? t("security.suggest.appLock")
       : !enrolled
         ? t("security.appLock.unavailable")
-        : !prefs.txConfirm
+        : prefs.txVerification === "off"
           ? t("security.suggest.txConfirm")
           : undefined;
   const levelColor =
@@ -160,14 +170,9 @@ export function SecurityCenterScreen({
             <SRow
               title={t("settings.txConfirm")}
               subtitle={t("security.txConfirm.hint")}
-              trailing={
-                <Switch
-                  value={prefs.txConfirm}
-                  onValueChange={(next) => prefs.update({ txConfirm: next })}
-                  accessibilityLabel={t("settings.txConfirm")}
-                  testID="sec-tx-confirm"
-                />
-              }
+              value={txVerificationLabel}
+              onPress={() => txVerification.current?.present()}
+              testID="sec-tx-confirm"
             />
             <SRow
               title={t("security.largeAmount")}
@@ -295,6 +300,7 @@ export function SecurityCenterScreen({
           {t("common.cancel")}
         </SecondaryButton>
       </Sheet>
+      <TxVerificationSheet ref={txVerification} />
     </Page>
   );
 }

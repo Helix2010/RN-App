@@ -183,12 +183,6 @@ export const Card = styled(YStack, {
   shadowOffset: { width: 0, height: 10 },
 });
 
-export const HairlineCard = styled(Card, {
-  borderWidth: 1,
-  borderColor: "$borderColor",
-  shadowOpacity: 0,
-});
-
 export const SkeletonBlock = styled(YStack, {
   backgroundColor: "$surfaceVariant",
   borderRadius: "$4",
@@ -486,45 +480,125 @@ export function PriceChange({ value }: { value: number }) {
 
 type Segment<T extends string> = { value: T; label: string };
 
+/**
+ * 分段控件（2–4 个互斥选项：买/卖、转入/取回、周期）：一条浅色轨道，选中段浮起成白卡。
+ * 不是一排平铺的药丸按钮——那种样式和"操作按钮"分不开，也没有"这是一组"的感觉。
+ * 选项多于 4 个或不定长（链、分类、多结果市场）请用 `ChipRow`。
+ */
 export function SegmentedControl<T extends string>({
   value,
   options,
   onChange,
   accessibilityLabel,
+  size = "md",
+  testID,
 }: {
   value: T;
   options: Segment<T>[];
   onChange: (value: T) => void;
   accessibilityLabel: string;
+  size?: "sm" | "md";
+  testID?: string;
 }) {
+  const height = size === "sm" ? 30 : 36;
   return (
     <XStack
-      gap="$2"
-      flexWrap="wrap"
+      padding={3}
+      gap={2}
+      borderRadius={size === "sm" ? 9 : 11}
+      backgroundColor="$surfaceVariant"
       accessibilityRole="radiogroup"
       accessibilityLabel={accessibilityLabel}
+      testID={testID}
     >
       {options.map((option) => {
         const selected = value === option.value;
         return (
-          <Button
+          <XStack
             key={option.value}
-            size="$3.5"
-            borderRadius={999}
-            backgroundColor={selected ? "$primary" : "$surfaceVariant"}
-            color={selected ? "$onPrimary" : "$color"}
-            borderWidth={1}
-            borderColor={selected ? "$primary" : "$borderColor"}
+            flex={1}
+            height={height}
+            alignItems="center"
+            justifyContent="center"
+            paddingHorizontal="$2"
+            borderRadius={size === "sm" ? 7 : 9}
+            backgroundColor={selected ? "$surface" : "transparent"}
+            shadowColor="$shadowColor"
+            shadowOpacity={selected ? 0.12 : 0}
+            shadowRadius={4}
+            shadowOffset={{ width: 0, height: 1 }}
             onPress={() => onChange(option.value)}
             accessibilityRole="radio"
             accessibilityState={{ selected }}
-            pressStyle={{ opacity: 0.82 }}
+            accessibilityLabel={option.label}
+            testID={testID ? `${testID}-${option.value}` : undefined}
+            pressStyle={{ opacity: 0.7 }}
           >
-            {option.label}
-          </Button>
+            <Text
+              fontSize={size === "sm" ? 12 : 13}
+              fontWeight={selected ? "800" : "600"}
+              color={selected ? "$color" : "$textMuted"}
+              numberOfLines={1}
+            >
+              {option.label}
+            </Text>
+          </XStack>
         );
       })}
     </XStack>
+  );
+}
+
+/**
+ * 图标在上、文字在下的操作格（收款 / 转出 / 划转…）。一排 3–4 个等宽；
+ * `primary` 的那一个是页面的主操作。文字只有一行，装不下的标签要改短。
+ */
+export function ActionTile({
+  label,
+  icon,
+  primary,
+  disabled,
+  onPress,
+  testID,
+}: {
+  label: string;
+  icon: AppIconName;
+  primary?: boolean;
+  disabled?: boolean;
+  onPress: () => void;
+  testID?: string;
+}) {
+  return (
+    <YStack
+      flex={1}
+      alignItems="center"
+      justifyContent="center"
+      gap="$1"
+      height={60}
+      borderRadius="$4"
+      backgroundColor={primary ? "$primary" : "$surfaceVariant"}
+      opacity={disabled ? 0.45 : 1}
+      onPress={disabled ? undefined : onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: Boolean(disabled) }}
+      testID={testID}
+      pressStyle={{ opacity: 0.8 }}
+    >
+      <AppIcon
+        name={icon}
+        size={22}
+        colorToken={primary ? "onPrimary" : "color"}
+      />
+      <Text
+        fontSize={12}
+        fontWeight="700"
+        color={primary ? "$onPrimary" : "$color"}
+        numberOfLines={1}
+      >
+        {label}
+      </Text>
+    </YStack>
   );
 }
 
@@ -532,15 +606,19 @@ export function PageScroll({
   children,
   refresh,
   keyboardShouldPersistTaps = "handled",
+  scrollEnabled = true,
 }: PropsWithChildren<{
   refresh?: RefreshControlProps;
   keyboardShouldPersistTaps?: "always" | "never" | "handled";
+  /** 页内手势（图表刻度）进行中暂停滚动 */
+  scrollEnabled?: boolean;
 }>) {
   const theme = useTheme();
   return (
     <ScrollView
       flex={1}
       showsVerticalScrollIndicator={false}
+      scrollEnabled={scrollEnabled}
       keyboardShouldPersistTaps={keyboardShouldPersistTaps}
       refreshControl={
         refresh ? (

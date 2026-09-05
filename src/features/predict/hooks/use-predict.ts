@@ -1,4 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useEffect } from "react";
 import type { Page } from "../../../core/gateways/types";
 import { useGateways } from "../../../core/gateways/gateway-context";
@@ -53,14 +58,27 @@ export function useMarketStream(marketIds: string[]) {
     if (!key) return;
     return predict.subscribeMarkets(key.split(","), (event) => {
       if (event.type === "book") {
-        // WS 簿事件不带 min_order_size，网关只能按 gamma 兜底；REST 拉到过的值更准，保留
+        // WS 簿事件不带 min_order_size，网关只能按 gamma 兜底；REST 拉到过的值更准，保留；
+        // 成交价同理：这帧没带就沿用上一次的
         queryClient.setQueryData<OrderBook>(
           ["predict-book", event.book.marketId],
           (old) => ({
             ...event.book,
             minOrderShares: old?.minOrderShares ?? event.book.minOrderShares,
+            lastTradeCents:
+              event.book.lastTradeCents ?? old?.lastTradeCents ?? null,
           }),
         );
+        return;
+      }
+      if (event.type === "last_trade") {
+        queryClient.setQueryData<OrderBook>(
+          ["predict-book", event.marketId],
+          (old) => (old ? { ...old, lastTradeCents: event.priceCents } : old),
+        );
+        void queryClient.invalidateQueries({
+          queryKey: ["predict-trades", event.marketId],
+        });
         return;
       }
       const patch = (item: PredictEvent): PredictEvent =>
@@ -112,6 +130,30 @@ export function usePriceHistory(
     queryFn: () => predict.getPriceHistory(marketId as string, range),
     enabled: Boolean(marketId),
     staleTime: 30_000,
+  });
+}
+
+/** 最近成交（成交 Tab）；有推送时按 last_trade 事件失效重取，否则 15 秒一轮 */
+export function useTrades(marketId: string | undefined, limit = 50) {
+  const { predict } = useGateways();
+  return useQuery({
+    queryKey: ["predict-trades", marketId, limit],
+    queryFn: () => predict.listTrades(marketId as string, limit),
+    enabled: Boolean(marketId),
+    staleTime: 5_000,
+    refetchInterval: 15_000,
+  });
+}
+
+/** 多个市场的走势（多结果事件画多条线）；键与 `usePriceHistory` 相同，缓存共用 */
+export function usePriceHistories(marketIds: string[], range: PriceRange) {
+  const { predict } = useGateways();
+  return useQueries({
+    queries: marketIds.map((marketId) => ({
+      queryKey: ["predict-history", marketId, range],
+      queryFn: () => predict.getPriceHistory(marketId, range),
+      staleTime: 30_000,
+    })),
   });
 }
 

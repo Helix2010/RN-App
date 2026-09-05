@@ -29,6 +29,10 @@ import { Group, SRow } from "../profile/profile-screen";
 import { useSession } from "../session/hooks/use-session";
 import { LANGUAGE_NAMES } from "./language-names";
 import { useAppLockToggle } from "../security/use-app-lock-toggle";
+import {
+  TxVerificationSheet,
+  useTxVerificationLabel,
+} from "../security/tx-verification-sheet";
 import { useManualUpdateCheck } from "../updates/use-manual-update-check";
 
 /** S-02 设置：通用 / 通知 / 交易偏好 / 安全 / 关于 五组，值列直接显示当前设置。 */
@@ -50,6 +54,8 @@ export function SettingsScreen({
   const account = useAccountPrefs(address);
   const patchAccount = useAccountPreferences((state) => state.patch);
   const clearCache = useRef<SheetHandle>(null);
+  const txVerification = useRef<SheetHandle>(null);
+  const txVerificationLabel = useTxVerificationLabel();
   const notificationsOn = Object.entries(account.notifications).filter(
     ([key, value]) => key !== "security" && value,
   ).length;
@@ -232,14 +238,9 @@ export function SettingsScreen({
             <SRow
               title={t("settings.txConfirm")}
               subtitle={t("settings.txConfirm.hint")}
-              trailing={
-                <Switch
-                  value={prefs.txConfirm}
-                  onValueChange={(next) => prefs.update({ txConfirm: next })}
-                  accessibilityLabel={t("settings.txConfirm")}
-                  testID="settings-tx-confirm"
-                />
-              }
+              value={txVerificationLabel}
+              onPress={() => txVerification.current?.present()}
+              testID="settings-tx-confirm"
             />
             <SRow
               title={t("settings.securityCenter")}
@@ -327,6 +328,7 @@ export function SettingsScreen({
           {t("common.cancel")}
         </SecondaryButton>
       </Sheet>
+      <TxVerificationSheet ref={txVerification} />
     </Page>
   );
 }

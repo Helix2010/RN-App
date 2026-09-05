@@ -19,6 +19,7 @@ export type RootRouteName =
   | "WalletImport"
   | "Transfer"
   | "AccountDetail"
+  | "Records"
   | "Send"
   | "NotificationSettings"
   | "About"

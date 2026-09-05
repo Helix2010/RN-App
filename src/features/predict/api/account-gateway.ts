@@ -2,6 +2,7 @@ import type { ChainId } from "../../../core/gateways/types";
 import type { Money } from "../../../core/money/money";
 import type { PlatformAgreement } from "../../../core/predict-platform/agreements";
 import type { FaucetStatus } from "../../../core/predict-platform/faucet";
+import type { FundRecord } from "../model/fund-record";
 import type { PredictTx } from "../model/predict";
 
 /**
@@ -126,6 +127,11 @@ export interface PredictAccountGateway {
   /** 阶段 B：领取，USDC 回到 EOA */
   claimWithdrawal(address: string, requestId: string): Promise<PredictTx>;
   getTx(id: string): Promise<PredictTx | null>;
+  /**
+   * 资金记录：本机发起的转入 / 取回 / 领取 ∪ 平台索引到的解包请求（含已领取）。
+   * 未启用的账户没有记录，返回空。
+   */
+  listFundRecords(address: string): Promise<FundRecord[]>;
   agreements(): Promise<PredictAgreements>;
   /** 记下本机已接受这些协议的版本（与网页版一样只存本机） */
   acceptAgreements(items: PlatformAgreement[]): Promise<void>;

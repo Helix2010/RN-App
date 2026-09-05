@@ -23,7 +23,6 @@ import {
   AppIcon,
   Body,
   DetailRow,
-  IconButton,
   InlineText,
   Label,
   PrimaryButton,
@@ -194,6 +193,7 @@ export function TransferForm({
   onFinished,
   onMinimize,
   onOpenEnable,
+  onOpenRecords,
 }: {
   address: string;
   initialDirection?: TransferDirection;
@@ -201,6 +201,8 @@ export function TransferForm({
   onFinished: () => void;
   onMinimize?: () => void;
   onOpenEnable: () => void;
+  /** 进度页 / 表单底部的"查看记录"入口 */
+  onOpenRecords?: () => void;
 }) {
   const { config, t } = useFoundationRuntime();
   const requireVerification = useRequireVerification();
@@ -305,13 +307,16 @@ export function TransferForm({
 
   if (txId) {
     return (
-      <TxProgress
-        tx={tx.data}
-        title={txTitle}
-        onDone={onFinished}
-        onMinimize={onMinimize}
-        doneLabel={t("common.done")}
-      />
+      <Stack gap="$3">
+        <TxProgress
+          tx={tx.data}
+          title={txTitle}
+          onDone={onFinished}
+          onMinimize={onMinimize}
+          doneLabel={t("common.done")}
+        />
+        {onOpenRecords ? <RecordsLink onPress={onOpenRecords} /> : null}
+      </Stack>
     );
   }
 
@@ -389,35 +394,14 @@ export function TransferForm({
 
   return (
     <Stack gap="$3" testID="transfer-form">
-      <Stack
-        borderRadius="$4"
-        backgroundColor="$surfaceVariant"
-        padding="$3"
-        gap="$2"
-      >
-        <Row alignItems="center" justifyContent="space-between">
-          <Stack gap="$0.5">
-            <Body fontSize={11}>{t("transfer.from")}</Body>
-            <SectionTitle fontSize={15}>{fromLabel}</SectionTitle>
-          </Stack>
-          <IconButton
-            label={t("transfer.swapDirection")}
-            icon="swap-vertical"
-            size={30}
-            onPress={() => {
-              setDirection((prev) =>
-                prev === "deposit" ? "withdraw" : "deposit",
-              );
-              setText("");
-            }}
-          />
-        </Row>
-        <Stack height={1} backgroundColor="$borderColor" />
-        <Stack gap="$0.5">
-          <Body fontSize={11}>{t("transfer.to")}</Body>
-          <SectionTitle fontSize={15}>{toLabel}</SectionTitle>
-        </Stack>
-      </Stack>
+      <DirectionCard
+        fromLabel={fromLabel}
+        toLabel={toLabel}
+        onSwap={() => {
+          setDirection((prev) => (prev === "deposit" ? "withdraw" : "deposit"));
+          setText("");
+        }}
+      />
 
       <Row alignItems="center" justifyContent="space-between">
         <Body>
@@ -597,6 +581,100 @@ export function TransferForm({
             setTxId(result.id);
           }}
         />
+      ) : null}
+      {onOpenRecords ? <RecordsLink onPress={onOpenRecords} /> : null}
+    </Stack>
+  );
+}
+
+/** "查看记录 ›"：进度页与表单底部共用的入口 */
+function RecordsLink({ onPress }: { onPress: () => void }) {
+  const { t } = useFoundationRuntime();
+  return (
+    <Row
+      alignSelf="center"
+      alignItems="center"
+      gap="$1"
+      paddingVertical="$1"
+      onPress={onPress}
+      accessibilityRole="button"
+      testID="transfer-records"
+    >
+      <AppIcon name="history" size={16} colorToken="textMuted" />
+      <Body fontSize={13} fontWeight="700">
+        {t("records.viewRecords")}
+      </Body>
+      <AppIcon name="chevron-right" size={16} colorToken="textMuted" />
+    </Row>
+  );
+}
+
+/**
+ * 从 / 到 两行 + 一个对调按钮。按钮压在两行的分割线上、竖直居中——它对调的是两行
+ * 而不是"从"这一行，所以不能挂在第一行右侧。
+ */
+function DirectionCard({
+  fromLabel,
+  toLabel,
+  onSwap,
+}: {
+  fromLabel: string;
+  toLabel: string;
+  onSwap: () => void;
+}) {
+  const { t } = useFoundationRuntime();
+  const [height, setHeight] = useState(0);
+  const button = 36;
+  return (
+    <Stack
+      borderRadius="$4"
+      backgroundColor="$surfaceVariant"
+      onLayout={(event) => setHeight(event.nativeEvent.layout.height)}
+      testID="transfer-direction"
+    >
+      <Row alignItems="center" gap="$3" paddingHorizontal="$3" height={56}>
+        <Body fontSize={11} minWidth={32}>
+          {t("transfer.from")}
+        </Body>
+        <SectionTitle fontSize={15} flex={1} numberOfLines={1}>
+          {fromLabel}
+        </SectionTitle>
+      </Row>
+      <Stack
+        height={1}
+        backgroundColor="$borderColor"
+        marginLeft="$3"
+        marginRight={button + 28}
+      />
+      <Row alignItems="center" gap="$3" paddingHorizontal="$3" height={56}>
+        <Body fontSize={11} minWidth={32}>
+          {t("transfer.to")}
+        </Body>
+        <SectionTitle fontSize={15} flex={1} numberOfLines={1}>
+          {toLabel}
+        </SectionTitle>
+      </Row>
+      {height > 0 ? (
+        <Stack
+          position="absolute"
+          right={14}
+          top={height / 2 - button / 2}
+          width={button}
+          height={button}
+          borderRadius={button / 2}
+          backgroundColor="$surface"
+          borderWidth={1}
+          borderColor="$borderColor"
+          alignItems="center"
+          justifyContent="center"
+          onPress={onSwap}
+          accessibilityRole="button"
+          accessibilityLabel={t("transfer.swapDirection")}
+          pressStyle={{ opacity: 0.7, scale: 0.94 }}
+          testID="transfer-swap-direction"
+        >
+          <AppIcon name="swap-vertical" size={20} colorToken="primary" />
+        </Stack>
       ) : null}
     </Stack>
   );

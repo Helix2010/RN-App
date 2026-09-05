@@ -18,11 +18,13 @@ export function TransferScreen({
   amount,
   onBack,
   onOpenEnable,
+  onOpenRecords,
 }: {
   direction?: TransferDirection;
   amount?: string;
   onBack: () => void;
   onOpenEnable: () => void;
+  onOpenRecords: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const { t } = useFoundationRuntime();
@@ -46,6 +48,7 @@ export function TransferScreen({
               initialAmount={amount}
               onFinished={onBack}
               onOpenEnable={onOpenEnable}
+              onOpenRecords={onOpenRecords}
             />
           </Content>
         </PageScroll>

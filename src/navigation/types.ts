@@ -26,6 +26,7 @@ export type RootStackParamList = {
   WalletBackup: { phrase?: string } | undefined;
   Transfer: { direction?: "deposit" | "withdraw"; amount?: string } | undefined;
   AccountDetail: { kind: "predict" | "wallet" };
+  Records: { tab?: "predict" | "wallet" } | undefined;
   Send: { chain?: ChainId } | undefined;
   NotificationSettings: undefined;
   About: undefined;

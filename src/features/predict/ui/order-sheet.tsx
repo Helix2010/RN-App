@@ -17,6 +17,7 @@ import {
 } from "../../../core/money/money";
 import {
   AmountInput,
+  AppIcon,
   Body,
   DetailRow,
   InlineText,
@@ -49,22 +50,48 @@ import type {
   Outcome,
   PlaceOrderRequest,
   PredictEvent,
-  TimeInForce,
 } from "../model/predict";
 import { fill, outcomeLabel } from "./shared";
 import { useRequireVerification } from "../../security/use-require-verification";
 
 // 平台市价买入的最小金额（match_dispatcher.go validateOrderAmounts：makerAmount ≥ 1 USDC）
 const MIN_MARKET_BUY = fromDecimal("1", 6, "USDW");
+/** 市价买入的快捷加额（网页版 BUY_QUICK_AMOUNTS，USDW） */
+const BUY_QUICK_ADDS = [2, 20, 100];
+/** 限价买入份数的快捷增减（网页版 [-100, -10, +10, +100]） */
+const LIMIT_SHARE_STEPS = [-10, 10, 100];
+/** 卖出份数比例（网页版 SELL_QUICK_PCTS + Max） */
+const SELL_PRESETS = [25, 50, 100];
+/**
+ * 限价单有效期：撤单前（GTC）或 5 分钟 / 1 小时 / 12 小时后过期（GTD）。
+ * 与网页版 `orderExpiry.ts` 一致：GTD 至少 120 秒。
+ */
+type ExpiryPreset = "never" | "5m" | "1h" | "12h";
+const EXPIRY_SECONDS: Record<ExpiryPreset, number> = {
+  never: 0,
+  "5m": 5 * 60,
+  "1h": 60 * 60,
+  "12h": 12 * 60 * 60,
+};
 
 export type OrderSheetHandle = {
-  open: (market: Market, outcome: Outcome, side?: OrderSide) => void;
+  open: (
+    market: Market,
+    outcome: Outcome,
+    side?: OrderSide,
+    /** 从盘口点档位进来：直接切限价并预填这个价 */
+    limitPriceCents?: number,
+  ) => void;
   dismiss: () => void;
 };
+
+const mirror = (cents: number) => Math.round((100 - cents) * 10) / 10;
 
 /**
  * P-03 下单面板：买入 / 卖出 segmented，市价 / 限价切换，Yes/No 选择器；
  * 市价买入输入金额派生份额；限价输入价格 + 份额派生金额；卖出输入份额派生回款。
+ * Yes/No 卡上的价格按方向取盘口（买入看卖一、卖出看买一，同网页版 resolveTradePrice）；
+ * 限价默认跟随卖一，用户一改就不再跟随；限价可按 tick 步进。
  * 未登录 → 记录意图并拉起登录 sheet，登录后自动重开。
  */
 export const OrderSheet = forwardRef<
@@ -87,7 +114,9 @@ export const OrderSheet = forwardRef<
   const [amountText, setAmountText] = useState("");
   const [sharesText, setSharesText] = useState("");
   const [priceText, setPriceText] = useState("");
-  const [tif, setTif] = useState<TimeInForce>("GTC");
+  /** market = 跟随盘口自动填；user = 用户改过，不再覆盖 */
+  const [priceSource, setPriceSource] = useState<"market" | "user">("market");
+  const [expiry, setExpiry] = useState<ExpiryPreset>("never");
 
   const balance = usePredictAccountBalance(address);
   const positions = usePositions(address);
@@ -97,8 +126,30 @@ export const OrderSheet = forwardRef<
   const place = usePlaceOrder(address);
   const consumeIntent = useAuthSheet((state) => state.consumeIntent);
 
+  const reset = (
+    nextMarket: Market,
+    nextOutcome: Outcome,
+    nextSide: OrderSide,
+    limitPriceCents?: number,
+  ) => {
+    setMarket(nextMarket);
+    setOutcome(nextOutcome);
+    setSide(nextSide);
+    setType(limitPriceCents !== undefined ? "limit" : "market");
+    setAmountText("");
+    setSharesText("");
+    setExpiry("never");
+    if (limitPriceCents !== undefined) {
+      setPriceText(String(limitPriceCents));
+      setPriceSource("user");
+    } else {
+      setPriceText("");
+      setPriceSource("market");
+    }
+  };
+
   useImperativeHandle(ref, () => ({
-    open: (nextMarket, nextOutcome, nextSide = "buy") => {
+    open: (nextMarket, nextOutcome, nextSide = "buy", limitPriceCents) => {
       if (!address) {
         requestAuth({
           type: "open_order",
@@ -107,30 +158,7 @@ export const OrderSheet = forwardRef<
         });
         return;
       }
-      setMarket(nextMarket);
-      setOutcome(nextOutcome);
-      setSide(nextSide);
-      setType("market");
-      setAmountText("");
-      setSharesText("");
-      // 无报价时不预填限价，由用户输入；预填落在整数分上（是所有 tick 的公倍数，簿还没到也不会掉到 tick 外）
-      setPriceText(
-        nextMarket.yesPriceCents === null
-          ? ""
-          : String(
-              Math.min(
-                99,
-                Math.max(
-                  1,
-                  Math.floor(
-                    (nextOutcome === "yes"
-                      ? nextMarket.yesPriceCents
-                      : 100 - nextMarket.yesPriceCents) - 0.5,
-                  ),
-                ),
-              ),
-            ),
-      );
+      reset(nextMarket, nextOutcome, nextSide, limitPriceCents);
       sheet.current?.present();
     },
     dismiss: () => sheet.current?.dismiss(),
@@ -145,9 +173,7 @@ export const OrderSheet = forwardRef<
     const intent = consumeIntent();
     if (!intent) return;
     const timer = setTimeout(() => {
-      setMarket(target);
-      setOutcome(fulfilled.outcome);
-      setSide("buy");
+      reset(target, fulfilled.outcome, "buy");
       sheet.current?.present();
     }, 350);
     return () => clearTimeout(timer);
@@ -169,7 +195,6 @@ export const OrderSheet = forwardRef<
     bookYes;
   const marketPrice = yes === null ? null : outcome === "yes" ? yes : 100 - yes;
   // 订单簿是 YES 代币的；No 侧盘口取镜像（买 No @ p 等价于卖 Yes @ 100 − p）
-  const mirror = (cents: number) => Math.round((100 - cents) * 10) / 10;
   const sideBid =
     bestBid === undefined || bestAsk === undefined
       ? undefined
@@ -182,6 +207,15 @@ export const OrderSheet = forwardRef<
       : outcome === "yes"
         ? bestAsk
         : mirror(bestBid);
+  /** 某一结果按当前方向可成交的价：买入看卖一、卖出看买一；簿没到就用展示价 */
+  const tradePrice = (option: Outcome): number | null => {
+    if (bestBid !== undefined && bestAsk !== undefined) {
+      const bid = option === "yes" ? bestBid : mirror(bestAsk);
+      const ask = option === "yes" ? bestAsk : mirror(bestBid);
+      return side === "buy" ? ask : bid;
+    }
+    return yes === null ? null : option === "yes" ? yes : 100 - yes;
+  };
   // 限价只认用户输入；平台要求价格落在 tick 网格上且在 [tick, 100 − tick] 内（ORDER_PRICE_NOT_ALIGNED）
   const tick = book.data?.tickCents ?? null;
   const typedPrice = Number(priceText);
@@ -195,6 +229,23 @@ export const OrderSheet = forwardRef<
     (limitPrice < tick ||
       limitPrice > 100 - tick ||
       Math.abs(limitPrice / tick - Math.round(limitPrice / tick)) > 1e-6);
+
+  // 限价跟随盘口：用户没改过时，卖一变了就跟着变（网页版 limitPriceSource === 'market'）
+  const followPrice = sideAsk ?? marketPrice;
+  useEffect(() => {
+    if (type !== "limit" || priceSource !== "market") return;
+    setPriceText(followPrice === null ? "" : String(followPrice));
+  }, [followPrice, priceSource, type]);
+
+  const stepPrice = (direction: 1 | -1) => {
+    const step = tick ?? 1;
+    const base = limitPrice ?? followPrice ?? 50;
+    const next = Math.round((base + direction * step) / step) * step;
+    const clamped = Math.min(100 - step, Math.max(step, next));
+    setPriceText(String(Math.round(clamped * 10) / 10));
+    setPriceSource("user");
+  };
+
   const held =
     positions.data?.find(
       (item) =>
@@ -205,6 +256,10 @@ export const OrderSheet = forwardRef<
   const shares = Number(sharesText) || 0;
   // 预测账户内的金额单位是 USDW（抵押品），与账户余额同单位
   const amount = fromDecimal(amountText || "0", 6, "USDW");
+  const expiresAt =
+    type === "limit" && expiry !== "never"
+      ? new Date(Date.now() + EXPIRY_SECONDS[expiry] * 1000).toISOString()
+      : undefined;
   const request: PlaceOrderRequest | null = market
     ? side === "sell"
       ? { marketId: market.id, outcome, side, type: "market", shares }
@@ -219,7 +274,8 @@ export const OrderSheet = forwardRef<
               type,
               shares,
               priceCents: limitPrice,
-              tif,
+              tif: expiresAt ? "GTD" : "GTC",
+              expiresAt,
             }
     : null;
   const active =
@@ -315,6 +371,13 @@ export const OrderSheet = forwardRef<
             shares,
             price: formatCents(limitPrice),
           });
+  const availableNumber = available ? Number(toDecimalString(available)) : null;
+  const addAmount = (delta: number) =>
+    setAmountText(
+      (Math.round(((Number(amountText) || 0) + delta) * 100) / 100).toFixed(2),
+    );
+  const addShares = (delta: number) =>
+    setSharesText(String(Math.max(0, shares + delta)));
 
   return (
     <Sheet
@@ -350,40 +413,33 @@ export const OrderSheet = forwardRef<
               setAmountText("");
             }}
             accessibilityLabel={t("predict.buy")}
+            testID="order-side"
           />
         </Stack>
         {side === "buy" ? (
-          <Row borderRadius={999} backgroundColor="$surfaceVariant" padding={2}>
-            {(["market", "limit"] as const).map((option) => (
-              <Stack
-                key={option}
-                paddingHorizontal="$2.5"
-                paddingVertical="$1"
-                borderRadius={999}
-                backgroundColor={type === option ? "$surface" : "transparent"}
-                onPress={() => setType(option)}
-                accessibilityRole="radio"
-                accessibilityState={{ selected: type === option }}
-                testID={`order-type-${option}`}
-              >
-                <InlineText
-                  fontSize={12}
-                  fontWeight="700"
-                  color={type === option ? "$color" : "$textMuted"}
-                >
-                  {t(`predict.order.${option}`)}
-                </InlineText>
-              </Stack>
-            ))}
-          </Row>
+          <Stack width={132}>
+            <SegmentedControl
+              size="sm"
+              value={type}
+              options={[
+                { value: "market", label: t("predict.order.market") },
+                { value: "limit", label: t("predict.order.limit") },
+              ]}
+              onChange={(next) => {
+                setType(next);
+                if (next === "limit") setPriceSource("market");
+              }}
+              accessibilityLabel={t("predict.order.market")}
+              testID="order-type"
+            />
+          </Stack>
         ) : null}
       </Row>
 
       <Row gap="$2">
         {(["yes", "no"] as const).map((option) => {
           const selected = outcome === option;
-          const price =
-            yes === null ? null : option === "yes" ? yes : 100 - yes;
+          const price = tradePrice(option);
           return (
             <Stack
               key={option}
@@ -399,17 +455,29 @@ export const OrderSheet = forwardRef<
                     : "$danger"
                   : "transparent"
               }
-              onPress={() => setOutcome(option)}
+              onPress={() => {
+                setOutcome(option);
+                setPriceSource("market");
+              }}
               accessibilityRole="radio"
               accessibilityState={{ selected }}
               testID={`order-outcome-${option}`}
             >
-              <InlineText
-                fontWeight="800"
-                color={option === "yes" ? "$success" : "$danger"}
-              >
-                {outcomeLabel(option)}
-              </InlineText>
+              <Row justifyContent="space-between" alignItems="center">
+                <InlineText
+                  fontWeight="800"
+                  color={option === "yes" ? "$success" : "$danger"}
+                >
+                  {outcomeLabel(option)}
+                </InlineText>
+                <Body fontSize={10}>
+                  {bestBid !== undefined && bestAsk !== undefined
+                    ? side === "buy"
+                      ? t("predict.order.buyPrice")
+                      : t("predict.order.sellPrice")
+                    : ""}
+                </Body>
+              </Row>
               <InlineText fontSize={20} fontWeight="900">
                 {formatCents(price)}
               </InlineText>
@@ -419,30 +487,74 @@ export const OrderSheet = forwardRef<
       </Row>
 
       {side === "buy" && type === "limit" ? (
-        <TextField
-          value={priceText}
-          onChangeText={(text) => setPriceText(text.replace(/[^\d.]/g, ""))}
-          keyboardType="decimal-pad"
-          placeholder={marketPrice === null ? "" : String(marketPrice)}
-          error={
-            offTick && tick !== null
-              ? fill(t("predict.order.tickHint"), { tick })
-              : undefined
-          }
-          accessibilityLabel={t("predict.order.limitPrice")}
-          testID="order-limit-price"
-          leading={<Body fontSize={12}>{t("predict.order.limitPrice")}</Body>}
-          trailing={
-            <Body fontSize={11}>
-              {sideBid !== undefined && sideAsk !== undefined
-                ? fill(t("predict.order.bookHint"), {
-                    bid: sideBid,
-                    ask: sideAsk,
-                  })
-                : ""}
-            </Body>
-          }
-        />
+        <Stack gap="$1">
+          <TextField
+            value={priceText}
+            onChangeText={(text) => {
+              setPriceText(text.replace(/[^\d.]/g, ""));
+              setPriceSource("user");
+            }}
+            keyboardType="decimal-pad"
+            placeholder={marketPrice === null ? "" : String(marketPrice)}
+            error={
+              offTick && tick !== null
+                ? fill(t("predict.order.tickHint"), { tick })
+                : undefined
+            }
+            accessibilityLabel={t("predict.order.limitPrice")}
+            testID="order-limit-price"
+            leading={
+              <Row alignItems="center" gap="$2">
+                <Stack
+                  width={28}
+                  height={28}
+                  borderRadius={14}
+                  backgroundColor="$surface"
+                  alignItems="center"
+                  justifyContent="center"
+                  onPress={() => stepPrice(-1)}
+                  accessibilityRole="button"
+                  accessibilityLabel={t("predict.order.priceDown")}
+                  testID="order-price-down"
+                  pressStyle={{ opacity: 0.7 }}
+                >
+                  <AppIcon name="minus" size={16} colorToken="color" />
+                </Stack>
+                <Body fontSize={12}>{t("predict.order.limitPrice")}</Body>
+              </Row>
+            }
+            trailing={
+              <Row alignItems="center" gap="$2">
+                <Body fontSize={11}>
+                  {sideBid !== undefined && sideAsk !== undefined
+                    ? fill(t("predict.order.bookHint"), {
+                        bid: sideBid,
+                        ask: sideAsk,
+                      })
+                    : ""}
+                </Body>
+                <Stack
+                  width={28}
+                  height={28}
+                  borderRadius={14}
+                  backgroundColor="$surface"
+                  alignItems="center"
+                  justifyContent="center"
+                  onPress={() => stepPrice(1)}
+                  accessibilityRole="button"
+                  accessibilityLabel={t("predict.order.priceUp")}
+                  testID="order-price-up"
+                  pressStyle={{ opacity: 0.7 }}
+                >
+                  <AppIcon name="plus" size={16} colorToken="color" />
+                </Stack>
+              </Row>
+            }
+          />
+          {priceSource === "market" && priceText !== "" ? (
+            <Body fontSize={11}>{t("predict.order.priceFollow")}</Body>
+          ) : null}
+        </Stack>
       ) : null}
 
       {side === "buy" && type === "market" ? (
@@ -467,13 +579,6 @@ export const OrderSheet = forwardRef<
             available && setAmountText(toDecimalString(available, 2))
           }
           maxLabel={t("common.max")}
-          presets={[25, 50, 75, 100]}
-          onPreset={(pct) =>
-            available &&
-            setAmountText(
-              ((Number(toDecimalString(available)) * pct) / 100).toFixed(2),
-            )
-          }
           accessibilityLabel={t("predict.order.amount")}
           testID="order-amount"
         />
@@ -486,9 +591,16 @@ export const OrderSheet = forwardRef<
           helper={
             side === "sell"
               ? fill(t("predict.order.holding"), { shares: held })
-              : fill(t("predict.order.available"), {
-                  amount: available ? formatMoney(available, locale) : "—",
-                })
+              : [
+                  fill(t("predict.order.available"), {
+                    amount: available ? formatMoney(available, locale) : "—",
+                  }),
+                  minShares !== null
+                    ? fill(t("predict.order.minSharesHint"), { n: minShares })
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")
           }
           error={
             insufficientShares
@@ -502,18 +614,14 @@ export const OrderSheet = forwardRef<
           onMax={() =>
             side === "sell"
               ? setSharesText(String(Math.floor(held)))
-              : available &&
+              : availableNumber !== null &&
                 limitPrice !== null &&
                 setSharesText(
-                  String(
-                    Math.floor(
-                      (Number(toDecimalString(available)) * 100) / limitPrice,
-                    ),
-                  ),
+                  String(Math.floor((availableNumber * 100) / limitPrice)),
                 )
           }
           maxLabel={t("common.max")}
-          presets={side === "sell" ? [25, 50, 75, 100] : undefined}
+          presets={side === "sell" ? SELL_PRESETS : undefined}
           onPreset={(pct) =>
             setSharesText(String(Math.floor((held * pct) / 100)))
           }
@@ -521,24 +629,31 @@ export const OrderSheet = forwardRef<
           testID="order-shares"
         />
       )}
-      {side === "buy" && type === "limit" ? (
+      {side === "buy" ? (
         <Row gap="$2">
-          {[10, 50, 100].map((step) => (
-            <Stack
-              key={step}
-              flex={1}
-              paddingVertical="$1.5"
-              borderRadius="$3"
-              backgroundColor="$surfaceVariant"
-              alignItems="center"
-              onPress={() => setSharesText(String(shares + step))}
-              accessibilityRole="button"
-            >
-              <InlineText fontSize={12} fontWeight="700">
-                +{step}
-              </InlineText>
-            </Stack>
-          ))}
+          {(type === "market" ? BUY_QUICK_ADDS : LIMIT_SHARE_STEPS).map(
+            (step) => (
+              <Stack
+                key={step}
+                flex={1}
+                paddingVertical="$1.5"
+                borderRadius="$3"
+                backgroundColor="$surfaceVariant"
+                alignItems="center"
+                onPress={() =>
+                  type === "market" ? addAmount(step) : addShares(step)
+                }
+                accessibilityRole="button"
+                testID={`order-quick-${step}`}
+              >
+                <InlineText fontSize={12} fontWeight="700">
+                  {step > 0 ? "+" : ""}
+                  {step}
+                  {type === "market" ? " USDW" : ""}
+                </InlineText>
+              </Stack>
+            ),
+          )}
         </Row>
       ) : null}
 
@@ -559,7 +674,9 @@ export const OrderSheet = forwardRef<
             preview.data
               ? formatCents(preview.data.avgPriceCents)
               : formatCents(
-                  side === "buy" && type === "limit" ? limitPrice : marketPrice,
+                  side === "buy" && type === "limit"
+                    ? limitPrice
+                    : tradePrice(outcome),
                 )
           }
         />
@@ -576,28 +693,30 @@ export const OrderSheet = forwardRef<
             alignItems="center"
             justifyContent="space-between"
             paddingVertical="$1.5"
+            gap="$2"
           >
             <Body fontSize={13}>{t("predict.order.tif")}</Body>
-            <Row gap="$1.5">
-              {(["GTC", "GTD"] as const).map((option) => (
+            <Row gap="$1.5" flexWrap="wrap" justifyContent="flex-end">
+              {(Object.keys(EXPIRY_SECONDS) as ExpiryPreset[]).map((option) => (
                 <Stack
                   key={option}
                   paddingHorizontal="$2"
                   paddingVertical="$1"
                   borderRadius={999}
                   backgroundColor={
-                    tif === option ? "$primary" : "$surfaceVariant"
+                    expiry === option ? "$color" : "$surfaceVariant"
                   }
-                  onPress={() => setTif(option)}
+                  onPress={() => setExpiry(option)}
                   accessibilityRole="radio"
-                  accessibilityState={{ selected: tif === option }}
+                  accessibilityState={{ selected: expiry === option }}
+                  testID={`order-expiry-${option}`}
                 >
                   <InlineText
                     fontSize={11}
                     fontWeight="700"
-                    color={tif === option ? "$onPrimary" : "$color"}
+                    color={expiry === option ? "$background" : "$color"}
                   >
-                    {option}
+                    {t(`predict.order.expiry.${option}`)}
                   </InlineText>
                 </Stack>
               ))}

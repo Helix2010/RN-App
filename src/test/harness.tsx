@@ -20,7 +20,6 @@ import { usePreferencesStore } from "../core/preferences/preferences-store";
 import { memoryStorage } from "../core/gateways/types";
 import { translateMessage } from "../core/config/localization";
 import { FoundationThemeProvider } from "../design-system";
-import { AssetsOverviewGateway } from "../features/assets/api/assets-overview-gateway";
 import { InMemoryPredictAccountGateway } from "./predict-account";
 import { MockDexGateway } from "../features/dex/api/mock-dex-gateway";
 import { MockPredictGateway } from "../features/predict/api/mock-predict-gateway";
@@ -51,7 +50,6 @@ export function createTestGateways(overrides?: Partial<Gateways>): Gateways {
     predict,
     predictAccount,
     dex: new MockDexGateway(storage, wallet),
-    assets: new AssetsOverviewGateway(wallet, predictAccount),
     mode: "mock",
     lockKeys: () => {},
     ...overrides,

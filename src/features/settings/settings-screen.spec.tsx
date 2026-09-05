@@ -27,7 +27,7 @@ describe("SettingsScreen", () => {
       locale: "system",
       colorScheme: "green-up",
       appLockEnabled: true,
-      txConfirm: true,
+      txVerification: "smart",
     });
   });
 

@@ -19,6 +19,7 @@ import type {
   PriceRange,
   PricePoint,
   Tag,
+  Trade,
 } from "../model/predict";
 
 /**
@@ -33,6 +34,8 @@ export interface PredictGateway {
   getEvent(slugOrId: string): Promise<PredictEvent>;
   getOrderBook(marketId: string): Promise<OrderBook>;
   getPriceHistory(marketId: string, range: PriceRange): Promise<PricePoint[]>;
+  /** 最近成交（按时间倒序），用于成交列表与稀疏历史的补点 */
+  listTrades(marketId: string, limit?: number): Promise<Trade[]>;
   subscribeMarkets(
     marketIds: string[],
     onEvent: (event: MarketEvent) => void,

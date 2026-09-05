@@ -1,6 +1,11 @@
 import * as Haptics from "expo-haptics";
 import { useEffect, type ReactNode } from "react";
-import { Pressable, TextInput, type TextInputProps } from "react-native";
+import {
+  Pressable,
+  ScrollView,
+  TextInput,
+  type TextInputProps,
+} from "react-native";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -454,5 +459,90 @@ export function DetailRow({
         value
       )}
     </XStack>
+  );
+}
+
+export type ChipOption<T extends string> = {
+  value: T;
+  label: string;
+  /** 左侧色点（链的品牌色等） */
+  color?: string;
+  /** 右侧小标（如"测试网"） */
+  tag?: string;
+};
+
+/**
+ * 横向滚动的筛选 chip（链 / 分类 / 多结果市场）。选中项用文字色反白，
+ * 不用主色——主色留给真正的操作按钮；不换行、不撑满，项数再多也是一行。
+ */
+export function ChipRow<T extends string>({
+  value,
+  options,
+  onChange,
+  accessibilityLabel,
+  testID,
+}: {
+  value: T;
+  options: ChipOption<T>[];
+  onChange: (value: T) => void;
+  accessibilityLabel: string;
+  testID?: string;
+}) {
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={{ gap: 8, paddingVertical: 2 }}
+      accessibilityRole="radiogroup"
+      accessibilityLabel={accessibilityLabel}
+      testID={testID}
+    >
+      {options.map((option) => {
+        const selected = option.value === value;
+        return (
+          <XStack
+            key={option.value}
+            alignItems="center"
+            gap={6}
+            height={32}
+            paddingHorizontal={12}
+            borderRadius={999}
+            backgroundColor={selected ? "$color" : "$surfaceVariant"}
+            onPress={() => onChange(option.value)}
+            accessibilityRole="radio"
+            accessibilityState={{ selected }}
+            accessibilityLabel={option.label}
+            testID={testID ? `${testID}-${option.value}` : undefined}
+            pressStyle={{ opacity: 0.75 }}
+          >
+            {option.color ? (
+              <YStack
+                width={8}
+                height={8}
+                borderRadius={4}
+                style={{ backgroundColor: option.color }}
+              />
+            ) : null}
+            <Text
+              fontSize={12}
+              fontWeight="700"
+              color={selected ? "$background" : "$color"}
+            >
+              {option.label}
+            </Text>
+            {option.tag ? (
+              <Text
+                fontSize={10}
+                fontWeight="700"
+                color={selected ? "$background" : "$textMuted"}
+                opacity={0.8}
+              >
+                {option.tag}
+              </Text>
+            ) : null}
+          </XStack>
+        );
+      })}
+    </ScrollView>
   );
 }

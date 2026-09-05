@@ -15,11 +15,11 @@ describe("ReceiveSheet", () => {
       { config: (c) => withWallet(c, { chains: ["eth", "op-sepolia"] }) },
     );
 
-    expect(screen.queryByText(CHAINS.bsc.name)).toBeNull();
-    expect(screen.getByText(CHAINS.eth.name)).toBeTruthy();
-    expect(
-      screen.getByText(new RegExp(`${CHAINS["op-sepolia"].name} · `)),
-    ).toBeTruthy();
+    // 链选择是短名 chip；测试链带"测试网"小标
+    expect(screen.queryByText(CHAINS.bsc.shortName)).toBeNull();
+    expect(screen.getByText(CHAINS.eth.shortName)).toBeTruthy();
+    expect(screen.getByText(CHAINS["op-sepolia"].shortName)).toBeTruthy();
+    expect(screen.getByTestId("receive-chain-op-sepolia")).toBeTruthy();
     expect(screen.queryByTestId("receive-testnet-notice")).toBeNull();
   });
 

@@ -5,8 +5,6 @@ import {
   useMemo,
   type PropsWithChildren,
 } from "react";
-import type { AssetsGateway } from "../../features/assets/api/gateway";
-import { AssetsOverviewGateway } from "../../features/assets/api/assets-overview-gateway";
 import type { PredictAccountGateway } from "../../features/predict/api/account-gateway";
 import { HttpPredictAccountGateway } from "../../features/predict/api/http-predict-account-gateway";
 import { PredictCredentialStore } from "../predict-platform/credentials";
@@ -40,7 +38,6 @@ export type Gateways = {
   /** 预测账户：真实平台，没有 Mock 实现 */
   predictAccount: PredictAccountGateway;
   dex: DexGateway;
-  assets: AssetsGateway;
   /** 业务数据来源；密钥与签名始终是真的 */
   mode: "mock" | "live";
   /** 丢弃内存中的钱包解锁态；应用上锁 / 进后台时调用 */
@@ -105,14 +102,12 @@ function createGateways(storage: KeyValueStorage): Gateways {
     onchain,
   });
   const dex = new MockDexGateway(storage, wallet);
-  const assets = new AssetsOverviewGateway(wallet, predictAccount);
   return {
     session,
     wallet,
     predict,
     predictAccount,
     dex,
-    assets,
     mode: "mock",
     lockKeys: () => vault.lock(),
   };

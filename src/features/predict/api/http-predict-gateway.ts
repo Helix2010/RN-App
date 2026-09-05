@@ -31,6 +31,11 @@ import {
   type PnlInterval,
 } from "../../../core/predict-platform/data-positions";
 import {
+  fetchTrades,
+  tradeTimestampMs,
+  type PlatformTrade,
+} from "../../../core/predict-platform/data-trades";
+import {
   displayPrice,
   fetchCarouselTags,
   fetchEvent,
@@ -82,6 +87,8 @@ import type {
   PriceRange,
   PricePoint,
   Tag,
+  Trade,
+  OrderBookLevel,
 } from "../model/predict";
 import type { PredictGateway } from "./gateway";
 import type { HttpPredictAccountGateway } from "./http-predict-account-gateway";
@@ -209,17 +216,28 @@ const ACTIVITY_TYPES: Record<string, ActivityType> = {
   MAKER_REBATE: "MAKER_REBATE",
 };
 
+/**
+ * 区间 → clob `/price-history` 参数。fidelity（分钟）与网页版 `priceHistoryConfig.ts` 一致：
+ * 1D 5 分钟、7D 30 分钟、1M 3 小时、ALL 12 小时；1h / 6h 是 App 多出来的两档，取 1D 数据再按窗口截。
+ */
 const HISTORY: Record<
   PriceRange,
-  { interval: PriceHistoryInterval; windowSeconds: number | null }
+  {
+    interval: PriceHistoryInterval;
+    fidelity: number;
+    windowSeconds: number | null;
+  }
 > = {
-  "1h": { interval: "1d", windowSeconds: 3_600 },
-  "6h": { interval: "1d", windowSeconds: 6 * 3_600 },
-  "1d": { interval: "1d", windowSeconds: null },
-  "1w": { interval: "1w", windowSeconds: null },
-  "1m": { interval: "1m", windowSeconds: null },
-  all: { interval: "max", windowSeconds: null },
+  "1h": { interval: "1d", fidelity: 5, windowSeconds: 3_600 },
+  "6h": { interval: "1d", fidelity: 5, windowSeconds: 6 * 3_600 },
+  "1d": { interval: "1d", fidelity: 5, windowSeconds: null },
+  "1w": { interval: "1w", fidelity: 30, windowSeconds: null },
+  "1m": { interval: "1m", fidelity: 180, windowSeconds: null },
+  all: { interval: "max", fidelity: 720, windowSeconds: null },
 };
+/** 历史点数 ≤ 1 时视为"没有聚合历史"，改用最近成交补点（网页版 `priceHistory.ts` loadSparseTradeFallback） */
+const SPARSE_HISTORY_POINTS = 1;
+const SPARSE_TRADES_LIMIT = 50;
 
 const PNL_INTERVAL: Record<PriceRange, PnlInterval> = {
   "1h": "1d",
@@ -531,24 +549,74 @@ export class HttpPredictGateway implements PredictGateway {
     };
   }
 
+  /**
+   * 簿映射：档位按 tick 聚合（同价合并份数）、买盘从高到低、卖盘从低到高
+   * （网页版 `adapters.ts` aggregateOrderBookLevelsByTick + pmOrderBookToSnapshot）。
+   * 平台给的档位本就不保证有序，界面按"卖一 / 买一"取第一档，顺序必须在这里定下来。
+   */
   private mapBook(
     marketId: string,
     book: ClobOrderBook,
     fallbackMinOrderShares = 1,
   ): OrderBook {
     const updatedAt = bookTimestamp(book.timestamp);
-    const level = (item: { price: number; size: number }) => ({
-      priceCents: cents(item.price),
-      shares: item.size,
-    });
+    const tickCents = (book.tick_size ?? 0.01) * 100;
+    // 同价合并；价格保留到 0.1¢（簿的最细 tick），不再往粗 tick 上吸——平台已保证挂单对齐 tick
+    const aggregate = (levels: { price: number; size: number }[]) => {
+      const byPrice = new Map<number, number>();
+      for (const item of levels) {
+        if (!Number.isFinite(item.price) || !Number.isFinite(item.size))
+          continue;
+        const key = cents(item.price);
+        byPrice.set(key, (byPrice.get(key) ?? 0) + item.size);
+      }
+      return [...byPrice.entries()]
+        .filter(([, shares]) => shares > 0)
+        .map(([priceCents, shares]): OrderBookLevel => ({
+          priceCents,
+          shares,
+        }));
+    };
+    const last = tradablePrice(book.last_trade_price ?? null);
     return {
       marketId,
-      bids: book.bids.map(level),
-      asks: book.asks.map(level),
-      tickCents: (book.tick_size ?? 0.01) * 100,
+      bids: aggregate(book.bids).sort((a, b) => b.priceCents - a.priceCents),
+      asks: aggregate(book.asks).sort((a, b) => a.priceCents - b.priceCents),
+      tickCents,
       // marketdata.go:65 默认 "1"；WS 簿事件不带这个字段，用 gamma 的 orderMinSize 兜住
       minOrderShares: book.min_order_size ?? fallbackMinOrderShares,
+      lastTradeCents: last === null ? null : cents(last),
       updatedAt,
+    };
+  }
+
+  /** 成交映射：YES 视角的价格（NO 侧成交换算成 1 − p），时间戳认秒 / 毫秒 / ISO */
+  private mapTrade(
+    marketId: string,
+    item: PlatformTrade,
+    index: number,
+  ): Trade | null {
+    const ms = tradeTimestampMs(item.timestamp);
+    if (ms === null) return null;
+    const outcomeIndex = Number(item.outcomeIndex);
+    const outcome: Outcome =
+      outcomeIndex === 1
+        ? "no"
+        : outcomeIndex === 0
+          ? "yes"
+          : (item.outcome ?? "").toLowerCase() === "no"
+            ? "no"
+            : "yes";
+    const yesPrice = outcome === "yes" ? item.price : 1 - item.price;
+    return {
+      id: `${item.transactionHash ?? item.id ?? ""}:${index}:${outcome}:${item.side ?? ""}`,
+      marketId,
+      outcome,
+      side: (item.side ?? "").toUpperCase() === "SELL" ? "sell" : "buy",
+      priceCents: cents(Math.min(Math.max(yesPrice, 0), 1)),
+      shares: item.size,
+      at: new Date(ms).toISOString(),
+      hash: item.transactionHash ?? undefined,
     };
   }
 
@@ -608,18 +676,51 @@ export class HttpPredictGateway implements PredictGateway {
   ): Promise<PricePoint[]> {
     const service = await this.service();
     const ref = await this.marketRef(marketId);
-    const { interval, windowSeconds } = HISTORY[range];
+    const { interval, fidelity, windowSeconds } = HISTORY[range];
     const points = await fetchPriceHistory(service, {
       tokenId: ref.yesTokenId,
       interval,
+      fidelity,
     });
+    const nowSeconds = Math.floor((this.deps.now?.() ?? Date.now()) / 1000);
     const since =
       windowSeconds === null
-        ? 0
-        : Math.floor((this.deps.now?.() ?? Date.now()) / 1000) - windowSeconds;
-    return points
+        ? interval === "1d"
+          ? nowSeconds - 86_400
+          : interval === "1w"
+            ? nowSeconds - 7 * 86_400
+            : interval === "1m"
+              ? nowSeconds - 30 * 86_400
+              : 0
+        : nowSeconds - windowSeconds;
+    const history = points
       .filter((point) => point.t >= since)
       .map((point) => ({ t: iso(point.t), priceCents: cents(point.p) }));
+    if (history.length > SPARSE_HISTORY_POINTS) return history;
+    // 聚合历史还没攒出来（新市场 / 低活跃）：按最近成交画线，与网页版一致；
+    // 成交也没有就返回聚合给的那几个点（可能为空），界面显示"暂无走势"
+    const trades = (await this.listTrades(marketId, SPARSE_TRADES_LIMIT))
+      .filter((trade) => new Date(trade.at).getTime() / 1000 >= since)
+      .sort((a, b) => a.at.localeCompare(b.at));
+    const byTime = new Map<string, number>();
+    for (const trade of trades) byTime.set(trade.at, trade.priceCents);
+    const fromTrades = [...byTime.entries()].map(([t, priceCents]) => ({
+      t,
+      priceCents,
+    }));
+    return fromTrades.length > history.length ? fromTrades : history;
+  }
+
+  async listTrades(marketId: string, limit = 50): Promise<Trade[]> {
+    const service = await this.service();
+    const ref = await this.marketRef(marketId);
+    const raw = await fetchTrades(service, ref.conditionId, limit);
+    return raw
+      .flatMap((item, index) => {
+        const trade = this.mapTrade(ref.conditionId, item, index);
+        return trade ? [trade] : [];
+      })
+      .sort((a, b) => b.at.localeCompare(a.at));
   }
 
   /**
@@ -654,8 +755,14 @@ export class HttpPredictGateway implements PredictGateway {
         if (!ref) return;
         if (event.kind === "last_trade") {
           const last = tradablePrice(event.price);
-          if (last === null || (bookPrice.get(event.assetId) ?? null) !== null)
-            return;
+          if (last === null) return;
+          onEvent({
+            type: "last_trade",
+            marketId: ref.conditionId,
+            priceCents: cents(last),
+          });
+          // 有簿价时展示价以簿为准（同网页版：成交价只是最后的回落）
+          if ((bookPrice.get(event.assetId) ?? null) !== null) return;
           onEvent({
             type: "price_change",
             marketId: ref.conditionId,
@@ -672,6 +779,7 @@ export class HttpPredictGateway implements PredictGateway {
               bids: event.book.bids,
               asks: event.book.asks,
               tick_size: event.book.tick_size,
+              last_trade_price: event.book.last_trade_price,
               timestamp: event.book.timestamp,
             },
             ref.minOrderShares ?? 1,

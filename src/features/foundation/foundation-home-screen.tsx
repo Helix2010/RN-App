@@ -13,6 +13,7 @@ import {
 } from "../../core/i18n/format";
 import { mockNow } from "../../core/mock/mock-runtime";
 import {
+  ActionTile,
   AmountText,
   AppIcon,
   type AppIconName,
@@ -217,12 +218,6 @@ export function FoundationHomeScreen({
                       </InlineText>
                     </Row>
                   </>
-                ) : overview.isError ? (
-                  <InlineErrorRow
-                    message={t("state.error")}
-                    onRetry={() => void overview.refetch()}
-                    retryLabel={t("action.retryNow")}
-                  />
                 ) : (
                   <Stack gap="$2">
                     <SkeletonBlock height={36} width={180} />
@@ -230,15 +225,25 @@ export function FoundationHomeScreen({
                   </Stack>
                 )}
                 <Row gap="$2" marginTop="$1">
-                  <PrimaryButton height={36} flex={1} onPress={onOpenAssets}>
-                    {t("home.deposit")}
-                  </PrimaryButton>
-                  <SecondaryButton height={36} flex={1} onPress={onOpenAssets}>
-                    {t("home.withdraw")}
-                  </SecondaryButton>
-                  <SecondaryButton height={36} flex={1} onPress={onOpenAssets}>
-                    {t("home.transfer")}
-                  </SecondaryButton>
+                  <ActionTile
+                    label={t("home.deposit")}
+                    icon="qrcode"
+                    primary
+                    onPress={onOpenAssets}
+                    testID="home-deposit"
+                  />
+                  <ActionTile
+                    label={t("home.withdraw")}
+                    icon="arrow-top-right"
+                    onPress={onOpenAssets}
+                    testID="home-withdraw"
+                  />
+                  <ActionTile
+                    label={t("home.transfer")}
+                    icon="swap-vertical"
+                    onPress={onOpenAssets}
+                    testID="home-transfer"
+                  />
                 </Row>
               </>
             ) : (

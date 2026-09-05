@@ -15,6 +15,7 @@ function renderAssets(options: Parameters<typeof renderWithProviders>[1] = {}) {
       onOpenSend={jest.fn()}
       onOpenSwap={jest.fn()}
       onOpenPredictEnable={jest.fn()}
+      onOpenRecords={jest.fn()}
     />,
     options,
   );
@@ -146,10 +147,14 @@ describe("AssetsScreen chain information", () => {
     // 每一行都带链徽标 + 链全名：同一个符号在两条链上是两个资产
     await screen.findByTestId("chain-badge-bsc");
     expect(screen.getByTestId("chain-badge-eth")).toBeTruthy();
-    expect(screen.getAllByText(CHAINS.eth.name).length).toBeGreaterThan(1);
+    expect(
+      screen.getAllByText(new RegExp(CHAINS.eth.name)).length,
+    ).toBeGreaterThan(0);
 
-    // 链筛选的第一个匹配是筛选条里的按钮（在列表上方）
-    void fireEvent.press(screen.getAllByText(CHAINS.eth.name)[0]!);
+    // 链筛选是一排短名 chip（BSC / ETH …），不是一排全名按钮
+    expect(screen.getByTestId("chain-chip-eth")).toBeTruthy();
+    expect(screen.queryByTestId("chain-chip-all")).toBeTruthy();
+    void fireEvent.press(screen.getByTestId("chain-chip-eth"));
 
     await waitFor(() => expect(screen.queryByText("AAA")).toBeNull());
     expect(screen.getByText("BBB")).toBeTruthy();

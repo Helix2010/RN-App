@@ -26,6 +26,8 @@ const bookPayloadSchema = z.object({
   bids: z.array(bookLevelSchema),
   asks: z.array(bookLevelSchema),
   tick_size: numeric.nullish(),
+  /** 初始 dump 会带最近成交价（`polymarket.ts` 的 book 事件也读它） */
+  last_trade_price: numeric.nullish(),
   timestamp: z.union([z.string(), z.number()]).nullish(),
 });
 

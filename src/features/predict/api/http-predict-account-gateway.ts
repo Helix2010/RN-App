@@ -72,7 +72,13 @@ import {
 } from "../../../core/wallet/config/wallet-runtime-config";
 import type { WalletGateway } from "../../wallet/api/gateway";
 import type { OnchainTransfers } from "../../wallet/api/onchain-transfers";
+import {
+  mergeFundRecords,
+  type FundRecord,
+  type FundRecordStatus,
+} from "../model/fund-record";
 import type { PredictTx } from "../model/predict";
+import { FundLedger } from "./fund-ledger";
 import {
   PredictChainUnavailableError,
   PredictNotEnabledError,
@@ -129,6 +135,8 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
   private context: Context | null = null;
   private readonly credentials: PredictCredentialStore;
   private readonly acceptance: AgreementAcceptanceStore;
+  /** 本机发起的转入 / 取回 / 领取记录 */
+  private readonly ledger: FundLedger;
   /** 本次会话提交的链上交易：hash → 链 与快照，供 getTx 轮询 */
   private readonly submitted = new Map<
     string,
@@ -157,6 +165,7 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
   ) {
     this.credentials = deps.credentials;
     this.acceptance = new AgreementAcceptanceStore(deps.storage);
+    this.ledger = new FundLedger(deps.storage, () => this.nowMs());
     // 平台关联变了（换域名 / scopeId / 链，或关闭）：旧平台的凭证一律作废
     this.unsubscribe = onPredictServiceChange((_next, previous) => {
       this.context = null;
@@ -206,8 +215,16 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
     return run;
   }
 
+  private nowMs(): number {
+    return this.deps.now?.() ?? Date.now();
+  }
+
   private nowSeconds(): number {
-    return Math.floor((this.deps.now?.() ?? Date.now()) / 1000);
+    return Math.floor(this.nowMs() / 1000);
+  }
+
+  private nowIso(): string {
+    return new Date(this.nowMs()).toISOString();
   }
 
   private usdw(ctx: Context, raw: bigint | string): Money {
@@ -278,6 +295,29 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
     return result;
   }
 
+  /**
+   * 授权是否就位：凭证里记过这个 Safe 就直接算就位（授权单向、核实过一次即可），
+   * 否则读链，读到就位就记下来。
+   */
+  private async approvalsVerified(
+    ctx: Context,
+    address: string,
+    approvedSafe: string | undefined,
+    safe: { address: string },
+  ): Promise<boolean> {
+    if (
+      approvedSafe &&
+      approvedSafe.toLowerCase() === safe.address.toLowerCase()
+    )
+      return true;
+    const present = await this.approvalsPresent(ctx, safe.address);
+    if (present)
+      await this.credentials.save(ctx.service, address, {
+        approvedSafe: safe.address,
+      });
+    return present;
+  }
+
   private async approvalsPresent(ctx: Context, safe: string): Promise<boolean> {
     const { usdw, ctf, ctfExchange, negRiskAdapter, negRiskExchange } =
       ctx.contracts;
@@ -330,7 +370,7 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
     if (loggedIn && stored.jwt)
       safe = await this.safeFor(ctx, address, stored.jwt);
     const approved = safe?.deployed
-      ? await this.approvalsPresent(ctx, safe.address)
+      ? await this.approvalsVerified(ctx, address, stored.approvedSafe, safe)
       : false;
     return {
       configured: true,
@@ -392,7 +432,9 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
     }
 
     onStep?.("approve");
-    if (!(await this.approvalsPresent(ctx, safe.address))) {
+    if (
+      !(await this.approvalsVerified(ctx, address, stored.approvedSafe, safe))
+    ) {
       const {
         usdw,
         ctf,
@@ -423,6 +465,9 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
         () => this.approvalsPresent(ctx, safe.address),
         "the relayer reported the approval transaction as mined but the approvals are still not visible on-chain",
       );
+      await this.credentials.save(ctx.service, address, {
+        approvedSafe: safe.address,
+      });
     }
     return this.enablement(address);
   }
@@ -747,26 +792,49 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
     const chain = ctx.service.chain;
     this.assertChainUsable(chain);
     const signer = await this.deps.wallet.signerFor(address);
+    // 先记一条进行中的记录：签名 / 授权阶段失败也要能在记录里看到
+    const record: FundRecord = {
+      id: `deposit:${this.nowMs()}`,
+      kind: "deposit",
+      status: "pending",
+      amount: input.amount,
+      createdAt: this.nowIso(),
+      updatedAt: this.nowIso(),
+      source: "local",
+    };
+    await this.ledger.upsert(ctx.service, address, record);
     let lastHash = "";
-    const calls = this.depositCalls(ctx, address, safe, input);
-    for (const [index, call] of calls.entries()) {
-      onStep?.(call.step);
-      const { hash } = await this.deps.onchain.callContract(
-        chain,
-        { from: address, to: call.to, data: call.data, label: call.label },
-        signer,
-      );
-      lastHash = hash;
-      // 中间步骤（approve）要等上链，否则 wrap 会因额度未生效而 revert
-      if (index < calls.length - 1)
-        await this.waitReceipt(chain, hash, call.label);
+    try {
+      const calls = this.depositCalls(ctx, address, safe, input);
+      for (const [index, call] of calls.entries()) {
+        onStep?.(call.step);
+        await this.ledger.patch(ctx.service, address, record.id, {
+          step: call.step,
+        });
+        const { hash } = await this.deps.onchain.callContract(
+          chain,
+          { from: address, to: call.to, data: call.data, label: call.label },
+          signer,
+        );
+        lastHash = hash;
+        await this.ledger.patch(ctx.service, address, record.id, { hash });
+        // 中间步骤（approve）要等上链，否则 wrap 会因额度未生效而 revert
+        if (index < calls.length - 1)
+          await this.waitReceipt(chain, hash, call.label);
+      }
+    } catch (error) {
+      await this.ledger.patch(ctx.service, address, record.id, {
+        status: "failed",
+        failure: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
     }
     const tx: PredictTx = {
       id: lastHash,
       kind: "deposit",
       status: "submitted",
       hash: lastHash,
-      updatedAt: new Date(this.deps.now?.() ?? Date.now()).toISOString(),
+      updatedAt: this.nowIso(),
     };
     this.submitted.set(lastHash, { chain, tx, address });
     return tx;
@@ -841,22 +909,49 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
         ]),
       },
     ]);
-    const hash = await this.relaySafeTx(
-      ctx,
-      { service: ctx.service, token: jwt },
-      signer,
-      safe,
-      multiSend,
-      data,
-    );
-    // relayer 说 mined 是它的节点看到了；我们的端点可能还落后几个块，先等回执再读日志
-    await this.waitReceipt(ctx.service.chain, hash, "initiate-unwrap");
-    const logs = await this.deps.onchain.receiptLogs(ctx.service.chain, hash);
-    const event = logs ? findUnwrapInitiated(logs, wrapper) : null;
-    if (!event)
-      throw new Error(
-        `initiate-unwrap ${hash} is mined but emitted no UnwrapInitiated event`,
+    const record: FundRecord = {
+      id: `withdraw:${this.nowMs()}`,
+      kind: "withdraw",
+      status: "pending",
+      amount,
+      createdAt: this.nowIso(),
+      updatedAt: this.nowIso(),
+      source: "local",
+    };
+    await this.ledger.upsert(ctx.service, address, record);
+    let event: ReturnType<typeof findUnwrapInitiated>;
+    let hash: string;
+    try {
+      hash = await this.relaySafeTx(
+        ctx,
+        { service: ctx.service, token: jwt },
+        signer,
+        safe,
+        multiSend,
+        data,
       );
+      await this.ledger.patch(ctx.service, address, record.id, { hash });
+      // relayer 说 mined 是它的节点看到了；我们的端点可能还落后几个块，先等回执再读日志
+      await this.waitReceipt(ctx.service.chain, hash, "initiate-unwrap");
+      const logs = await this.deps.onchain.receiptLogs(ctx.service.chain, hash);
+      event = logs ? findUnwrapInitiated(logs, wrapper) : null;
+      if (!event)
+        throw new Error(
+          `initiate-unwrap ${hash} is mined but emitted no UnwrapInitiated event`,
+        );
+    } catch (error) {
+      await this.ledger.patch(ctx.service, address, record.id, {
+        status: "failed",
+        failure: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+    await this.ledger.patch(ctx.service, address, record.id, {
+      status: "waiting",
+      requestId: event.requestId.toString(),
+      claimableAt: new Date(event.claimableAt * 1000).toISOString(),
+      amount: this.usdw(ctx, event.usdwAmount),
+    });
     const pending: LocalPending = {
       requestId: event.requestId.toString(),
       amount: this.usdw(ctx, event.usdwAmount),
@@ -953,9 +1048,28 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
       kind: "withdraw",
       status: "confirmed",
       hash,
-      updatedAt: new Date(this.deps.now?.() ?? Date.now()).toISOString(),
+      updatedAt: this.nowIso(),
     };
     this.submitted.set(hash, { chain: ctx.service.chain, tx, address });
+    await this.ledger.upsert(ctx.service, address, {
+      id: hash,
+      kind: "claim",
+      status: "confirmed",
+      amount: pending.assetAmount,
+      hash,
+      requestId,
+      createdAt: this.nowIso(),
+      updatedAt: this.nowIso(),
+      source: "local",
+    });
+    const ledgerRecords = await this.ledger.list(ctx.service, address);
+    const initiated = ledgerRecords.find(
+      (item) => item.kind === "withdraw" && item.requestId === requestId,
+    );
+    if (initiated)
+      await this.ledger.patch(ctx.service, address, initiated.id, {
+        status: "claimed",
+      });
     // 领取把 USDW 换回 USDC，clob 那边的可用余额要立刻重读
     await this.refreshClobBalance(address);
     return tx;
@@ -976,9 +1090,16 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
       ...known.tx,
       status,
       reasonKey: status === "failed" ? "tx.reverted" : undefined,
-      updatedAt: new Date(this.deps.now?.() ?? Date.now()).toISOString(),
+      updatedAt: this.nowIso(),
     };
     this.submitted.set(id, { ...known, tx: next });
+    if (known.tx.kind === "deposit" && status !== "confirming")
+      await this.ledger.patchByHash(
+        (await this.contextFor()).service,
+        known.address,
+        id,
+        status === "failed" ? { status, failure: "tx.reverted" } : { status },
+      );
     // 转入上链后让 clob 立刻重读子图余额，否则"可用"要等它下一轮同步（实测要几分钟）
     if (status === "confirmed" && known.tx.kind === "deposit")
       await this.refreshClobBalance(known.address);
@@ -995,6 +1116,50 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
     } catch (error) {
       console.warn("[predict] clob balance refresh failed", error);
     }
+  }
+
+  // ---- 资金记录 ----
+
+  async listFundRecords(address: string): Promise<FundRecord[]> {
+    const ctx = await this.contextFor();
+    const local = await this.ledger.list(ctx.service, address);
+    let safe: string;
+    try {
+      safe = (await this.enabledContext(address)).safe;
+    } catch (error) {
+      // 没启用的账户在平台上没有记录；本机也只可能有失败的尝试
+      if (error instanceof PredictNotEnabledError) return local;
+      throw error;
+    }
+    const [open, claimed] = await Promise.all([
+      listUnwrapRequests(ctx.service, safe, { claimed: false }),
+      listUnwrapRequests(ctx.service, safe, { claimed: true }),
+    ]);
+    const now = this.nowMs();
+    const platform: FundRecord[] = [...open, ...claimed].map((item) => {
+      const claimableAt = new Date(Number(item.claimableAt) * 1000);
+      const status: FundRecordStatus = item.claimed
+        ? "claimed"
+        : claimableAt.getTime() <= now
+          ? "claimable"
+          : "waiting";
+      const createdAt = new Date(
+        Number(item.initTimestamp) * 1000,
+      ).toISOString();
+      return {
+        id: `withdraw:${item.requestId}`,
+        kind: "withdraw",
+        status,
+        amount: this.usdw(ctx, item.usdwAmount),
+        hash: item.initTxHash,
+        requestId: item.requestId,
+        claimableAt: claimableAt.toISOString(),
+        createdAt,
+        updatedAt: createdAt,
+        source: "platform",
+      };
+    });
+    return mergeFundRecords(local, platform);
   }
 
   // ---- 协议 ----

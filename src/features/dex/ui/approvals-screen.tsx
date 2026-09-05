@@ -19,7 +19,7 @@ import {
   ScreenHeader,
   SecondaryButton,
   SectionTitle,
-  SegmentedControl,
+  ChipRow,
   SkeletonBlock,
   Stack,
   toast,
@@ -83,13 +83,14 @@ export function ApprovalsScreen({ onBack }: { onBack: () => void }) {
       <PageScroll>
         <Content paddingTop="$1" gap="$3" paddingBottom={120}>
           <Body fontSize={12}>{t("approvals.hint")}</Body>
-          <SegmentedControl
+          <ChipRow
             value={chain}
             options={[
               { value: "all" as const, label: t("dex.allChains") },
               ...(Object.keys(CHAINS) as ChainId[]).map((id) => ({
                 value: id,
-                label: CHAINS[id].name,
+                label: CHAINS[id].shortName,
+                color: CHAINS[id].color,
               })),
             ]}
             onChange={setChain}

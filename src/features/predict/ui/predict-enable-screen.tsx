@@ -199,8 +199,10 @@ export function PredictEnableScreen({
             <Stack gap="$2" testID="predict-enable-steps">
               {status
                 ? STEPS.map((step, index) => {
-                    const done = stepDone(status, step);
-                    const active = enable.step === step;
+                    // 服务端状态 ∪ 本次运行已完成的步骤：进行中每完成一步就打一个勾
+                    const done =
+                      stepDone(status, step) || enable.done.includes(step);
+                    const active = enable.step === step && !done;
                     return (
                       <Row
                         key={step}

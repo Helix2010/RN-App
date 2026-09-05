@@ -15,7 +15,7 @@ import {
   ScreenHeader,
   SecondaryButton,
   SectionTitle,
-  SegmentedControl,
+  ChipRow,
   SkeletonBlock,
   Stack,
   Tabs,
@@ -85,13 +85,14 @@ export function SwapHistoryScreen({
             onChange={setStatus}
             accessibilityLabel={t("swap.history")}
           />
-          <SegmentedControl
+          <ChipRow
             value={chain}
             options={[
               { value: "all" as const, label: t("dex.allChains") },
               ...(Object.keys(CHAINS) as ChainId[]).map((id) => ({
                 value: id,
-                label: CHAINS[id].name,
+                label: CHAINS[id].shortName,
+                color: CHAINS[id].color,
               })),
             ]}
             onChange={setChain}

@@ -1,7 +1,7 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useIsFocused } from "@react-navigation/native";
-import { useEffect, useMemo, useState } from "react";
-import { BackHandler, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BackHandler, Platform, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../app/runtime-context";
 import {
@@ -12,11 +12,16 @@ import {
   Row,
   SecondaryButton,
   Stack,
+  toast,
 } from "../../design-system";
 import type { RootStackParamList } from "../../navigation/types";
 import { AssetsScreen } from "../assets/ui/assets-screen";
 import { FoundationHomeScreen } from "./foundation-home-screen";
-import { resolveAppShellBack, type AppTab } from "./app-shell-back";
+import {
+  resolveAppShellBack,
+  resolveExitAttempt,
+  type AppTab,
+} from "./app-shell-back";
 import {
   buildAppTabs,
   isAppContentAvailable,
@@ -44,23 +49,41 @@ export function AppShellScreen({ navigation }: Props) {
     ? tab
     : "home";
   const selectedBottomTab = resolveBottomTab(effectiveTab, config.modules);
-  const edgeBack = useEdgeBackGesture(() => {
+  /**
+   * 首页上的返回（边缘滑动 / 返回键）：第一次提示，2 秒内再来一次退出应用。
+   * iOS 没有"退出应用"这回事（系统不允许），首页上的返回什么都不做。
+   */
+  const lastExitAttempt = useRef<number | null>(null);
+  const attemptExit = useCallback(() => {
+    if (Platform.OS !== "android") return;
+    const now = Date.now();
+    if (resolveExitAttempt(lastExitAttempt.current, now) === "exit") {
+      BackHandler.exitApp();
+      return;
+    }
+    lastExitAttempt.current = now;
+    toast(t("app.exitHint"), "info");
+  }, [t]);
+  const handleShellBack = useCallback(() => {
     const action = resolveAppShellBack(effectiveTab);
-    if (action === "home") setTab("home");
-  });
+    if (action === "home") {
+      setTab("home");
+      return;
+    }
+    attemptExit();
+  }, [attemptExit, effectiveTab]);
+  const edgeBack = useEdgeBackGesture(handleShellBack);
   useEffect(() => {
     const subscription = BackHandler.addEventListener(
       "hardwareBackPress",
       () => {
         if (!isFocused) return false;
-        const action = resolveAppShellBack(effectiveTab);
-        if (action === "consume") return true;
-        setTab(action);
+        handleShellBack();
         return true;
       },
     );
     return () => subscription.remove();
-  }, [effectiveTab, isFocused]);
+  }, [handleShellBack, isFocused]);
 
   return (
     <Page {...edgeBack}>
@@ -87,6 +110,7 @@ export function AppShellScreen({ navigation }: Props) {
             onOpenSend={() => navigation.navigate("Send")}
             onOpenSwap={() => setTab("swap")}
             onOpenPredictEnable={() => navigation.navigate("PredictEnable")}
+            onOpenRecords={() => navigation.navigate("Records")}
           />
         ) : effectiveTab === "predict" ||
           effectiveTab === "positions" ||

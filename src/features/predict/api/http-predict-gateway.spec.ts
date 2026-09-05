@@ -793,6 +793,7 @@ describe("HttpPredictGateway", () => {
       }),
     });
     // 簿事件之外再推一条由簿算出的价格（mid 60/66 → 63），同网页版概率来源；显式 price_change 用 best_bid/ask 的 mid
+    // 成交价单独推一条 last_trade（盘口的"最新"一行用它），但有簿价时不再当作展示价
     expect(events).toEqual([
       {
         type: "book",
@@ -802,10 +803,12 @@ describe("HttpPredictGateway", () => {
           asks: [{ priceCents: 66, shares: 2 }],
           tickCents: 1,
           minOrderShares: 1,
+          lastTradeCents: null,
           updatedAt: "2027-01-15T08:00:00.000Z",
         },
       },
       { type: "price_change", marketId: CONDITION, yesPriceCents: 63 },
+      { type: "last_trade", marketId: CONDITION, priceCents: 70 },
       { type: "price_change", marketId: CONDITION, yesPriceCents: 62 },
     ]);
     stop();

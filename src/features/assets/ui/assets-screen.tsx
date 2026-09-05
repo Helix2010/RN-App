@@ -16,10 +16,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import { toApproxNumber } from "../../../core/money/money";
 import {
+  ActionTile,
   AmountText,
   AppIcon,
   Body,
   Card,
+  ChipRow,
   Content,
   InlineText,
   Label,
@@ -29,32 +31,52 @@ import {
   PrimaryButton,
   Row,
   SectionTitle,
-  SegmentedControl,
   Sheet,
   SkeletonBlock,
+  Spinner,
   Stack,
   Switch,
-  type AppIconName,
+  type ChipOption,
   type SheetHandle,
 } from "../../../design-system";
 import { useSession } from "../../session/hooks/use-session";
 import { requestAuth } from "../../session/model/auth-sheet-store";
-import type { TokenBalance } from "../../wallet/model/wallet";
-import { useAssetsOverview } from "../hooks/use-assets";
+import { useAssetsOverview, type AssetRow } from "../hooks/use-assets";
 import { ReceiveSheet } from "./receive-sheet";
 import { TransferForm } from "./transfer-form";
 
-/** A-01 资产总览：估值直接落在页面底色上；账户卡 1 + 1；币种列表标注所在账户。 */
+/** 链筛选 chip：全部 + 每条启用的链（短名 + 品牌色点，测试网带小标）。 */
+export function useChainChips(
+  chains: ChainId[],
+): ChipOption<ChainId | "all">[] {
+  const { t } = useFoundationRuntime();
+  return [
+    { value: "all" as const, label: t("assets.allChains") },
+    ...chains.map((id) => ({
+      value: id,
+      label: CHAINS[id].shortName,
+      color: CHAINS[id].color,
+      tag: isTestnetChain(id) ? t("send.testnetTag") : undefined,
+    })),
+  ];
+}
+
+/**
+ * A-01 资产总览：估值直接落在页面底色上；账户卡 1 + 1；币种列表标注所在账户。
+ * 每条链的余额独立到达：先按下发目录列出币种，哪条链的余额先到就先填哪条。
+ */
 export function AssetsScreen({
   onOpenAccount,
   onOpenSend,
   onOpenSwap,
   onOpenPredictEnable,
+  onOpenRecords,
 }: {
   onOpenAccount: (kind: "predict" | "wallet") => void;
   onOpenSend: () => void;
   onOpenSwap: () => void;
   onOpenPredictEnable: () => void;
+  onOpenRecords: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const { config, t } = useFoundationRuntime();
@@ -67,6 +89,8 @@ export function AssetsScreen({
   const [pickedChain, setPickedChain] = useState<ChainId | "all">("all");
   const receive = useRef<SheetHandle>(null);
   const transfer = useRef<SheetHandle>(null);
+  const chains = enabledChains();
+  const chips = useChainChips(chains);
 
   if (!session.isLoading && !address) {
     return (
@@ -91,17 +115,16 @@ export function AssetsScreen({
 
   const data = overview.data;
   // 链筛选只列租户启用的链；选中的链被关掉后回到"全部"
-  const chains = enabledChains();
   const chainFilter =
     pickedChain === "all" || chains.includes(pickedChain) ? pickedChain : "all";
-  const holdings = (data?.holdings ?? []).filter(
-    (item) =>
-      (chainFilter === "all" || item.token.chain === chainFilter) &&
-      // 没有估值的币不算"小额"：不知道值多少，不能替用户藏起来
-      (!hideSmall || item.usdValue === null || item.usdValue >= 1),
+  const rows = (data?.rows ?? []).filter(
+    (row) =>
+      (chainFilter === "all" || row.token.chain === chainFilter) &&
+      // 没有估值 / 还没到的币不算"小额"：不知道值多少，不能替用户藏起来
+      (!hideSmall || row.usdValue === null || row.usdValue >= 1),
   );
   const predict = data?.predict?.status === "enabled" ? data.predict : null;
-  const predictUsdw: TokenBalance | null =
+  const predictUsdw: AssetRow | null =
     predict && (chainFilter === "all" || predict.chain === chainFilter)
       ? {
           token: {
@@ -119,44 +142,63 @@ export function AssetsScreen({
           // USDW 由 wrapper 合约按 1:1 兑 USDC 铸销，估值按 1 美元
           usdValue: toApproxNumber(predict.safeBalance),
           change24hPct: 0,
+          loading: false,
         }
       : null;
+  const hidden = (text: string) => (visible ? text : "••••");
 
   return (
     <Page>
       <PageScroll
         refresh={{
           refreshing: overview.isRefetching,
-          onRefresh: () => void overview.refetch(),
+          onRefresh: () => overview.refetch(),
           accessibilityLabel: t("action.refresh"),
         }}
       >
         <Content paddingTop={insets.top + 16} gap="$4">
           <Row alignItems="center" justifyContent="space-between">
             <SectionTitle fontSize={20}>{t("assets.title")}</SectionTitle>
-            <Stack
-              onPress={() => setVisible((v) => !v)}
-              accessibilityRole="button"
-              accessibilityLabel={
-                visible ? t("home.hideBalance") : t("home.showBalance")
-              }
-            >
-              <AppIcon
-                name={visible ? "eye-outline" : "eye-off-outline"}
-                size={20}
-                colorToken="textMuted"
-              />
-            </Stack>
+            <Row gap="$3" alignItems="center">
+              <Stack
+                onPress={() => setVisible((v) => !v)}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  visible ? t("home.hideBalance") : t("home.showBalance")
+                }
+                hitSlop={8}
+              >
+                <AppIcon
+                  name={visible ? "eye-outline" : "eye-off-outline"}
+                  size={20}
+                  colorToken="textMuted"
+                />
+              </Stack>
+              <Stack
+                onPress={onOpenRecords}
+                accessibilityRole="button"
+                accessibilityLabel={t("records.title")}
+                hitSlop={8}
+                testID="assets-records"
+              >
+                <AppIcon name="history" size={20} colorToken="textMuted" />
+              </Stack>
+            </Row>
           </Row>
 
           <Stack gap="$1">
             <Label>{t("assets.totalValue")}</Label>
             {data ? (
               <>
-                <AmountText fontSize={34} lineHeight={40}>
-                  {visible ? formatUsd(data.totalUsd, locale) : "••••••"}
-                </AmountText>
-                {data.partial ? (
+                <Row alignItems="center" gap="$2">
+                  <AmountText fontSize={34} lineHeight={40}>
+                    {visible ? formatUsd(data.totalUsd, locale) : "••••••"}
+                  </AmountText>
+                  {data.loading ? (
+                    <Spinner size="small" color="$textMuted" />
+                  ) : null}
+                </Row>
+                {data.partial && !data.loading ? (
                   <Body fontSize={12} color="$warning" testID="assets-partial">
                     {t("assets.totalPartial")}
                   </Body>
@@ -186,28 +228,28 @@ export function AssetsScreen({
           </Stack>
 
           <Row gap="$2">
-            <ActionButton
+            <ActionTile
               label={t("assets.receive")}
               icon="qrcode"
               primary
               onPress={() => receive.current?.present()}
               testID="assets-receive"
             />
-            <ActionButton
+            <ActionTile
               label={t("assets.send")}
               icon="arrow-top-right"
               onPress={onOpenSend}
               testID="assets-send"
             />
             {config.modules.predict ? (
-              <ActionButton
+              <ActionTile
                 label={t("assets.transferAction")}
                 icon="swap-vertical"
                 onPress={() => transfer.current?.present()}
                 testID="assets-transfer"
               />
             ) : (
-              <ActionButton
+              <ActionTile
                 label={t("assets.swap")}
                 icon="swap-horizontal"
                 onPress={onOpenSwap}
@@ -226,20 +268,7 @@ export function AssetsScreen({
               testID="assets-wallet"
             >
               <Row alignItems="center" gap="$3">
-                <Stack
-                  width={40}
-                  height={40}
-                  borderRadius={12}
-                  backgroundColor="$surfaceVariant"
-                  alignItems="center"
-                  justifyContent="center"
-                >
-                  <AppIcon
-                    name="wallet-outline"
-                    size={22}
-                    colorToken="primary"
-                  />
-                </Stack>
+                <AccountIcon icon="wallet-outline" />
                 <Stack flex={1}>
                   <SectionTitle fontSize={15}>
                     {t("assets.wallet")}
@@ -253,11 +282,7 @@ export function AssetsScreen({
                 </Stack>
                 <Stack alignItems="flex-end">
                   <InlineText fontWeight="800">
-                    {data
-                      ? visible
-                        ? formatUsd(data.wallet.usd, locale)
-                        : "••••"
-                      : "—"}
+                    {data ? hidden(formatUsd(data.wallet.usd, locale)) : "—"}
                   </InlineText>
                 </Stack>
                 <AppIcon
@@ -276,20 +301,7 @@ export function AssetsScreen({
                 testID="assets-predict"
               >
                 <Row alignItems="center" gap="$3">
-                  <Stack
-                    width={40}
-                    height={40}
-                    borderRadius={12}
-                    backgroundColor="$surfaceVariant"
-                    alignItems="center"
-                    justifyContent="center"
-                  >
-                    <AppIcon
-                      name="chart-timeline-variant"
-                      size={22}
-                      colorToken="primary"
-                    />
-                  </Stack>
+                  <AccountIcon icon="chart-timeline-variant" />
                   <Stack flex={1}>
                     <SectionTitle fontSize={15}>
                       {t("assets.predictAccount")}
@@ -303,11 +315,7 @@ export function AssetsScreen({
                     </Body>
                   </Stack>
                   <InlineText fontWeight="800">
-                    {predict
-                      ? visible
-                        ? formatUsd(predict.usd, locale)
-                        : "••••"
-                      : "—"}
+                    {predict ? hidden(formatUsd(predict.usd, locale)) : "—"}
                   </InlineText>
                   <AppIcon
                     name="chevron-right"
@@ -333,26 +341,19 @@ export function AssetsScreen({
               </Row>
             </Row>
             {chains.length > 1 ? (
-              <SegmentedControl
+              <ChipRow
                 value={chainFilter}
-                options={[
-                  { value: "all" as const, label: t("assets.allChains") },
-                  ...chains.map((id) => ({
-                    value: id,
-                    label: isTestnetChain(id)
-                      ? `${CHAINS[id].name} · ${t("send.testnetTag")}`
-                      : CHAINS[id].name,
-                  })),
-                ]}
+                options={chips}
                 onChange={setPickedChain}
                 accessibilityLabel={t("assets.allChains")}
+                testID="chain-chip"
               />
             ) : null}
             {data ? (
               <>
                 <ChainUnavailableNotice
                   failures={data.unavailable}
-                  onRetry={() => void overview.refetch()}
+                  onRetry={() => overview.refetch()}
                 />
                 {predictUsdw ? (
                   <HoldingRow
@@ -367,7 +368,7 @@ export function AssetsScreen({
                     visible={visible}
                   />
                 ) : null}
-                {holdings.map((item) => (
+                {rows.map((item) => (
                   <HoldingRow
                     key={`${item.token.chain}:${item.token.address}`}
                     item={item}
@@ -377,7 +378,7 @@ export function AssetsScreen({
                     visible={visible}
                   />
                 ))}
-                {holdings.length === 0 &&
+                {rows.length === 0 &&
                 !predictUsdw &&
                 data.unavailable.length === 0 ? (
                   <Body>{t("state.empty")}</Body>
@@ -417,6 +418,10 @@ export function AssetsScreen({
             }}
             onFinished={() => transfer.current?.dismiss()}
             onMinimize={() => transfer.current?.dismiss()}
+            onOpenRecords={() => {
+              transfer.current?.dismiss();
+              onOpenRecords();
+            }}
           />
         </Sheet>
       ) : null}
@@ -424,50 +429,26 @@ export function AssetsScreen({
   );
 }
 
-function ActionButton({
-  label,
+function AccountIcon({
   icon,
-  primary,
-  onPress,
-  testID,
 }: {
-  label: string;
-  icon: AppIconName;
-  primary?: boolean;
-  onPress: () => void;
-  testID: string;
+  icon: "wallet-outline" | "chart-timeline-variant";
 }) {
   return (
     <Stack
-      flex={1}
+      width={40}
+      height={40}
+      borderRadius={12}
+      backgroundColor="$surfaceVariant"
       alignItems="center"
       justifyContent="center"
-      gap="$1"
-      height={56}
-      borderRadius="$4"
-      backgroundColor={primary ? "$primary" : "$surfaceVariant"}
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      testID={testID}
-      pressStyle={{ opacity: 0.8 }}
     >
-      <AppIcon
-        name={icon}
-        size={20}
-        colorToken={primary ? "onPrimary" : "color"}
-      />
-      <InlineText
-        fontSize={12}
-        fontWeight="700"
-        color={primary ? "$onPrimary" : "$color"}
-      >
-        {label}
-      </InlineText>
+      <AppIcon name={icon} size={22} colorToken="primary" />
     </Stack>
   );
 }
 
+/** 币种行：余额还没到（`loading`）时金额与估值留骨架，币名与链徽标先出来。 */
 export function HoldingRow({
   item,
   account,
@@ -476,7 +457,7 @@ export function HoldingRow({
   visible = true,
   onPress,
 }: {
-  item: TokenBalance;
+  item: AssetRow;
   account?: string;
   note?: string;
   locale: string;
@@ -492,32 +473,38 @@ export function HoldingRow({
       borderColor="$borderColor"
       onPress={onPress}
       accessibilityRole={onPress ? "button" : undefined}
+      testID={`holding-${item.token.chain}-${item.token.symbol}`}
     >
       <TokenAvatar token={item.token} size={36} />
       <Stack flex={1}>
         <SectionTitle fontSize={15}>{item.token.symbol}</SectionTitle>
         <Body fontSize={12}>{[account, note].filter(Boolean).join(" · ")}</Body>
       </Stack>
-      <Stack alignItems="flex-end">
-        <InlineText fontWeight="700">
-          {/* 按展示精度向下截断：四舍五入会把 0.999 显示成 1.00，而 1 个转不出 */}
-          {visible
-            ? formatTokenAmount(
-                item.amount,
-                item.token.displayDecimals,
-                locale,
-                {
-                  withSymbol: false,
-                },
-              )
-            : "••••"}
-        </InlineText>
-        <Body fontSize={12}>
-          {item.usdValue === null
-            ? "—"
-            : `≈ ${visible ? formatUsd(item.usdValue, locale) : "••••"}`}
-        </Body>
-      </Stack>
+      {item.loading || item.amount === null ? (
+        <Stack alignItems="flex-end" gap="$1" testID="holding-loading">
+          <SkeletonBlock height={16} width={72} />
+          <SkeletonBlock height={12} width={48} />
+        </Stack>
+      ) : (
+        <Stack alignItems="flex-end">
+          <InlineText fontWeight="700">
+            {/* 按展示精度向下截断：四舍五入会把 0.999 显示成 1.00，而 1 个转不出 */}
+            {visible
+              ? formatTokenAmount(
+                  item.amount,
+                  item.token.displayDecimals,
+                  locale,
+                  { withSymbol: false },
+                )
+              : "••••"}
+          </InlineText>
+          <Body fontSize={12}>
+            {item.usdValue === null
+              ? "—"
+              : `≈ ${visible ? formatUsd(item.usdValue, locale) : "••••"}`}
+          </Body>
+        </Stack>
+      )}
     </Row>
   );
 }

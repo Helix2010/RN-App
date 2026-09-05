@@ -48,6 +48,7 @@ export function useSendToken() {
       void queryClient.invalidateQueries({
         queryKey: ["wallet-recent-recipients"],
       });
+      void queryClient.invalidateQueries({ queryKey: ["wallet-transfers"] });
     },
   });
 }
@@ -122,6 +123,20 @@ export function useWalletTransfer(id: string | undefined, initial?: Tx) {
       // 已进入等待出块阶段就放慢：真链上出块要几秒，800ms 一次只是在撞节点限流
       return status === "confirming" ? 2_500 : 800;
     },
+  });
+}
+
+/** 钱包层的转账记录（本机发起的转出 + 账本里的收款），按时间倒序。 */
+export function useWalletTransfers(address: string | undefined) {
+  const { wallet } = useGateways();
+  return useQuery({
+    queryKey: ["wallet-transfers", address],
+    queryFn: async () =>
+      (await wallet.listTransfers(address as string)).sort((a, b) =>
+        a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0,
+      ),
+    enabled: Boolean(address),
+    staleTime: 15_000,
   });
 }
 

@@ -36,7 +36,7 @@ describe("SecurityCenterScreen", () => {
       .mockResolvedValue({ success: true });
     usePreferencesStore.setState({
       appLockEnabled: true,
-      txConfirm: true,
+      txVerification: "smart",
       sendWhitelistOnly: false,
     });
     // 设备已录入凭据，应用锁才算真正生效
@@ -65,7 +65,10 @@ describe("SecurityCenterScreen", () => {
   });
 
   it("drops to low when both protections are off", async () => {
-    usePreferencesStore.setState({ appLockEnabled: false, txConfirm: false });
+    usePreferencesStore.setState({
+      appLockEnabled: false,
+      txVerification: "off",
+    });
     const { runtime } = await renderSecurity();
     await waitFor(() =>
       expect(screen.getByText(runtime.t("security.level.low"))).toBeTruthy(),

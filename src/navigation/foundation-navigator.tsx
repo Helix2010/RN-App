@@ -24,6 +24,7 @@ import { WalletSetupScreen } from "../features/wallet/ui/wallet-setup-screen";
 import { AccountDetailScreen } from "../features/assets/ui/account-detail-screen";
 import { SendScreen } from "../features/assets/ui/send-screen";
 import { TransferScreen } from "../features/assets/ui/transfer-screen";
+import { RecordsScreen } from "../features/assets/ui/records-screen";
 import { EventDetailScreen } from "../features/predict/ui/event-detail-screen";
 import { SettlementScreen } from "../features/predict/ui/settlement-screen";
 import { LeaderboardScreen } from "../features/predict/ui/leaderboard-screen";
@@ -228,6 +229,9 @@ export function FoundationNavigator() {
               amount={props.route.params?.amount}
               onBack={() => props.navigation.goBack()}
               onOpenEnable={() => props.navigation.navigate("PredictEnable")}
+              onOpenRecords={() =>
+                props.navigation.navigate("Records", { tab: "predict" })
+              }
             />
           )}
         </Stack.Screen>
@@ -249,6 +253,17 @@ export function FoundationNavigator() {
               onOpenPredictEnable={() =>
                 props.navigation.navigate("PredictEnable")
               }
+              onOpenRecords={(tab) =>
+                props.navigation.navigate("Records", { tab })
+              }
+            />
+          )}
+        </Stack.Screen>
+        <Stack.Screen name="Records">
+          {(props) => (
+            <RecordsScreen
+              initialTab={props.route.params?.tab}
+              onBack={() => props.navigation.goBack()}
             />
           )}
         </Stack.Screen>

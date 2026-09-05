@@ -72,7 +72,11 @@ export type EventQuery = {
   limit?: number;
 };
 
-type OrderBookLevel = { priceCents: number; shares: number };
+export type OrderBookLevel = { priceCents: number; shares: number };
+/**
+ * YES 代币的订单簿：按 tick 聚合、买盘从高到低、卖盘从低到高（同网页版 `pmOrderBookToSnapshot`）。
+ * No 侧盘口是它的镜像（买 No @ p ≡ 卖 Yes @ 100 − p），由界面推导。
+ */
 export type OrderBook = {
   marketId: string;
   bids: OrderBookLevel[];
@@ -80,14 +84,29 @@ export type OrderBook = {
   tickCents: number;
   /** clob 对该代币的最小下单份数（`/book` 的 min_order_size；不足会被 400 拒绝） */
   minOrderShares: number;
+  /** 最近成交价（分）；簿与推送都没给过就是 null */
+  lastTradeCents: number | null;
   updatedAt: string;
 };
 export type PricePoint = { t: string; priceCents: number };
 export type PriceRange = "1h" | "6h" | "1d" | "1w" | "1m" | "all";
 
+/** 一笔公开成交（data-service `/trades`）：YES 视角的价格 */
+export type Trade = {
+  id: string;
+  marketId: string;
+  outcome: Outcome;
+  side: OrderSide;
+  priceCents: number;
+  shares: number;
+  at: string;
+  hash?: string;
+};
+
 export type MarketEvent =
   | { type: "price_change"; marketId: string; yesPriceCents: number }
-  | { type: "book"; book: OrderBook };
+  | { type: "book"; book: OrderBook }
+  | { type: "last_trade"; marketId: string; priceCents: number };
 
 export type OrderSide = "buy" | "sell";
 export type OrderType = "market" | "limit";

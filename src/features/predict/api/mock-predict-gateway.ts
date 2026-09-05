@@ -51,6 +51,7 @@ import type {
   PriceRange,
   PricePoint,
   Tag,
+  Trade,
 } from "../model/predict";
 import type { PredictGateway } from "./gateway";
 
@@ -451,9 +452,27 @@ export class MockPredictGateway implements PredictGateway {
         asks,
         tickCents: 0.5,
         minOrderShares: 1,
+        lastTradeCents: price,
         updatedAt: mockNowIso(),
       };
     });
+  }
+
+  /** 演示成交：从 1h 走势里取最近的点，交替买卖 */
+  async listTrades(marketId: string, limit = 50): Promise<Trade[]> {
+    const history = await this.getPriceHistory(marketId, "1h");
+    return history
+      .slice(-limit)
+      .reverse()
+      .map((point, index) => ({
+        id: `${marketId}:${point.t}`,
+        marketId,
+        outcome: "yes" as const,
+        side: index % 3 === 0 ? ("sell" as const) : ("buy" as const),
+        priceCents: point.priceCents,
+        shares: 10 + ((index * 37) % 90),
+        at: point.t,
+      }));
   }
 
   async getPriceHistory(

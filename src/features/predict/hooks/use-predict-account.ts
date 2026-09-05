@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useGateways } from "../../../core/gateways/gateway-context";
 import type { Money } from "../../../core/money/money";
+import { isFundRecordOpen } from "../model/fund-record";
 import type { PlatformAgreement } from "../../../core/predict-platform/agreements";
 import { PredictServiceNotConfiguredError } from "../../../core/predict-platform/config";
 import { PredictPlatformMismatchError } from "../../../core/predict-platform/public-info";
@@ -53,19 +54,38 @@ export function usePredictEnablement(address: string | undefined) {
   });
 }
 
-/** 四步启用；`step` 是正在进行的一步，供引导页显示进度。 */
+const ENABLEMENT_STEPS: EnablementStep[] = [
+  "login",
+  "deploySafe",
+  "clobKey",
+  "approve",
+];
+
+/**
+ * 四步启用；`step` 是正在进行的一步，`done` 是本次运行里已经完成的步骤，供引导页
+ * 一步一步打勾——网关按顺序推进，进入下一步就意味着前面的都完成了；全部成功后四步全勾。
+ * 服务端状态（`usePredictEnablement`）要等这次运行结束才刷新，所以进度只能在这里记。
+ */
 export function useEnablePredict(address: string | undefined) {
   const { predictAccount } = useGateways();
   const invalidate = useInvalidatePredictAccount();
   const [step, setStep] = useState<EnablementStep | null>(null);
+  const [done, setDone] = useState<EnablementStep[]>([]);
   const mutation = useMutation({
-    mutationFn: () => predictAccount.enable(address as string, setStep),
+    mutationFn: () => {
+      setDone([]);
+      return predictAccount.enable(address as string, (next) => {
+        setStep(next);
+        setDone(ENABLEMENT_STEPS.slice(0, ENABLEMENT_STEPS.indexOf(next)));
+      });
+    },
+    onSuccess: () => setDone(ENABLEMENT_STEPS),
     onSettled: () => {
       setStep(null);
       invalidate();
     },
   });
-  return { ...mutation, step };
+  return { ...mutation, step, done };
 }
 
 /** 余额；账户未启用时 `notEnabled` 为 true 而不是把它当成错误抛给界面。 */
@@ -190,6 +210,23 @@ export function usePredictAccountTx(id: string | undefined) {
       const status = query.state.data?.status;
       return status === "confirmed" || status === "failed" ? false : 3_000;
     },
+  });
+}
+
+/**
+ * 资金记录（转入 / 取回 / 领取）。有进行中的记录时每 5 秒刷新一次——转入的确认、
+ * 取回的到期都是时间驱动的；划转类 mutation 结束时也会失效重取。
+ */
+export function useFundRecords(address: string | undefined) {
+  const { predictAccount } = useGateways();
+  return useQuery({
+    queryKey: [PREDICT_ACCOUNT_KEY, "fund-records", address],
+    queryFn: () => predictAccount.listFundRecords(address as string),
+    enabled: Boolean(address),
+    staleTime: 10_000,
+    refetchInterval: (query) =>
+      query.state.data?.some(isFundRecordOpen) ? 5_000 : false,
+    retry: predictRetry,
   });
 }
 

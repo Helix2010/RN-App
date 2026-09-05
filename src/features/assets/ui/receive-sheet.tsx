@@ -17,7 +17,7 @@ import {
   Row,
   SecondaryButton,
   SectionTitle,
-  SegmentedControl,
+  ChipRow,
   Sheet,
   Stack,
   toast,
@@ -75,17 +75,18 @@ export const ReceiveSheet = forwardRef<
       scroll
       testID="receive-sheet"
     >
-      <SegmentedControl
+      <ChipRow
         value={chain}
         options={options.map((id) => ({
           value: id,
+          label: CHAINS[id].shortName,
+          color: CHAINS[id].color,
           // 测试链必须标出来：主网资产打到测试链地址，虽同地址却在错的链上
-          label: isTestnetChain(id)
-            ? `${CHAINS[id].name} · ${t("send.testnetTag")}`
-            : CHAINS[id].name,
+          tag: isTestnetChain(id) ? t("send.testnetTag") : undefined,
         }))}
         onChange={setPicked}
         accessibilityLabel={t("send.network")}
+        testID="receive-chain"
       />
       <Stack alignItems="center" gap="$3" paddingVertical="$2">
         <Stack padding="$3" borderRadius="$4" backgroundColor="white">

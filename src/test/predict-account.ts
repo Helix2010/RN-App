@@ -16,6 +16,7 @@ import {
   type PredictWalletFunds,
   type UnwrapTerms,
 } from "../features/predict/api/account-gateway";
+import type { FundRecord } from "../features/predict/model/fund-record";
 import type { PredictTx } from "../features/predict/model/predict";
 
 /**
@@ -62,6 +63,7 @@ export class InMemoryPredictAccountGateway implements PredictAccountGateway {
   accepted: Record<string, string> = {};
   now = () => Date.now();
   readonly txs = new Map<string, PredictTx>();
+  readonly records: FundRecord[] = [];
   readonly calls: string[] = [];
   private sequence = 0;
 
@@ -165,7 +167,31 @@ export class InMemoryPredictAccountGateway implements PredictAccountGateway {
         "USDW",
       ),
     };
-    return this.tx("deposit", "submitted");
+    const tx = this.tx("deposit", "submitted");
+    this.record({
+      id: `deposit:${this.sequence}`,
+      kind: "deposit",
+      status: "pending",
+      amount: input.amount,
+      hash: tx.hash,
+    });
+    return tx;
+  }
+
+  private record(
+    partial: Omit<FundRecord, "createdAt" | "updatedAt" | "source">,
+  ): void {
+    const at = new Date(this.now()).toISOString();
+    this.records.unshift({
+      ...partial,
+      createdAt: at,
+      updatedAt: at,
+      source: "local",
+    });
+  }
+
+  async listFundRecords(): Promise<FundRecord[]> {
+    return [...this.records];
   }
 
   async withdraw(_address: string, amount: Money): Promise<PendingWithdrawal> {
@@ -182,6 +208,15 @@ export class InMemoryPredictAccountGateway implements PredictAccountGateway {
       source: "local",
     };
     this.pending = [...this.pending, pending];
+    this.record({
+      id: `withdraw:${pending.requestId}`,
+      kind: "withdraw",
+      status: "waiting",
+      amount,
+      hash: pending.initTxHash,
+      requestId: pending.requestId,
+      claimableAt: pending.claimableAt,
+    });
     this.balance = {
       ...this.balance,
       safeBalance: money(

@@ -1,3 +1,4 @@
+import { forgetVerification } from "../core/security/app-lock";
 import { resetEnablePrompts } from "../features/predict/model/enable-prompt";
 /* eslint-disable @typescript-eslint/no-require-imports */
 import { resetDeliveredWalletConfig } from "../core/wallet/config/wallet-runtime-config";
@@ -18,7 +19,9 @@ jest.mock("@gorhom/bottom-sheet", () => require("@gorhom/bottom-sheet/mock"));
 /** 默认：设备已录入生物识别且验证通过；单个用例可用 jest.mocked(...) 改写。 */
 jest.mock("expo-local-authentication", () => ({
   SecurityLevel: { NONE: 0, SECRET: 1, BIOMETRIC_WEAK: 2, BIOMETRIC_STRONG: 3 },
+  AuthenticationType: { FINGERPRINT: 1, FACIAL_RECOGNITION: 2, IRIS: 3 },
   getEnrolledLevelAsync: jest.fn(async () => 3),
+  supportedAuthenticationTypesAsync: jest.fn(async () => [1]),
   hasHardwareAsync: jest.fn(async () => true),
   isEnrolledAsync: jest.fn(async () => true),
   authenticateAsync: jest.fn(async () => ({ success: true })),
@@ -46,6 +49,8 @@ beforeEach(() => {
   useMockRuntime
     .getState()
     .set({ clockOffsetMs: new Date(FIXTURE_NOW).getTime() - Date.now() });
+  // "最近验证过"是模块级状态：上个用例通过的验证不能让这个用例跳过弹窗
+  forgetVerification();
 });
 
 export {};

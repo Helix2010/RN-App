@@ -14,6 +14,12 @@ type PredictCredentials = {
   jwt?: string;
   clob?: ClobCredentials;
   safe?: string;
+  /**
+   * 已在链上核实过 7 项授权的 Safe 地址。授权是单向的（approve MAX + setApprovalForAll），
+   * 核实一次后就不再逐次读链——公共节点落后几个块时会把刚授权的账户误判成"未授权"，
+   * 界面就会闪回"去授权"那一步。凭证被丢弃时一起清。
+   */
+  approvedSafe?: string;
 };
 
 const INDEX_KEY = "foundation.predict.credentials.index.v1";

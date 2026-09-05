@@ -13,6 +13,7 @@ import {
   AmountInput,
   Body,
   PrimaryButton,
+  ChipRow,
   SegmentedControl,
   Sheet,
   type SheetHandle,
@@ -147,7 +148,7 @@ export const SplitMergeSheet = forwardRef<
           />
           <Stack gap="$1.5">
             <Body fontSize={12}>{t("split.market")}</Body>
-            <SegmentedControl
+            <ChipRow
               value={marketId ?? ""}
               options={markets}
               onChange={setMarketId}
