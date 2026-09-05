@@ -120,19 +120,6 @@ export function useOrderBook(marketId: string | undefined) {
   });
 }
 
-export function usePriceHistory(
-  marketId: string | undefined,
-  range: PriceRange,
-) {
-  const { predict } = useGateways();
-  return useQuery({
-    queryKey: ["predict-history", marketId, range],
-    queryFn: () => predict.getPriceHistory(marketId as string, range),
-    enabled: Boolean(marketId),
-    staleTime: 30_000,
-  });
-}
-
 /** 最近成交（成交 Tab）；有推送时按 last_trade 事件失效重取，否则 15 秒一轮 */
 export function useTrades(marketId: string | undefined, limit = 50) {
   const { predict } = useGateways();
@@ -145,7 +132,7 @@ export function useTrades(marketId: string | undefined, limit = 50) {
   });
 }
 
-/** 多个市场的走势（多结果事件画多条线）；键与 `usePriceHistory` 相同，缓存共用 */
+/** 一个或多个市场的走势（多结果事件画多条线），键 `["predict-history", marketId, range]` */
 export function usePriceHistories(marketIds: string[], range: PriceRange) {
   const { predict } = useGateways();
   return useQueries({

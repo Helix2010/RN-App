@@ -153,7 +153,7 @@ export type OnchainTransferPort = {
   available: (chain: ChainId) => boolean;
   send: (request: SendRequest, signer: WalletSigner) => Promise<WalletTransfer>;
   quote: (request: SendRequest) => Promise<TransferQuote>;
-  listTransfers: (address: string) => WalletTransfer[];
+  listTransfers: (address: string) => Promise<WalletTransfer[]>;
   nativeBalance: (chain: ChainId, address: string) => Promise<bigint>;
   /**
    * 一批 ERC-20 合约在这个地址上的余额，键是**小写**合约地址。
@@ -544,7 +544,7 @@ export class EmbeddedWalletGateway implements WalletGateway {
 
   async listTransfers(address: string): Promise<WalletTransfer[]> {
     // 链上转账只在内存里，Mock 账本不认识；不合并的话用户转完账回列表会发现记录没了
-    const onchain = this.deps.onchain?.listTransfers(address) ?? [];
+    const onchain = (await this.deps.onchain?.listTransfers(address)) ?? [];
     const ledger = await this.deps.chainData.listTransfers(address);
     // 和余额一致：租户关掉的链，它上面的记录也不显示
     return [...onchain, ...ledger].filter((item) =>

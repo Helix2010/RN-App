@@ -230,8 +230,9 @@ export const OrderSheet = forwardRef<
       limitPrice > 100 - tick ||
       Math.abs(limitPrice / tick - Math.round(limitPrice / tick)) > 1e-6);
 
-  // 限价跟随盘口：用户没改过时，卖一变了就跟着变（网页版 limitPriceSource === 'market'）
-  const followPrice = sideAsk ?? marketPrice;
+  // 限价跟随盘口：用户没改过时跟着对手价走——买入跟卖一、卖出跟买一
+  //（网页版 limitPriceSource === 'market' + resolveTradePrice）
+  const followPrice = (side === "buy" ? sideAsk : sideBid) ?? marketPrice;
   useEffect(() => {
     if (type !== "limit" || priceSource !== "market") return;
     setPriceText(followPrice === null ? "" : String(followPrice));
@@ -261,30 +262,30 @@ export const OrderSheet = forwardRef<
       ? new Date(Date.now() + EXPIRY_SECONDS[expiry] * 1000).toISOString()
       : undefined;
   const request: PlaceOrderRequest | null = market
-    ? side === "sell"
-      ? { marketId: market.id, outcome, side, type: "market", shares }
-      : type === "market"
-        ? { marketId: market.id, outcome, side, type, amount }
-        : limitPrice === null
-          ? null
-          : {
-              marketId: market.id,
-              outcome,
-              side,
-              type,
-              shares,
-              priceCents: limitPrice,
-              tif: expiresAt ? "GTD" : "GTC",
-              expiresAt,
-            }
+    ? type === "market"
+      ? side === "sell"
+        ? { marketId: market.id, outcome, side, type, shares }
+        : { marketId: market.id, outcome, side, type, amount }
+      : limitPrice === null
+        ? null
+        : {
+            marketId: market.id,
+            outcome,
+            side,
+            type,
+            shares,
+            priceCents: limitPrice,
+            tif: expiresAt ? "GTD" : "GTC",
+            expiresAt,
+          }
     : null;
   const active =
     request &&
-    (side === "sell"
-      ? shares > 0
-      : type === "market"
-        ? !isZero(amount)
-        : shares > 0 && !offTick);
+    (type === "limit"
+      ? shares > 0 && !offTick
+      : side === "sell"
+        ? shares > 0
+        : !isZero(amount));
   const preview = useOrderPreview(address, active ? request : null);
   const available = balance.data?.available;
   const insufficient =
@@ -296,11 +297,7 @@ export const OrderSheet = forwardRef<
   // 市价买入金额 ≥ 1 USDW；市价卖出份数 ≥ 0.01（这里份数输入是整数，天然满足）
   const minShares = book.data?.minOrderShares ?? null;
   const belowMin =
-    type === "limit" &&
-    side === "buy" &&
-    minShares !== null &&
-    shares > 0 &&
-    shares < minShares;
+    type === "limit" && minShares !== null && shares > 0 && shares < minShares;
   // 预览会按当前对手价把下限精确到"份数对齐后仍 ≥ 1 USDC"的金额（常是 1.01 左右）
   const minAmount = preview.data?.minAmount ?? MIN_MARKET_BUY;
   const belowMinAmount =
@@ -356,20 +353,27 @@ export const OrderSheet = forwardRef<
 
   const submitLabel = !request
     ? ""
-    : side === "sell"
-      ? fill(t("predict.order.submitSell"), {
-          outcome: outcomeLabel(outcome),
-          shares,
-        })
-      : type === "market"
-        ? fill(t("predict.order.submitBuy"), {
-            outcome: outcomeLabel(outcome),
-            amount: isZero(amount) ? "USDW" : formatMoney(amount, locale),
-          })
-        : fill(t("predict.order.submitLimit"), {
+    : type === "limit"
+      ? fill(
+          t(
+            side === "sell"
+              ? "predict.order.submitSellLimit"
+              : "predict.order.submitLimit",
+          ),
+          {
             outcome: outcomeLabel(outcome),
             shares,
             price: formatCents(limitPrice),
+          },
+        )
+      : side === "sell"
+        ? fill(t("predict.order.submitSell"), {
+            outcome: outcomeLabel(outcome),
+            shares,
+          })
+        : fill(t("predict.order.submitBuy"), {
+            outcome: outcomeLabel(outcome),
+            amount: isZero(amount) ? "USDW" : formatMoney(amount, locale),
           });
   const availableNumber = available ? Number(toDecimalString(available)) : null;
   const addAmount = (delta: number) =>
@@ -416,24 +420,22 @@ export const OrderSheet = forwardRef<
             testID="order-side"
           />
         </Stack>
-        {side === "buy" ? (
-          <Stack width={132}>
-            <SegmentedControl
-              size="sm"
-              value={type}
-              options={[
-                { value: "market", label: t("predict.order.market") },
-                { value: "limit", label: t("predict.order.limit") },
-              ]}
-              onChange={(next) => {
-                setType(next);
-                if (next === "limit") setPriceSource("market");
-              }}
-              accessibilityLabel={t("predict.order.market")}
-              testID="order-type"
-            />
-          </Stack>
-        ) : null}
+        <Stack width={132}>
+          <SegmentedControl
+            size="sm"
+            value={type}
+            options={[
+              { value: "market", label: t("predict.order.market") },
+              { value: "limit", label: t("predict.order.limit") },
+            ]}
+            onChange={(next) => {
+              setType(next);
+              if (next === "limit") setPriceSource("market");
+            }}
+            accessibilityLabel={t("predict.order.market")}
+            testID="order-type"
+          />
+        </Stack>
       </Row>
 
       <Row gap="$2">
@@ -486,7 +488,7 @@ export const OrderSheet = forwardRef<
         })}
       </Row>
 
-      {side === "buy" && type === "limit" ? (
+      {type === "limit" ? (
         <Stack gap="$1">
           <TextField
             value={priceText}
@@ -588,20 +590,18 @@ export const OrderSheet = forwardRef<
           onChangeText={setSharesText}
           symbol={t("predict.order.shares.unit")}
           decimals={0}
-          helper={
+          helper={[
             side === "sell"
               ? fill(t("predict.order.holding"), { shares: held })
-              : [
-                  fill(t("predict.order.available"), {
-                    amount: available ? formatMoney(available, locale) : "—",
-                  }),
-                  minShares !== null
-                    ? fill(t("predict.order.minSharesHint"), { n: minShares })
-                    : null,
-                ]
-                  .filter(Boolean)
-                  .join(" · ")
-          }
+              : fill(t("predict.order.available"), {
+                  amount: available ? formatMoney(available, locale) : "—",
+                }),
+            type === "limit" && minShares !== null
+              ? fill(t("predict.order.minSharesHint"), { n: minShares })
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
           error={
             insufficientShares
               ? t("predict.order.insufficientShares")
@@ -673,11 +673,7 @@ export const OrderSheet = forwardRef<
           value={
             preview.data
               ? formatCents(preview.data.avgPriceCents)
-              : formatCents(
-                  side === "buy" && type === "limit"
-                    ? limitPrice
-                    : tradePrice(outcome),
-                )
+              : formatCents(type === "limit" ? limitPrice : tradePrice(outcome))
           }
         />
         <DetailRow
@@ -688,7 +684,7 @@ export const OrderSheet = forwardRef<
           }
           value={preview.data ? formatMoney(preview.data.cost, locale) : "—"}
         />
-        {side === "buy" && type === "limit" ? (
+        {type === "limit" ? (
           <Row
             alignItems="center"
             justifyContent="space-between"
@@ -772,7 +768,7 @@ export const OrderSheet = forwardRef<
         </PrimaryButton>
       )}
       <Body fontSize={11}>
-        {type === "market" || side === "sell"
+        {type === "market"
           ? t("predict.order.marketNote")
           : t("predict.order.limitNote")}
       </Body>

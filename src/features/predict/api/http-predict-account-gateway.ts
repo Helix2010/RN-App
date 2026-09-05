@@ -74,6 +74,7 @@ import type { WalletGateway } from "../../wallet/api/gateway";
 import type { OnchainTransfers } from "../../wallet/api/onchain-transfers";
 import {
   mergeFundRecords,
+  reconcileLocalRecord,
   type FundRecord,
   type FundRecordStatus,
 } from "../model/fund-record";
@@ -1120,9 +1121,53 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
 
   // ---- 资金记录 ----
 
+  /**
+   * 把本机记录推到当下再返回：转入的确认 / 失败靠回执（进度页没开着时 `getTx` 不会被轮询，
+   * 应用被杀后更没人问）、没发出的记录超时判中断、取回到期变可领取。
+   */
+  private async reconcileLocal(
+    ctx: Context,
+    address: string,
+  ): Promise<FundRecord[]> {
+    const local = await this.ledger.list(ctx.service, address);
+    const now = this.nowMs();
+    const next: FundRecord[] = [];
+    for (const record of local) {
+      let receipt: "success" | "reverted" | "pending" | undefined;
+      if (
+        record.status === "pending" &&
+        record.hash &&
+        record.kind === "deposit"
+      ) {
+        const result = await this.deps.onchain.receiptOf(
+          ctx.service.chain,
+          record.hash,
+        );
+        receipt = !result
+          ? "pending"
+          : result.status === "success"
+            ? "success"
+            : "reverted";
+      }
+      const patch = reconcileLocalRecord(record, receipt, now);
+      if (!patch) {
+        next.push(record);
+        continue;
+      }
+      const updated = await this.ledger.patch(
+        ctx.service,
+        address,
+        record.id,
+        patch,
+      );
+      next.push(updated ?? record);
+    }
+    return next;
+  }
+
   async listFundRecords(address: string): Promise<FundRecord[]> {
     const ctx = await this.contextFor();
-    const local = await this.ledger.list(ctx.service, address);
+    const local = await this.reconcileLocal(ctx, address);
     let safe: string;
     try {
       safe = (await this.enabledContext(address)).safe;

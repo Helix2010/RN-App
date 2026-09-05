@@ -960,6 +960,9 @@ const zhCN = {
   "predict.order.priceUp": "升一档",
   "predict.order.minSharesHint": "最少 {n} 份",
   "app.exitHint": "再滑一次退出应用",
+  "predict.order.submitSellLimit": "挂单卖出 {outcome} · {shares} 份 @ {price}",
+  "records.failure.interrupted":
+    "操作中断（应用被关闭或签名未完成），未发出交易",
 };
 
 const enUS: Record<keyof typeof zhCN, string> = {
@@ -1937,6 +1940,9 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "predict.order.priceUp": "One tick up",
   "predict.order.minSharesHint": "Min {n} shares",
   "app.exitHint": "Swipe again to exit",
+  "predict.order.submitSellLimit": "Place sell {outcome} · {shares} @ {price}",
+  "records.failure.interrupted":
+    "Interrupted (app closed or signature not completed); no transaction was sent",
 };
 
 export function createFallbackConfig(locale: SupportedLocale): BootstrapConfig {

@@ -1,5 +1,6 @@
 import {
   CHAINS,
+  type KeyValueStorage,
   NATIVE_TOKEN_ADDRESS,
   type ChainId,
   type Tx,
@@ -27,6 +28,12 @@ import type {
 
 /** 内存里最多记这么多笔：进度只在提交后几分钟内有意义，更早的去区块浏览器看。 */
 const MAX_TRACKED = 50;
+const SENDS_KEY = "foundation.wallet.sends.v1";
+type SubmittedRecord = {
+  chain: ChainId;
+  from: string;
+  transfer: WalletTransfer;
+};
 
 /**
  * 真实链上的转出。
@@ -47,25 +54,49 @@ export class OnchainTransfers {
     }
   >();
   /**
-   * txHash → 这笔转账的链与快照。
-   *
-   * 只在内存里：转账进度只在提交后的几分钟内有意义，冷启动后用户可以去区块浏览器
-   * 查。完整的链上历史需要索引服务（`eth_getLogs` 有区块范围限制），不在这一层。
+   * txHash → 这笔转账的链与快照。本机发出过的转账（记录页"钱包转账"Tab 的正式来源），
+   * 落普通存储，冷启动后仍在；未到终态的在读取时按回执推进。
+   * 完整的链上历史（别人打进来的）需要索引服务（`eth_getLogs` 有区块范围限制），不在这一层。
    */
-  private readonly submitted = new Map<
-    string,
-    { chain: ChainId; from: string; transfer: WalletTransfer }
-  >();
+  private readonly submitted = new Map<string, SubmittedRecord>();
+  private hydrated: Promise<void> | null = null;
 
   constructor(
     private readonly deps: {
       /** 签名弹窗 / 外部钱包里显示的说明，已 i18n */
       reason: string;
+      storage: KeyValueStorage;
       now?: () => number;
       /** 仅供测试替换：默认按下发的端点建真实客户端。参数是端点的实时读取函数 */
       createChain?: (endpoints: () => string[]) => ChainClient;
     },
   ) {}
+
+  /** 第一次用到记录时从存储读一次；坏了就从头开始记（留痕） */
+  private hydrate(): Promise<void> {
+    if (!this.hydrated)
+      this.hydrated = (async () => {
+        const raw = await this.deps.storage.getItem(SENDS_KEY);
+        if (!raw) return;
+        try {
+          const parsed = JSON.parse(raw) as unknown;
+          if (!Array.isArray(parsed)) return;
+          for (const item of parsed as SubmittedRecord[])
+            if (item?.transfer?.id && !this.submitted.has(item.transfer.id))
+              this.submitted.set(item.transfer.id, item);
+        } catch (error) {
+          console.warn("[wallet] send ledger is corrupt, starting over", error);
+        }
+      })();
+    return this.hydrated;
+  }
+
+  private async persist(): Promise<void> {
+    await this.deps.storage.setItem(
+      SENDS_KEY,
+      JSON.stringify([...this.submitted.values()]),
+    );
+  }
 
   available(chain: ChainId): boolean {
     // 两个条件缺一不可：租户显式开了链上转出，且这条链有端点可用
@@ -158,6 +189,7 @@ export class OnchainTransfers {
   ): Promise<WalletTransfer> {
     const chain = request.token.chain;
     const { transfer } = this.serviceFor(chain);
+    await this.hydrate();
     const submitted = await transfer.submit(this.specOf(request), signer);
     const record: WalletTransfer = {
       id: submitted.hash,
@@ -181,6 +213,7 @@ export class OnchainTransfers {
       if (oldest === undefined) break;
       this.submitted.delete(oldest);
     }
+    await this.persist();
     return record;
   }
 
@@ -213,39 +246,65 @@ export class OnchainTransfers {
    * 链上 revert（钱花了 gas 但没成功——和"网络失败"完全不同，不能混为一谈）。
    */
   async getTransaction(id: string): Promise<Tx | null> {
+    await this.hydrate();
     const known = this.submitted.get(id);
     if (!known) return null;
+    return this.refresh(known);
+  }
+
+  /** 按回执推进一条记录并落盘；已到终态的原样返回 */
+  private async refresh(known: SubmittedRecord): Promise<WalletTransfer> {
+    const current = known.transfer;
+    if (current.status === "confirmed" || current.status === "failed")
+      return current;
     const { chain } = this.serviceFor(known.chain);
-    const receipt = await chain.getReceipt(id);
+    const receipt = await chain.getReceipt(current.id);
     const status: Tx["status"] = !receipt
       ? "confirming"
       : receipt.status === "success"
         ? "confirmed"
         : "failed";
     const next: WalletTransfer = {
-      ...known.transfer,
+      ...current,
       status,
       // 链上 revert 有专门的文案：用户需要知道 gas 花掉了
       reasonKey: status === "failed" ? "tx.reverted" : undefined,
       updatedAt: new Date(this.now()).toISOString(),
     };
-    this.submitted.set(id, { ...known, transfer: next });
+    this.submitted.set(current.id, { ...known, transfer: next });
+    if (status !== current.status) await this.persist();
     return next;
   }
 
   /**
-   * 本次会话里从这个地址发出的链上转账。
-   *
-   * Mock 账本不认识真链上的交易，不在这里补上，用户转完账回到列表会发现记录不见了。
-   * 只有内存里这一份：完整的链上历史需要索引服务（`eth_getLogs` 有区块范围限制），
-   * 不属于这一层。
+   * 从这个地址发出过的链上转账（本机账本，跨冷启动）。未到终态的先按回执推进一次，
+   * 进度页没开着也不会一直停在"已提交"。收款（别人打进来的）需要索引服务，不在这一层。
    */
-  listTransfers(address: string): WalletTransfer[] {
+  async listTransfers(address: string): Promise<WalletTransfer[]> {
+    await this.hydrate();
     const key = address.toLowerCase();
-    return [...this.submitted.values()]
-      .filter((entry) => entry.from.toLowerCase() === key)
-      .map((entry) => entry.transfer)
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    const mine = [...this.submitted.values()].filter(
+      (entry) => entry.from.toLowerCase() === key,
+    );
+    const items: WalletTransfer[] = [];
+    for (const entry of mine) {
+      if (
+        entry.transfer.status === "confirmed" ||
+        entry.transfer.status === "failed" ||
+        !this.available(entry.chain)
+      ) {
+        items.push(entry.transfer);
+        continue;
+      }
+      try {
+        items.push(await this.refresh(entry));
+      } catch (error) {
+        // 节点这次没答上：保留上次的状态，不把一笔真实交易显示成消失或失败
+        console.warn(`[wallet] ${entry.chain} 回执查询失败`, error);
+        items.push(entry.transfer);
+      }
+    }
+    return items.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
   private specOf(request: SendRequest) {

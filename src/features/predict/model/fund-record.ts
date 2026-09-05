@@ -33,7 +33,7 @@ export type FundRecord = {
   source: "local" | "platform";
 };
 
-export const FUND_RECORD_OPEN_STATUSES: FundRecordStatus[] = [
+const FUND_RECORD_OPEN_STATUSES: FundRecordStatus[] = [
   "pending",
   "waiting",
   "claimable",
@@ -60,4 +60,44 @@ export function mergeFundRecords(
   return [...platform, ...kept].sort((a, b) =>
     a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0,
   );
+}
+
+/** 发起后一直没拿到哈希的记录，超过这个时长就当作中断（应用被杀 / 签名没完成） */
+export const FUND_RECORD_STALE_MS = 15 * 60_000;
+
+/**
+ * 读取时把本机记录的状态推到当下：
+ * - 转入 pending 且有哈希：按链上回执定终态（`receipt` 由调用方查好传入）；
+ * - pending 且没哈希、又已经超时：中断——交易从未发出；
+ * - 取回 waiting 到了可领取时刻：claimable。
+ * 返回 null 表示不用改。
+ */
+export function reconcileLocalRecord(
+  record: FundRecord,
+  receipt: "success" | "reverted" | "pending" | undefined,
+  nowMs: number,
+): Partial<Pick<FundRecord, "status" | "failure">> | null {
+  if (record.source !== "local") return null;
+  if (record.status === "pending") {
+    if (record.hash && record.kind === "deposit") {
+      if (receipt === "success") return { status: "confirmed" };
+      if (receipt === "reverted")
+        return { status: "failed", failure: "tx.reverted" };
+      return null;
+    }
+    if (
+      !record.hash &&
+      nowMs - Date.parse(record.createdAt) > FUND_RECORD_STALE_MS
+    )
+      return { status: "failed", failure: "records.failure.interrupted" };
+    return null;
+  }
+  if (
+    record.kind === "withdraw" &&
+    record.status === "waiting" &&
+    record.claimableAt &&
+    Date.parse(record.claimableAt) <= nowMs
+  )
+    return { status: "claimable" };
+  return null;
 }

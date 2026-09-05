@@ -1,9 +1,6 @@
-import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
-import {
-  View,
-  type GestureResponderEvent,
-  type LayoutChangeEvent,
-} from "react-native";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { View, type LayoutChangeEvent } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Svg, {
   Circle,
   Defs,
@@ -158,7 +155,9 @@ export type ChartSample = {
 const AXIS_WIDTH = 46;
 const PAD_TOP = 8;
 const PAD_BOTTOM = 18;
-const SCRUB_START_PX = 6;
+/** 横向移动超过这个距离才进入刻度模式；竖直先超过则交给外层滚动 */
+const SCRUB_ACTIVATE_PX = 8;
+const SCRUB_FAIL_Y_PX = 12;
 
 function sampleAt(points: ChartSeries["points"], t: number): number | null {
   if (points.length === 0) return null;
@@ -229,7 +228,6 @@ export function PriceLineChart({
   const theme = useTheme();
   const [width, setWidth] = useState(0);
   const [scrubX, setScrubX] = useState<number | null>(null);
-  const touchStart = useRef<{ x: number; y: number } | null>(null);
   const plotWidth = Math.max(0, width - AXIS_WIDTH);
   const plotHeight = Math.max(0, height - PAD_TOP - PAD_BOTTOM);
 
@@ -306,30 +304,27 @@ export function PriceLineChart({
   );
 
   const clampX = (value: number) => Math.min(plotWidth, Math.max(0, value));
-  const onTouchStart = (event: GestureResponderEvent) => {
-    touchStart.current = {
-      x: event.nativeEvent.locationX,
-      y: event.nativeEvent.locationY,
-    };
-  };
-  const shouldScrub = (event: GestureResponderEvent) => {
-    const start = touchStart.current;
-    if (!start || !domain) return false;
-    const dx = event.nativeEvent.locationX - start.x;
-    const dy = event.nativeEvent.locationY - start.y;
-    return Math.abs(dx) > SCRUB_START_PX && Math.abs(dx) > Math.abs(dy);
-  };
-  const onGrant = (event: GestureResponderEvent) => {
-    onScrubbing?.(true);
-    scrub(clampX(event.nativeEvent.locationX));
-  };
-  const onMove = (event: GestureResponderEvent) =>
-    scrub(clampX(event.nativeEvent.locationX));
-  const onEnd = () => {
-    onScrubbing?.(false);
-    scrub(null);
-    touchStart.current = null;
-  };
+  // 手势走 react-native-gesture-handler（交互规范 §0：不写 PanResponder / 原生 responder）：
+  // 横向先动 8px 激活，竖直先动 12px 失败——失败后手势交给外层 ScrollView 继续滚动
+  const pan = useMemo(
+    () =>
+      Gesture.Pan()
+        .activeOffsetX([-SCRUB_ACTIVATE_PX, SCRUB_ACTIVATE_PX])
+        .failOffsetY([-SCRUB_FAIL_Y_PX, SCRUB_FAIL_Y_PX])
+        .runOnJS(true)
+        .onStart((event) => {
+          onScrubbing?.(true);
+          scrub(clampX(event.x));
+        })
+        .onUpdate((event) => scrub(clampX(event.x)))
+        .onFinalize(() => {
+          onScrubbing?.(false);
+          scrub(null);
+        }),
+    // clampX 只依赖 plotWidth
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [onScrubbing, plotWidth, scrub],
+  );
 
   const scrubT =
     scrubX !== null && domain
@@ -340,169 +335,165 @@ export function PriceLineChart({
   const labelColor = theme.textMuted.val;
 
   return (
-    <View
-      style={{ height }}
-      onLayout={(event) => setWidth(Math.round(event.nativeEvent.layout.width))}
-      onTouchStart={onTouchStart}
-      onStartShouldSetResponder={() => false}
-      onMoveShouldSetResponder={shouldScrub}
-      onResponderGrant={onGrant}
-      onResponderMove={onMove}
-      onResponderRelease={onEnd}
-      onResponderTerminate={onEnd}
-      onResponderTerminationRequest={() => false}
-      accessibilityRole="image"
-      testID="price-line-chart"
-    >
-      {width > 0 && domain ? (
-        <Svg width={width} height={height}>
-          <Defs>
-            {series.map((item) => (
-              <LinearGradient
-                key={item.key}
-                id={`area-${item.key}`}
-                x1="0"
-                y1="0"
-                x2="0"
-                y2="1"
-              >
-                <Stop offset="0" stopColor={item.color} stopOpacity={0.26} />
-                <Stop offset="1" stopColor={item.color} stopOpacity={0} />
-              </LinearGradient>
-            ))}
-          </Defs>
-          {ticks.map((tick) => (
-            <Line
-              key={tick}
-              x1={0}
-              x2={plotWidth}
-              y1={y(tick)}
-              y2={y(tick)}
-              stroke={gridColor}
-              strokeDasharray="3 4"
-              strokeWidth={1}
-            />
-          ))}
-          {ticks.map((tick) => (
-            <SvgText
-              key={`label-${tick}`}
-              x={plotWidth + 8}
-              y={y(tick) + 4}
-              fill={labelColor}
-              fontSize={10}
-              fontWeight="600"
-            >
-              {formatValue(tick)}
-            </SvgText>
-          ))}
-          {baseline !== undefined ? (
-            <Line
-              x1={0}
-              x2={plotWidth}
-              y1={y(baseline)}
-              y2={y(baseline)}
-              stroke={labelColor}
-              strokeDasharray="2 4"
-              strokeWidth={1}
-              opacity={0.6}
-            />
-          ) : null}
-          {series.map((item) => {
-            if (item.points.length === 0) return null;
-            const pts = item.points.map((point) => ({
-              x: x(point.t),
-              y: y(point.v),
-            }));
-            const path = linePath(pts);
-            const last = pts[pts.length - 1]!;
-            const area = single
-              ? `${path} L${last.x.toFixed(1)} ${(PAD_TOP + plotHeight).toFixed(1)} L${pts[0]!.x.toFixed(1)} ${(PAD_TOP + plotHeight).toFixed(1)} Z`
-              : null;
-            return (
-              <YStack key={item.key}>
-                {area ? (
-                  <Path d={area} fill={`url(#area-${item.key})`} />
-                ) : null}
-                <Path
-                  d={path}
-                  stroke={item.color}
-                  strokeWidth={2}
-                  fill="none"
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                  opacity={scrubT === null ? 1 : 0.75}
-                />
-                <Circle cx={last.x} cy={last.y} r={3.5} fill={item.color} />
-                <Circle
-                  cx={last.x}
-                  cy={last.y}
-                  r={7}
-                  fill={item.color}
-                  opacity={0.18}
-                />
-              </YStack>
-            );
-          })}
-          {scrubX !== null && scrubT !== null ? (
-            <YStack>
+    <GestureDetector gesture={pan}>
+      <View
+        style={{ height }}
+        onLayout={(event) =>
+          setWidth(Math.round(event.nativeEvent.layout.width))
+        }
+        accessibilityRole="image"
+        testID="price-line-chart"
+      >
+        {width > 0 && domain ? (
+          <Svg width={width} height={height}>
+            <Defs>
+              {series.map((item) => (
+                <LinearGradient
+                  key={item.key}
+                  id={`area-${item.key}`}
+                  x1="0"
+                  y1="0"
+                  x2="0"
+                  y2="1"
+                >
+                  <Stop offset="0" stopColor={item.color} stopOpacity={0.26} />
+                  <Stop offset="1" stopColor={item.color} stopOpacity={0} />
+                </LinearGradient>
+              ))}
+            </Defs>
+            {ticks.map((tick) => (
               <Line
-                x1={scrubX}
-                x2={scrubX}
-                y1={PAD_TOP}
-                y2={PAD_TOP + plotHeight}
-                stroke={labelColor}
+                key={tick}
+                x1={0}
+                x2={plotWidth}
+                y1={y(tick)}
+                y2={y(tick)}
+                stroke={gridColor}
+                strokeDasharray="3 4"
                 strokeWidth={1}
               />
-              {series.map((item) => {
-                const value = sampleAt(item.points, scrubT);
-                if (value === null) return null;
-                return (
-                  <Circle
-                    key={`scrub-${item.key}`}
-                    cx={scrubX}
-                    cy={y(value)}
-                    r={4}
-                    fill={item.color}
-                    stroke={theme.surface.val}
-                    strokeWidth={2}
-                  />
-                );
-              })}
-            </YStack>
-          ) : null}
-          {scrubT === null ? (
-            <>
-              <SvgText x={0} y={height - 4} fill={labelColor} fontSize={10}>
-                {formatTime(domain.t0)}
-              </SvgText>
+            ))}
+            {ticks.map((tick) => (
               <SvgText
-                x={plotWidth}
-                y={height - 4}
+                key={`label-${tick}`}
+                x={plotWidth + 8}
+                y={y(tick) + 4}
                 fill={labelColor}
                 fontSize={10}
-                textAnchor="end"
+                fontWeight="600"
               >
-                {formatTime(domain.t1)}
+                {formatValue(tick)}
               </SvgText>
-            </>
-          ) : (
-            <SvgText
-              x={Math.min(Math.max(scrubX ?? 0, 36), plotWidth - 36)}
-              y={height - 4}
-              fill={theme.color.val}
-              fontSize={10}
-              fontWeight="700"
-              textAnchor="middle"
-            >
-              {formatTime(scrubT)}
-            </SvgText>
-          )}
-        </Svg>
-      ) : width > 0 ? (
-        <YStack flex={1} alignItems="center" justifyContent="center">
-          {empty ?? <Text color="$textMuted" fontSize={12} />}
-        </YStack>
-      ) : null}
-    </View>
+            ))}
+            {baseline !== undefined ? (
+              <Line
+                x1={0}
+                x2={plotWidth}
+                y1={y(baseline)}
+                y2={y(baseline)}
+                stroke={labelColor}
+                strokeDasharray="2 4"
+                strokeWidth={1}
+                opacity={0.6}
+              />
+            ) : null}
+            {series.map((item) => {
+              if (item.points.length === 0) return null;
+              const pts = item.points.map((point) => ({
+                x: x(point.t),
+                y: y(point.v),
+              }));
+              const path = linePath(pts);
+              const last = pts[pts.length - 1]!;
+              const area = single
+                ? `${path} L${last.x.toFixed(1)} ${(PAD_TOP + plotHeight).toFixed(1)} L${pts[0]!.x.toFixed(1)} ${(PAD_TOP + plotHeight).toFixed(1)} Z`
+                : null;
+              return (
+                <YStack key={item.key}>
+                  {area ? (
+                    <Path d={area} fill={`url(#area-${item.key})`} />
+                  ) : null}
+                  <Path
+                    d={path}
+                    stroke={item.color}
+                    strokeWidth={2}
+                    fill="none"
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                    opacity={scrubT === null ? 1 : 0.75}
+                  />
+                  <Circle cx={last.x} cy={last.y} r={3.5} fill={item.color} />
+                  <Circle
+                    cx={last.x}
+                    cy={last.y}
+                    r={7}
+                    fill={item.color}
+                    opacity={0.18}
+                  />
+                </YStack>
+              );
+            })}
+            {scrubX !== null && scrubT !== null ? (
+              <YStack>
+                <Line
+                  x1={scrubX}
+                  x2={scrubX}
+                  y1={PAD_TOP}
+                  y2={PAD_TOP + plotHeight}
+                  stroke={labelColor}
+                  strokeWidth={1}
+                />
+                {series.map((item) => {
+                  const value = sampleAt(item.points, scrubT);
+                  if (value === null) return null;
+                  return (
+                    <Circle
+                      key={`scrub-${item.key}`}
+                      cx={scrubX}
+                      cy={y(value)}
+                      r={4}
+                      fill={item.color}
+                      stroke={theme.surface.val}
+                      strokeWidth={2}
+                    />
+                  );
+                })}
+              </YStack>
+            ) : null}
+            {scrubT === null ? (
+              <>
+                <SvgText x={0} y={height - 4} fill={labelColor} fontSize={10}>
+                  {formatTime(domain.t0)}
+                </SvgText>
+                <SvgText
+                  x={plotWidth}
+                  y={height - 4}
+                  fill={labelColor}
+                  fontSize={10}
+                  textAnchor="end"
+                >
+                  {formatTime(domain.t1)}
+                </SvgText>
+              </>
+            ) : (
+              <SvgText
+                x={Math.min(Math.max(scrubX ?? 0, 36), plotWidth - 36)}
+                y={height - 4}
+                fill={theme.color.val}
+                fontSize={10}
+                fontWeight="700"
+                textAnchor="middle"
+              >
+                {formatTime(scrubT)}
+              </SvgText>
+            )}
+          </Svg>
+        ) : width > 0 ? (
+          <YStack flex={1} alignItems="center" justifyContent="center">
+            {empty ?? <Text color="$textMuted" fontSize={12} />}
+          </YStack>
+        ) : null}
+      </View>
+    </GestureDetector>
   );
 }

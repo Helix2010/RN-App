@@ -1,7 +1,9 @@
 import { fromDecimal } from "../../../core/money/money";
 import {
+  FUND_RECORD_STALE_MS,
   isFundRecordOpen,
   mergeFundRecords,
+  reconcileLocalRecord,
   type FundRecord,
 } from "./fund-record";
 
@@ -51,5 +53,58 @@ describe("fund records", () => {
     expect(isFundRecordOpen(record({ status: "claimable" }))).toBe(true);
     expect(isFundRecordOpen(record({ status: "claimed" }))).toBe(false);
     expect(isFundRecordOpen(record({ status: "failed" }))).toBe(false);
+  });
+});
+
+describe("reconcileLocalRecord", () => {
+  const now = Date.parse("2026-09-05T12:00:00.000Z");
+  it("confirms or fails a pending deposit by its receipt and leaves it pending otherwise", () => {
+    const pending = record({ hash: "0xh", status: "pending" });
+    expect(reconcileLocalRecord(pending, "success", now)).toEqual({
+      status: "confirmed",
+    });
+    expect(reconcileLocalRecord(pending, "reverted", now)).toEqual({
+      status: "failed",
+      failure: "tx.reverted",
+    });
+    expect(reconcileLocalRecord(pending, "pending", now)).toBeNull();
+  });
+
+  it("marks a hash-less pending record as interrupted only after the stale window", () => {
+    const fresh = record({
+      status: "pending",
+      createdAt: new Date(now - 60_000).toISOString(),
+    });
+    expect(reconcileLocalRecord(fresh, undefined, now)).toBeNull();
+    const stale = record({
+      status: "pending",
+      createdAt: new Date(now - FUND_RECORD_STALE_MS - 1).toISOString(),
+    });
+    expect(reconcileLocalRecord(stale, undefined, now)).toEqual({
+      status: "failed",
+      failure: "records.failure.interrupted",
+    });
+  });
+
+  it("turns a waiting withdrawal claimable once its time has come, and never touches platform records", () => {
+    const waiting = record({
+      kind: "withdraw",
+      status: "waiting",
+      requestId: "7",
+      claimableAt: new Date(now - 1).toISOString(),
+    });
+    expect(reconcileLocalRecord(waiting, undefined, now)).toEqual({
+      status: "claimable",
+    });
+    expect(
+      reconcileLocalRecord(
+        { ...waiting, claimableAt: new Date(now + 1).toISOString() },
+        undefined,
+        now,
+      ),
+    ).toBeNull();
+    expect(
+      reconcileLocalRecord({ ...waiting, source: "platform" }, undefined, now),
+    ).toBeNull();
   });
 });

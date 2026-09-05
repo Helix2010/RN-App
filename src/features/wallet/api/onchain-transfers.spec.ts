@@ -1,3 +1,4 @@
+import { memoryStorage } from "../../../core/gateways/types";
 import { Wallet } from "ethers";
 import type { ChainClient } from "../../../core/chain/chain-client";
 import { CHAINS, type ChainId } from "../../../core/gateways/types";
@@ -101,20 +102,29 @@ afterEach(() => resetDeliveredWalletConfig());
 describe("OnchainTransfers availability", () => {
   it("is unavailable until the server delivers an rpc endpoint", () => {
     // 下发本身就是灰度开关：没配端点的链不能悄悄用一个公共节点
-    const onchain = new OnchainTransfers({ reason: "r" });
+    const onchain = new OnchainTransfers({
+      reason: "r",
+      storage: memoryStorage(),
+    });
     expect(onchain.available("bsc")).toBe(false);
   });
 
   it("stays on the demo ledger while the tenant has not opted in, even with endpoints", () => {
     // 没配过端点的租户也会拿到平台默认端点，所以端点不能当开关
     deliverBscRpc(["https://bsc.example"], false);
-    const onchain = new OnchainTransfers({ reason: "r" });
+    const onchain = new OnchainTransfers({
+      reason: "r",
+      storage: memoryStorage(),
+    });
     expect(onchain.available("bsc")).toBe(false);
   });
 
   it("becomes available only for the chains that got endpoints", () => {
     deliverBscRpc();
-    const onchain = new OnchainTransfers({ reason: "r" });
+    const onchain = new OnchainTransfers({
+      reason: "r",
+      storage: memoryStorage(),
+    });
     expect(onchain.available("bsc")).toBe(true);
     expect(onchain.available("eth")).toBe(false);
   });
@@ -126,6 +136,7 @@ describe("OnchainTransfers send", () => {
     deliverBscRpc();
     const { chain } = fakeChain();
     const onchain = new OnchainTransfers({
+      storage: memoryStorage(),
       reason: "r",
       createChain: () => chain,
     });
@@ -145,6 +156,7 @@ describe("OnchainTransfers send", () => {
     const { chain, calls } = fakeChain();
     calls.getNativeBalance.mockResolvedValue(0n);
     const onchain = new OnchainTransfers({
+      storage: memoryStorage(),
       reason: "r",
       createChain: () => chain,
     });
@@ -160,6 +172,7 @@ describe("OnchainTransfers send", () => {
     deliverBscRpc();
     const { chain } = fakeChain();
     const onchain = new OnchainTransfers({
+      storage: memoryStorage(),
       reason: "r",
       createChain: () => chain,
     });
@@ -188,6 +201,7 @@ describe("OnchainTransfers send", () => {
     const getters: (() => string[])[] = [];
     const { chain } = fakeChain();
     const onchain = new OnchainTransfers({
+      storage: memoryStorage(),
       reason: "r",
       createChain: (endpoints) => {
         getters.push(endpoints);
@@ -210,6 +224,7 @@ describe("OnchainTransfers quote", () => {
     deliverBscRpc();
     const { chain } = fakeChain();
     const onchain = new OnchainTransfers({
+      storage: memoryStorage(),
       reason: "r",
       createChain: () => chain,
     });
@@ -230,6 +245,7 @@ describe("OnchainTransfers quote", () => {
     deliverBscRpc();
     const { chain, calls } = fakeChain();
     const onchain = new OnchainTransfers({
+      storage: memoryStorage(),
       reason: "r",
       createChain: () => chain,
     });
@@ -247,6 +263,7 @@ describe("OnchainTransfers quote", () => {
     const { chain, calls } = fakeChain();
     calls.getNativeBalance.mockResolvedValue(100_000n * 1_000_000_000n);
     const onchain = new OnchainTransfers({
+      storage: memoryStorage(),
       reason: "r",
       createChain: () => chain,
     });
@@ -277,6 +294,7 @@ describe("OnchainTransfers progress", () => {
     deliverBscRpc();
     const { chain } = fakeChain();
     const onchain = new OnchainTransfers({
+      storage: memoryStorage(),
       reason: "r",
       createChain: () => chain,
     });
@@ -291,6 +309,7 @@ describe("OnchainTransfers progress", () => {
     deliverBscRpc();
     const { chain, receipts } = fakeChain();
     const onchain = new OnchainTransfers({
+      storage: memoryStorage(),
       reason: "r",
       createChain: () => chain,
     });
@@ -308,6 +327,7 @@ describe("OnchainTransfers progress", () => {
     deliverBscRpc();
     const { chain, receipts } = fakeChain();
     const onchain = new OnchainTransfers({
+      storage: memoryStorage(),
       reason: "r",
       createChain: () => chain,
     });
@@ -323,6 +343,7 @@ describe("OnchainTransfers progress", () => {
     deliverBscRpc();
     const { chain } = fakeChain();
     const onchain = new OnchainTransfers({
+      storage: memoryStorage(),
       reason: "r",
       createChain: () => chain,
     });
@@ -334,6 +355,7 @@ describe("OnchainTransfers progress", () => {
     deliverBscRpc();
     const { chain } = fakeChain();
     const onchain = new OnchainTransfers({
+      storage: memoryStorage(),
       reason: "r",
       createChain: () => chain,
     });
@@ -341,9 +363,40 @@ describe("OnchainTransfers progress", () => {
     await onchain.send(request(), signer());
 
     // 不合并进历史，用户转完账回列表会以为这笔没发生
-    expect(onchain.listTransfers(FROM)).toHaveLength(1);
-    expect(onchain.listTransfers(FROM.toLowerCase())).toHaveLength(1);
-    expect(onchain.listTransfers(TO)).toHaveLength(0);
+    expect(await onchain.listTransfers(FROM)).toHaveLength(1);
+    expect(await onchain.listTransfers(FROM.toLowerCase())).toHaveLength(1);
+    expect(await onchain.listTransfers(TO)).toHaveLength(0);
+  });
+
+  it("keeps sends across a restart and settles them from the receipt on the next read", async () => {
+    deliverBscRpc();
+    const { chain, receipts } = fakeChain();
+    const storage = memoryStorage();
+    const first = new OnchainTransfers({
+      storage,
+      reason: "r",
+      createChain: () => chain,
+    });
+    const sent = await first.send(request(), signer());
+
+    // 冷启动：新实例、同一份存储；这笔还没上链 → 仍在列表里并保持未到终态
+    const second = new OnchainTransfers({
+      storage,
+      reason: "r",
+      createChain: () => chain,
+    });
+    const before = await second.listTransfers(FROM);
+    expect(before.map((item) => [item.id, item.status])).toEqual([
+      [sent.id, "confirming"],
+    ]);
+
+    // 回执到了：进度页没开着，列表读取也要把它推到已确认
+    receipts.set(sent.id, { status: "success" });
+    const after = await second.listTransfers(FROM);
+    expect(after[0]?.status).toBe("confirmed");
+    expect(await second.getTransaction(sent.id)).toMatchObject({
+      status: "confirmed",
+    });
   });
 });
 
@@ -352,6 +405,7 @@ describe("OnchainTransfers token balances", () => {
     deliverBscRpc();
     const { chain, calls } = fakeChain();
     const onchain = new OnchainTransfers({
+      storage: memoryStorage(),
       reason: "r",
       createChain: () => chain,
     });
@@ -367,6 +421,7 @@ describe("OnchainTransfers token balances", () => {
     deliverBscRpc();
     const { chain } = fakeChain();
     const onchain = new OnchainTransfers({
+      storage: memoryStorage(),
       reason: "r",
       createChain: () => chain,
     });

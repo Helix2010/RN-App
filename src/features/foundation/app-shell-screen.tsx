@@ -2,6 +2,7 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useIsFocused } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BackHandler, Platform, View } from "react-native";
+import { GestureDetector } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../app/runtime-context";
 import {
@@ -86,60 +87,64 @@ export function AppShellScreen({ navigation }: Props) {
   }, [handleShellBack, isFocused]);
 
   return (
-    <Page {...edgeBack}>
-      <View style={{ flex: 1 }}>
-        {effectiveTab === "home" ? (
-          <FoundationHomeScreen
-            onOpenAssets={() => setTab("assets")}
-            onOpenProfile={() => navigation.navigate("Profile")}
-            onOpenPredict={() => setTab("predict")}
-            onOpenPredictPositions={() =>
-              config.modules.dex
-                ? navigation.navigate("Positions")
-                : setTab("positions")
-            }
-            onOpenLeaderboard={() => navigation.navigate("Leaderboard")}
-            onOpenDex={() => setTab(config.modules.predict ? "dex" : "market")}
-            onOpenSwap={() => setTab("swap")}
-          />
-        ) : effectiveTab === "assets" ? (
-          <AssetsScreen
-            onOpenAccount={(kind) =>
-              navigation.navigate("AccountDetail", { kind })
-            }
-            onOpenSend={() => navigation.navigate("Send")}
-            onOpenSwap={() => setTab("swap")}
-            onOpenPredictEnable={() => navigation.navigate("PredictEnable")}
-            onOpenRecords={() => navigation.navigate("Records")}
-          />
-        ) : effectiveTab === "predict" ||
-          effectiveTab === "positions" ||
-          effectiveTab === "dex" ||
-          effectiveTab === "market" ||
-          effectiveTab === "swap" ? (
-          <ModuleOverviewScreen kind={effectiveTab} />
-        ) : null}
-      </View>
-      <Row
-        paddingTop="$2"
-        paddingHorizontal="$3"
-        paddingBottom={Math.max(insets.bottom, 10)}
-        gap="$2"
-        borderTopWidth={1}
-        borderColor="$borderColor"
-        backgroundColor="$surface"
-      >
-        {tabs.map((item) => (
-          <TabButton
-            key={item.key}
-            selected={selectedBottomTab === item.key}
-            label={item.label}
-            icon={item.icon}
-            onPress={() => setTab(item.key)}
-          />
-        ))}
-      </Row>
-    </Page>
+    <GestureDetector gesture={edgeBack}>
+      <Page>
+        <View style={{ flex: 1 }}>
+          {effectiveTab === "home" ? (
+            <FoundationHomeScreen
+              onOpenAssets={() => setTab("assets")}
+              onOpenProfile={() => navigation.navigate("Profile")}
+              onOpenPredict={() => setTab("predict")}
+              onOpenPredictPositions={() =>
+                config.modules.dex
+                  ? navigation.navigate("Positions")
+                  : setTab("positions")
+              }
+              onOpenLeaderboard={() => navigation.navigate("Leaderboard")}
+              onOpenDex={() =>
+                setTab(config.modules.predict ? "dex" : "market")
+              }
+              onOpenSwap={() => setTab("swap")}
+            />
+          ) : effectiveTab === "assets" ? (
+            <AssetsScreen
+              onOpenAccount={(kind) =>
+                navigation.navigate("AccountDetail", { kind })
+              }
+              onOpenSend={() => navigation.navigate("Send")}
+              onOpenSwap={() => setTab("swap")}
+              onOpenPredictEnable={() => navigation.navigate("PredictEnable")}
+              onOpenRecords={() => navigation.navigate("Records")}
+            />
+          ) : effectiveTab === "predict" ||
+            effectiveTab === "positions" ||
+            effectiveTab === "dex" ||
+            effectiveTab === "market" ||
+            effectiveTab === "swap" ? (
+            <ModuleOverviewScreen kind={effectiveTab} />
+          ) : null}
+        </View>
+        <Row
+          paddingTop="$2"
+          paddingHorizontal="$3"
+          paddingBottom={Math.max(insets.bottom, 10)}
+          gap="$2"
+          borderTopWidth={1}
+          borderColor="$borderColor"
+          backgroundColor="$surface"
+        >
+          {tabs.map((item) => (
+            <TabButton
+              key={item.key}
+              selected={selectedBottomTab === item.key}
+              label={item.label}
+              icon={item.icon}
+              onPress={() => setTab(item.key)}
+            />
+          ))}
+        </Row>
+      </Page>
+    </GestureDetector>
   );
 }
 

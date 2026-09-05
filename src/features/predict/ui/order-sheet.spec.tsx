@@ -119,3 +119,23 @@ describe("OrderSheet", () => {
     });
   });
 });
+
+describe("selling with a limit order", () => {
+  it("offers market / limit on the sell side and builds a limit sell with shares and price", async () => {
+    await openSheet();
+    await fireEvent.press(screen.getByTestId("order-side-sell"));
+    // 卖出也能挂限价（网页版 TradeForm 的 LIMIT + SELL），不再只有市价
+    await fireEvent.press(screen.getByTestId("order-type-limit"));
+    await fireEvent.changeText(screen.getByTestId("order-limit-price"), "70");
+    await fireEvent.changeText(screen.getByTestId("order-shares"), "10");
+    await waitFor(
+      () => expect(screen.getByText(/挂单卖出 Yes · 10 份 @ 70¢/)).toBeTruthy(),
+      { timeout: 4000 },
+    );
+    // 限价的最小份数门禁对卖出同样生效
+    await fireEvent.changeText(screen.getByTestId("order-shares"), "3");
+    await waitFor(() => expect(screen.getByText("最少 5 份")).toBeTruthy(), {
+      timeout: 4000,
+    });
+  });
+});

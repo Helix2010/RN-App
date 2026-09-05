@@ -1,3 +1,4 @@
+import "react-native-gesture-handler/jestSetup";
 import { forgetVerification } from "../core/security/app-lock";
 import { resetEnablePrompts } from "../features/predict/model/enable-prompt";
 /* eslint-disable @typescript-eslint/no-require-imports */

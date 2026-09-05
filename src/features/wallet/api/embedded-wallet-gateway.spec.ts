@@ -62,7 +62,7 @@ function fakeOnchain(available: ChainId[]) {
             updatedAt: "2026-01-01T00:00:00.000Z",
           }
         : null,
-    listTransfers: () => [],
+    listTransfers: async () => [],
     nativeBalance: async () => 0n,
     tokenBalances: async () => new Map(),
   };
@@ -448,7 +448,7 @@ describe("EmbeddedWalletGateway on-chain routing", () => {
       counterparty: "0x000000000000000000000000000000000000dEaD",
       updatedAt: "2026-01-01T00:00:00.000Z",
     };
-    port.listTransfers = () => [onchainRecord];
+    port.listTransfers = async () => [onchainRecord];
     const { gateway } = setup({ onchain: port });
     const { account } = await gateway.createWallet();
 

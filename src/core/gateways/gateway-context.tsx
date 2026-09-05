@@ -76,7 +76,10 @@ function createGateways(storage: KeyValueStorage): Gateways {
   onPairingDismissed(() => external.cancelConnect());
   // 真实链上转出。签名器由网关在每次转账时按账户解析后传进来，所以这里不需要
   // 反向引用网关。
-  const onchain = new OnchainTransfers({ reason: "wallet.sign.transfer" });
+  const onchain = new OnchainTransfers({
+    reason: "wallet.sign.transfer",
+    storage,
+  });
   const wallet = new EmbeddedWalletGateway({
     vault,
     chainData,

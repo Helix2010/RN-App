@@ -75,3 +75,16 @@
 ## 回滚
 
 纯 JS 改动，OTA 回滚到上一版即可；偏好存储 v2 → v1 不可逆（旧包读到 `txVerification` 会忽略并按 `txConfirm` 缺省 true 处理，不影响启动）。
+
+## 评审轮（2026-09-05 晚，对照设计文档）
+
+评审结论与遗留方案：`docs/design/review-2026-09-05.md`。本轮改动：
+
+- 手势改走 `react-native-gesture-handler`（交互规范 §0）：走势图刻度 `Gesture.Pan().activeOffsetX(8).failOffsetY(12)`；AppShell 边缘返回改为左右两个 `hitSlop` 限定在 32px 边缘的 Pan（`Gesture.Race`），`GestureDetector` 包住页面。
+- 下单面板：卖出也可限价（网关本就支持 SELL + GTC/GTD）；限价跟随价按方向取（买跟卖一、卖跟买一）；最小份数门禁对限价卖出生效；新文案 `predict.order.submitSellLimit`。
+- 资金记录读取时对账（`reconcileLocalRecord`）：有哈希的 pending 转入按回执定终态；没哈希且超过 15 分钟判"中断"（`records.failure.interrupted`）；到期的取回转 claimable。
+- 钱包链上转出账本落存储（`foundation.wallet.sends.v1`），`OnchainTransfers` 新增 `storage` 依赖；`listTransfers` 改异步并按回执推进未到终态的记录。
+- 死代码：`usePriceHistory`、`FUND_RECORD_OPEN_STATUSES` 的导出。
+- 测试：`onchain-transfers.spec` 跨重启 + 回执推进 1 例；`fund-record.spec` 对账 3 例；`order-sheet.spec` 限价卖出 1 例。`pnpm check` 全绿。
+
+模拟器复验（1.2.8 debug 包 + Metro）：多结果事件（inflation）四条线 + 图例 + 20/40/60% 刻度，横向拖动出竖线、各线插值点、图例跟随、头部显示 14% / Sep 5 11:48 ✅；盘口点卖一 28¢ → 面板切"卖出 + 限价"后仍保留价格输入 / 步进 / 有效期 ✅；事件详情页边缘滑动回列表（系统手势）→ 预测标签边缘滑动回首页 → 首页两次边缘滑动退出（焦点回桌面）✅。
