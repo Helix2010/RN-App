@@ -843,7 +843,7 @@ export class HttpPredictGateway implements PredictGateway {
       proposedAt: adj?.proposedAt ?? undefined,
       disputeDeadline: adj?.livenessDeadline ?? undefined,
       disputeWindowSec: adj?.livenessSecs ?? 0,
-      // 平台网页没有争议提交入口（§2.9）
+      // 平台有争议流程（review-2026-09-05.md §4.3）；App 侧实现前保持 false
       canDispute: false,
       disputedAt: adj?.challengedAt ?? undefined,
       disputedBy: adj?.challenger ?? undefined,
@@ -1282,7 +1282,7 @@ export class HttpPredictGateway implements PredictGateway {
   async submitDispute(): Promise<PredictTx> {
     throw new PredictUnsupportedError(
       "dispute",
-      "the platform has no dispute submission for users",
+      "dispute submission is not implemented in the app yet (platform flow: docs/design/review-2026-09-05.md §4.3)",
     );
   }
 
