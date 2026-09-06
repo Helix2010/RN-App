@@ -2,6 +2,8 @@
 
 > 结论（用户 2026-09-06 拍板）：独立扫链模块。RN-Server 仓库内新增独立进程 `./rn-server indexer`（同镜像、不同启动命令、按链租约），扫链端点是**与 App 端 RPC 无关的独立属性**，平台级、支持多个端点、管理端维护、热加载；ERC-20 用 `eth_getLogs` 双向索引，原生币按链配置 `blocks`（逐块精确）或 `balance`（Multicall3 余额差触发）两种模式；游标 + 唯一键保证服务中断后从断点追块不遗漏；新增链有一条从服务端目录到 App 版本门禁的固定流程；管理端有配置、体检、状态、补扫、告警。
 >
+> 2026-09-06 表复用（用户要求"不能动不动就加表"）：只新增 2 张表（`wallet_transfer_index` 数据表、`chain_scan_state` 每链一行的运行状态表）+ 2 个新列；配置复用 `app_configs`（tenant 0）+ `secretbox` 加密，历史复用 `audit_events`，监听集合从 `wallet_user` × 租户配置派生，不建监听表。映射见 §4.9。
+>
 > 2026-09-06 用户决定：主网扫链端点由用户自己在管理端维护，本设计只提供管理功能；平台管理员身份沿用配置文件里的管理员账号（`.env` 的 `ADMIN_USERNAME`），新增 `PLATFORM_ADMIN_USERNAMES` 明确列出可进"扫链管理"的账号；"来源待确认"的收款照常推送。v1（浏览器 API / App 自扫的否决理由与五条链默认端点实测）保留在 §2、§3。
 
 ## 1. 目标
@@ -68,7 +70,7 @@ B 只保留为将来"记录详情看内部交易"的可选增强，不进正式�
 
 - `./rn-server indexer`（`cmd/server/main.go` 与 `migrate` 并列），代码 `internal/indexer/`；不在 API 进程内启动。
 - `deploy/web4/compose.yaml` 增加 `indexer` 服务：同镜像、`command: ["./rn-server","indexer"]`、`depends_on: server`（迁移由 server 先跑）。
-- 开关 `INDEXER_ENABLED`（默认 false）。多副本允许：每条链一把租约（`chain_scan_cursor.lease_owner / lease_until`，每轮续约，超时可被接管），链在副本间自然分摊。
+- 开关 `INDEXER_ENABLED`（默认 false）。多副本允许：每条链一把租约（`chain_scan_state.lease_owner / lease_until`，每轮续约，超时可被接管），链在副本间自然分摊。
 
 ### 4.2 三类 RPC 端点的边界
 
@@ -76,37 +78,37 @@ B 只保留为将来"记录详情看内部交易"的可选增强，不进正式�
 |---|---|---|---|
 | App 端读余额 / 发交易 | 租户 `wallet.networks[].rpcUrls`（未配时 `supportedNetworks` 默认） | 租户管理员 | 只下发给 App |
 | 服务端读代币元数据（symbol / decimals） | `supportedNetworks` 默认端点 | 代码 | `tokens.go:568-573`，维持现状 |
-| **扫链** | `chain_scan_config.endpoints`（§4.3） | 平台管理员 | 只给 indexer |
+| **扫链** | `app_configs(tenant_id=0, config_key='chain-scan.<chain>')` 的 `endpoints`（§4.3） | 平台管理员 | 只给 indexer |
 
 三者互不读取。理由：租户可控的节点能伪造记录；默认公共端点扫不了链（§2.1）；扫链端点通常带付费密钥，不能下发到 App。
 
 ### 4.3 扫链配置模型（平台级、库内、热加载）
 
-表 `chain_scan_config`（平台级，无 tenant_id）：
+不建配置表，复用 `app_configs`：`tenant_id = 0`、`config_key = 'chain-scan.<chain>'`，一链一行。这正是平台级配置的既有形态（`release.platforms`、`mobile-bootstrap` 都在 tenant 0；`server.go:630-717`、`simplified_releases.go:352`），而且现有读取全部按 `config_key` 精确查询，不会把这行混进 bootstrap 下发。行自带的 `version / updated_by / updated_at` 就是乐观锁与审计字段；写入沿用 `tokens.go:585-600` 的 `tokenTransaction` 骨架（核对 expectedVersion → 写入 → version+1 → 审计 → 提交）。
 
-| 列 | 说明 |
+`config_value` JSON：
+
+| 字段 | 说明 |
 |---|---|
-| `chain` PK | 目录 id（`supportedNetworks`） |
-| `enabled` | 平台是否对这条链扫链 |
+| `enabled` | 平台是否对这条链扫链；false = `unconfigured` |
 | `paused` | 运维手动暂停（游标保留，恢复后追块） |
-| `endpoints` JSON | 有序数组 `[{url, label, rps, maxLogSpan?}]`；`rps` 每端点限速；`maxLogSpan` 端点级覆盖 |
-| `max_log_span` | 链级日志跨度（体检结果写入，§4.12） |
+| `endpoints[]` | 有序数组 `{url, label, rps, maxLogSpan?}`；`url` 用 `secretbox` 加密后存（`app_configs` 表注释要求"敏感字段必须应用层加密"，先例 `release_storage.go:235-253`），关联数据 = `chain-scan:<chain>:endpoint`；`rps` 每端点限速；`maxLogSpan` 端点级覆盖 |
+| `maxLogSpan` | 链级日志跨度（体检结果写入，§4.12） |
 | `confirmations` | 写入深度（区块） |
-| `poll_seconds` | 轮询间隔 |
-| `addr_chunk` | 每次 `eth_getLogs` 的地址数（默认 1000） |
-| `native_mode` ENUM('blocks','balance') | 原生币模式（§4.6） |
-| `start_block` | 启用时的起扫区块（默认 = 启用时刻链头 − confirmations） |
-| `native_gap_cap` | `balance` 模式下，缺口超过多少块改为"先记差额、后台归属"（§4.7） |
-| `version`, `updated_by`, `updated_at` | 乐观锁 + 审计 |
+| `pollSeconds` | 轮询间隔 |
+| `addrChunk` | 每次 `eth_getLogs` 的地址数（默认 1000） |
+| `nativeMode` | `blocks` / `balance`（§4.6） |
+| `nativeGapCap` | `balance` 模式下缺口超过多少块改为"先记差额、后台归属"（§4.7） |
+| `startBlock` | 首次启用时的起扫区块（默认 = 启用时刻链头 − confirmations）；游标存在后不再使用 |
 
-- 保存时校验（拒绝即 400，不容忍）：每个端点 `eth_chainId` 必须等于目录 `chainId`；`https://` 或私网 `http://`（仅 `INDEXER_ALLOW_PLAIN_HTTP=true` 时）；`confirmations ≥ 1`；`max_log_span ≥ 1`；`enabled=true` 时至少一个端点。
-- 索引器每 30 秒读一次 `version`，变化即重建该链的 worker（端点、节奏、模式立即生效，不重启进程）。
-- 出于安全，端点 url 里的密钥在管理端只显示脱敏形式；`GET` 接口返回 `urlMasked` 与 `hasSecret`。
-- 端点的选型、申请、更换由运营（用户本人）在管理端完成，代码里不内置任何扫链端点；没有配置端点的链就是 `unconfigured`。
+- 保存时校验（拒绝即 400，不容忍）：`chain` 必须在目录 `supportedNetworks`；每个端点 `eth_chainId` 必须等于目录 `chainId`；`https://` 或私网 `http://`（仅 `INDEXER_ALLOW_PLAIN_HTTP=true` 时）；`confirmations ≥ 1`；`maxLogSpan ≥ 1`；`enabled=true` 时至少一个端点。
+- 索引器每 30 秒读一遍 `chain-scan.%` 行的 `version`，变化即重建该链的 worker（端点、节奏、模式立即生效，不重启进程）。
+- 管理端 `GET` 返回 `urlMasked` 与 `hasSecret`，明文只在保存请求里出现一次。
+- 端点的选型、申请、更换由运营（用户本人）在管理端完成，代码里不内置任何扫链端点；没有配置行或 `enabled=false` 的链就是 `unconfigured`。
 
 ### 4.4 多端点策略
 
-每条链的 worker 维护端点健康度（内存 + 落表 `chain_scan_endpoint_status` 供管理端）：
+每条链的 worker 维护端点健康度（内存 + 每轮写回 `chain_scan_state.endpoint_health` JSON 供管理端，不单独建表）：
 
 - **选择**：按配置顺序取第一个 `healthy` 的端点；同一轮内的所有请求固定同一端点（避免不同节点视图混用）。
 - **健康度**：连续失败 ≥3 → `cooling`（退避 30s × 2^n，上限 10 分钟）；冷却到期先做探活（`eth_chainId` + `eth_blockNumber`）再回 `healthy`。`eth_chainId` 不符 → `mismatch`，永久剔除直到配置修改。
@@ -140,7 +142,7 @@ eth_getLogs { …, topics: [Transfer, [被监听地址 ≤ addr_chunk], null] } 
 | 模式 | 做法 | 适用 | 成本 |
 |---|---|---|---|
 | `blocks` | 每片逐块 `eth_getBlockByNumber(full=true)`，匹配 `to ∈ 监听` 或 `from ∈ 监听` 且 `value > 0`；双向、精确、零延迟 | 出块慢或有自建 / 付费节点的链（eth 7200 块/天；base、op-sepolia 4.3 万/天） | 每块 1 请求 |
-| `balance` | 每轮 Multicall3 `aggregate3([getEthBalance…])`（500 地址一次 `eth_call`）与 `wallet_index_watch.native_balance_raw` 比较；**只有增加**才对本轮区间逐块扫、写 `in` 行；扫不到对应交易的增量写 `attribution='unattributed'` 行（金额 = 差额、无哈希、区块 = 区间末块）；减少不处理（App 自己的转出在本机账本，别的软件发起的原生币转出不索引，记录页文案说明） | 出块快、只有公共端点的链（monad 28.8 万块/天、bsc 19.2 万/天） | 每轮 N/500 次 `eth_call`，触发时才扫块 |
+| `balance` | 每轮 Multicall3 `aggregate3([getEthBalance…])`（500 地址一次 `eth_call`）与 `wallet_user.scan_state[chain].balanceRaw` 比较；**只有增加**才对本轮区间逐块扫、写 `in` 行；扫不到对应交易的增量写 `attribution='unattributed'` 行（金额 = 差额、无哈希、区块 = 区间末块）；减少不处理（App 自己的转出在本机账本，别的软件发起的原生币转出不索引，记录页文案说明） | 出块快、只有公共端点的链（monad 28.8 万块/天、bsc 19.2 万/天） | 每轮 N/500 次 `eth_call`，触发时才扫块 |
 
 两种模式都是声明式配置，语义写进管理端提示，不是回退。
 
@@ -155,7 +157,7 @@ eth_getLogs { …, topics: [Transfer, [被监听地址 ≤ addr_chunk], null] } 
 | 数据库不可用 | 本片事务失败，游标不推进 | 重试；不会出现"记录写了游标没推"或反之 |
 | 链重组 | 最近 `confirmations` 块内数据作废 | §4.5 哈希核对 + 回退 + `orphaned` |
 | 配置错误（端点错链、跨度过大） | 拒绝保存 / 片跨度自动减半 | §4.3 / §4.4 |
-| 缺口很大（`balance` 模式，如停机一天，Monad 28.8 万块） | 逐块归属太贵（28.8 万请求） | 缺口 > `native_gap_cap` 时：本轮只做余额比对，增量先写 `unattributed(gap: from–to)` 行，**立即可见且金额正确**；同时建一条后台任务 `attribute`（§4.9 `chain_scan_job`）在低优先级、限速下逐块扫该缺口，找到交易后用真实行替换 `unattributed` 行（同事务：插入真实行、删除占位行）。ERC-20 在缺口内照常按日志精确追 |
+| 缺口很大（`balance` 模式，如停机一天，Monad 28.8 万块） | 逐块归属太贵（28.8 万请求） | 缺口 > `native_gap_cap` 时：本轮只做余额比对，增量先写 `unattributed(gap: from–to)` 行，**立即可见且金额正确**；同时建一条后台任务 `attribute`（§4.9，`chain_scan_state.jobs`）在低优先级、限速下逐块扫该缺口，找到交易后用真实行替换 `unattributed` 行（同事务：插入真实行、删除占位行）。ERC-20 在缺口内照常按日志精确追 |
 | 缺口内某地址先收后付、净额 ≤ 0 | `balance` 模式当轮不触发 | 同上：`attribute` 任务对整个缺口一次扫过所有监听地址，能补上；正常轮询窗口 30 秒内出现这种情况概率很低，记录页文案不承诺原生币出账 |
 
 追块吞吐（Monad，`max_log_span=100`，每片 2 次 `getLogs` + 1 次 `eth_call`，端点 5 rps）：停机 1 小时 = 1.2 万块 = 120 片 ≈ 1.2 分钟；停机 1 天 = 2880 片 ≈ 29 分钟。管理端显示"落后 N 块 / 预计 M 分钟追平"。
@@ -168,87 +170,51 @@ eth_getLogs { …, topics: [Transfer, [被监听地址 ≤ addr_chunk], null] } 
 2. **RN-Server 目录**：`supportedNetworks` 加条目，新增字段 `minBuild {android, ios}` = 第 1 步的构建号；`walletCatalog()` 一并下发给管理端。
 3. **bootstrap 门禁**：`GET /v1/mobile/bootstrap` 读 `x-platform` / `x-build-number`，`chains / networks / tokens` 只下发构建号 ≥ `minBuild` 的链；旧 App 看不到新链，不会解析失败。管理端"钱包与链"页对低于门槛的租户活跃安装（`app_installations` 有 `build_number`）显示"仍有 N 个安装看不到该链"。
 4. **租户启用**：租户管理员在"钱包与链"启用（现有校验 `supportedNetwork(id)` 不变）。
-5. **扫链配置**：平台管理员在"扫链管理"为该链建 `chain_scan_config`（端点、体检、模式、`start_block`），`enabled=true` 后索引器热加载建 worker，游标从 `start_block` 起。
-6. **监听地址**：`enabled` 变为 true 时，服务端把所有 `onchainSends=true` 且启用该链的租户的 `wallet_user` 一次性写入 `wallet_index_watch`（`from_block = start_block`）；之后由登录写入。
+5. **扫链配置**：平台管理员在"扫链管理"为该链建 `app_configs` 的 `chain-scan.<chain>` 行（端点、体检、模式、`startBlock`），`enabled=true` 后索引器热加载建 worker，`chain_scan_state` 行不存在时以 `startBlock` 初始化。
+6. **监听地址**：不需要登记。监听集合是派生的：`wallet_user(status='active')` × 租户 `mobile-bootstrap.wallet` 里 `onchainSends=true` 且 `chains` 含该链的租户（§4.9），worker 每 60 秒重算一次；新用户登录、租户启用链，下一轮自动纳入。
 7. **代币目录**：`chain_token_catalog` 加该链的原生币行与代币；ERC-20 过滤列表随之生效。
 
 去掉一条链：先 `paused` 观察，再 `enabled=false`（游标与记录保留，不删）；目录移除是代码变更，需先确认没有租户启用。
 
-### 4.9 表结构（迁移 24）
+### 4.9 表结构（迁移 24：新增 2 表 + 2 列）
 
-沿用仓库约定（`internal/store/migrations.go`）：每张表、每一列都带 `COMMENT`，说明含义、来源与取值；金额一律最小单位整数，不做精度换算；地址统一小写 `address_key`（与 `wallet_user` 一致），合约地址 EIP-55。
+**复用映射（v2 初稿 8 张表 → 2 张）**
+
+| 初稿 | 处理 | 落点与理由 |
+|---|---|---|
+| `chain_scan_config` | **复用** | `app_configs(tenant_id=0, config_key='chain-scan.<chain>')`，平台级配置的既有形态；`version/updated_by/updated_at` 现成；密钥走 `secretbox`（§4.3） |
+| `chain_scan_cursor` | **新表** | `chain_scan_state`，每链一行的运行状态，更新频繁、语义与配置不同，不能塞进 `app_configs`（会与管理员编辑抢 version） |
+| `chain_scan_endpoint_status` | **合并** | 进 `chain_scan_state.endpoint_health` JSON：端点 ≤ 5 个、由同一个 worker 每轮写，无独立查询需求 |
+| `chain_scan_job` | **合并** | 进 `chain_scan_state.jobs` JSON：任务按链、由持租约的 worker 串行执行，同时存在的任务个位数；完成 / 取消后从 JSON 移除，生命周期写 `audit_events` |
+| `chain_scan_alert` | **合并 + 复用** | 未恢复的告警在 `chain_scan_state.open_alerts` JSON（管理端横幅读它）；触发 / 恢复历史写 `audit_events`（actor `system-indexer`，action `chain_scan.alert_raised / alert_resolved`，target `chain`） |
+| `wallet_index_watch` | **取消** | 监听集合派生自 `wallet_user` × 租户 `mobile-bootstrap.wallet`（`onchainSends=true` 且 `chains` 含该链），worker 内存缓存、60 秒重算；`balance` 模式需要的每地址余额快照放 `wallet_user.scan_state` 新列；"记录自何时起算"用 `wallet_user.first_seen_at` 与链启用时间说明，不需要 `from_block` |
+| `wallet_transfer_index` | **新表** | 唯一的数据表，现有表没有链上转账这个实体 |
+| `wallet_session.installation_id` | **加列** | 定向推送（§4.10） |
+
+沿用仓库约定（`internal/store/migrations.go`）：每张表、每一列都带 `COMMENT`；金额一律最小单位整数；地址统一小写 `address_key`（与 `wallet_user` 一致），合约地址 EIP-55；时间 UTC。
 
 ```sql
-CREATE TABLE chain_scan_config (
-  chain VARCHAR(32) NOT NULL COMMENT '链 id，与平台链目录 supportedNetworks 一致：bsc/eth/base/op-sepolia/monad…',
-  enabled TINYINT(1) NOT NULL DEFAULT 0 COMMENT '平台是否对这条链扫链：0 不扫（unconfigured），1 扫',
-  paused TINYINT(1) NOT NULL DEFAULT 0 COMMENT '运维手动暂停：1 时 worker 停止推进游标，恢复后从断点追块',
-  endpoints JSON NOT NULL COMMENT '扫链端点有序数组 [{url,label,rps,maxLogSpan?}]；url 含密钥时只在此表明文，接口返回脱敏；rps 每端点每秒请求上限；maxLogSpan 端点级覆盖',
-  max_log_span INT UNSIGNED NOT NULL COMMENT '链级 eth_getLogs 最大区块跨度，来自端点体检（§4.12）；请求被拒会自动减半但不回写',
-  confirmations INT UNSIGNED NOT NULL COMMENT '写入深度：只索引 head−confirmations 之前的区块，也是重组回退的块数',
-  poll_seconds INT UNSIGNED NOT NULL COMMENT '追平后的轮询间隔（秒）；追块期间不生效',
-  addr_chunk INT UNSIGNED NOT NULL DEFAULT 1000 COMMENT '每次 eth_getLogs 携带的监听地址数上限（实测 2000 可用，默认留一倍余量）',
-  native_mode ENUM('blocks','balance') NOT NULL COMMENT '原生币索引模式：blocks 逐块读全部交易（精确、双向）；balance 用 Multicall3 余额差触发（只记入账，归属可能延后）',
-  native_gap_cap BIGINT UNSIGNED NOT NULL DEFAULT 20000 COMMENT 'balance 模式下缺口超过多少块改为先记差额、后台任务归属（§4.7）',
-  start_block BIGINT UNSIGNED NOT NULL COMMENT '首次启用时的起扫区块；游标不存在时以它初始化，之后不再使用',
-  version INT UNSIGNED NOT NULL DEFAULT 1 COMMENT '乐观锁版本；索引器每 30 秒比对，变化即重建该链 worker',
-  updated_by VARCHAR(120) NOT NULL COMMENT '最后修改人（管理员用户名或 x-admin-id）',
-  updated_at DATETIME(3) NOT NULL COMMENT '最后修改时间（UTC）',
-  PRIMARY KEY(chain)
-) ENGINE=InnoDB COMMENT='平台级扫链配置：端点、节奏、模式；由管理端"扫链管理"维护，索引器热加载';
-
-CREATE TABLE chain_scan_cursor (
-  chain VARCHAR(32) NOT NULL COMMENT '链 id，同 chain_scan_config.chain',
+CREATE TABLE chain_scan_state (
+  chain VARCHAR(32) NOT NULL COMMENT '链 id，与平台链目录 supportedNetworks 及 app_configs 的 chain-scan.<chain> 一致',
   scanned_to_block BIGINT UNSIGNED NOT NULL COMMENT '已完整索引到的区块号（含）；与记录同一事务推进，是追块的唯一断点',
   scanned_to_hash CHAR(66) NOT NULL COMMENT 'scanned_to_block 的区块哈希；每轮核对，不一致即判定重组',
   head_block BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '最近一次从端点观察到的链头区块号，用于计算落后',
-  state ENUM('idle','scanning','catching_up','stalled','paused','unconfigured') NOT NULL COMMENT '运行状态：idle 追平等待；scanning 正在扫本轮；catching_up 落后追块中；stalled 全部端点不可用；paused 手动暂停；unconfigured 未启用或无端点',
+  state ENUM('idle','scanning','catching_up','stalled','paused','unconfigured') NOT NULL COMMENT '运行状态：idle 追平等待；scanning 正在扫本轮；catching_up 落后追块中；stalled 全部端点不可用；paused 手动暂停；unconfigured 配置行不存在或 enabled=false',
   lease_owner VARCHAR(80) NOT NULL DEFAULT '' COMMENT '持有租约的索引器实例标识（主机名+进程 id）；空表示无人持有',
   lease_until DATETIME(3) NULL COMMENT '租约到期时间（UTC）；到期后其他实例可接管',
   last_error VARCHAR(512) NOT NULL DEFAULT '' COMMENT '最近一次错误（已截断），成功一轮后清空',
   error_count INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '连续失败轮数；成功后归零',
   reorg_count INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '累计检测到的重组次数，用于告警与排查',
+  endpoint_health JSON NOT NULL COMMENT '端点健康度数组，按配置顺序：[{label,urlHash,health(healthy|cooling|mismatch|unknown),consecutiveFailures,coolingUntil,lastOkAt,lastError,latencyMs,headBlock,spanRejected}]；urlHash = url 的 SHA-256，不含明文；由 worker 每轮写、管理端读',
+  jobs JSON NOT NULL COMMENT '后台任务数组：[{id,kind(rescan|attribute),fromBlock,toBlock,progressBlock,state(pending|running|failed),createdBy,reason,lastError,createdAt}]；由持租约的 worker 串行执行；done/cancelled 后移出数组并写 audit_events',
+  open_alerts JSON NOT NULL COMMENT '未恢复的告警数组：[{kind(stalled|lagging|reorg|endpoint_mismatch|job_failed),message,raisedAt,webhookSentAt}]；恢复即移出并写 audit_events；管理端横幅与 webhook 读它',
   updated_at DATETIME(3) NOT NULL COMMENT '最后更新时间（UTC）',
   PRIMARY KEY(chain)
-) ENGINE=InnoDB COMMENT='每条链的扫描游标、运行状态与单实例租约';
-
-CREATE TABLE chain_scan_endpoint_status (
-  chain VARCHAR(32) NOT NULL COMMENT '链 id',
-  url_hash CHAR(64) NOT NULL COMMENT '端点 url 的 SHA-256；不落明文，避免密钥进入状态表',
-  label VARCHAR(80) NOT NULL COMMENT '配置里的端点显示名，供管理端对应',
-  health ENUM('healthy','cooling','mismatch','unknown') NOT NULL COMMENT '健康度：healthy 可用；cooling 连续失败后冷却中；mismatch eth_chainId 与目录不符，剔除；unknown 尚未探测',
-  consecutive_failures INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '连续失败次数；成功后归零；≥3 进入 cooling',
-  cooling_until DATETIME(3) NULL COMMENT '冷却到期时间（UTC），到期先探活再恢复',
-  last_ok_at DATETIME(3) NULL COMMENT '最近一次成功响应时间（UTC）',
-  last_error VARCHAR(512) NOT NULL DEFAULT '' COMMENT '最近一次错误（已截断）',
-  latency_ms INT UNSIGNED NULL COMMENT '最近一次成功请求耗时（毫秒）',
-  head_block BIGINT UNSIGNED NULL COMMENT '该端点最近报告的链头，用于识别落后节点',
-  span_rejected INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '因区块跨度过大被拒的次数，提示 max_log_span 配高了',
-  updated_at DATETIME(3) NOT NULL COMMENT '最后更新时间（UTC）',
-  PRIMARY KEY(chain, url_hash)
-) ENGINE=InnoDB COMMENT='扫链端点健康度，由索引器写、管理端读';
-
-CREATE TABLE chain_scan_job (
-  id VARCHAR(80) NOT NULL COMMENT '任务 id（job_ 前缀随机串）',
-  chain VARCHAR(32) NOT NULL COMMENT '链 id',
-  kind ENUM('rescan','attribute','rebuild_watch') NOT NULL COMMENT '任务类型：rescan 重扫区间（幂等）；attribute 对 unattributed 行逐块定位交易并替换；rebuild_watch 按 wallet_user 重建监听地址',
-  from_block BIGINT UNSIGNED NOT NULL COMMENT '处理区间起始区块（含）；rebuild_watch 填 0',
-  to_block BIGINT UNSIGNED NOT NULL COMMENT '处理区间结束区块（含）；rebuild_watch 填 0',
-  progress_block BIGINT UNSIGNED NOT NULL COMMENT '已处理到的区块，供进度条与断点续跑',
-  tenant_id BIGINT UNSIGNED NULL COMMENT 'rebuild_watch 限定的租户；NULL 表示全部租户',
-  state ENUM('pending','running','done','failed','cancelled') NOT NULL COMMENT '任务状态：pending 排队；running 执行中；done 完成；failed 失败（见 last_error）；cancelled 管理端取消',
-  created_by VARCHAR(120) NOT NULL COMMENT '发起人：管理员用户名，或 system（索引器自动建的 attribute 任务）',
-  reason VARCHAR(500) NOT NULL DEFAULT '' COMMENT '管理端填写的操作原因，同步写审计',
-  last_error VARCHAR(512) NOT NULL DEFAULT '' COMMENT '最近一次错误（已截断）',
-  created_at DATETIME(3) NOT NULL COMMENT '创建时间（UTC）',
-  updated_at DATETIME(3) NOT NULL COMMENT '最后更新时间（UTC）',
-  PRIMARY KEY(id),
-  KEY ix_job_chain_state(chain, state)
-) ENGINE=InnoDB COMMENT='扫链后台任务：重扫、原生币归属、重建监听；限速执行、可取消、断点续跑';
+) ENGINE=InnoDB COMMENT='每条链的扫描游标、运行状态、端点健康、后台任务与未恢复告警；每链一行，由持租约的索引器写，管理端与移动端接口读';
 
 CREATE TABLE wallet_transfer_index (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '记录主键',
-  tenant_id BIGINT UNSIGNED NOT NULL COMMENT '租户 ID，来自 wallet_index_watch',
+  tenant_id BIGINT UNSIGNED NOT NULL COMMENT '租户 ID，来自 wallet_user',
   chain VARCHAR(32) NOT NULL COMMENT '链 id',
   address_key VARCHAR(42) NOT NULL COMMENT '被监听的钱包地址（小写），同 wallet_user.address_key',
   direction ENUM('in','out') NOT NULL COMMENT '方向：in 入账（to = 本地址）；out 出账（from = 本地址）',
@@ -270,33 +236,16 @@ CREATE TABLE wallet_transfer_index (
   KEY ix_transfer_address(tenant_id, address_key, chain, block_number DESC)
 ) ENGINE=InnoDB COMMENT='扫链得到的钱包转账记录，唯一正式来源；App 本机账本只补充未上链的进行中状态';
 
-CREATE TABLE wallet_index_watch (
-  tenant_id BIGINT UNSIGNED NOT NULL COMMENT '租户 ID',
-  chain VARCHAR(32) NOT NULL COMMENT '链 id',
-  address_key VARCHAR(42) NOT NULL COMMENT '被监听地址（小写），同 wallet_user.address_key',
-  from_block BIGINT UNSIGNED NOT NULL COMMENT '纳入监听时的游标区块；此前的历史不索引，记录页据此说明起算时间',
-  native_balance_raw DECIMAL(65,0) NULL COMMENT 'balance 模式最近一次读到的原生币余额（最小单位）；NULL 表示尚未读取',
-  last_polled_block BIGINT UNSIGNED NULL COMMENT 'balance 模式最近一次余额比对对应的区块，下次触发扫块的区间起点',
-  created_at DATETIME(3) NOT NULL COMMENT '登记时间（UTC）：登录时由 API 写入，或 rebuild_watch 任务写入',
-  PRIMARY KEY(chain, address_key, tenant_id)
-) ENGINE=InnoDB COMMENT='被监听的钱包地址；只登记 onchainSends=true 且启用该链的租户用户';
+ALTER TABLE wallet_user ADD COLUMN scan_state JSON NULL
+  COMMENT 'balance 模式的每链原生币余额快照：{"<chain>":{"balanceRaw":"最小单位整数","block":比对时的区块号}}；NULL 表示尚未读取；只对 nativeMode=balance 的链写';
 
-CREATE TABLE chain_scan_alert (
-  id VARCHAR(80) NOT NULL COMMENT '告警 id',
-  chain VARCHAR(32) NOT NULL COMMENT '链 id',
-  kind ENUM('stalled','lagging','reorg','endpoint_mismatch','job_failed') NOT NULL COMMENT '告警类型，触发条件见 §4.14',
-  message VARCHAR(512) NOT NULL COMMENT '人类可读描述（已截断）',
-  raised_at DATETIME(3) NOT NULL COMMENT '首次触发时间（UTC）',
-  resolved_at DATETIME(3) NULL COMMENT '恢复时间（UTC）；NULL 表示仍在告警',
-  webhook_sent_at DATETIME(3) NULL COMMENT 'webhook 投递成功时间；未配置或失败为 NULL',
-  PRIMARY KEY(id),
-  KEY ix_alert_open(chain, resolved_at)
-) ENGINE=InnoDB COMMENT='扫链告警；管理端横幅与 webhook 的事实源';
+ALTER TABLE wallet_session ADD COLUMN installation_id VARCHAR(80) NULL
+  COMMENT '登录时的 App 安装实例 ID（app_installations.installation_id），定向推送用；旧会话为 NULL';
 ```
 
-- 监听登记：`walletAuthVerify` 成功后对会话声明且该租户启用、且 `chain_scan_config.enabled` 的链 `INSERT IGNORE`，`from_block = 当前游标`（API 读 `chain_scan_cursor`，没有游标的链不登记并打日志）。只登记 `onchainSends=true` 的租户：演示模式的记录来自 Mock 账本。
 - `unattributed` 行的唯一键用 `(chain, '', -1, address_key, 'in', block_number)`，同一区间只会有一条。
-- `wallet_session` 加列 `installation_id VARCHAR(80) NULL COMMENT '登录时的 App 安装实例 ID，定向推送用；旧会话为 NULL'`（§4.10）。
+- `wallet_user.scan_state` 每轮只更新余额有变化的地址（`JSON_SET`），无变化不写。
+- 派生监听集合的查询（worker 每 60 秒）：`SELECT u.tenant_id, u.address_key FROM wallet_user u WHERE u.status='active' AND u.tenant_id IN (<启用该链且 onchainSends=true 的租户>)`，租户集合来自 `app_configs` 的 `mobile-bootstrap` 行 `wallet.chains / wallet.onchainSends`（`server.go:939` `walletSection`）。
 
 ### 4.10 推送
 
@@ -317,7 +266,7 @@ CREATE TABLE chain_scan_alert (
 }
 ```
 
-只返回 `status='confirmed'`；`index[chain].state` 取 `chain_scan_cursor.state`。契约进 `contracts/openapi.json`，同步 RN-App `contracts/rn-server.openapi.json`（`check-api-contract.mjs`）。
+只返回 `status='confirmed'`；`index[chain].state` 取 `chain_scan_state.state`。契约进 `contracts/openapi.json`，同步 RN-App `contracts/rn-server.openapi.json`（`check-api-contract.mjs`）。
 
 **管理端（平台级，新路由组 `/v1/admin/platform/scan`，走 `authenticate()` 不走 `domainTenantScope()`，再加 `requirePlatformAdmin()`）**
 
@@ -329,7 +278,7 @@ CREATE TABLE chain_scan_alert (
 | PUT | `/chains/:chain` | 保存配置（乐观锁 `version`、校验、审计） |
 | POST | `/chains/:chain/probe` | 端点体检：对每个端点跑 `eth_chainId`、`eth_blockNumber`、Multicall3 `eth_getCode`、`eth_getLogs` 跨度二分探测（100 → 10000）、`eth_getBlockByNumber(full)` 耗时；返回建议 `maxLogSpan` 与 `native_mode` |
 | POST | `/chains/:chain/pause` / `resume` | 暂停 / 恢复 |
-| POST | `/chains/:chain/jobs` | 建任务：`rescan {from,to}`（重扫区间，幂等）、`attribute {from,to}`（补原生币归属）、`rebuild_watch {tenantId?}`（按 `wallet_user` 重建监听） |
+| POST | `/chains/:chain/jobs` | 建任务（写入 `chain_scan_state.jobs`，行锁）：`rescan {from,to}`（重扫区间，幂等）、`attribute {from,to}`（补原生币归属） |
 | GET / POST | `/jobs`、`/jobs/:id/cancel` | 任务列表与取消 |
 | GET | `/transfers?chain=&address=` | 客服查询某地址的索引记录（含 `orphaned` / `unattributed`） |
 
@@ -342,10 +291,10 @@ CREATE TABLE chain_scan_alert (
 1. **链卡片列表**：每条目录链一张卡：`enabled / paused`、状态（`idle / catching_up / stalled / unconfigured`）、游标块与链头、落后块数与时长、预计追平时间、最近错误、重组次数、24h 记录数、`unattributed` 未归属数、监听地址数、运行中任务。
 2. **配置编辑**：端点有序列表（增删、拖动排序、label、rps、脱敏显示），链级参数（`max_log_span / confirmations / poll_seconds / addr_chunk / native_mode / native_gap_cap / start_block`），保存前必须"体检通过"（体检按钮逐端点显示 chainId 是否相符、头高度、延迟、getLogs 可用跨度、Multicall3 有无），体检建议一键填入。
 3. **端点健康表**：`healthy / cooling / mismatch`、连续失败、冷却到期、最近成功、延迟、头高度、`spanRejected` 次数。
-4. **操作**：暂停 / 恢复；重扫区间（填 from/to，说明"幂等，不会重复"）；补归属（对 `unattributed` 行一键生成 `attribute` 任务）；重建监听；每个操作要填 `reason`，写审计。
+4. **操作**：暂停 / 恢复；重扫区间（填 from/to，说明"幂等，不会重复"）；补归属（对 `unattributed` 行一键生成 `attribute` 任务）；每个操作要填 `reason`，写审计。
 5. **任务列表**：进度条（`progress_block / (to − from)`）、取消。
 6. **地址查询**：输入地址与链，列出索引记录（含 `orphaned` / `unattributed`），给客服排查"我收到了钱但没记录"。
-7. **新链向导**（§4.8 的可视化）：显示该链的 `minBuild`、当前各租户低于门槛的活跃安装数、是否已有配置 / 代币目录 / 监听地址，按步骤打勾。
+7. **新链向导**（§4.8 的可视化）：显示该链的 `minBuild`、当前各租户低于门槛的活跃安装数、是否已有配置 / 代币目录 / 派生监听地址数，按步骤打勾。
 
 页面入口只对 `PLATFORM_ADMIN_USERNAMES` 内的账号显示（前端按 `GET /v1/admin/auth/session` 返回的 `platformAdmin: true` 判断，接口侧仍以 `requirePlatformAdmin()` 为准）。
 
@@ -362,21 +311,21 @@ CREATE TABLE chain_scan_alert (
 ### 4.14 可观测与告警
 
 - 结构化日志字段：`chain, state, cursor, head, lag_blocks, lag_seconds, endpoint_label, rps_wait_ms, rows_written, unattributed_rows, reorgs`。
-- 告警条件（索引器自查，每轮）：`stalled` 持续 > 5 分钟；`lag_seconds` > 30 分钟；重组发生；某端点 `mismatch`；任务 `failed`。动作：写 `chain_scan_alert`（管理端顶部横幅 + 卡片红标）+ 可选 webhook `INDEXER_ALERT_WEBHOOK`（企业微信 / Slack 通用 JSON）。恢复时写"已恢复"。
-- 指标暴露留给 OTel（`docs/ARCHITECTURE.md` §7 的既定方向），本期只做日志 + 表。
+- 告警条件（索引器自查，每轮）：`stalled` 持续 > 5 分钟；`lag_seconds` > 30 分钟；重组发生；某端点 `mismatch`；任务 `failed`。动作：写入 `chain_scan_state.open_alerts`（管理端顶部横幅 + 卡片红标）+ `audit_events`（`chain_scan.alert_raised`）+ 可选 webhook `INDEXER_ALERT_WEBHOOK`（企业微信 / Slack 通用 JSON）。恢复时移出 `open_alerts` 并写 `audit_events`（`chain_scan.alert_resolved`）。
+- 指标暴露留给 OTel（`docs/ARCHITECTURE.md` §7 的既定方向），本期只做日志 + `chain_scan_state` + `audit_events`。
 
 ### 4.15 测试
 
-- Go 单测（假 RPC）：分片与地址分组边界；同事务写行 + 游标；重组回退与 `orphaned`；端点健康度状态机（失败计数、冷却、chainId 不符、落后节点跳过、限速等待）；`-32614` 跨度减半；`balance` 模式的余额差触发、`unattributed` 生成与 `attribute` 任务替换；缺口 > `native_gap_cap` 的分支；配置热加载重建 worker；租约互斥与接管；bootstrap 按构建号过滤链。
+- Go 单测（假 RPC）：分片与地址分组边界；同事务写行 + 游标；重组回退与 `orphaned`；端点健康度状态机（失败计数、冷却、chainId 不符、落后节点跳过、限速等待）；`-32614` 跨度减半；`balance` 模式的余额差触发、`unattributed` 生成与 `attribute` 任务替换；缺口 > `native_gap_cap` 的分支；配置热加载重建 worker；派生监听集合（租户启用 / 关闭链、用户 blocked）；`jobs` JSON 的行锁并发（管理端取消 vs worker 进度）；租约互斥与接管；bootstrap 按构建号过滤链。
 - 集成（dev，OP Sepolia，prax1s 租户）：转 USDC 与 ETH 到模拟器钱包 → 表 → 接口 → App 记录页 → 推送；停索引器 10 分钟再启动看追块与"已索引到"提示；配置里换成错链端点看保存被拒；两端点其一断网看切换与健康表。
 - 主网前置：为 bsc / eth 提供可扫链端点并体检通过后再启用。
 
 ## 5. 分期
 
-1. 迁移 24（全部表）+ `internal/indexer`（ERC-20 + 原生币两种模式 + 游标 / 重组 / 多端点 / 热加载 / 租约）+ `indexer` 子命令 + compose；dev 只开 op-sepolia。
+1. 迁移 24（2 表 + 2 列）+ `internal/indexer`（ERC-20 + 原生币两种模式 + 游标 / 重组 / 多端点 / 热加载 / 租约）+ `indexer` 子命令 + compose；dev 只开 op-sepolia。
 2. 平台级管理接口 + RN-Admin"扫链管理"页（配置、体检、状态、暂停、任务、地址查询）+ 审计。
 3. 移动端接口 + 契约同步 + App 合并与记录页状态 + 收款页轮询。
-4. 追块任务（`attribute` / `rescan` / `rebuild_watch`）+ 告警。
+4. 追块任务（`attribute` / `rescan`）+ 告警。
 5. 会话 ↔ 安装关联 + 定向推送。
 6. 新链门禁（目录 `minBuild` + bootstrap 过滤 + 向导）。
 7. 主网链启用：端点由用户在管理端填入并体检通过后 `enabled=true`，无代码变更。
