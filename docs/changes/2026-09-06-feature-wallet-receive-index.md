@@ -27,6 +27,7 @@
 - `WalletTransfer` 加 `attribution` / `blockTime`；新类型 `TransferIndex` / `TransferIndexState` / `WalletTransferFeed`。
 - hooks：`useWalletTransfers` → `useWalletTransferFeed(address, { refetchInterval })`；新增 `useIncomingTransferWatch`（AppState 前台 + 收款页打开时才轮询）。
 - 记录页 `IndexNotices`；收款页用 `useImperativeHandle` 包一层拿到打开 / 关闭时机。
+- 第五期（定向推送）：登录 `verify` 带 `X-Installation-ID` + `Authorization: Installation <credential>`（`installationAuthorization()`），服务端返回 401 `INSTALLATION_CREDENTIAL_INVALID` 时丢掉凭证并用同一挑战重试一次；`AppError.code` 承载服务端 problem 码（api-client 解析错误体）；收到 `wallet.transfer.received` 推送只刷新钱包查询。
 - i18n 新键 `records.index.*`、`records.unattributed`、`receive.arrived`；删除 `records.receiveNote`；`i18n/seed` 已导出。
 - 无原生依赖变化；可走 OTA。服务端未部署前 `HttpWalletIndex` 会收到 404 → 记录页显示"收款索引暂时不可用"，本机记录不受影响。
 

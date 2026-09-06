@@ -251,6 +251,8 @@ ALTER TABLE wallet_session ADD COLUMN installation_id VARCHAR(80) NULL
 
 前置：`wallet_session` 加 `installation_id`（登录请求带现有安装凭证头），outbox payload 加 `targetInstallationIds`，`dispatcher.targets` 有该字段时只发这些安装。事件 `wallet.transfer.received {chain, addressKey, symbol, amountRaw, decimals, txHash, attribution}`，文案走 `push_notification_copy`。`unattributed` 也推送（"收到 X，来源待确认"，2026-09-06 用户确认），归属完成不再推。
 
+实现（2026-09-06）：登录请求头 `X-Installation-ID` + `Authorization: Installation <credential>`（安装注册时下发的凭证），带了就必须有效——服务端在核销 nonce 之前校验，无效返回 401 `INSTALLATION_CREDENTIAL_INVALID`，App 丢掉失效凭证后用同一挑战重试一次（本次会话不关联安装，下次心跳重新注册）；没注册过就不带。入队发生在索引器写记录的同一事务里（写入前判断该 `in` 行是否首次出现），重扫 / 补归属任务不推；载荷 `{chain, chainName, addressKey, symbol, decimals, displayDecimals, amountRaw, txHash, attribution, targetInstallationIds}`，dispatcher 不把 `targetInstallationIds` 下发到设备。文案键 `wallet.receivedTitle` / `wallet.receivedBody` / `wallet.receivedUnattributedBody`（迁移 34，占位符 `{amount}`（按 displayDecimals 截断）`{symbol}` `{chain}`）。App 收到 `wallet.transfer.received` 只刷新钱包查询（记录 / 余额 / 资产页），不重拉 bootstrap。
+
 ### 4.11 接口
 
 **移动端** `GET /v1/mobile/wallet/transfers?chain=&cursor=&limit=50`，鉴权 `Authorization: Wallet <token>`：

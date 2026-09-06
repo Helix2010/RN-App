@@ -355,6 +355,16 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   useEffect(
     () =>
       subscribeToUpdateSignals((signal) => {
+        if (signal.type === "wallet.transfer.received") {
+          // 收款推送：只刷新钱包数据，不重拉 bootstrap
+          for (const key of [
+            ["wallet-transfers"],
+            ["wallet-balances"],
+            ["assets"],
+          ])
+            void queryClient.invalidateQueries({ queryKey: key });
+          return;
+        }
         if (
           signal.type === "app_update_available" ||
           (signal.opened && signal.type === "ota_updated")
@@ -379,7 +389,7 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
           }
         });
       }),
-    [query, runSilentOtaCheck],
+    [query, queryClient, runSilentOtaCheck],
   );
   const enableUpdateNotifications = useCallback(async () => {
     setNotificationStatus(

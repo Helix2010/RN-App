@@ -1,6 +1,10 @@
 import * as SecureStore from "expo-secure-store";
 import { z } from "zod";
 import type { KeyValueStorage } from "../../../core/gateways/types";
+import {
+  forgetInstallationCredential,
+  installationAuthorization,
+} from "../../../core/device/installation-service";
 import { apiClient } from "../../../core/network/api-client";
 import { AppError } from "../../../core/network/app-error";
 import type { Session } from "../model/session";
@@ -68,17 +72,47 @@ export class HttpSessionGateway implements SessionGateway {
     challenge: SignInChallenge,
     signature: string,
   ): Promise<Session> {
-    const response = await apiClient.post(
-      "/v1/mobile/auth/verify",
-      {
-        address: request.address,
-        nonce: challenge.nonce,
-        signature,
-        connector: request.connector,
-        chains: request.chains,
-      },
-      verifySchema,
-    );
+    const body = {
+      address: request.address,
+      nonce: challenge.nonce,
+      signature,
+      connector: request.connector,
+      chains: request.chains,
+    };
+    // 带上安装身份，服务端把会话关联到这台安装（收款推送只发它）
+    const installation = await installationAuthorization();
+    let response: z.infer<typeof verifySchema>;
+    if (Object.keys(installation).length === 0) {
+      response = await apiClient.post(
+        "/v1/mobile/auth/verify",
+        body,
+        verifySchema,
+      );
+    } else {
+      try {
+        response = await apiClient.post(
+          "/v1/mobile/auth/verify",
+          body,
+          verifySchema,
+          { headers: installation },
+        );
+      } catch (error) {
+        // 安装凭证被撤销 / 轮换了：不能挡登录。丢掉失效凭证让心跳重新注册，本次登录
+        // 不关联安装（服务端在核销 nonce 之前校验，同一挑战可以重试）
+        if (
+          !(error instanceof AppError) ||
+          error.status !== 401 ||
+          error.code !== "INSTALLATION_CREDENTIAL_INVALID"
+        )
+          throw error;
+        await forgetInstallationCredential();
+        response = await apiClient.post(
+          "/v1/mobile/auth/verify",
+          body,
+          verifySchema,
+        );
+      }
+    }
     const session: Session = {
       address: response.address,
       connector: request.connector,

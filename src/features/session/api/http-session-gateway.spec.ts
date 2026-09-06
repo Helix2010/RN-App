@@ -92,6 +92,46 @@ describe("HttpSessionGateway", () => {
     });
   });
 
+  it("links the installation on login and retries without it when the credential is stale", async () => {
+    const gateway = setup();
+    mockSecure.set("foundation.installation-id.v1", "inst_1");
+    mockSecure.set("foundation.installation-credential.v1", "icred_1");
+    post
+      .mockRejectedValueOnce(
+        new AppError("server", "401", false, undefined, 401, {
+          code: "INSTALLATION_CREDENTIAL_INVALID",
+        }),
+      )
+      .mockResolvedValueOnce(verifyResponse());
+    await gateway.verify(request, challenge, "0xsig");
+    expect(post.mock.calls[0]?.[3]).toEqual({
+      headers: {
+        "X-Installation-ID": "inst_1",
+        Authorization: "Installation icred_1",
+      },
+    });
+    // 重试不带安装身份，失效凭证已丢弃（心跳会重新注册）
+    expect(post.mock.calls[1]?.length).toBe(3);
+    expect(mockSecure.has("foundation.installation-credential.v1")).toBe(false);
+    expect(mockSecure.get("foundation.session-token.v1")).toBe("wtok_test");
+  });
+
+  it("does not swallow other login failures behind the installation retry", async () => {
+    const gateway = setup();
+    mockSecure.set("foundation.installation-id.v1", "inst_1");
+    mockSecure.set("foundation.installation-credential.v1", "icred_1");
+    post.mockRejectedValueOnce(
+      new AppError("server", "401", false, undefined, 401, {
+        code: "WALLET_SIGNATURE_INVALID",
+      }),
+    );
+    await expect(gateway.verify(request, challenge, "0xsig")).rejects.toThrow(
+      "401",
+    );
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(mockSecure.has("foundation.installation-credential.v1")).toBe(true);
+  });
+
   it("drops an expired cached session", async () => {
     const gateway = setup();
     post.mockResolvedValueOnce(

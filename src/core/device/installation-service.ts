@@ -104,6 +104,29 @@ async function readHeartbeatRecord(): Promise<{
   }
 }
 
+/**
+ * 登录时带上的安装身份：服务端把钱包会话关联到这台安装，收款等用户级推送只发它。
+ * 还没注册过（没有凭证）就不带，登录照常。
+ */
+export async function installationAuthorization(): Promise<
+  Record<string, string>
+> {
+  const [id, credential] = await Promise.all([
+    SecureStore.getItemAsync(INSTALLATION_KEY),
+    SecureStore.getItemAsync(CREDENTIAL_KEY),
+  ]);
+  if (!id || !credential) return {};
+  return {
+    "X-Installation-ID": id,
+    Authorization: `Installation ${credential}`,
+  };
+}
+
+/** 服务端判定凭证失效时丢掉它：下次心跳会重新注册拿新凭证。 */
+export async function forgetInstallationCredential(): Promise<void> {
+  await SecureStore.deleteItemAsync(CREDENTIAL_KEY);
+}
+
 async function installationId(): Promise<string> {
   const current = await SecureStore.getItemAsync(INSTALLATION_KEY);
   if (current) return current;

@@ -102,6 +102,7 @@ class ApiClient {
           response.status >= 500 || response.status === 429,
           requestId,
           response.status,
+          { code: await problemCode(response) },
         );
       }
       return response;
@@ -210,6 +211,20 @@ class ApiClient {
       );
     }
   }
+}
+
+/** 服务端错误体是 problem JSON（{code, detail, …}）时取出业务码；不是 JSON 就没有。 */
+async function problemCode(response: Response): Promise<string | undefined> {
+  try {
+    const body: unknown = await response.json();
+    if (body && typeof body === "object" && "code" in body) {
+      const code = (body as { code?: unknown }).code;
+      return typeof code === "string" ? code : undefined;
+    }
+  } catch {
+    // 非 JSON 错误体
+  }
+  return undefined;
 }
 
 export const apiClient = new ApiClient();
