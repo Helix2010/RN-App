@@ -52,7 +52,16 @@ import type {
   PricePoint,
   Tag,
   Trade,
+  DisputeInput,
+  DisputeStep,
+  DisputeTerms,
 } from "../model/predict";
+import {
+  PredictDisputeError,
+  PredictInsufficientBondError,
+  normalizeDisputeInput,
+  validateDisputeInput,
+} from "../model/dispute";
 import type { PredictGateway } from "./gateway";
 
 const USDW = { decimals: 6, symbol: "USDW" };
@@ -1099,23 +1108,69 @@ export class MockPredictGateway implements PredictGateway {
     });
   }
 
+  /** 演示账本：押金固定、到期 = 争议截止、余额取账户可用额（没有独立的 EOA 余额概念） */
+  async getDisputeTerms(
+    address: string,
+    marketId: string,
+  ): Promise<DisputeTerms> {
+    const state = await this.load();
+    this.ensureAccount(state, address);
+    const adjudication = this.adjudicationOf(state, marketId);
+    const balance = state.balances[address] as { available: string };
+    return {
+      bond: BOND,
+      expiresAt: adjudication.disputeDeadline ?? mockNowIso(),
+      oracle: "0x0000000000000000000000000000000000000000",
+      usdwBalance: money(balance.available, 6, "USDW"),
+      usdcBalance: zero(6, "USDC"),
+      nativeBalance: fromDecimal("0.05", 18, "ETH"),
+    };
+  }
+
+  async wrapForDispute(address: string, amount: Money): Promise<PredictTx> {
+    return simulate(async () => {
+      const state = await this.load();
+      this.ensureAccount(state, address);
+      const balance = state.balances[address] as { available: string };
+      balance.available = add(money(balance.available, 6, "USDW"), {
+        ...amount,
+        symbol: "USDW",
+      }).raw;
+      const tx = this.pushTx(state, "deposit");
+      await this.save();
+      return tx;
+    });
+  }
+
   async submitDispute(
     address: string,
     marketId: string,
-    reason: string,
+    input: DisputeInput,
+    onStep?: (step: DisputeStep) => void,
   ): Promise<PredictTx> {
+    const normalized = normalizeDisputeInput(input);
+    if (!validateDisputeInput(normalized).ok)
+      throw new PredictDisputeError("evidence_rejected", "client validation");
+    const reason = normalized.evidence;
     return simulate(async () => {
       const state = await this.load();
       this.ensureAccount(state, address);
       const adjudication = this.adjudicationOf(state, marketId);
-      if (!adjudication.canDispute) throw new Error("dispute window closed");
+      if (!adjudication.canDispute)
+        throw new PredictDisputeError("window_closed");
+      onStep?.("evidence");
+      onStep?.("bond");
       const balance = state.balances[address] as {
         available: string;
         locked: string;
       };
       const available = sub(money(balance.available, 6, "USDW"), BOND);
       if (isNegative(available))
-        throw new Error("insufficient balance for bond");
+        throw new PredictInsufficientBondError(
+          BOND,
+          money(balance.available, 6, "USDW"),
+        );
+      onStep?.("dispute");
       balance.available = available.raw;
       const stored: StoredAdjudication = {
         ...(state.adjudication[marketId] ?? {}),

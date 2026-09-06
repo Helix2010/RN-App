@@ -16,6 +16,7 @@ import type {
   PlaceOrderRequest,
   PredictEvent,
   PriceRange,
+  DisputeStep,
 } from "../model/predict";
 
 export function usePredictTags() {
@@ -283,18 +284,67 @@ export function useSplitMerge(address: string | undefined) {
   });
 }
 
+/** 争议条款（链上押金 / 到期 / 本地址余额）：面板打开时才读，15 秒刷新一次 */
+export function useDisputeTerms(
+  address: string | undefined,
+  marketId: string | undefined,
+  enabled: boolean,
+) {
+  const { predict } = useGateways();
+  return useQuery({
+    queryKey: ["predict-dispute-terms", address, marketId],
+    queryFn: () =>
+      predict.getDisputeTerms(address as string, marketId as string),
+    enabled: Boolean(address && marketId && enabled),
+    refetchInterval: 15_000,
+  });
+}
+
 export function useSubmitDispute(address: string | undefined) {
   const { predict } = useGateways();
   const invalidate = useInvalidateAccount();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { marketId: string; reason: string }) =>
-      predict.submitDispute(address as string, input.marketId, input.reason),
+    mutationFn: (input: {
+      marketId: string;
+      evidence: string;
+      links: string[];
+      onStep?: (step: DisputeStep) => void;
+    }) =>
+      predict.submitDispute(
+        address as string,
+        input.marketId,
+        { evidence: input.evidence, links: input.links },
+        input.onStep,
+      ),
     onSuccess: (_result, input) => {
       if (address) invalidate(address);
       void queryClient.invalidateQueries({
         queryKey: ["predict-adjudication", input.marketId],
       });
+      void queryClient.invalidateQueries({
+        queryKey: ["predict-dispute-terms"],
+      });
+    },
+  });
+}
+
+/** 押金不够：把钱包 USDC 兑换成 USDW 到本地址；成功后条款与钱包余额都要重读 */
+export function useWrapForDispute(address: string | undefined) {
+  const { predict } = useGateways();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      amount: Money;
+      onStep?: (step: "approve" | "wrap") => void;
+    }) => predict.wrapForDispute(address as string, input.amount, input.onStep),
+    onSuccess: () => {
+      for (const key of [
+        ["predict-dispute-terms"],
+        ["wallet-balances"],
+        ["assets"],
+      ])
+        void queryClient.invalidateQueries({ queryKey: key });
     },
   });
 }

@@ -176,6 +176,8 @@ eth_getLogs { …, topics: [Transfer, [被监听地址 ≤ addr_chunk], null] } 
 
 去掉一条链：先 `paused` 观察，再 `enabled=false`（游标与记录保留，不删）；目录移除是代码变更，需先确认没有租户启用。
 
+实现（2026-09-06）：`evmNetwork.MinBuild{Android, IOS}`（现有五条链均为 0）；bootstrap 在 `normalizeWallet` 之后、附加代币目录之前调用 `filterWalletForBuild`（harmony 按 Android 门槛，`x-build-number` 解析不出按 0），过滤后没有链返回 426 `APP_BUILD_TOO_OLD`。管理端：`walletCatalog[].minBuild`；`GET /v1/admin/platform/scan/chains` 每项带 `readiness{minBuild, lowBuildInstalls（近 30 天活跃、低于门槛）, tokens, hasConfig, enabled}`，扫链管理页对未启用的链显示接入进度清单；租户 `GET /v1/admin/wallet/index-status` 每链带 `lowBuildInstalls` 与 `minBuild`，「钱包与链」页多一列"看不到该链的安装"。
+
 ### 4.9 表结构（迁移 24：新增 2 表 + 2 列）
 
 **复用映射（v2 初稿 8 张表 → 2 张）**

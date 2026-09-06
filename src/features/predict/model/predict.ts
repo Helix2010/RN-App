@@ -210,13 +210,51 @@ export type Adjudication = {
   proposedEvidence?: LocalizedText;
   disputeDeadline?: string;
   disputeWindowSec: number;
-  /** 争议保证金；平台不暴露时缺省 */
+  /** 争议保证金；平台不暴露时缺省（真实平台要读链，见 DisputeTerms） */
   bond?: Money;
+  /** 现在能不能提出争议：以平台算好的阶段为准（liveness_period 且适配器有争议环节且还没人争议） */
   canDispute: boolean;
+  /** 平台的阶段原值（gamma currentPhase），不自己从字段推 */
+  phase?: string;
+  /** 市场适配器实例（regular / neg_risk / sports / crypto_periodic）；crypto_periodic 没有争议环节 */
+  adapter?: string;
+  /** 链上争议的键（LightOracle 请求四元组）；平台没给或适配器合约缺失时缺省 */
+  disputeKey?: DisputeKey;
   disputedAt?: string;
   disputedBy?: string;
   settledOutcome?: Outcome;
   settledAt?: string;
+};
+
+export type DisputeKey = {
+  /** 作为 requester 的适配器地址 */
+  requester: string;
+  /** bytes32 identifier（YES_OR_NO_QUERY / MULTIPLE_VALUES） */
+  identifier: string;
+  /** uint256，十进制字符串 */
+  requestTimestamp: string;
+  /** bytes，0x 前缀 */
+  ancillaryData: string;
+};
+
+/** 争议条款：链上押金与到期，加上本地址（EOA）的相关余额。面板打开时读，倒计时以链上到期为准。 */
+export type DisputeTerms = {
+  bond: Money;
+  /** LightOracle 请求的 expirationTime（ISO） */
+  expiresAt: string;
+  oracle: string;
+  usdwBalance: Money;
+  /** 钱包里可兑换成 USDW 的底层 USDC */
+  usdcBalance: Money;
+  /** 付 gas 的原生币余额 */
+  nativeBalance: Money;
+};
+
+export type DisputeStep = "evidence" | "bond" | "approve" | "dispute";
+
+export type DisputeInput = {
+  evidence: string;
+  links: string[];
 };
 
 export type ActivityType =

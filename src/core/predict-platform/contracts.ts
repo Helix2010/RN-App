@@ -39,6 +39,44 @@ export const negRiskAdapter = new Interface([
   "function mergePositions(bytes32 conditionId, uint256 amount)",
 ]);
 
+/**
+ * LightOracle（OOV2 兼容的请求形状）：读请求（押金、到期）与提出争议。
+ * ABI 与网页 `ResolutionProgress.tsx` LIGHT_ORACLE_ABI、`LightOracle.sol:485/746` 一致。
+ */
+export const lightOracle = new Interface([
+  "function getRequest(address requester, bytes32 identifier, uint256 timestamp, bytes ancillaryData) view returns (tuple(address proposer, address disputer, address currency, bool settled, tuple(bool eventBased, bool refundOnDispute, bool callbackOnPriceProposed, bool callbackOnPriceDisputed, bool callbackOnPriceSettled, uint256 bond, uint256 customLiveness) requestSettings, int256 proposedPrice, int256 resolvedPrice, uint256 expirationTime, uint256 reward, uint256 finalFee) request)",
+  "function disputePrice(address requester, bytes32 identifier, uint256 timestamp, bytes ancillaryData) returns (uint256 totalBond)",
+]);
+
+/** 市场适配器暴露的 LightOracle 地址（网页 ADAPTER_ABI） */
+export const oracleAdapter = new Interface([
+  "function optimisticOracle() view returns (address)",
+]);
+
+/** LightOracle identifier：ASCII 右补零到 32 字节（网页 encodeIdentifier，同 UMA priceIdentifierToBytes32） */
+export function encodeIdentifier(name: string): string {
+  const hex = Array.from(name)
+    .map((char) => char.charCodeAt(0).toString(16).padStart(2, "0"))
+    .join("");
+  return `0x${hex.padEnd(64, "0")}`;
+}
+export const YES_OR_NO_IDENTIFIER = encodeIdentifier("YES_OR_NO_QUERY");
+export const MULTIPLE_VALUES_IDENTIFIER = encodeIdentifier("MULTIPLE_VALUES");
+
+/** 白名单映射：只有 sports 用 MULTIPLE_VALUES，其它（regular / neg_risk / 未知）一律 YES_OR_NO_QUERY */
+export function identifierForAdapter(
+  adapterInstance: string | undefined,
+): string {
+  return adapterInstance === "sports"
+    ? MULTIPLE_VALUES_IDENTIFIER
+    : YES_OR_NO_IDENTIFIER;
+}
+
+/** eth_call 返回的 32 字节地址 */
+export function decodeAddress(hex: string): string {
+  return getAddress(`0x${hex.slice(-40)}`);
+}
+
 export const ZERO_BYTES32 = `0x${"00".repeat(32)}`;
 
 export const MAX_UINT256 = (1n << 256n) - 1n;

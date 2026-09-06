@@ -1,18 +1,21 @@
-import { Wallet, getAddress } from "ethers";
+import { Interface, Wallet, getAddress } from "ethers";
 import { fromDecimal } from "../../../core/money/money";
 import {
+  YES_OR_NO_IDENTIFIER,
+  ZERO_ADDRESS,
   conditionalTokens,
+  erc20,
+  lightOracle,
   negRiskAdapter,
+  oracleAdapter,
+  usdWrapper,
 } from "../../../core/predict-platform/contracts";
 import { setPlatformFetch } from "../../../core/predict-platform/tenant-client";
 import type { WalletSigner } from "../../../core/wallet/signer/types";
 import type { WalletGateway } from "../../wallet/api/gateway";
 import type { OnchainTransfers } from "../../wallet/api/onchain-transfers";
 import type { HttpPredictAccountGateway } from "./http-predict-account-gateway";
-import {
-  HttpPredictGateway,
-  PredictUnsupportedError,
-} from "./http-predict-gateway";
+import { HttpPredictGateway } from "./http-predict-gateway";
 
 const DOMAIN = "predict.prax1s.xyz";
 const SCOPE = `0x${"fb".repeat(32)}`;
@@ -90,7 +93,19 @@ function platform() {
       if (path === "/events/slug/btc-120k" || path === "/events/42")
         return json(event);
       if (path === "/markets/information")
-        return json([{ ...event.markets[0], eventSlug: "btc-120k" }]);
+        return json([
+          {
+            ...event.markets[0],
+            eventSlug: "btc-120k",
+            adjudication: adjudicationOverride,
+          },
+        ]);
+      if (path === "/disputes/evidence" && method === "POST") {
+        evidencePosts.push(JSON.parse(String(init?.body)) as unknown);
+        return evidenceResponse
+          ? json(evidenceResponse.body, evidenceResponse.status)
+          : json({ evidenceId: 77 });
+      }
     }
     if (host === "clob-api") {
       if (path === "/time") return json(1_800_000_000);
@@ -286,7 +301,16 @@ function platform() {
   return seen;
 }
 
+/** 假平台 /markets/information 返回的 adjudication；null = 没有裁决数据 */
+let adjudicationOverride: Record<string, unknown> | null = null;
+/** 假平台 POST /disputes/evidence 的应答（null = 200 {evidenceId}）与收到的请求体 */
+let evidenceResponse: { status: number; body: unknown } | null = null;
+const evidencePosts: unknown[] = [];
+
 const CONTRACTS = {
+  umaAdapter: getAddress(`0x${"0a".repeat(20)}`),
+  negRiskUmaAdapter: getAddress(`0x${"0b".repeat(20)}`),
+  sportsOracle: getAddress(`0x${"0c".repeat(20)}`),
   usdw: getAddress(`0x${"01".repeat(20)}`),
   usdcUnderlying: getAddress(`0x${"02".repeat(20)}`),
   usdwWrapper: getAddress(`0x${"03".repeat(20)}`),
@@ -300,7 +324,7 @@ const CONTRACTS = {
   usdcDecimals: 6,
 };
 
-function build() {
+function build(options: { onchain?: Partial<OnchainTransfers> } = {}) {
   const seen = platform();
   const wallet = Wallet.createRandom();
   const relayed: { to: string; data: string; operation: number }[] = [];
@@ -338,6 +362,7 @@ function build() {
   // 链上 ERC1155 余额：Safe 手里每个代币 5 份
   const onchain = {
     readContract: async () => `0x${5_000_000n.toString(16).padStart(64, "0")}`,
+    ...options.onchain,
   } as unknown as OnchainTransfers;
   return {
     gateway: new HttpPredictGateway({
@@ -345,6 +370,7 @@ function build() {
       wallet: walletGateway,
       onchain,
       now: () => 1_800_000_000_000,
+      sleep: async () => {},
     }),
     seen,
     relayed,
@@ -360,6 +386,9 @@ let orderStatus = "matched";
 afterEach(() => {
   for (const stop of cleanup.splice(0)) stop();
   orderStatus = "matched";
+  adjudicationOverride = null;
+  evidenceResponse = null;
+  evidencePosts.length = 0;
   jest.restoreAllMocks();
 });
 
@@ -554,9 +583,6 @@ describe("HttpPredictGateway", () => {
     const request = seen.find((r) => r.url.pathname === "/v1/leaderboard");
     expect(request?.url.searchParams.get("orderBy")).toBe("VOL");
     expect(request?.url.searchParams.get("timePeriod")).toBe("WEEK");
-    await expect(gateway.submitDispute()).rejects.toBeInstanceOf(
-      PredictUnsupportedError,
-    );
   });
 
   it("places a market buy as a FAK order: best ask, tick-aligned amounts, Safe as maker, L2 headers", async () => {
@@ -813,5 +839,281 @@ describe("HttpPredictGateway", () => {
     ]);
     stop();
     expect(socket.readyState).toBe(3);
+  });
+});
+
+// ---- 争议（review-2026-09-05 §4.3）----
+
+const ORACLE = getAddress(`0x${"0e".repeat(20)}`);
+const ADAPTER = CONTRACTS.umaAdapter;
+const BOND = 5_000_000n;
+const OPEN_UNTIL = 1_800_000_600n;
+const LIVE_ADJUDICATION = {
+  status: "proposed",
+  proposedOutcome: "Yes",
+  proposedAt: "2027-01-15T07:50:00Z",
+  livenessDeadline: "2027-01-15T08:10:00Z",
+  livenessSecs: 600,
+  currentPhase: "liveness_period",
+  adapterInstance: "regular",
+  ancillaryData: "0xabcd",
+  requestTimestamp: 1_799_999_000,
+};
+const EVIDENCE =
+  "The reported price was taken from the wrong exchange and does not match the resolution source named in the market description. ".repeat(
+    2,
+  );
+
+function selectorOf(iface: Interface, name: string): string {
+  const fragment = iface.getFunction(name);
+  if (!fragment) throw new Error(`no function ${name}`);
+  return fragment.selector;
+}
+const hex = (value: bigint) => `0x${value.toString(16).padStart(64, "0")}`;
+
+function disputeChain(
+  options: {
+    usdw?: bigint;
+    usdc?: bigint;
+    allowance?: bigint;
+    expirationTime?: bigint;
+    reverted?: boolean;
+  } = {},
+) {
+  const calls: { to: string; data: string; label?: string }[] = [];
+  let allowance = options.allowance ?? 0n;
+  const onchain = {
+    readContract: async (_chain: string, to: string, data: string) => {
+      const selector = data.slice(0, 10);
+      if (selector === selectorOf(oracleAdapter, "optimisticOracle"))
+        return hex(BigInt(ORACLE));
+      if (selector === selectorOf(lightOracle, "getRequest"))
+        return lightOracle.encodeFunctionResult("getRequest", [
+          [
+            ZERO_ADDRESS,
+            ZERO_ADDRESS,
+            CONTRACTS.usdw,
+            false,
+            [false, false, false, false, false, BOND, 0n],
+            10n ** 18n,
+            0n,
+            options.expirationTime ?? OPEN_UNTIL,
+            0n,
+            0n,
+          ],
+        ]);
+      if (selector === selectorOf(erc20, "balanceOf"))
+        return hex(
+          to === CONTRACTS.usdw
+            ? (options.usdw ?? 100_000_000n)
+            : (options.usdc ?? 0n),
+        );
+      if (selector === selectorOf(erc20, "allowance")) return hex(allowance);
+      throw new Error(`unexpected read ${selector} on ${to}`);
+    },
+    nativeBalance: async () => 10n ** 18n,
+    callContract: async (
+      _chain: string,
+      call: { to: string; data: string; label?: string },
+    ) => {
+      calls.push(call);
+      if (call.data.startsWith(selectorOf(erc20, "approve"))) allowance = BOND;
+      return { hash: `0x${calls.length.toString(16).padStart(64, "0")}` };
+    },
+    receiptOf: async () => ({
+      status: options.reverted ? "reverted" : "success",
+      blockNumber: 1,
+    }),
+  };
+  return { onchain: onchain as unknown as Partial<OnchainTransfers>, calls };
+}
+
+describe("HttpPredictGateway disputes", () => {
+  it("reads the dispute terms from the adapter's oracle and exposes the dispute key", async () => {
+    adjudicationOverride = LIVE_ADJUDICATION;
+    const { onchain } = disputeChain({ usdw: 3_000_000n, usdc: 9_000_000n });
+    const { gateway } = build({ onchain });
+    const adj = await gateway.getAdjudication(CONDITION);
+    expect(adj).toMatchObject({
+      status: "result_proposed",
+      phase: "liveness_period",
+      adapter: "regular",
+      canDispute: true,
+      disputeKey: {
+        requester: ADAPTER,
+        identifier: YES_OR_NO_IDENTIFIER,
+        requestTimestamp: "1799999000",
+        ancillaryData: "0xabcd",
+      },
+    });
+    const terms = await gateway.getDisputeTerms(EOA, CONDITION);
+    expect(terms).toMatchObject({
+      oracle: ORACLE,
+      bond: { raw: "5000000", decimals: 6, symbol: "USDW" },
+      usdwBalance: { raw: "3000000" },
+      usdcBalance: { raw: "9000000", symbol: "USDC" },
+      nativeBalance: { raw: (10n ** 18n).toString(), symbol: "ETH" },
+      expiresAt: new Date(Number(OPEN_UNTIL) * 1000).toISOString(),
+    });
+  });
+
+  it("runs evidence → bond → approve → dispute with the EOA paying gas, then shows the dispute optimistically", async () => {
+    adjudicationOverride = LIVE_ADJUDICATION;
+    const { onchain, calls } = disputeChain({ usdw: BOND });
+    const { gateway, seen } = build({ onchain });
+    const steps: string[] = [];
+    const tx = await gateway.submitDispute(
+      EOA,
+      CONDITION,
+      { evidence: EVIDENCE, links: [" https://source.example/a ", ""] },
+      (step) => steps.push(step),
+    );
+    expect(steps).toEqual(["evidence", "bond", "approve", "dispute"]);
+    expect(evidencePosts).toEqual([
+      {
+        conditionId: CONDITION,
+        disputer: EOA,
+        evidence: EVIDENCE.trim(),
+        links: ["https://source.example/a"],
+      },
+    ]);
+    expect(
+      seen.find((r) => r.url.pathname === "/disputes/evidence")?.headers[
+        "X-Tenant-Domain"
+      ],
+    ).toBe(DOMAIN);
+    expect(calls.map((call) => call.to)).toEqual([CONTRACTS.usdw, ORACLE]);
+    expect(calls[0]?.data).toBe(
+      erc20.encodeFunctionData("approve", [ORACLE, BOND]),
+    );
+    expect(calls[1]?.data).toBe(
+      lightOracle.encodeFunctionData("disputePrice", [
+        ADAPTER,
+        YES_OR_NO_IDENTIFIER,
+        1_799_999_000n,
+        "0xabcd",
+      ]),
+    );
+    expect(tx).toMatchObject({ kind: "dispute", status: "confirmed" });
+    const after = await gateway.getAdjudication(CONDITION);
+    expect(after).toMatchObject({
+      status: "disputed",
+      disputedBy: EOA,
+      canDispute: false,
+    });
+  });
+
+  it("skips the approval when the allowance already covers the bond", async () => {
+    adjudicationOverride = LIVE_ADJUDICATION;
+    const { onchain, calls } = disputeChain({ allowance: BOND });
+    const { gateway } = build({ onchain });
+    const steps: string[] = [];
+    await gateway.submitDispute(
+      EOA,
+      CONDITION,
+      { evidence: EVIDENCE, links: [] },
+      (step) => steps.push(step),
+    );
+    expect(steps).toEqual(["evidence", "bond", "dispute"]);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.to).toBe(ORACLE);
+  });
+
+  it("stops before any signature when the address holds less USDW than the bond", async () => {
+    adjudicationOverride = LIVE_ADJUDICATION;
+    const { onchain, calls } = disputeChain({ usdw: 1_000_000n });
+    const { gateway } = build({ onchain });
+    await expect(
+      gateway.submitDispute(EOA, CONDITION, { evidence: EVIDENCE, links: [] }),
+    ).rejects.toMatchObject({
+      name: "PredictInsufficientBondError",
+      shortfall: { raw: "4000000" },
+    });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("maps the platform's 409 to already_disputed without touching the chain", async () => {
+    adjudicationOverride = LIVE_ADJUDICATION;
+    evidenceResponse = {
+      status: 409,
+      body: {
+        error: "a dispute has already been submitted for this market round",
+        message: "a dispute has already been submitted for this market round",
+      },
+    };
+    const { onchain, calls } = disputeChain();
+    const { gateway } = build({ onchain });
+    await expect(
+      gateway.submitDispute(EOA, CONDITION, { evidence: EVIDENCE, links: [] }),
+    ).rejects.toMatchObject({
+      name: "PredictDisputeError",
+      reason: "already_disputed",
+    });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("refuses to broadcast once the on-chain window has expired", async () => {
+    adjudicationOverride = LIVE_ADJUDICATION;
+    const { onchain, calls } = disputeChain({
+      allowance: BOND,
+      expirationTime: 1_799_999_999n,
+    });
+    const { gateway } = build({ onchain });
+    await expect(
+      gateway.submitDispute(EOA, CONDITION, { evidence: EVIDENCE, links: [] }),
+    ).rejects.toMatchObject({
+      name: "PredictDisputeError",
+      reason: "window_closed",
+    });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("rejects evidence that fails the client-side rules before calling the platform", async () => {
+    adjudicationOverride = LIVE_ADJUDICATION;
+    const { onchain } = disputeChain();
+    const { gateway } = build({ onchain });
+    await expect(
+      gateway.submitDispute(EOA, CONDITION, {
+        evidence: "too short",
+        links: [],
+      }),
+    ).rejects.toMatchObject({ reason: "evidence_rejected" });
+    expect(evidencePosts).toHaveLength(0);
+  });
+
+  it("treats crypto_periodic markets as non-disputable", async () => {
+    adjudicationOverride = {
+      ...LIVE_ADJUDICATION,
+      adapterInstance: "crypto_periodic",
+    };
+    const { onchain } = disputeChain();
+    const { gateway } = build({ onchain });
+    const adj = await gateway.getAdjudication(CONDITION);
+    expect(adj.canDispute).toBe(false);
+    expect(adj.disputeKey).toBeUndefined();
+    await expect(gateway.getDisputeTerms(EOA, CONDITION)).rejects.toMatchObject(
+      { reason: "unsupported_adapter" },
+    );
+  });
+
+  it("wraps wallet USDC into USDW at the EOA itself", async () => {
+    const { onchain, calls } = disputeChain();
+    const { gateway } = build({ onchain });
+    const steps: string[] = [];
+    await gateway.wrapForDispute(EOA, fromDecimal("4", 6, "USDC"), (step) =>
+      steps.push(step),
+    );
+    expect(steps).toEqual(["approve", "wrap"]);
+    expect(calls.map((call) => call.to)).toEqual([
+      CONTRACTS.usdcUnderlying,
+      CONTRACTS.usdwWrapper,
+    ]);
+    expect(calls[1]?.data).toBe(
+      usdWrapper.encodeFunctionData("wrap", [
+        CONTRACTS.usdcUnderlying,
+        4_000_000n,
+        EOA,
+      ]),
+    );
   });
 });

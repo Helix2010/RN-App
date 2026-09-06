@@ -21,20 +21,17 @@ import {
   ScreenHeader,
   SecondaryButton,
   SectionTitle,
-  Sheet,
   type SheetHandle,
   SkeletonBlock,
   Stack,
-  TextField,
-  toast,
 } from "../../../design-system";
 import { useSession } from "../../session/hooks/use-session";
 import {
   useAdjudication,
   usePositions,
   usePredictEvent,
-  useSubmitDispute,
 } from "../hooks/use-predict";
+import { DisputeSheet } from "./dispute-sheet";
 import { StatusBadge, fill, outcomeLabel } from "./shared";
 
 /** P-04 结算进度与争议：四步进度条（倒计时是唯一 warn 色）、你的持仓、提出争议（押金）。 */
@@ -56,9 +53,7 @@ export function SettlementScreen({
   const event = usePredictEvent(eventId);
   const adjudication = useAdjudication(marketId);
   const positions = usePositions(address, true);
-  const dispute = useSubmitDispute(address);
   const disputeSheet = useRef<SheetHandle>(null);
-  const [reason, setReason] = useState("");
   const [now, setNow] = useState(mockNow());
   const adj = adjudication.data;
   const market = event.data?.markets.find((item) => item.id === marketId);
@@ -123,19 +118,6 @@ export function SettlementScreen({
         },
       ]
     : [];
-
-  const submitDispute = () => {
-    dispute.mutate(
-      { marketId, reason },
-      {
-        onSuccess: () => {
-          disputeSheet.current?.dismiss();
-          toast(t("predict.settlement.disputeSubmitted"), "success");
-        },
-        onError: () => toast(t("state.error"), "error"),
-      },
-    );
-  };
 
   return (
     <Page>
@@ -325,12 +307,26 @@ export function SettlementScreen({
                     onPress={() => disputeSheet.current?.present()}
                     testID="settlement-dispute"
                   >
-                    {fill(t("predict.settlement.dispute"), {
-                      bond: adj.bond ? formatMoney(adj.bond, locale) : "",
-                    })}
+                    {adj.bond
+                      ? fill(t("predict.settlement.dispute"), {
+                          bond: formatMoney(adj.bond, locale),
+                        })
+                      : t("predict.dispute.title")}
                   </SecondaryButton>
+                ) : adj.status === "disputed" ||
+                  adj.status === "arbitrating" ? (
+                  <Body fontSize={12} testID="settlement-disputed">
+                    {t("predict.dispute.disputed")}
+                  </Body>
                 ) : null}
-                <Body fontSize={11}>{t("predict.settlement.disputeNote")}</Body>
+                {/* crypto_periodic 由可信提案人直接结算，没有争议环节 */}
+                {adj.adapter === "crypto_periodic" ? (
+                  <Body fontSize={11}>{t("predict.dispute.noWindow")}</Body>
+                ) : (
+                  <Body fontSize={11}>
+                    {t("predict.settlement.disputeNote")}
+                  </Body>
+                )}
               </Stack>
             </>
           ) : (
@@ -341,30 +337,15 @@ export function SettlementScreen({
           )}
         </Content>
       </PageScroll>
-      <Sheet
-        ref={disputeSheet}
-        title={fill(t("predict.settlement.dispute"), {
-          bond: adj?.bond ? formatMoney(adj.bond, locale) : "",
-        })}
-        closeLabel={t("common.close")}
-        locked={dispute.isPending}
-      >
-        <TextField
-          value={reason}
-          onChangeText={setReason}
-          placeholder={t("predict.settlement.disputeReason")}
-          accessibilityLabel={t("predict.settlement.disputeReason")}
-          testID="dispute-reason"
+      {adj && address ? (
+        <DisputeSheet
+          ref={disputeSheet}
+          marketId={marketId}
+          address={address}
+          adjudication={adj}
+          onSubmitted={() => void adjudication.refetch()}
         />
-        <Body fontSize={12}>{t("predict.settlement.disputeNote")}</Body>
-        <PrimaryButton
-          disabled={dispute.isPending}
-          onPress={submitDispute}
-          testID="dispute-submit"
-        >
-          {dispute.isPending ? t("login.signing") : t("common.confirm")}
-        </PrimaryButton>
-      </Sheet>
+      ) : null}
     </Page>
   );
 }

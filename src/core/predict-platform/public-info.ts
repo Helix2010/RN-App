@@ -64,7 +64,7 @@ export class PredictPlatformMismatchError extends Error {
   }
 }
 
-class PredictPlatformContractMissingError extends Error {
+export class PredictPlatformContractMissingError extends Error {
   constructor(readonly contract: string) {
     super(`public-info does not list the ${contract} contract`);
     this.name = "PredictPlatformContractMissingError";
@@ -116,7 +116,32 @@ export type PlatformContracts = {
   /** USDW 与底层 USDC 的精度（平台 tokens 列表） */
   usdwDecimals: number;
   usdcDecimals: number;
+  /**
+   * 争议适配器（有争议环节的市场类型才需要，缺则该类市场不能争议）：
+   * regular → UMA_ADAPTER、neg_risk → NEG_RISK_UMA_ADAPTER、sports → SPORTS_ORACLE。
+   */
+  umaAdapter?: string;
+  negRiskUmaAdapter?: string;
+  sportsOracle?: string;
 };
+
+/**
+ * adjudication.adapterInstance → 作为 LightOracle `requester` 的适配器地址
+ * （网页 ResolutionProgress.tsx:74-82；未知实例名按 regular 处理）。缺则如实抛错。
+ */
+export function adapterAddressFor(
+  contracts: PlatformContracts,
+  adapterInstance: string | undefined,
+): string {
+  const [name, address] =
+    adapterInstance === "neg_risk"
+      ? ["NEG_RISK_UMA_ADAPTER", contracts.negRiskUmaAdapter]
+      : adapterInstance === "sports"
+        ? ["SPORTS_ORACLE", contracts.sportsOracle]
+        : ["UMA_ADAPTER", contracts.umaAdapter];
+  if (!address) throw new PredictPlatformContractMissingError(name);
+  return address;
+}
 
 export function platformContracts(info: PublicInfo): PlatformContracts {
   const byName = new Map(
@@ -149,5 +174,8 @@ export function platformContracts(info: PublicInfo): PlatformContracts {
     negRiskExchange: info.contracts.negRiskExchangeAddress,
     usdwDecimals: decimalsOf(usdw),
     usdcDecimals: decimalsOf(usdcUnderlying),
+    umaAdapter: byName.get("UMA_ADAPTER"),
+    negRiskUmaAdapter: byName.get("NEG_RISK_UMA_ADAPTER"),
+    sportsOracle: byName.get("SPORTS_ORACLE"),
   };
 }

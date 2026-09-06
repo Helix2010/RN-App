@@ -228,6 +228,7 @@ export function TextField({
   error,
   accessibilityLabel,
   testID,
+  multiline,
   ...rest
 }: Omit<TextInputProps, "style"> & {
   leading?: ReactNode;
@@ -239,9 +240,11 @@ export function TextField({
   return (
     <YStack gap="$1">
       <XStack
-        alignItems="center"
+        alignItems={multiline ? "flex-start" : "center"}
         gap="$2"
-        height={48}
+        height={multiline ? undefined : 48}
+        minHeight={multiline ? 128 : undefined}
+        paddingVertical={multiline ? "$2" : undefined}
         paddingHorizontal="$3"
         borderRadius="$4"
         backgroundColor="$surfaceVariant"
@@ -257,11 +260,14 @@ export function TextField({
           placeholderTextColor={theme.textMuted.val}
           accessibilityLabel={accessibilityLabel}
           testID={testID}
+          multiline={multiline}
+          textAlignVertical={multiline ? "top" : "center"}
           style={{
             flex: 1,
             color: theme.color.val,
             fontSize: 15,
             paddingVertical: 0,
+            minHeight: multiline ? 112 : undefined,
           }}
           {...rest}
         />

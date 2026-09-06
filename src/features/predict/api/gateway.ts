@@ -20,6 +20,9 @@ import type {
   PricePoint,
   Tag,
   Trade,
+  DisputeInput,
+  DisputeStep,
+  DisputeTerms,
 } from "../model/predict";
 
 /**
@@ -64,10 +67,23 @@ export interface PredictGateway {
     amount: Money,
   ): Promise<PredictTx>;
 
+  /** 争议条款：链上押金与到期、本地址余额；只对 canDispute 的市场有意义 */
+  getDisputeTerms(address: string, marketId: string): Promise<DisputeTerms>;
+  /**
+   * 四步争议（review-2026-09-05 §4.3）：证据登记 → 押金核对 → 授权 → 链上 disputePrice，
+   * 每步进 onStep。押金不够抛 PredictInsufficientBondError，可预期失败抛 PredictDisputeError。
+   */
   submitDispute(
     address: string,
     marketId: string,
-    reason: string,
+    input: DisputeInput,
+    onStep?: (step: DisputeStep) => void,
+  ): Promise<PredictTx>;
+  /** 押金不够时：把钱包里的 USDC 兑换成 USDW 到本地址（EOA），复用转入的 approve + wrap */
+  wrapForDispute(
+    address: string,
+    amount: Money,
+    onStep?: (step: "approve" | "wrap") => void,
   ): Promise<PredictTx>;
   /** 存入 / 取回 / 领取 / 拆合 / 争议 交易状态（轮询） */
   getTx(id: string): Promise<PredictTx | null>;

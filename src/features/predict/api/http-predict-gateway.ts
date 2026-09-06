@@ -1,6 +1,6 @@
 import type { LocalizedText } from "../../../core/i18n/localized-text";
 import type { Page, Unsubscribe } from "../../../core/gateways/types";
-import { money, type Money } from "../../../core/money/money";
+import { money, toBigInt, type Money } from "../../../core/money/money";
 import type { PredictServiceConfig } from "../../../core/config/bootstrap.schema";
 import {
   fetchFeeRateBps,
@@ -18,8 +18,14 @@ import {
 import {
   ZERO_BYTES32,
   conditionalTokens,
+  decodeAddress,
   decodeUint,
+  erc20,
+  identifierForAdapter,
+  lightOracle,
   negRiskAdapter,
+  oracleAdapter,
+  usdWrapper,
 } from "../../../core/predict-platform/contracts";
 import {
   fetchActivity,
@@ -41,6 +47,7 @@ import {
   fetchEvent,
   fetchEvents,
   fetchMarketsByCondition,
+  postDisputeEvidence,
   type GammaEvent,
   type GammaMarket,
   type GammaTag,
@@ -61,7 +68,18 @@ import {
   type SocketLike,
 } from "../../../core/predict-platform/market-ws";
 import { encodeMultiSend } from "../../../core/predict-platform/safe";
-import { platformHosts } from "../../../core/predict-platform/tenant-client";
+import {
+  PlatformHttpError,
+  platformHosts,
+} from "../../../core/predict-platform/tenant-client";
+import { adapterAddressFor } from "../../../core/predict-platform/public-info";
+import { CHAINS } from "../../../core/gateways/types";
+import {
+  PredictDisputeError,
+  PredictInsufficientBondError,
+  normalizeDisputeInput,
+  validateDisputeInput,
+} from "../model/dispute";
 import type { WalletGateway } from "../../wallet/api/gateway";
 import type { OnchainTransfers } from "../../wallet/api/onchain-transfers";
 import type {
@@ -89,6 +107,10 @@ import type {
   Tag,
   Trade,
   OrderBookLevel,
+  DisputeInput,
+  DisputeKey,
+  DisputeStep,
+  DisputeTerms,
 } from "../model/predict";
 import type { PredictGateway } from "./gateway";
 import type { HttpPredictAccountGateway } from "./http-predict-account-gateway";
@@ -310,10 +332,18 @@ export class HttpPredictGateway implements PredictGateway {
       wallet: WalletGateway;
       onchain: OnchainTransfers;
       now?: () => number;
+      /** 仅供测试：等回执时的休眠 */
+      sleep?: (ms: number) => Promise<void>;
       /** 仅供测试替换 WebSocket */
       createSocket?: (url: string) => SocketLike;
     },
   ) {}
+
+  /** 本机刚提交、平台 indexer 还没追上的争议：marketId → 提交者与时间（乐观态） */
+  private readonly optimisticDisputes = new Map<
+    string,
+    { by: string; at: string }
+  >();
 
   private async service(): Promise<PredictServiceConfig> {
     return (await this.deps.account.platformContext()).service;
@@ -835,18 +865,56 @@ export class HttpPredictGateway implements PredictGateway {
       closed: market.closed ?? null,
       markets: [market],
     } as GammaEvent;
+    const adapter = adj?.adapterInstance ?? undefined;
+    const phase = adj?.currentPhase ?? undefined;
+    // 链上争议的键：适配器地址（requester）+ identifier + 平台拼好的 requestTimestamp / ancillaryData
+    let disputeKey: DisputeKey | undefined;
+    if (
+      adj?.ancillaryData &&
+      adj.requestTimestamp !== null &&
+      adj.requestTimestamp !== undefined &&
+      adapter !== "crypto_periodic"
+    ) {
+      try {
+        const { contracts } = await this.deps.account.platformContext();
+        disputeKey = {
+          requester: adapterAddressFor(contracts, adapter),
+          identifier: identifierForAdapter(adapter),
+          requestTimestamp: String(adj.requestTimestamp),
+          ancillaryData: adj.ancillaryData,
+        };
+      } catch (error) {
+        // 平台 public-info 没给这个适配器：这类市场在本租户不能争议，界面不显示入口
+        console.warn("[predict] dispute adapter unavailable", error);
+      }
+    }
+    // 乐观态：本机刚提交的争议，在平台 indexer 追上（返回 challenger）之前按已争议显示
+    if (adj?.challenger) this.optimisticDisputes.delete(marketId);
+    const optimistic = adj?.challenger
+      ? undefined
+      : this.optimisticDisputes.get(marketId);
+    const disputedBy = adj?.challenger ?? optimistic?.by;
+    let status = marketStatusOf(market, event);
+    if (optimistic && status === "result_proposed") status = "disputed";
     return {
       marketId,
-      status: marketStatusOf(market, event),
+      status,
       endsAt: market.endDate ?? "",
       proposedOutcome: outcomeFromText(adj?.proposedOutcome),
       proposedAt: adj?.proposedAt ?? undefined,
       disputeDeadline: adj?.livenessDeadline ?? undefined,
       disputeWindowSec: adj?.livenessSecs ?? 0,
-      // 平台有争议流程（review-2026-09-05.md §4.3）；App 侧实现前保持 false
-      canDispute: false,
-      disputedAt: adj?.challengedAt ?? undefined,
-      disputedBy: adj?.challenger ?? undefined,
+      // 以平台算好的阶段为准；crypto_periodic 没有争议环节；已有人争议就不能再提
+      canDispute:
+        phase === "liveness_period" &&
+        adapter !== "crypto_periodic" &&
+        !disputedBy &&
+        disputeKey !== undefined,
+      phase,
+      adapter,
+      disputeKey,
+      disputedAt: adj?.challengedAt ?? optimistic?.at,
+      disputedBy,
       settledOutcome: outcomeFromText(adj?.settledOutcome),
       settledAt: adj?.resolvedAt ?? undefined,
     };
@@ -1279,11 +1347,233 @@ export class HttpPredictGateway implements PredictGateway {
     return this.recordTx(hash, direction);
   }
 
-  async submitDispute(): Promise<PredictTx> {
-    throw new PredictUnsupportedError(
-      "dispute",
-      "dispute submission is not implemented in the app yet (platform flow: docs/design/review-2026-09-05.md §4.3)",
+  // ---- 争议（review-2026-09-05 §4.3；EOA 付 gas，对齐网页 RaiseDisputeModal）----
+
+  /**
+   * 读争议上下文：adapter.optimisticOracle() → LightOracle.getRequest(...) 拿押金与到期，
+   * 再读本地址（EOA）的 USDW / USDC / 原生币余额。不用 adapter.getQuestion（网页注释里的两个坑）。
+   */
+  private async disputeContext(address: string, marketId: string) {
+    const adj = await this.getAdjudication(marketId);
+    if (adj.adapter === "crypto_periodic")
+      throw new PredictDisputeError("unsupported_adapter", adj.adapter);
+    if (!adj.disputeKey) throw new PredictDisputeError("no_dispute_key");
+    const { service, contracts } = await this.deps.account.platformContext();
+    const chain = service.chain;
+    const key = adj.disputeKey;
+    const oracle = decodeAddress(
+      await this.deps.onchain.readContract(
+        chain,
+        key.requester,
+        oracleAdapter.encodeFunctionData("optimisticOracle", []),
+      ),
     );
+    const [request] = lightOracle.decodeFunctionResult(
+      "getRequest",
+      await this.deps.onchain.readContract(
+        chain,
+        oracle,
+        lightOracle.encodeFunctionData("getRequest", [
+          key.requester,
+          key.identifier,
+          BigInt(key.requestTimestamp),
+          key.ancillaryData,
+        ]),
+      ),
+    );
+    const bond = BigInt(request.requestSettings.bond);
+    const expiration = Number(request.expirationTime);
+    const [usdwRaw, usdcRaw, native] = await Promise.all([
+      this.deps.onchain.readContract(
+        chain,
+        contracts.usdw,
+        erc20.encodeFunctionData("balanceOf", [address]),
+      ),
+      this.deps.onchain.readContract(
+        chain,
+        contracts.usdcUnderlying,
+        erc20.encodeFunctionData("balanceOf", [address]),
+      ),
+      this.deps.onchain.nativeBalance(chain, address),
+    ]);
+    const terms: DisputeTerms = {
+      bond: money(bond, contracts.usdwDecimals, "USDW"),
+      expiresAt: new Date(expiration * 1_000).toISOString(),
+      oracle,
+      usdwBalance: money(decodeUint(usdwRaw), contracts.usdwDecimals, "USDW"),
+      usdcBalance: money(decodeUint(usdcRaw), contracts.usdcDecimals, "USDC"),
+      nativeBalance: money(
+        native,
+        CHAINS[chain].nativeDecimals,
+        CHAINS[chain].nativeSymbol,
+      ),
+    };
+    return { adj, key, terms, service, contracts, chain, oracle, bond };
+  }
+
+  async getDisputeTerms(
+    address: string,
+    marketId: string,
+  ): Promise<DisputeTerms> {
+    return (await this.disputeContext(address, marketId)).terms;
+  }
+
+  async submitDispute(
+    address: string,
+    marketId: string,
+    input: DisputeInput,
+    onStep?: (step: DisputeStep) => void,
+  ): Promise<PredictTx> {
+    const normalized = normalizeDisputeInput(input);
+    if (!validateDisputeInput(normalized).ok)
+      throw new PredictDisputeError("evidence_rejected", "client validation");
+    const { adj, key, terms, service, contracts, chain, oracle, bond } =
+      await this.disputeContext(address, marketId);
+    if (!adj.canDispute)
+      throw new PredictDisputeError(
+        adj.disputedBy ? "already_disputed" : "not_open",
+        adj.phase ?? "",
+      );
+    // 1/4 证据意向：链上争议之前登记；平台 4xx 映射为可预期失败
+    onStep?.("evidence");
+    try {
+      await postDisputeEvidence(service, {
+        conditionId: marketId,
+        disputer: address,
+        evidence: normalized.evidence,
+        links: normalized.links,
+      });
+    } catch (error) {
+      if (error instanceof PlatformHttpError) {
+        if (error.status === 404)
+          throw new PredictDisputeError("unknown_market", error.message);
+        if (error.status === 409)
+          throw new PredictDisputeError(
+            /already/i.test(error.message) ? "already_disputed" : "not_open",
+            error.message,
+          );
+        if (error.status === 400)
+          throw new PredictDisputeError("evidence_rejected", error.message);
+      }
+      throw error;
+    }
+    // 2/4 押金：从 EOA 的 USDW 扣，不够就停在这里（面板给兑换入口）
+    onStep?.("bond");
+    if (toBigInt(terms.usdwBalance) < bond)
+      throw new PredictInsufficientBondError(terms.bond, terms.usdwBalance);
+    const signer = await this.deps.wallet.signerFor(address);
+    // 3/4 授权：按本次押金授权，不给无上限额度
+    const allowance = decodeUint(
+      await this.deps.onchain.readContract(
+        chain,
+        contracts.usdw,
+        erc20.encodeFunctionData("allowance", [address, oracle]),
+      ),
+    );
+    if (allowance < bond) {
+      onStep?.("approve");
+      const { hash } = await this.deps.onchain.callContract(
+        chain,
+        {
+          from: address,
+          to: contracts.usdw,
+          data: erc20.encodeFunctionData("approve", [oracle, bond]),
+          label: "approve USDW",
+        },
+        signer,
+      );
+      await this.waitReceipt(chain, hash, "approve USDW");
+    }
+    // 广播前再核一次到期：证据与授权可能花了几十秒，过期的 disputePrice 会 revert 白付 gas
+    if (this.nowMs() >= new Date(terms.expiresAt).getTime())
+      throw new PredictDisputeError("window_closed", terms.expiresAt);
+    // 4/4 链上争议
+    onStep?.("dispute");
+    const { hash } = await this.deps.onchain.callContract(
+      chain,
+      {
+        from: address,
+        to: oracle,
+        data: lightOracle.encodeFunctionData("disputePrice", [
+          key.requester,
+          key.identifier,
+          BigInt(key.requestTimestamp),
+          key.ancillaryData,
+        ]),
+        label: "disputePrice",
+      },
+      signer,
+    );
+    await this.waitReceipt(chain, hash, "disputePrice");
+    this.optimisticDisputes.set(marketId, { by: address, at: this.nowIso() });
+    return this.recordTx(hash, "dispute");
+  }
+
+  async wrapForDispute(
+    address: string,
+    amount: Money,
+    onStep?: (step: "approve" | "wrap") => void,
+  ): Promise<PredictTx> {
+    const { service, contracts } = await this.deps.account.platformContext();
+    const chain = service.chain;
+    const raw = BigInt(amount.raw);
+    if (raw <= 0n) throw new Error("wrap amount must be positive");
+    const signer = await this.deps.wallet.signerFor(address);
+    onStep?.("approve");
+    const approve = await this.deps.onchain.callContract(
+      chain,
+      {
+        from: address,
+        to: contracts.usdcUnderlying,
+        data: erc20.encodeFunctionData("approve", [contracts.usdwWrapper, raw]),
+        label: "approve USDC",
+      },
+      signer,
+    );
+    await this.waitReceipt(chain, approve.hash, "approve USDC");
+    onStep?.("wrap");
+    // 与转入唯一的区别：USDW 收款人是 EOA 自己，不是 Safe
+    const wrap = await this.deps.onchain.callContract(
+      chain,
+      {
+        from: address,
+        to: contracts.usdwWrapper,
+        data: usdWrapper.encodeFunctionData("wrap", [
+          contracts.usdcUnderlying,
+          raw,
+          address,
+        ]),
+        label: "wrap USDC",
+      },
+      signer,
+    );
+    await this.waitReceipt(chain, wrap.hash, "wrap USDC");
+    return this.recordTx(wrap.hash, "deposit");
+  }
+
+  private nowMs(): number {
+    return this.deps.now?.() ?? Date.now();
+  }
+
+  /** 等回执：中间步骤（授权）不等上链，下一步会因额度未生效而 revert；回执失败按失败。 */
+  private async waitReceipt(
+    chain: PredictServiceConfig["chain"],
+    hash: string,
+    label: string,
+  ): Promise<void> {
+    const sleep =
+      this.deps.sleep ??
+      ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+    for (let attempt = 0; attempt < 90; attempt += 1) {
+      const receipt = await this.deps.onchain.receiptOf(chain, hash);
+      if (receipt) {
+        if (receipt.status === "reverted")
+          throw new PredictDisputeError("reverted", `${label} ${hash}`);
+        return;
+      }
+      await sleep(2_000);
+    }
+    throw new Error(`${label} ${hash} was not mined in time`);
   }
 
   async getTx(id: string): Promise<PredictTx | null> {

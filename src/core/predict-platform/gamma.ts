@@ -80,6 +80,13 @@ const gammaAdjudicationSchema = z.object({
   livenessDeadline: z.string().nullish(),
   livenessSecs: z.number().nullish(),
   currentPhase: z.string().nullish(),
+  // 争议要用的链上参数（gamma models.go:228-259）：适配器实例名、LightOracle 请求的 ancillaryData
+  // 与 requestTimestamp；bond 不在接口里，客户端读链
+  adapterInstance: z.string().nullish(),
+  ancillaryData: z.string().nullish(),
+  requestTimestamp: z.union([z.string(), z.number()]).nullish(),
+  questionId: z.string().nullish(),
+  nextSteps: z.unknown().nullish(),
 });
 
 export const gammaMarketSchema = z.object({
@@ -195,6 +202,32 @@ export async function fetchEvent(
     url: `${hosts.gamma}${path}`,
     tenantDomain: service.domain,
     schema: gammaEventSchema,
+  });
+}
+
+/**
+ * 争议证据意向（网页 RaiseDisputeModal 第 0 步）：链上争议之前先把理由与链接登记到平台，
+ * indexer 看到 `PriceDisputed` 后按 (conditionId, disputer) 关联。接口无鉴权（review §4.3）。
+ * 4xx：400 校验不过、404 未知条件、409 不在 proposed 或本轮已有争议。
+ */
+export async function postDisputeEvidence(
+  service: PredictServiceConfig,
+  input: {
+    conditionId: string;
+    disputer: string;
+    evidence: string;
+    links: string[];
+  },
+): Promise<{ evidenceId: string }> {
+  const hosts = platformHosts(service);
+  return platformRequest({
+    url: `${hosts.gamma}/disputes/evidence`,
+    tenantDomain: service.domain,
+    method: "POST",
+    body: input,
+    schema: z.object({
+      evidenceId: z.union([z.string(), z.number()]).transform(String),
+    }),
   });
 }
 

@@ -164,7 +164,10 @@ describe("MockPredictGateway", () => {
     expect(proposed.status).toBe("result_proposed");
     expect(proposed.canDispute).toBe(true);
     const before = await gateway.getBalance(ADDRESS);
-    await gateway.submitDispute(ADDRESS, "m-eth-4500", "数据源错误");
+    await gateway.submitDispute(ADDRESS, "m-eth-4500", {
+      evidence: "数据源错误：".repeat(30),
+      links: ["https://example.com/evidence"],
+    });
     const after = await gateway.getBalance(ADDRESS);
     expect(
       toApproxNumber(before.available) - toApproxNumber(after.available),
