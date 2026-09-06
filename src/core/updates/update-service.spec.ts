@@ -91,6 +91,52 @@ describe("update service feature flags", () => {
     ]);
   });
 
+  it("reports an update downloaded on an earlier check as ready on a re-check", async () => {
+    const config = createFallbackConfig("zh-CN");
+    config.features.otaEnabled = true;
+    config.update.ota.enabled = true;
+    config.update.ota.channel = "development";
+    config.update.ota.runtimeVersion = "test";
+    config.update.ota.applyStrategy = "next_launch";
+    const manifest = {
+      id: "update-pending",
+      runtimeVersion: "test",
+      createdAt: "2026-09-06T00:00:00.000Z",
+      extra: {
+        appVersion: config.app.version,
+        buildNumber: config.app.buildNumber,
+      },
+    };
+    (Updates.checkForUpdateAsync as jest.Mock).mockResolvedValue({
+      isAvailable: true,
+      manifest,
+    });
+    (Updates.fetchUpdateAsync as jest.Mock).mockResolvedValue({
+      isNew: false,
+      manifest: undefined,
+    });
+
+    const transitions: string[] = [];
+    await expect(
+      checkAndDownloadOta(config, {
+        onStateChange: (state) => transitions.push(state),
+      }),
+    ).resolves.toEqual({
+      status: "ready",
+      messageKey: "update.otaReadyNextLaunch",
+      metadata: expect.objectContaining({
+        updateId: "update-pending",
+        applyStrategy: "next_launch",
+      }),
+    });
+    expect(transitions).toEqual([
+      "checking",
+      "available",
+      "downloading",
+      "ready",
+    ]);
+  });
+
   it("reads immediate apply strategy from an Expo manifest extra payload", () => {
     const metadata = getUpdateMetadataFromManifest({
       id: "update-extra",

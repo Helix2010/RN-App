@@ -144,46 +144,44 @@ async function performCheckAndDownloadOta(
       emitUpdateTelemetry({ stage: "rollback" });
       return { ...resultValue("rollback", "update.otaRollback") };
     }
-    if (fetched.isNew) {
-      if (!isManifestCompatibleWithApp(fetched.manifest, config)) {
-        transition("error");
-        emitUpdateTelemetry({
-          stage: "error",
-          updateId: fetched.manifest?.id,
-        });
-        return resultValue("error", "update.otaIncompatible");
-      }
-      const manifestMetadata = getUpdateMetadataFromManifest(fetched.manifest);
-      const manifestApplyStrategy = getApplyStrategyFromManifest(
-        fetched.manifest,
-      );
-      const metadata = {
-        ...manifestMetadata,
-        // Bootstrap is the server's tenant-scoped release policy. Keep it as
-        // the source of truth when a provider strips custom manifest metadata.
-        applyStrategy:
-          config.update.ota.applyStrategy ??
-          manifestApplyStrategy ??
-          manifestMetadata.applyStrategy,
-      };
-      transition("ready");
+    // The server still advertised this update in the check, so a fetch that
+    // reports nothing new means it was downloaded on an earlier check and is
+    // waiting for the next launch: report it as ready, not as up to date.
+    const pendingManifest = fetched.isNew ? fetched.manifest : check.manifest;
+    if (!isManifestCompatibleWithApp(pendingManifest, config)) {
+      transition("error");
       emitUpdateTelemetry({
-        stage: "ready",
-        updateId: metadata.updateId,
-        runtimeVersion: metadata.runtimeVersion,
-        channel: metadata.channel,
-        applyStrategy: metadata.applyStrategy,
+        stage: "error",
+        updateId: pendingManifest?.id,
       });
-      return resultValue(
-        "ready",
-        metadata.applyStrategy === "immediate"
-          ? "update.otaReadyImmediate"
-          : "update.otaReadyNextLaunch",
-        metadata,
-      );
+      return resultValue("error", "update.otaIncompatible");
     }
-    emitUpdateTelemetry({ stage: "current" });
-    return resultValue("current", "update.otaCurrent");
+    const manifestMetadata = getUpdateMetadataFromManifest(pendingManifest);
+    const manifestApplyStrategy = getApplyStrategyFromManifest(pendingManifest);
+    const metadata = {
+      ...manifestMetadata,
+      // Bootstrap is the server's tenant-scoped release policy. Keep it as
+      // the source of truth when a provider strips custom manifest metadata.
+      applyStrategy:
+        config.update.ota.applyStrategy ??
+        manifestApplyStrategy ??
+        manifestMetadata.applyStrategy,
+    };
+    transition("ready");
+    emitUpdateTelemetry({
+      stage: "ready",
+      updateId: metadata.updateId,
+      runtimeVersion: metadata.runtimeVersion,
+      channel: metadata.channel,
+      applyStrategy: metadata.applyStrategy,
+    });
+    return resultValue(
+      "ready",
+      metadata.applyStrategy === "immediate"
+        ? "update.otaReadyImmediate"
+        : "update.otaReadyNextLaunch",
+      metadata,
+    );
   } catch (error) {
     transition("error");
     emitUpdateTelemetry({ stage: "error", error });
