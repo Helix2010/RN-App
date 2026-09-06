@@ -240,6 +240,46 @@ type Detail =
   | { kind: "fund"; record: FundRecord }
   | { kind: "wallet"; transfer: WalletTransfer };
 
+/** 记录行的骨架：和 FundRecordRow / WalletTransferRow 同一布局（左圆图标、中两行、右金额），数据到了不跳版 */
+function RecordRowSkeleton() {
+  return (
+    <Row
+      alignItems="center"
+      gap="$3"
+      paddingVertical="$2.5"
+      borderBottomWidth={1}
+      borderColor="$borderColor"
+    >
+      <SkeletonBlock width={36} height={36} borderRadius={18} />
+      <Stack flex={1} gap="$1.5">
+        <SkeletonBlock height={14} width={120} />
+        <SkeletonBlock height={11} width={180} />
+      </Stack>
+      <SkeletonBlock height={16} width={72} />
+    </Row>
+  );
+}
+
+function RecordListSkeleton({ notices = 0 }: { notices?: number }) {
+  return (
+    <Stack testID="records-skeleton">
+      {notices > 0 ? (
+        <Stack gap="$1.5" paddingBottom="$3">
+          {Array.from({ length: notices }, (_, index) => (
+            <Row key={index} alignItems="center" gap="$2">
+              <SkeletonBlock width={16} height={16} borderRadius={8} />
+              <SkeletonBlock height={12} width={index === 0 ? 220 : 170} />
+            </Row>
+          ))}
+        </Stack>
+      ) : null}
+      <RecordRowSkeleton />
+      <RecordRowSkeleton />
+      <RecordRowSkeleton />
+    </Stack>
+  );
+}
+
 function Notice({
   tone,
   text,
@@ -458,10 +498,7 @@ export function RecordsScreen({
                     : String(fund.error)}
                 </Body>
               ) : (
-                <Stack gap="$2">
-                  <SkeletonBlock height={56} />
-                  <SkeletonBlock height={56} />
-                </Stack>
+                <RecordListSkeleton />
               )
             ) : (
               <>
@@ -489,10 +526,8 @@ export function RecordsScreen({
                       : String(transfers.error)}
                   </Body>
                 ) : (
-                  <Stack gap="$2">
-                    <SkeletonBlock height={56} />
-                    <SkeletonBlock height={56} />
-                  </Stack>
+                  // 顶部两行占位给每链索引状态，列表到了不会把行往下挤
+                  <RecordListSkeleton notices={2} />
                 )}
               </>
             )}

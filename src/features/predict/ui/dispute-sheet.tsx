@@ -369,9 +369,15 @@ export const DisputeSheet = forwardRef<
             {describe(terms.error)}
           </Body>
         ) : (
-          <Stack gap="$2">
-            <SkeletonBlock height={18} />
-            <SkeletonBlock height={18} width={160} />
+          // 押金 / 余额 / 手续费 / 倒计时 四行，与读到条款后的布局同形
+          <Stack gap="$2" testID="dispute-terms-skeleton">
+            {[0, 1, 2].map((index) => (
+              <Row key={index} justifyContent="space-between">
+                <SkeletonBlock height={12} width={72} />
+                <SkeletonBlock height={12} width={96} />
+              </Row>
+            ))}
+            <SkeletonBlock height={12} width={200} />
           </Stack>
         )}
       </Stack>

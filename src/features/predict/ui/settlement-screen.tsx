@@ -34,6 +34,45 @@ import {
 import { DisputeSheet } from "./dispute-sheet";
 import { StatusBadge, fill, outcomeLabel } from "./shared";
 
+/** 结算页骨架：标题两行、结果卡、四步进度、持仓卡、两个按钮，与真实布局同形，数据到了不跳版 */
+function SettlementSkeleton() {
+  return (
+    <Stack gap="$4" testID="settlement-skeleton">
+      <Stack gap="$1.5">
+        <SkeletonBlock height={22} width={240} />
+        <SkeletonBlock height={12} width={200} />
+      </Stack>
+      <SkeletonBlock height={72} />
+      <Stack gap="$0">
+        {[0, 1, 2, 3].map((index) => (
+          <Row key={index} gap="$3" alignItems="flex-start">
+            <Stack alignItems="center" width={24}>
+              <SkeletonBlock width={24} height={24} borderRadius={12} />
+              {index < 3 ? (
+                <Stack
+                  width={2}
+                  minHeight={28}
+                  flex={1}
+                  backgroundColor="$borderColor"
+                />
+              ) : null}
+            </Stack>
+            <Stack flex={1} paddingBottom="$3" gap="$1.5">
+              <SkeletonBlock height={14} width={140} />
+              <SkeletonBlock height={12} width={200} />
+            </Stack>
+          </Row>
+        ))}
+      </Stack>
+      <SkeletonBlock height={110} />
+      <Stack gap="$2">
+        <SkeletonBlock height={48} />
+        <SkeletonBlock height={48} />
+      </Stack>
+    </Stack>
+  );
+}
+
 /** P-04 结算进度与争议：四步进度条（倒计时是唯一 warn 色）、你的持仓、提出争议（押金）。 */
 export function SettlementScreen({
   marketId,
@@ -330,10 +369,7 @@ export function SettlementScreen({
               </Stack>
             </>
           ) : (
-            <Stack gap="$3">
-              <SkeletonBlock height={24} width={240} />
-              <SkeletonBlock height={200} />
-            </Stack>
+            <SettlementSkeleton />
           )}
         </Content>
       </PageScroll>
