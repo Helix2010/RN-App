@@ -176,107 +176,127 @@ eth_getLogs { …, topics: [Transfer, [被监听地址 ≤ addr_chunk], null] } 
 
 ### 4.9 表结构（迁移 24）
 
+沿用仓库约定（`internal/store/migrations.go`）：每张表、每一列都带 `COMMENT`，说明含义、来源与取值；金额一律最小单位整数，不做精度换算；地址统一小写 `address_key`（与 `wallet_user` 一致），合约地址 EIP-55。
+
 ```sql
 CREATE TABLE chain_scan_config (
-  chain VARCHAR(32) PRIMARY KEY,
-  enabled TINYINT(1) NOT NULL DEFAULT 0,
-  paused TINYINT(1) NOT NULL DEFAULT 0,
-  endpoints JSON NOT NULL COMMENT '[{url,label,rps,maxLogSpan?}]，有序',
-  max_log_span INT UNSIGNED NOT NULL,
-  confirmations INT UNSIGNED NOT NULL,
-  poll_seconds INT UNSIGNED NOT NULL,
-  addr_chunk INT UNSIGNED NOT NULL DEFAULT 1000,
-  native_mode ENUM('blocks','balance') NOT NULL,
-  native_gap_cap BIGINT UNSIGNED NOT NULL DEFAULT 20000,
-  start_block BIGINT UNSIGNED NOT NULL,
-  version INT UNSIGNED NOT NULL DEFAULT 1,
-  updated_by VARCHAR(120) NOT NULL,
-  updated_at DATETIME(3) NOT NULL
-) COMMENT='平台级扫链配置；索引器热加载';
+  chain VARCHAR(32) NOT NULL COMMENT '链 id，与平台链目录 supportedNetworks 一致：bsc/eth/base/op-sepolia/monad…',
+  enabled TINYINT(1) NOT NULL DEFAULT 0 COMMENT '平台是否对这条链扫链：0 不扫（unconfigured），1 扫',
+  paused TINYINT(1) NOT NULL DEFAULT 0 COMMENT '运维手动暂停：1 时 worker 停止推进游标，恢复后从断点追块',
+  endpoints JSON NOT NULL COMMENT '扫链端点有序数组 [{url,label,rps,maxLogSpan?}]；url 含密钥时只在此表明文，接口返回脱敏；rps 每端点每秒请求上限；maxLogSpan 端点级覆盖',
+  max_log_span INT UNSIGNED NOT NULL COMMENT '链级 eth_getLogs 最大区块跨度，来自端点体检（§4.12）；请求被拒会自动减半但不回写',
+  confirmations INT UNSIGNED NOT NULL COMMENT '写入深度：只索引 head−confirmations 之前的区块，也是重组回退的块数',
+  poll_seconds INT UNSIGNED NOT NULL COMMENT '追平后的轮询间隔（秒）；追块期间不生效',
+  addr_chunk INT UNSIGNED NOT NULL DEFAULT 1000 COMMENT '每次 eth_getLogs 携带的监听地址数上限（实测 2000 可用，默认留一倍余量）',
+  native_mode ENUM('blocks','balance') NOT NULL COMMENT '原生币索引模式：blocks 逐块读全部交易（精确、双向）；balance 用 Multicall3 余额差触发（只记入账，归属可能延后）',
+  native_gap_cap BIGINT UNSIGNED NOT NULL DEFAULT 20000 COMMENT 'balance 模式下缺口超过多少块改为先记差额、后台任务归属（§4.7）',
+  start_block BIGINT UNSIGNED NOT NULL COMMENT '首次启用时的起扫区块；游标不存在时以它初始化，之后不再使用',
+  version INT UNSIGNED NOT NULL DEFAULT 1 COMMENT '乐观锁版本；索引器每 30 秒比对，变化即重建该链 worker',
+  updated_by VARCHAR(120) NOT NULL COMMENT '最后修改人（管理员用户名或 x-admin-id）',
+  updated_at DATETIME(3) NOT NULL COMMENT '最后修改时间（UTC）',
+  PRIMARY KEY(chain)
+) ENGINE=InnoDB COMMENT='平台级扫链配置：端点、节奏、模式；由管理端"扫链管理"维护，索引器热加载';
 
 CREATE TABLE chain_scan_cursor (
-  chain VARCHAR(32) PRIMARY KEY,
-  scanned_to_block BIGINT UNSIGNED NOT NULL,
-  scanned_to_hash CHAR(66) NOT NULL,
-  head_block BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '最近一次观察到的链头',
-  state ENUM('idle','scanning','catching_up','stalled','paused','unconfigured') NOT NULL,
-  lease_owner VARCHAR(80) NOT NULL DEFAULT '',
-  lease_until DATETIME(3) NULL,
-  last_error VARCHAR(512) NOT NULL DEFAULT '',
-  error_count INT UNSIGNED NOT NULL DEFAULT 0,
-  reorg_count INT UNSIGNED NOT NULL DEFAULT 0,
-  updated_at DATETIME(3) NOT NULL
-) COMMENT='每链游标、状态与单实例租约';
+  chain VARCHAR(32) NOT NULL COMMENT '链 id，同 chain_scan_config.chain',
+  scanned_to_block BIGINT UNSIGNED NOT NULL COMMENT '已完整索引到的区块号（含）；与记录同一事务推进，是追块的唯一断点',
+  scanned_to_hash CHAR(66) NOT NULL COMMENT 'scanned_to_block 的区块哈希；每轮核对，不一致即判定重组',
+  head_block BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '最近一次从端点观察到的链头区块号，用于计算落后',
+  state ENUM('idle','scanning','catching_up','stalled','paused','unconfigured') NOT NULL COMMENT '运行状态：idle 追平等待；scanning 正在扫本轮；catching_up 落后追块中；stalled 全部端点不可用；paused 手动暂停；unconfigured 未启用或无端点',
+  lease_owner VARCHAR(80) NOT NULL DEFAULT '' COMMENT '持有租约的索引器实例标识（主机名+进程 id）；空表示无人持有',
+  lease_until DATETIME(3) NULL COMMENT '租约到期时间（UTC）；到期后其他实例可接管',
+  last_error VARCHAR(512) NOT NULL DEFAULT '' COMMENT '最近一次错误（已截断），成功一轮后清空',
+  error_count INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '连续失败轮数；成功后归零',
+  reorg_count INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '累计检测到的重组次数，用于告警与排查',
+  updated_at DATETIME(3) NOT NULL COMMENT '最后更新时间（UTC）',
+  PRIMARY KEY(chain)
+) ENGINE=InnoDB COMMENT='每条链的扫描游标、运行状态与单实例租约';
 
 CREATE TABLE chain_scan_endpoint_status (
-  chain VARCHAR(32) NOT NULL,
-  url_hash CHAR(64) NOT NULL COMMENT 'url 的 SHA-256，不存明文密钥',
-  label VARCHAR(80) NOT NULL,
-  health ENUM('healthy','cooling','mismatch','unknown') NOT NULL,
-  consecutive_failures INT UNSIGNED NOT NULL DEFAULT 0,
-  cooling_until DATETIME(3) NULL,
-  last_ok_at DATETIME(3) NULL,
-  last_error VARCHAR(512) NOT NULL DEFAULT '',
-  latency_ms INT UNSIGNED NULL,
-  head_block BIGINT UNSIGNED NULL,
-  span_rejected INT UNSIGNED NOT NULL DEFAULT 0,
-  updated_at DATETIME(3) NOT NULL,
+  chain VARCHAR(32) NOT NULL COMMENT '链 id',
+  url_hash CHAR(64) NOT NULL COMMENT '端点 url 的 SHA-256；不落明文，避免密钥进入状态表',
+  label VARCHAR(80) NOT NULL COMMENT '配置里的端点显示名，供管理端对应',
+  health ENUM('healthy','cooling','mismatch','unknown') NOT NULL COMMENT '健康度：healthy 可用；cooling 连续失败后冷却中；mismatch eth_chainId 与目录不符，剔除；unknown 尚未探测',
+  consecutive_failures INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '连续失败次数；成功后归零；≥3 进入 cooling',
+  cooling_until DATETIME(3) NULL COMMENT '冷却到期时间（UTC），到期先探活再恢复',
+  last_ok_at DATETIME(3) NULL COMMENT '最近一次成功响应时间（UTC）',
+  last_error VARCHAR(512) NOT NULL DEFAULT '' COMMENT '最近一次错误（已截断）',
+  latency_ms INT UNSIGNED NULL COMMENT '最近一次成功请求耗时（毫秒）',
+  head_block BIGINT UNSIGNED NULL COMMENT '该端点最近报告的链头，用于识别落后节点',
+  span_rejected INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '因区块跨度过大被拒的次数，提示 max_log_span 配高了',
+  updated_at DATETIME(3) NOT NULL COMMENT '最后更新时间（UTC）',
   PRIMARY KEY(chain, url_hash)
-) COMMENT='端点健康度，供管理端展示';
+) ENGINE=InnoDB COMMENT='扫链端点健康度，由索引器写、管理端读';
 
 CREATE TABLE chain_scan_job (
-  id VARCHAR(80) PRIMARY KEY,
-  chain VARCHAR(32) NOT NULL,
-  kind ENUM('rescan','attribute','rebuild_watch') NOT NULL,
-  from_block BIGINT UNSIGNED NOT NULL,
-  to_block BIGINT UNSIGNED NOT NULL,
-  progress_block BIGINT UNSIGNED NOT NULL,
-  state ENUM('pending','running','done','failed','cancelled') NOT NULL,
-  created_by VARCHAR(120) NOT NULL COMMENT '管理员或 system',
-  reason VARCHAR(500) NOT NULL DEFAULT '',
-  last_error VARCHAR(512) NOT NULL DEFAULT '',
-  created_at DATETIME(3) NOT NULL,
-  updated_at DATETIME(3) NOT NULL,
+  id VARCHAR(80) NOT NULL COMMENT '任务 id（job_ 前缀随机串）',
+  chain VARCHAR(32) NOT NULL COMMENT '链 id',
+  kind ENUM('rescan','attribute','rebuild_watch') NOT NULL COMMENT '任务类型：rescan 重扫区间（幂等）；attribute 对 unattributed 行逐块定位交易并替换；rebuild_watch 按 wallet_user 重建监听地址',
+  from_block BIGINT UNSIGNED NOT NULL COMMENT '处理区间起始区块（含）；rebuild_watch 填 0',
+  to_block BIGINT UNSIGNED NOT NULL COMMENT '处理区间结束区块（含）；rebuild_watch 填 0',
+  progress_block BIGINT UNSIGNED NOT NULL COMMENT '已处理到的区块，供进度条与断点续跑',
+  tenant_id BIGINT UNSIGNED NULL COMMENT 'rebuild_watch 限定的租户；NULL 表示全部租户',
+  state ENUM('pending','running','done','failed','cancelled') NOT NULL COMMENT '任务状态：pending 排队；running 执行中；done 完成；failed 失败（见 last_error）；cancelled 管理端取消',
+  created_by VARCHAR(120) NOT NULL COMMENT '发起人：管理员用户名，或 system（索引器自动建的 attribute 任务）',
+  reason VARCHAR(500) NOT NULL DEFAULT '' COMMENT '管理端填写的操作原因，同步写审计',
+  last_error VARCHAR(512) NOT NULL DEFAULT '' COMMENT '最近一次错误（已截断）',
+  created_at DATETIME(3) NOT NULL COMMENT '创建时间（UTC）',
+  updated_at DATETIME(3) NOT NULL COMMENT '最后更新时间（UTC）',
+  PRIMARY KEY(id),
   KEY ix_job_chain_state(chain, state)
-) COMMENT='后台补扫 / 归属 / 重建监听任务，限速、可取消';
+) ENGINE=InnoDB COMMENT='扫链后台任务：重扫、原生币归属、重建监听；限速执行、可取消、断点续跑';
 
 CREATE TABLE wallet_transfer_index (
-  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  tenant_id BIGINT UNSIGNED NOT NULL,
-  chain VARCHAR(32) NOT NULL,
-  address_key VARCHAR(42) NOT NULL,
-  direction ENUM('in','out') NOT NULL,
-  asset ENUM('native','erc20') NOT NULL,
-  contract_address VARCHAR(42) NOT NULL COMMENT 'EIP-55；原生币为 native',
-  amount_raw DECIMAL(65,0) NOT NULL,
-  counterparty VARCHAR(42) NOT NULL DEFAULT '',
-  tx_hash CHAR(66) NOT NULL DEFAULT '',
-  log_index INT NOT NULL DEFAULT -1 COMMENT 'ERC-20 日志序号；原生币为交易序号；unattributed 为 -1',
-  block_number BIGINT UNSIGNED NOT NULL,
-  block_hash CHAR(66) NOT NULL,
-  block_time DATETIME(3) NOT NULL,
-  attribution ENUM('tx','unattributed') NOT NULL DEFAULT 'tx',
-  gap_from_block BIGINT UNSIGNED NULL COMMENT 'unattributed 覆盖的区间起点',
-  status ENUM('confirmed','orphaned') NOT NULL DEFAULT 'confirmed',
-  created_at DATETIME(3) NOT NULL,
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '记录主键',
+  tenant_id BIGINT UNSIGNED NOT NULL COMMENT '租户 ID，来自 wallet_index_watch',
+  chain VARCHAR(32) NOT NULL COMMENT '链 id',
+  address_key VARCHAR(42) NOT NULL COMMENT '被监听的钱包地址（小写），同 wallet_user.address_key',
+  direction ENUM('in','out') NOT NULL COMMENT '方向：in 入账（to = 本地址）；out 出账（from = 本地址）',
+  asset ENUM('native','erc20') NOT NULL COMMENT '资产类型：native 原生币；erc20 目录内代币',
+  contract_address VARCHAR(42) NOT NULL COMMENT '代币合约地址（EIP-55）；原生币为 native，与 chain_token_catalog 一致',
+  amount_raw DECIMAL(65,0) NOT NULL COMMENT '金额，最小单位整数；精度看代币目录 decimals，此处不换算',
+  counterparty VARCHAR(42) NOT NULL DEFAULT '' COMMENT '对手方地址（小写）：in 为 from，out 为 to；unattributed 为空',
+  tx_hash CHAR(66) NOT NULL DEFAULT '' COMMENT '交易哈希；unattributed 为空',
+  log_index INT NOT NULL DEFAULT -1 COMMENT 'ERC-20 为日志在区块内的序号；原生币为交易在区块内的序号；unattributed 为 -1',
+  block_number BIGINT UNSIGNED NOT NULL COMMENT '区块号；unattributed 为覆盖区间的末块',
+  block_hash CHAR(66) NOT NULL COMMENT '区块哈希，重组回滚时据此比对',
+  block_time DATETIME(3) NOT NULL COMMENT '区块时间戳（UTC），来自链，不用服务器时钟',
+  attribution ENUM('tx','unattributed') NOT NULL DEFAULT 'tx' COMMENT '归属：tx 已定位到交易；unattributed 只有余额差额、交易待后台任务定位（balance 模式）',
+  gap_from_block BIGINT UNSIGNED NULL COMMENT 'unattributed 覆盖区间的起始区块；tx 行为 NULL',
+  status ENUM('confirmed','orphaned') NOT NULL DEFAULT 'confirmed' COMMENT '有效性：confirmed 有效；orphaned 因重组作废，保留供排查，接口不返回',
+  created_at DATETIME(3) NOT NULL COMMENT '入库时间（UTC）',
+  PRIMARY KEY(id),
   UNIQUE KEY uq_transfer(chain, tx_hash, log_index, address_key, direction, block_number),
   KEY ix_transfer_address(tenant_id, address_key, chain, block_number DESC)
-) COMMENT='扫链得到的钱包转账记录；唯一正式来源';
+) ENGINE=InnoDB COMMENT='扫链得到的钱包转账记录，唯一正式来源；App 本机账本只补充未上链的进行中状态';
 
 CREATE TABLE wallet_index_watch (
-  tenant_id BIGINT UNSIGNED NOT NULL,
-  chain VARCHAR(32) NOT NULL,
-  address_key VARCHAR(42) NOT NULL,
-  from_block BIGINT UNSIGNED NOT NULL,
-  native_balance_raw DECIMAL(65,0) NULL,
-  last_polled_block BIGINT UNSIGNED NULL,
-  created_at DATETIME(3) NOT NULL,
+  tenant_id BIGINT UNSIGNED NOT NULL COMMENT '租户 ID',
+  chain VARCHAR(32) NOT NULL COMMENT '链 id',
+  address_key VARCHAR(42) NOT NULL COMMENT '被监听地址（小写），同 wallet_user.address_key',
+  from_block BIGINT UNSIGNED NOT NULL COMMENT '纳入监听时的游标区块；此前的历史不索引，记录页据此说明起算时间',
+  native_balance_raw DECIMAL(65,0) NULL COMMENT 'balance 模式最近一次读到的原生币余额（最小单位）；NULL 表示尚未读取',
+  last_polled_block BIGINT UNSIGNED NULL COMMENT 'balance 模式最近一次余额比对对应的区块，下次触发扫块的区间起点',
+  created_at DATETIME(3) NOT NULL COMMENT '登记时间（UTC）：登录时由 API 写入，或 rebuild_watch 任务写入',
   PRIMARY KEY(chain, address_key, tenant_id)
-) COMMENT='被监听地址';
+) ENGINE=InnoDB COMMENT='被监听的钱包地址；只登记 onchainSends=true 且启用该链的租户用户';
+
+CREATE TABLE chain_scan_alert (
+  id VARCHAR(80) NOT NULL COMMENT '告警 id',
+  chain VARCHAR(32) NOT NULL COMMENT '链 id',
+  kind ENUM('stalled','lagging','reorg','endpoint_mismatch','job_failed') NOT NULL COMMENT '告警类型，触发条件见 §4.14',
+  message VARCHAR(512) NOT NULL COMMENT '人类可读描述（已截断）',
+  raised_at DATETIME(3) NOT NULL COMMENT '首次触发时间（UTC）',
+  resolved_at DATETIME(3) NULL COMMENT '恢复时间（UTC）；NULL 表示仍在告警',
+  webhook_sent_at DATETIME(3) NULL COMMENT 'webhook 投递成功时间；未配置或失败为 NULL',
+  PRIMARY KEY(id),
+  KEY ix_alert_open(chain, resolved_at)
+) ENGINE=InnoDB COMMENT='扫链告警；管理端横幅与 webhook 的事实源';
 ```
 
 - 监听登记：`walletAuthVerify` 成功后对会话声明且该租户启用、且 `chain_scan_config.enabled` 的链 `INSERT IGNORE`，`from_block = 当前游标`（API 读 `chain_scan_cursor`，没有游标的链不登记并打日志）。只登记 `onchainSends=true` 的租户：演示模式的记录来自 Mock 账本。
 - `unattributed` 行的唯一键用 `(chain, '', -1, address_key, 'in', block_number)`，同一区间只会有一条。
+- `wallet_session` 加列 `installation_id VARCHAR(80) NULL COMMENT '登录时的 App 安装实例 ID，定向推送用；旧会话为 NULL'`（§4.10）。
 
 ### 4.10 推送
 
