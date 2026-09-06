@@ -38,6 +38,7 @@ import type {
   WalletAccount,
   WalletConnector,
   WalletTransfer,
+  WalletTransferFeed,
 } from "../model/wallet";
 import {
   WalletProvisioningUnsupportedError,
@@ -369,6 +370,11 @@ export class MockWalletGateway implements WalletGateway {
     return state.transfers.filter(
       (item) => item.counterparty !== address || item.kind === "receive",
     );
+  }
+
+  /** 演示账本没有平台索引：index 为空对象，界面不显示索引状态 */
+  async transferFeed(address: string): Promise<WalletTransferFeed> {
+    return { items: await this.listTransfers(address), index: {}, hidden: 0 };
   }
 }
 

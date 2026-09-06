@@ -24,7 +24,12 @@ import {
   resetDeliveredWalletConfig,
   type DeliveredToken,
 } from "../../../core/wallet/config/wallet-runtime-config";
-import type { SendRequest, TokenBalance } from "../model/wallet";
+import type {
+  SendRequest,
+  TokenBalance,
+  WalletTransfer,
+} from "../model/wallet";
+import type { WalletIndexPort } from "./http-wallet-index";
 
 const snapshot = (items: TokenBalance[]) => ({ items, unavailable: [] });
 
@@ -90,6 +95,7 @@ function sendRequest(chain: ChainId): SendRequest {
 function setup(options?: {
   external?: ExternalWalletConnector;
   onchain?: OnchainTransferPort;
+  index?: WalletIndexPort;
 }) {
   const storage = memoryStorage();
   const vault = new KeystoreVault({
@@ -105,6 +111,7 @@ function setup(options?: {
     storage,
     external: options?.external,
     onchain: options?.onchain,
+    index: options?.index,
     seedDemoBalances: async (address) => {
       seeded.push(address);
     },
@@ -463,6 +470,97 @@ describe("EmbeddedWalletGateway on-chain routing", () => {
     const { account } = await gateway.createWallet();
     await expect(gateway.quoteTransfer(sendRequest("bsc"))).resolves.toBeNull();
     expect(await gateway.listTransfers(account.address)).toEqual([]);
+  });
+});
+
+describe("EmbeddedWalletGateway transfer feed", () => {
+  const indexed = (overrides: Partial<WalletTransfer>): WalletTransfer => ({
+    id: "bsc:0xabc:out:3",
+    kind: "send",
+    status: "confirmed",
+    hash: "0xABC",
+    token: { ...sendRequest("bsc").token, verified: false },
+    amount: money(1n, 18, "BNB"),
+    counterparty: "0x000000000000000000000000000000000000dEaD",
+    updatedAt: "2026-01-02T00:00:00.000Z",
+    blockTime: "2026-01-02T00:00:00.000Z",
+    attribution: "tx",
+    ...overrides,
+  });
+  const local = (overrides: Partial<WalletTransfer>): WalletTransfer => ({
+    id: "0xabc",
+    kind: "send",
+    status: "confirmed",
+    hash: "0xabc",
+    token: sendRequest("bsc").token,
+    amount: money(1n, 18, "BNB"),
+    counterparty: "0x000000000000000000000000000000000000dEaD",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    ...overrides,
+  });
+  const index = { bsc: { state: "idle" as const, block: 10, headBlock: 10 } };
+
+  it("prefers the platform row over a local send with the same hash and keeps local-only rows", async () => {
+    const { port } = fakeOnchain(["bsc"]);
+    port.listTransfers = async () => [
+      local({}),
+      local({ id: "0xpending", hash: "0xpending", status: "submitted" }),
+    ];
+    const { gateway } = setup({
+      onchain: port,
+      index: {
+        list: async () => ({
+          items: [
+            indexed({}),
+            indexed({ id: "bsc:0xdef:in:1", kind: "receive", hash: "0xdef" }),
+          ],
+          index,
+          hidden: 0,
+        }),
+      },
+    });
+    const { account } = await gateway.createWallet();
+    const feed = await gateway.transferFeed(account.address);
+
+    expect(feed.items.map((item) => item.id).sort()).toEqual([
+      "0xpending",
+      "bsc:0xabc:out:3",
+      "bsc:0xdef:in:1",
+    ]);
+    expect(feed.index).toEqual(index);
+    expect(feed.indexError).toBeUndefined();
+    // 服务端目录说了不算：原生币由客户端白名单授予 verified
+    expect(
+      feed.items.find((item) => item.id === "bsc:0xabc:out:3")?.token.verified,
+    ).toBe(true);
+  });
+
+  it("keeps local rows and reports the failure when the index is unreachable", async () => {
+    const { port } = fakeOnchain(["bsc"]);
+    port.listTransfers = async () => [local({})];
+    const { gateway } = setup({
+      onchain: port,
+      index: {
+        list: async () => {
+          throw new Error("network down");
+        },
+      },
+    });
+    const { account } = await gateway.createWallet();
+    const feed = await gateway.transferFeed(account.address);
+    expect(feed.items.map((item) => item.id)).toEqual(["0xabc"]);
+    expect(feed.index).toEqual({});
+    expect(feed.indexError).toBe("network down");
+  });
+
+  it("reports no index at all when none is wired", async () => {
+    const { gateway } = setup();
+    const { account } = await gateway.createWallet();
+    expect(await gateway.transferFeed(account.address)).toEqual({
+      items: [],
+      index: {},
+      hidden: 0,
+    });
   });
 });
 

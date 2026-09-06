@@ -9,6 +9,7 @@ import type {
   WalletAccount,
   WalletConnector,
   WalletTransfer,
+  WalletTransferFeed,
 } from "../model/wallet";
 
 /** 自托管开通不适用于外部钱包连接器时抛出。 */
@@ -60,6 +61,8 @@ export interface WalletGateway {
   send(request: SendRequest): Promise<WalletTransfer>;
   getTransaction(id: string): Promise<Tx | null>;
   listTransfers(address: string): Promise<WalletTransfer[]>;
+  /** 记录页用：转账记录 + 平台收款索引的每链状态（见 WalletTransferFeed） */
+  transferFeed(address: string): Promise<WalletTransferFeed>;
   /** 链上手续费预估；这条链没走真链时返回 null。 */
   quoteTransfer(request: SendRequest): Promise<TransferQuote | null>;
   /** 这条链上的转出会不会真的上链。界面要据此告诉用户这是真钱还是演示账本。 */

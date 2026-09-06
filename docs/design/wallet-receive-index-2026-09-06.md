@@ -258,15 +258,16 @@ ALTER TABLE wallet_session ADD COLUMN installation_id VARCHAR(80) NULL
 ```json
 {
   "items": [{ "chain": "monad", "direction": "in", "asset": "erc20", "contractAddress": "0x…",
-              "amountRaw": "1500000", "counterparty": "0x…", "txHash": "0x…",
-              "blockNumber": 102317141, "blockTime": "2026-09-06T02:11:03.000Z", "attribution": "tx" }],
+              "amountRaw": "1500000", "counterparty": "0x…", "txHash": "0x…", "logIndex": 7,
+              "blockNumber": 102317141, "blockTime": "2026-09-06T02:11:03.000Z", "attribution": "tx",
+              "token": { "address": "0x…", "symbol": "USDC", "name": "USD Coin", "decimals": 6, "displayDecimals": 2, "logoColor": "#2775CA" } }],
   "nextCursor": "…",
-  "index": { "monad": { "state": "idle", "block": 102317141, "time": "…", "lagSeconds": 12 },
+  "index": { "monad": { "state": "idle", "block": 102317141, "headBlock": 102317153, "time": "…", "lagSeconds": 12 },
              "base":  { "state": "unconfigured" } }
 }
 ```
 
-只返回 `status='confirmed'`；`index[chain].state` 取 `chain_scan_state.state`。契约进 `contracts/openapi.json`，同步 RN-App `contracts/rn-server.openapi.json`（`check-api-contract.mjs`）。
+只返回 `status='confirmed'`，键集分页 `(block_number, id)`，`limit` 1–200 默认 50。`token` 是该合约在 `chain_token_catalog` 的元数据（租户覆盖行优先；目录里没有则为 `null`，App 计数说明而不是编一个符号）——App 不用自己按合约地址查目录，服务端目录是唯一来源。`index[chain].state` 取 `chain_scan_state.state`；`time` / `lagSeconds` 来自 `chain_scan_state.scanned_to_time`（游标区块的链上时间戳，随游标同一事务写；实现时补的列，不用出块时间估算落后）；租户 `onchainSends=false`、链没有状态行或配置关闭一律 `unconfigured`。契约进 `contracts/openapi.json`（`WalletTransfer*` schema），同步 RN-App `contracts/rn-server.openapi.json`（`check-api-contract.mjs`）。
 
 **管理端（平台级，新路由组 `/v1/admin/platform/scan`，走 `authenticate()` 不走 `domainTenantScope()`，再加 `requirePlatformAdmin()`）**
 
@@ -302,10 +303,12 @@ ALTER TABLE wallet_session ADD COLUMN installation_id VARCHAR(80) NULL
 
 ### 4.13 App 合并规则
 
-- `WalletGateway.listTransfers(address)` = 服务端索引 ∪ 本机转出账本，按 `(chain, txHash)` 去重：服务端有行以服务端为准；本机独有的行只保留 `pending / failed`；本机 `confirmed` 且服务端已有 → 丢弃本机行。
-- `WalletTransfer` 加 `attribution`、`blockTime`；`kind: "receive"` 只能来自服务端。
-- 记录页：每链一行"已索引到 …"（`lagSeconds > 600` 才显示落后），`unconfigured / stalled` 的链在顶部说明并保留浏览器链接；`unattributed` 行显示"来源待确认（合约内部转账或服务中断期间）"。
-- 收款页在前台每 15 秒轮询一次，新 `in` 行即 toast 并刷新余额；推送到达走同一刷新。
+- `WalletGateway.transferFeed(address)`（`listTransfers` 取其 `items`）= 服务端索引 ∪ 本机转出账本，按 `(chain, txHash)` 去重，服务端为准：本机转出一旦被索引到（服务端有同哈希的 `out` 行）就用服务端那行；**没被索引到的本机行一律保留**——进行中、失败，以及索引落后或这条链未开索引时的已确认转出（实现时修正：原文"本机独有只保留 pending / failed"会让未开索引的链丢掉转出历史）。同一笔交易可能既有 `in` 又有 `out`（合约内部转账），记录 id 带方向与序号。
+- 服务端目录的 `verified` 不采纳，索引记录同样过客户端白名单 `trustedTokens`；被丢弃的行与 `token=null` 的行计入 `hidden`，记录页说明"N 条记录的代币不在目录中"。
+- 索引服务没答上（网络、401）时不吞：本机记录照常返回，`indexError` 让记录页顶部提示"收款索引暂时不可用：…以下只有本机记录"。
+- `WalletTransfer` 加 `attribution`、`blockTime`；`kind: "receive"` 只能来自服务端。索引来源只认当前会话地址（服务端按会话地址返回）。
+- 记录页：每链一行"已索引到 {time}"（`lagSeconds > 600` 才显示"落后 N 分钟"），`unconfigured / stalled / paused` 的链在顶部说明并保留区块浏览器链接；`unattributed` 行显示"来源待确认（合约内部转账或服务中断期间）"。
+- 收款页打开且 App 在前台时每 15 秒轮询一次（`useIncomingTransferWatch`），新 `in` 行即 toast"收到 X"并刷新余额；未打开时只跟着共享缓存更新"已见过"集合，不报旧记录；推送到达走同一刷新。
 - `records.indexing` 文案继续给预测资金记录用，不复用。
 
 ### 4.14 可观测与告警

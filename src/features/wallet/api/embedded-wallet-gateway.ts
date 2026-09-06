@@ -33,7 +33,9 @@ import type {
   WalletAccount,
   WalletConnector,
   WalletTransfer,
+  WalletTransferFeed,
 } from "../model/wallet";
+import type { WalletIndexPort, WalletIndexResult } from "./http-wallet-index";
 import {
   WalletNotProvisionedError,
   WalletProvisioningUnsupportedError,
@@ -173,6 +175,8 @@ type EmbeddedWalletGatewayDeps = {
   storage: KeyValueStorage;
   external?: ExternalWalletConnector;
   onchain?: OnchainTransferPort;
+  /** 平台收款索引；未注入时记录只有本机账本，界面不显示索引状态 */
+  index?: WalletIndexPort;
   /**
    * 仅用于演示：给新开通的地址铺一份 Mock 余额，让 Mock 业务面还能被浏览。
    * 真实链数据接入后应直接删掉这个注入。
@@ -543,13 +547,54 @@ export class EmbeddedWalletGateway implements WalletGateway {
   }
 
   async listTransfers(address: string): Promise<WalletTransfer[]> {
-    // 链上转账只在内存里，Mock 账本不认识；不合并的话用户转完账回列表会发现记录没了
+    return (await this.transferFeed(address)).items;
+  }
+
+  /**
+   * 记录 = 平台索引 ∪ 本机账本（设计 wallet-receive-index-2026-09-06 §4.13）。
+   *
+   * 按 (链, 交易哈希) 去重，服务端为准：本机的转出一旦被索引到就用服务端那行，
+   * 没被索引到的（进行中、失败、索引落后或这条链没开索引）保留本机行。
+   * 索引服务没答上时不吞：本机记录照常返回，`indexError` 让界面说明服务端记录可能缺失。
+   */
+  async transferFeed(address: string): Promise<WalletTransferFeed> {
+    // 链上转账只在本机账本里，Mock 账本不认识；不合并的话用户转完账回列表会发现记录没了
     const onchain = (await this.deps.onchain?.listTransfers(address)) ?? [];
     const ledger = await this.deps.chainData.listTransfers(address);
+    const local = [...onchain, ...ledger];
     // 和余额一致：租户关掉的链，它上面的记录也不显示
-    return [...onchain, ...ledger].filter((item) =>
-      isChainEnabled(item.token.chain),
+    const enabledOnly = (item: WalletTransfer) =>
+      isChainEnabled(item.token.chain);
+    if (!this.deps.index)
+      return { items: local.filter(enabledOnly), index: {}, hidden: 0 };
+    let remote: WalletIndexResult;
+    try {
+      remote = await this.deps.index.list(address);
+    } catch (error) {
+      console.warn("[wallet] 收款索引查询失败", error);
+      return {
+        items: local.filter(enabledOnly),
+        index: {},
+        indexError: error instanceof Error ? error.message : String(error),
+        hidden: 0,
+      };
+    }
+    // 服务端目录的 verified 不采纳，decimals 与白名单不符的丢掉并计入 hidden
+    const indexed = trustedTokens(remote.items);
+    const known = new Set(
+      indexed
+        .filter((item) => item.kind === "send" && item.hash)
+        .map((item) => transferKey(item)),
     );
+    const kept = local.filter(
+      (item) =>
+        !(item.kind === "send" && item.hash && known.has(transferKey(item))),
+    );
+    return {
+      items: [...indexed, ...kept].filter(enabledOnly),
+      index: remote.index,
+      hidden: remote.hidden + (remote.items.length - indexed.length),
+    };
   }
 
   // ---- 内部 ----
@@ -594,6 +639,10 @@ export class EmbeddedWalletGateway implements WalletGateway {
   private async writeRegistry(registry: Registry): Promise<void> {
     await this.deps.storage.setItem(REGISTRY_KEY, JSON.stringify(registry));
   }
+}
+
+function transferKey(item: WalletTransfer): string {
+  return `${item.token.chain}|${(item.hash ?? "").toLowerCase()}`;
 }
 
 function sameAddress(left: string | null, right: string): boolean {

@@ -1,7 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
+import { AppState } from "react-native";
 import { useGateways } from "../../../core/gateways/gateway-context";
 import type { ChainId, Tx } from "../../../core/gateways/types";
-import type { SendRequest } from "../model/wallet";
+import type {
+  SendRequest,
+  WalletTransfer,
+  WalletTransferFeed,
+} from "../model/wallet";
 
 export function useWalletConnectors() {
   const { wallet } = useGateways();
@@ -126,18 +132,77 @@ export function useWalletTransfer(id: string | undefined, initial?: Tx) {
   });
 }
 
-/** 钱包层的转账记录（本机发起的转出 + 账本里的收款），按时间倒序。 */
-export function useWalletTransfers(address: string | undefined) {
+/**
+ * 记录页的数据：平台索引 ∪ 本机账本，按时间倒序，外加每链索引状态。
+ * `refetchInterval` 给收款页轮询用（前台 15 秒一次，见 useIncomingTransferWatch）。
+ */
+export function useWalletTransferFeed(
+  address: string | undefined,
+  options?: { refetchInterval?: number | false },
+) {
   const { wallet } = useGateways();
   return useQuery({
     queryKey: ["wallet-transfers", address],
-    queryFn: async () =>
-      (await wallet.listTransfers(address as string)).sort((a, b) =>
-        a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0,
-      ),
+    queryFn: async (): Promise<WalletTransferFeed> => {
+      const feed = await wallet.transferFeed(address as string);
+      return {
+        ...feed,
+        items: [...feed.items].sort((a, b) =>
+          a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0,
+        ),
+      };
+    },
     enabled: Boolean(address),
     staleTime: 15_000,
+    refetchInterval: options?.refetchInterval ?? false,
   });
+}
+
+/**
+ * 收款页开着时盯新入账：前台每 15 秒拉一次记录，出现没见过的收款就回调（toast）
+ * 并刷新余额。`active=false` 时不轮询，但仍跟着共享缓存更新"已见过"的集合，
+ * 免得下次打开收款页把旧记录当新收款报一遍。
+ */
+export function useIncomingTransferWatch(
+  address: string | undefined,
+  active: boolean,
+  onArrival: (transfer: WalletTransfer) => void,
+) {
+  const [foreground, setForeground] = useState(
+    AppState.currentState === "active",
+  );
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) =>
+      setForeground(state === "active"),
+    );
+    return () => subscription.remove();
+  }, []);
+  const feed = useWalletTransferFeed(address, {
+    refetchInterval: active && foreground ? 15_000 : false,
+  });
+  const queryClient = useQueryClient();
+  const seen = useRef<Set<string> | null>(null);
+  // 回调放 ref 里：调用方每次渲染都会传新函数，不能让它成为下面 effect 的依赖
+  const arrival = useRef(onArrival);
+  useEffect(() => {
+    arrival.current = onArrival;
+  });
+  useEffect(() => {
+    const items = feed.data?.items;
+    if (!items) return;
+    const receives = items.filter((item) => item.kind === "receive");
+    if (seen.current === null) {
+      seen.current = new Set(receives.map((item) => item.id));
+      return;
+    }
+    const fresh = receives.filter((item) => !seen.current?.has(item.id));
+    if (fresh.length === 0) return;
+    for (const item of fresh) seen.current.add(item.id);
+    if (!active) return;
+    for (const item of fresh) arrival.current(item);
+    void queryClient.invalidateQueries({ queryKey: ["wallet-balances"] });
+    void queryClient.invalidateQueries({ queryKey: ["assets"] });
+  }, [feed.data, active, queryClient]);
 }
 
 /** 最近转出过的地址（去重、按时间倒序、最多 5 条），供转出页快速选择。 */

@@ -1,9 +1,11 @@
 import * as Clipboard from "expo-clipboard";
 import { useRef, useState } from "react";
+import { Linking } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
-import type { Tx } from "../../../core/gateways/types";
+import { CHAINS, type ChainId, type Tx } from "../../../core/gateways/types";
 import {
+  fill,
   formatDateTime,
   formatMoney,
   formatTokenAmount,
@@ -38,8 +40,12 @@ import type {
 } from "../../predict/model/fund-record";
 import { useSession } from "../../session/hooks/use-session";
 import { requestAuth } from "../../session/model/auth-sheet-store";
-import { useWalletTransfers } from "../../wallet/hooks/use-wallet";
-import type { WalletTransfer } from "../../wallet/model/wallet";
+import { useWalletTransferFeed } from "../../wallet/hooks/use-wallet";
+import type {
+  TransferIndex,
+  WalletTransfer,
+  WalletTransferFeed,
+} from "../../wallet/model/wallet";
 
 export type RecordsTab = "predict" | "wallet";
 
@@ -201,8 +207,10 @@ function WalletTransferRow({
         </SectionTitle>
         <Row alignItems="center" gap="$2">
           <Body fontSize={11}>
-            {formatDateTime(transfer.updatedAt, locale)} ·{" "}
-            {shortenAddress(transfer.counterparty)}
+            {formatDateTime(transfer.blockTime ?? transfer.updatedAt, locale)} ·{" "}
+            {transfer.attribution === "unattributed"
+              ? t("records.unattributed")
+              : shortenAddress(transfer.counterparty)}
           </Body>
           <StatusBadge status={status} />
         </Row>
@@ -232,6 +240,127 @@ type Detail =
   | { kind: "fund"; record: FundRecord }
   | { kind: "wallet"; transfer: WalletTransfer };
 
+function Notice({
+  tone,
+  text,
+  action,
+  testID,
+}: {
+  tone: "muted" | "warning";
+  text: string;
+  action?: { label: string; onPress: () => void };
+  testID?: string;
+}) {
+  return (
+    <Row alignItems="flex-start" gap="$2" testID={testID}>
+      <AppIcon
+        name={tone === "warning" ? "alert-outline" : "information-outline"}
+        size={16}
+        colorToken={tone === "warning" ? "warning" : "textMuted"}
+      />
+      <Body
+        fontSize={12}
+        flex={1}
+        color={tone === "warning" ? "$warning" : undefined}
+      >
+        {text}
+      </Body>
+      {action ? (
+        <InlineText
+          fontSize={12}
+          fontWeight="700"
+          color="$primary"
+          onPress={action.onPress}
+          accessibilityRole="link"
+        >
+          {action.label}
+        </InlineText>
+      ) : null}
+    </Row>
+  );
+}
+
+/**
+ * 平台收款索引的状态（设计 wallet-receive-index-2026-09-06 §4.13）：未开启 / 中断 /
+ * 暂停的链要说明清楚并留区块浏览器入口；正常的链显示已索引到哪里，落后超过 10 分钟
+ * 才提示落后。索引服务没答上、或有记录因代币不在目录而没显示时也要说，不能装作完整。
+ */
+function IndexNotices({
+  feed,
+  address,
+}: {
+  feed: WalletTransferFeed;
+  address: string;
+}) {
+  const { config, t } = useFoundationRuntime();
+  const locale = config.localization.selectedLocale;
+  const entries = Object.entries(feed.index) as [ChainId, TransferIndex][];
+  if (!feed.indexError && feed.hidden === 0 && entries.length === 0)
+    return null;
+  const explorer = (chain: ChainId) => ({
+    label: t("records.index.explorer"),
+    onPress: () =>
+      void Linking.openURL(`${CHAINS[chain].explorerUrl}/address/${address}`),
+  });
+  return (
+    <Stack gap="$1.5" testID="records-index">
+      {feed.indexError ? (
+        <Notice
+          tone="warning"
+          text={fill(t("records.index.error"), { message: feed.indexError })}
+          testID="records-index-error"
+        />
+      ) : null}
+      {feed.hidden > 0 ? (
+        <Notice
+          tone="muted"
+          text={fill(t("records.index.hidden"), { count: feed.hidden })}
+          testID="records-index-hidden"
+        />
+      ) : null}
+      {entries.map(([chain, index]) => {
+        const name = CHAINS[chain].shortName;
+        if (
+          index.state === "unconfigured" ||
+          index.state === "stalled" ||
+          index.state === "paused"
+        )
+          return (
+            <Notice
+              key={chain}
+              tone={index.state === "unconfigured" ? "muted" : "warning"}
+              text={fill(t(`records.index.${index.state}`), { chain: name })}
+              action={explorer(chain)}
+              testID={`records-index-${chain}`}
+            />
+          );
+        const lag = index.lagSeconds ?? 0;
+        const synced = index.time
+          ? fill(t("records.index.synced"), {
+              chain: name,
+              time: formatDateTime(index.time, locale),
+            })
+          : fill(t("records.index.syncedBlock"), {
+              chain: name,
+              block: index.block ?? 0,
+            });
+        return (
+          <Notice
+            key={chain}
+            tone={lag > 600 ? "warning" : "muted"}
+            text={
+              lag > 600
+                ? `${synced} · ${fill(t("records.index.lagging"), { minutes: Math.floor(lag / 60) })}`
+                : synced
+            }
+            testID={`records-index-${chain}`}
+          />
+        );
+      })}
+    </Stack>
+  );
+}
+
 /**
  * 记录页：划转（转入 / 取回 / 领取，本机 ∪ 平台索引）与钱包转账（本机发起的转出 +
  * 账本里的收款）。点一行看详情：哈希可复制、解包请求号、可领取时间、失败原因。
@@ -253,7 +382,7 @@ export function RecordsScreen({
     initialTab ?? (predictOn ? "predict" : "wallet"),
   );
   const fund = useFundRecords(predictOn ? address : undefined);
-  const transfers = useWalletTransfers(address);
+  const transfers = useWalletTransferFeed(address);
   const detail = useRef<SheetHandle>(null);
   const [selected, setSelected] = useState<Detail | null>(null);
   const open = (next: Detail) => {
@@ -336,23 +465,16 @@ export function RecordsScreen({
               )
             ) : (
               <>
-                <Row alignItems="flex-start" gap="$2">
-                  <AppIcon
-                    name="information-outline"
-                    size={16}
-                    colorToken="textMuted"
-                  />
-                  <Body fontSize={12} flex={1}>
-                    {t("records.receiveNote")}
-                  </Body>
-                </Row>
                 {transfers.data ? (
-                  transfers.data.length === 0 ? (
+                  <IndexNotices feed={transfers.data} address={address} />
+                ) : null}
+                {transfers.data ? (
+                  transfers.data.items.length === 0 ? (
                     <Body testID="records-empty">
                       {t("records.empty.wallet")}
                     </Body>
                   ) : (
-                    transfers.data.map((transfer) => (
+                    transfers.data.items.map((transfer) => (
                       <WalletTransferRow
                         key={transfer.id}
                         transfer={transfer}
@@ -360,6 +482,12 @@ export function RecordsScreen({
                       />
                     ))
                   )
+                ) : transfers.isError ? (
+                  <Body color="$priceNegative" fontSize={12}>
+                    {transfers.error instanceof Error
+                      ? transfers.error.message
+                      : String(transfers.error)}
+                  </Body>
                 ) : (
                   <Stack gap="$2">
                     <SkeletonBlock height={56} />
@@ -474,13 +602,19 @@ export function RecordsScreen({
             />
             <DetailRow
               label={t("records.time")}
-              value={formatDateTime(selected.transfer.updatedAt, locale, {
-                withYear: true,
-              })}
+              value={formatDateTime(
+                selected.transfer.blockTime ?? selected.transfer.updatedAt,
+                locale,
+                { withYear: true },
+              )}
             />
             <DetailRow
               label={t("records.counterparty")}
-              value={shortenAddress(selected.transfer.counterparty, 10, 8)}
+              value={
+                selected.transfer.attribution === "unattributed"
+                  ? t("records.unattributed")
+                  : shortenAddress(selected.transfer.counterparty, 10, 8)
+              }
             />
             {selected.transfer.hash ? (
               <DetailRow

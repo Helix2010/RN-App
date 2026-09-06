@@ -74,4 +74,39 @@ export type WalletTransfer = Tx & {
   token: TokenRef;
   amount: Money;
   counterparty: string;
+  /**
+   * 只有平台索引（RN-Server 扫链）给出的记录才有：`tx` 已定位到交易；`unattributed`
+   * 只有余额差额（合约内部转账或索引中断期间），交易待后台任务定位，此时没有哈希与对手方。
+   */
+  attribution?: "tx" | "unattributed";
+  /** 区块时间戳（ISO）；本机账本的进行中记录没有 */
+  blockTime?: string;
+};
+
+/** 平台收款索引在某条链上的运行状态，与 RN-Server chain_scan_state.state 一致 */
+export type TransferIndexState =
+  "idle" | "scanning" | "catching_up" | "stalled" | "paused" | "unconfigured";
+
+export type TransferIndex = {
+  state: TransferIndexState;
+  /** 已索引到的区块（含）；unconfigured 没有 */
+  block?: number;
+  headBlock?: number;
+  /** 已索引到的区块的链上时间（ISO） */
+  time?: string;
+  /** now − time；界面超过 600 秒才提示落后 */
+  lagSeconds?: number;
+};
+
+/**
+ * 记录页的数据：服务端索引 ∪ 本机账本（按链 + 哈希去重，服务端为准）。
+ * `index` 空对象表示没有索引服务（演示账本或未注入）；`indexError` 表示索引服务这次
+ * 没答上——本机记录照常返回，界面必须说明服务端记录可能缺失，不能装作没事。
+ */
+export type WalletTransferFeed = {
+  items: WalletTransfer[];
+  index: Partial<Record<ChainId, TransferIndex>>;
+  indexError?: string;
+  /** 服务端给了但无法显示的记录数（代币不在目录、链不在本构建）；界面要说明 */
+  hidden: number;
 };

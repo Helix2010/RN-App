@@ -1,6 +1,6 @@
 import * as Clipboard from "expo-clipboard";
-import { fill } from "../../../core/i18n/format";
-import { forwardRef, useState } from "react";
+import { fill, formatTokenAmount } from "../../../core/i18n/format";
+import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import { Share } from "react-native";
 import QRCode from "react-native-qrcode-svg";
 import { useFoundationRuntime } from "../../../app/runtime-context";
@@ -10,6 +10,7 @@ import {
   isChainEnabled,
   isTestnetChain,
 } from "../../../core/wallet/config/wallet-runtime-config";
+import { useIncomingTransferWatch } from "../../wallet/hooks/use-wallet";
 import {
   AppIcon,
   Body,
@@ -30,17 +31,49 @@ import {
  *
  * 能选的链 = 账户支持的链 ∩ 租户启用的链，一条都没有就如实说明、不显示地址。
  * "支持的币种"读服务端下发的代币目录——它就是这条链上 App 会显示余额的那些币。
+ * 打开期间每 15 秒查一次平台收款索引，新入账即 toast 并刷新余额。
  */
 export const ReceiveSheet = forwardRef<
   SheetHandle,
   { address: string; ens?: string; chains: ChainId[] }
 >(function ReceiveSheet({ address, ens, chains }, ref) {
-  const { t } = useFoundationRuntime();
+  const { config, t } = useFoundationRuntime();
+  const locale = config.localization.selectedLocale;
   const theme = useTheme();
   const options = chains.filter(isChainEnabled);
   const [picked, setPicked] = useState<ChainId | undefined>(options[0]);
   // 可选项会随配置刷新变化：选中的链不在里面就回到第一项，一项都没有就是空态
   const chain = picked && options.includes(picked) ? picked : options[0];
+  // 只在收款页开着时轮询：用 ref 包一层拿到 present / dismiss 的时机
+  const sheet = useRef<SheetHandle>(null);
+  const [open, setOpen] = useState(false);
+  useImperativeHandle(
+    ref,
+    () => ({
+      present: () => {
+        setOpen(true);
+        sheet.current?.present();
+      },
+      dismiss: () => {
+        setOpen(false);
+        sheet.current?.dismiss();
+      },
+    }),
+    [],
+  );
+  useIncomingTransferWatch(address, open, (transfer) =>
+    toast(
+      fill(t("receive.arrived"), {
+        amount: formatTokenAmount(
+          transfer.amount,
+          transfer.token.displayDecimals,
+          locale,
+        ),
+        symbol: transfer.token.symbol,
+      }),
+      "success",
+    ),
+  );
 
   const copy = async () => {
     await Clipboard.setStringAsync(address);
@@ -50,7 +83,8 @@ export const ReceiveSheet = forwardRef<
   if (chain === undefined)
     return (
       <Sheet
-        ref={ref}
+        ref={sheet}
+        onDismiss={() => setOpen(false)}
         title={t("receive.title")}
         closeLabel={t("common.close")}
         testID="receive-sheet"
@@ -69,7 +103,8 @@ export const ReceiveSheet = forwardRef<
 
   return (
     <Sheet
-      ref={ref}
+      ref={sheet}
+      onDismiss={() => setOpen(false)}
       title={t("receive.title")}
       closeLabel={t("common.close")}
       scroll

@@ -16,6 +16,7 @@ import type { SessionGateway } from "../../features/session/api/gateway";
 import { HttpSessionGateway } from "../../features/session/api/http-session-gateway";
 import type { WalletGateway } from "../../features/wallet/api/gateway";
 import { EmbeddedWalletGateway } from "../../features/wallet/api/embedded-wallet-gateway";
+import { HttpWalletIndex } from "../../features/wallet/api/http-wallet-index";
 import {
   createWalletConnectConnector,
   openWalletOrFallback,
@@ -80,17 +81,19 @@ function createGateways(storage: KeyValueStorage): Gateways {
     reason: "wallet.sign.transfer",
     storage,
   });
+  // 会话是真的：挑战由 RN-Server 构造并核销 nonce，签名换回的令牌进安全存储。
+  // 测试通过 GatewayProvider 注入 Mock 会话，不走这条路径。
+  const session = new HttpSessionGateway(storage);
   const wallet = new EmbeddedWalletGateway({
     vault,
     chainData,
     storage,
     external,
     onchain,
+    // 链上收款与转出记录来自平台扫链索引，按会话地址查询
+    index: new HttpWalletIndex({ session }),
     seedDemoBalances: (address) => chainData.seedDemoBalances(address),
   });
-  // 会话是真的：挑战由 RN-Server 构造并核销 nonce，签名换回的令牌进安全存储。
-  // 测试通过 GatewayProvider 注入 Mock 会话，不走这条路径。
-  const session = new HttpSessionGateway(storage);
   // 预测账户接真实平台：没有 services.predict 下发时账户功能如实不可用
   const predictAccount = new HttpPredictAccountGateway({
     wallet,
