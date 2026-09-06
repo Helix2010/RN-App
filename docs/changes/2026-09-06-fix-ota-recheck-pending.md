@@ -18,3 +18,8 @@
 
 - `src/core/updates/update-service.spec.ts` 新增用例：check 可用 + fetch 非新 → `ready` / `update.otaReadyNextLaunch`，状态序列 checking→available→downloading→ready。
 - 该改动本身未包含在上述 OTA 包里，随下一次 OTA 发布。
+
+## 追加：设置行长文案挤坏布局（同日）
+
+- 模拟器实测 OTA 第 2 版下载完成后，设置页"检查更新"行的值"Update downloaded and will be applied on the next launch"不可收缩，把标题挤没、整组卡片撑空。
+- `SRow` 的值改为可收缩（`flexShrink`、最宽 55%、右对齐换行），标题容器允许 `minWidth 0`。

@@ -417,7 +417,7 @@ export function SRow({
           colorToken={danger ? "danger" : "textMuted"}
         />
       ) : null}
-      <Stack flex={1} gap="$0.5">
+      <Stack flex={1} minWidth={0} gap="$0.5">
         <InlineText
           fontSize={15}
           fontWeight="600"
@@ -435,7 +435,13 @@ export function SRow({
         </Badge>
       ) : null}
       {value ? (
-        <Body fontSize={13} color="$textMuted">
+        <Body
+          fontSize={13}
+          color="$textMuted"
+          flexShrink={1}
+          maxWidth="55%"
+          textAlign="right"
+        >
           {value}
         </Body>
       ) : null}
