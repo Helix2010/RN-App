@@ -2,7 +2,7 @@
 
 > 结论（用户 2026-09-06 拍板）：独立扫链模块。RN-Server 仓库内新增独立进程 `./rn-server indexer`（同镜像、不同启动命令、按链租约），扫链端点是**与 App 端 RPC 无关的独立属性**，平台级、支持多个端点、管理端维护、热加载；ERC-20 用 `eth_getLogs` 双向索引，原生币按链配置 `blocks`（逐块精确）或 `balance`（Multicall3 余额差触发）两种模式；游标 + 唯一键保证服务中断后从断点追块不遗漏；新增链有一条从服务端目录到 App 版本门禁的固定流程；管理端有配置、体检、状态、补扫、告警。
 >
-> v1（浏览器 API / App 自扫的否决理由与五条链默认端点实测）保留在 §2、§3。
+> 2026-09-06 用户决定：主网扫链端点由用户自己在管理端维护，本设计只提供管理功能；平台管理员身份沿用配置文件里的管理员账号（`.env` 的 `ADMIN_USERNAME`），新增 `PLATFORM_ADMIN_USERNAMES` 明确列出可进"扫链管理"的账号；"来源待确认"的收款照常推送。v1（浏览器 API / App 自扫的否决理由与五条链默认端点实测）保留在 §2、§3。
 
 ## 1. 目标
 
@@ -47,6 +47,7 @@ Multicall3 `0xcA11bde05977b3631167028862bE2a173976CA11` 五条链均已部署。
 | App 链 id 是硬编码枚举，bootstrap 出现未知 id 整份解析失败 | `bootstrap.schema.ts:4`、`core/gateways/types.ts:27` | 新链必须先发 App，再由服务端按构建号下发 |
 | outbox 推送按**租户**广播，安装与钱包会话无关联 | `push/dispatcher.go:197-200`；`wallet_auth.go` 不读安装 id | 定向推送要先补关联（§4.10） |
 | 管理端：只有租户作用域（域名解析租户），没有平台级页面；`app-config` 插件下有"钱包与链"页（目录 + 租户启用 + RPC 覆盖草稿） | `server.go:130-146`、`RN-Admin/src/modules/app-config/plugin.ts`、`wallet-page.tsx` | 扫链管理是平台级，需要新的路由组与插件页（§4.12） |
+| 管理员账号来自配置文件：`.env` 的 `ADMIN_USERNAME` / `ADMIN_PASSWORD_HASH`（登录）与 `ADMIN_API_KEY`（自动化，`x-admin-id` 指明操作人）；会话表 `admin_sessions.actor_id` 存的就是该用户名 | `config.go:80-84`、`server.go:348-360`、`server.go:308-323`、`deploy/web4/prepare-env.sh` | 平台管理员用同一套配置声明（§4.11） |
 | 审计 `audit_events`、乐观锁 `version`、后台 worker 与 outbox 的既有模式 | `server.go:1314`、`tokens.go:585-600`、`docs/ARCHITECTURE.md` §7 | 配置写入走同一套 |
 | 单镜像 `./rn-server`，已有 `migrate` 子命令 | `Dockerfile:16`、`cmd/server/main.go:39-47` | 加 `indexer` 子命令 |
 
@@ -101,6 +102,7 @@ B 只保留为将来"记录详情看内部交易"的可选增强，不进正式�
 - 保存时校验（拒绝即 400，不容忍）：每个端点 `eth_chainId` 必须等于目录 `chainId`；`https://` 或私网 `http://`（仅 `INDEXER_ALLOW_PLAIN_HTTP=true` 时）；`confirmations ≥ 1`；`max_log_span ≥ 1`；`enabled=true` 时至少一个端点。
 - 索引器每 30 秒读一次 `version`，变化即重建该链的 worker（端点、节奏、模式立即生效，不重启进程）。
 - 出于安全，端点 url 里的密钥在管理端只显示脱敏形式；`GET` 接口返回 `urlMasked` 与 `hasSecret`。
+- 端点的选型、申请、更换由运营（用户本人）在管理端完成，代码里不内置任何扫链端点；没有配置端点的链就是 `unconfigured`。
 
 ### 4.4 多端点策略
 
@@ -278,7 +280,7 @@ CREATE TABLE wallet_index_watch (
 
 ### 4.10 推送
 
-前置：`wallet_session` 加 `installation_id`（登录请求带现有安装凭证头），outbox payload 加 `targetInstallationIds`，`dispatcher.targets` 有该字段时只发这些安装。事件 `wallet.transfer.received {chain, addressKey, symbol, amountRaw, decimals, txHash, attribution}`，文案走 `push_notification_copy`。`unattributed` 也推送（"收到 X，来源待确认"），归属完成不再推。
+前置：`wallet_session` 加 `installation_id`（登录请求带现有安装凭证头），outbox payload 加 `targetInstallationIds`，`dispatcher.targets` 有该字段时只发这些安装。事件 `wallet.transfer.received {chain, addressKey, symbol, amountRaw, decimals, txHash, attribution}`，文案走 `push_notification_copy`。`unattributed` 也推送（"收到 X，来源待确认"，2026-09-06 用户确认），归属完成不再推。
 
 ### 4.11 接口
 
@@ -297,7 +299,9 @@ CREATE TABLE wallet_index_watch (
 
 只返回 `status='confirmed'`；`index[chain].state` 取 `chain_scan_cursor.state`。契约进 `contracts/openapi.json`，同步 RN-App `contracts/rn-server.openapi.json`（`check-api-contract.mjs`）。
 
-**管理端（平台级，新路由组 `/v1/admin/platform/scan`，走 `authenticate()` 不走 `domainTenantScope()`）**
+**管理端（平台级，新路由组 `/v1/admin/platform/scan`，走 `authenticate()` 不走 `domainTenantScope()`，再加 `requirePlatformAdmin()`）**
+
+平台管理员用配置文件声明：`.env` 新增 `PLATFORM_ADMIN_USERNAMES`（逗号分隔的管理员用户名，`prepare-env.sh` 生成时预填为 `ADMIN_USERNAME`）。`requirePlatformAdmin()` 取会话的 `actor_id`（登录）或 `x-admin-id`（`ADMIN_API_KEY` 自动化）核对是否在列表内，不在 → 403 `PLATFORM_ADMIN_REQUIRED`；变量为空 → 平台路由一律 403 `PLATFORM_ADMIN_NOT_CONFIGURED`，管理端页面显示同样提示，不默认放开。将来引入多账号时只需扩展这个列表的来源。
 
 | 方法 | 路径 | 作用 |
 |---|---|---|
@@ -322,6 +326,8 @@ CREATE TABLE wallet_index_watch (
 5. **任务列表**：进度条（`progress_block / (to − from)`）、取消。
 6. **地址查询**：输入地址与链，列出索引记录（含 `orphaned` / `unattributed`），给客服排查"我收到了钱但没记录"。
 7. **新链向导**（§4.8 的可视化）：显示该链的 `minBuild`、当前各租户低于门槛的活跃安装数、是否已有配置 / 代币目录 / 监听地址，按步骤打勾。
+
+页面入口只对 `PLATFORM_ADMIN_USERNAMES` 内的账号显示（前端按 `GET /v1/admin/auth/session` 返回的 `platformAdmin: true` 判断，接口侧仍以 `requirePlatformAdmin()` 为准）。
 
 租户级"钱包与链"页增加只读区块 **"收款索引"**：本租户启用链的状态与落后、监听地址数；`unconfigured` 的链提示"平台未开启该链扫链，App 记录页会显示未开启"。
 
@@ -353,10 +359,10 @@ CREATE TABLE wallet_index_watch (
 4. 追块任务（`attribute` / `rescan` / `rebuild_watch`）+ 告警。
 5. 会话 ↔ 安装关联 + 定向推送。
 6. 新链门禁（目录 `minBuild` + bootstrap 过滤 + 向导）。
-7. 主网链端点与启用。
+7. 主网链启用：端点由用户在管理端填入并体检通过后 `enabled=true`，无代码变更。
 
-## 6. 未决
+## 6. 已决事项（2026-09-06）
 
-- 主网扫链端点选型（付费节点或自建）由运营决定；bsc / eth 的公共默认端点已实测不可用。
-- 平台管理员身份：现有管理端只有租户作用域的管理员账号（`ADMIN_USERNAME` 单账号），"扫链管理"先对该账号开放、不按租户过滤；若后续引入多角色再收紧。
-- `unattributed` 行推送默认发；若运营认为"来源待确认"会引起客诉，改为归属完成后再推。
+- 主网扫链端点：由用户在管理端维护，本设计只提供配置、体检、健康度与切换；代码不内置端点。bsc / eth 的公共默认端点已实测不可用于扫链，仅作说明。
+- 平台管理员身份：沿用配置文件里的管理员账号，用 `PLATFORM_ADMIN_USERNAMES` 明确列出；未配置即拒绝，不按租户过滤。
+- `unattributed` 收款推送：推送。
