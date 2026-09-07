@@ -33,6 +33,7 @@ import {
   TxVerificationSheet,
   useTxVerificationLabel,
 } from "../security/tx-verification-sheet";
+import { updateCheckRowValue } from "../updates/update-check-row";
 import { useManualUpdateCheck } from "../updates/use-manual-update-check";
 
 /** S-02 设置：通用 / 通知 / 交易偏好 / 安全 / 关于 五组，值列直接显示当前设置。 */
@@ -40,13 +41,10 @@ export function SettingsScreen({
   navigation,
 }: NativeStackScreenProps<RootStackParamList, "Settings">) {
   const insets = useSafeAreaInsets();
-  const { config, localePreference, themePreference, t } =
+  const { config, localePreference, themePreference, t, otaResult } =
     useFoundationRuntime();
-  const {
-    state: updateCheckState,
-    checking: checkingUpdate,
-    check: checkUpdate,
-  } = useManualUpdateCheck();
+  const { state: updateCheckState, check: checkUpdate } =
+    useManualUpdateCheck();
   const { toggle: toggleAppLock } = useAppLockToggle();
   const session = useSession();
   const address = session.data?.address;
@@ -252,21 +250,13 @@ export function SettingsScreen({
           <Group title={t("settings.section.about")}>
             <SRow
               title={t("settings.checkUpdate")}
-              value={
-                checkingUpdate
-                  ? t("update.checking")
-                  : updateCheckState === "error"
-                    ? t("status.error")
-                    : updateCheckState === "latest"
-                      ? t("settings.upToDate")
-                      : updateCheckState === "available" && !hasUpdate
-                        ? t("update.otaReadyNextLaunch")
-                        : hasUpdate
-                          ? fill(t("settings.newVersion"), {
-                              version: config.update.latestVersion,
-                            })
-                          : t("settings.upToDate")
-              }
+              value={updateCheckRowValue({
+                t,
+                state: updateCheckState,
+                hasUpdate,
+                latestVersion: config.update.latestVersion,
+                otaResult,
+              })}
               dot={hasUpdate}
               onPress={() => void checkUpdate()}
               testID="settings-check-update"

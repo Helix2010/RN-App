@@ -22,6 +22,7 @@ import {
 import type { RootStackParamList } from "../../navigation/types";
 import { useTenantLogoUri } from "../../app/use-tenant-logo";
 import { Group, SRow } from "../profile/profile-screen";
+import { updateCheckRowValue } from "../updates/update-check-row";
 import { useManualUpdateCheck } from "../updates/use-manual-update-check";
 import { getCurrentUpdateMetadata } from "../../core/updates/update-service";
 
@@ -30,12 +31,9 @@ export function AboutScreen({
   navigation,
 }: NativeStackScreenProps<RootStackParamList, "About">) {
   const insets = useSafeAreaInsets();
-  const { config, t } = useFoundationRuntime();
-  const {
-    state: updateCheckState,
-    checking: checkingUpdate,
-    check: checkUpdate,
-  } = useManualUpdateCheck();
+  const { config, t, otaResult } = useFoundationRuntime();
+  const { state: updateCheckState, check: checkUpdate } =
+    useManualUpdateCheck();
   const versionInfo = useRef<SheetHandle>(null);
   const hasUpdate = config.update.decision !== "none";
   const logoUri = useTenantLogoUri();
@@ -101,16 +99,14 @@ export function AboutScreen({
           ) : (
             <Group title="">
               <SRow
-                title={t("settings.upToDate")}
-                value={
-                  checkingUpdate
-                    ? t("update.checking")
-                    : updateCheckState === "error"
-                      ? t("status.error")
-                      : updateCheckState === "latest"
-                        ? t("settings.upToDate")
-                        : t("settings.checkUpdate")
-                }
+                title={t("settings.checkUpdate")}
+                value={updateCheckRowValue({
+                  t,
+                  state: updateCheckState,
+                  hasUpdate,
+                  latestVersion: config.update.latestVersion,
+                  otaResult,
+                })}
                 onPress={() => void checkUpdate()}
                 testID="about-check-update"
               />
