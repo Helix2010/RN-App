@@ -19,6 +19,18 @@ jest.mock("../../../core/network/api-client", () => ({
   apiClient: { post: jest.fn(), get: jest.fn() },
   appRuntime: { apiBaseUrl: "https://api.example.com" },
 }));
+const mockInstallation = {
+  headers: {
+    "X-Installation-ID": "inst_1",
+    Authorization: "Installation icred_1",
+  } as Record<string, string>,
+  ensure: jest.fn(),
+  forget: jest.fn(),
+};
+jest.mock("../../../core/device/installation-service", () => ({
+  ensureInstallationAuthorization: () => mockInstallation.ensure(),
+  forgetInstallationCredential: () => mockInstallation.forget(),
+}));
 
 const post = apiClient.post as jest.MockedFunction<typeof apiClient.post>;
 const get = apiClient.get as jest.MockedFunction<typeof apiClient.get>;
@@ -40,6 +52,9 @@ function setup() {
   mockSecure.clear();
   post.mockReset();
   get.mockReset();
+  mockInstallation.ensure.mockReset();
+  mockInstallation.forget.mockReset();
+  mockInstallation.ensure.mockResolvedValue(mockInstallation.headers);
   return new HttpSessionGateway(memoryStorage());
 }
 
@@ -81,6 +96,7 @@ describe("HttpSessionGateway", () => {
       "/v1/mobile/auth/verify",
       expect.objectContaining({ nonce: "server-nonce", signature: "0xsig" }),
       expect.anything(),
+      { headers: mockInstallation.headers },
     );
     // 令牌进安全存储，不进普通存储
     expect(mockSecure.get("foundation.session-token.v1")).toBe("wtok_test");
@@ -92,10 +108,17 @@ describe("HttpSessionGateway", () => {
     });
   });
 
-  it("links the installation on login and retries without it when the credential is stale", async () => {
+  // 登录必须关联安装（设计 §4.2）：凭证失效就丢掉、重新注册、用同一挑战再试一次；
+  // 重试仍然带安装身份，不再退化成无关联登录
+  it("links the installation on login and re-registers before retrying when the credential is stale", async () => {
     const gateway = setup();
-    mockSecure.set("foundation.installation-id.v1", "inst_1");
-    mockSecure.set("foundation.installation-credential.v1", "icred_1");
+    const renewed = {
+      "X-Installation-ID": "inst_1",
+      Authorization: "Installation icred_2",
+    };
+    mockInstallation.ensure
+      .mockResolvedValueOnce(mockInstallation.headers)
+      .mockResolvedValueOnce(renewed);
     post
       .mockRejectedValueOnce(
         new AppError("server", "401", false, undefined, 401, {
@@ -105,21 +128,35 @@ describe("HttpSessionGateway", () => {
       .mockResolvedValueOnce(verifyResponse());
     await gateway.verify(request, challenge, "0xsig");
     expect(post.mock.calls[0]?.[3]).toEqual({
-      headers: {
-        "X-Installation-ID": "inst_1",
-        Authorization: "Installation icred_1",
-      },
+      headers: mockInstallation.headers,
     });
-    // 重试不带安装身份，失效凭证已丢弃（心跳会重新注册）
-    expect(post.mock.calls[1]?.length).toBe(3);
-    expect(mockSecure.has("foundation.installation-credential.v1")).toBe(false);
+    expect(mockInstallation.forget).toHaveBeenCalledTimes(1);
+    expect(post.mock.calls[1]?.[3]).toEqual({ headers: renewed });
     expect(mockSecure.get("foundation.session-token.v1")).toBe("wtok_test");
+  });
+
+  it("fails sign-in when no installation credential can be obtained", async () => {
+    const gateway = setup();
+    mockInstallation.ensure.mockRejectedValueOnce(
+      new AppError(
+        "configuration",
+        "not registered",
+        false,
+        undefined,
+        undefined,
+        {
+          code: "INSTALLATION_REQUIRED",
+        },
+      ),
+    );
+    await expect(
+      gateway.verify(request, challenge, "0xsig"),
+    ).rejects.toMatchObject({ code: "INSTALLATION_REQUIRED" });
+    expect(post).not.toHaveBeenCalled();
   });
 
   it("does not swallow other login failures behind the installation retry", async () => {
     const gateway = setup();
-    mockSecure.set("foundation.installation-id.v1", "inst_1");
-    mockSecure.set("foundation.installation-credential.v1", "icred_1");
     post.mockRejectedValueOnce(
       new AppError("server", "401", false, undefined, 401, {
         code: "WALLET_SIGNATURE_INVALID",
@@ -129,7 +166,7 @@ describe("HttpSessionGateway", () => {
       "401",
     );
     expect(post).toHaveBeenCalledTimes(1);
-    expect(mockSecure.has("foundation.installation-credential.v1")).toBe(true);
+    expect(mockInstallation.forget).not.toHaveBeenCalled();
   });
 
   it("drops an expired cached session", async () => {

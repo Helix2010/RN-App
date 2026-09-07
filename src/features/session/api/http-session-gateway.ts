@@ -2,8 +2,8 @@ import * as SecureStore from "expo-secure-store";
 import { z } from "zod";
 import type { KeyValueStorage } from "../../../core/gateways/types";
 import {
+  ensureInstallationAuthorization,
   forgetInstallationCredential,
-  installationAuthorization,
 } from "../../../core/device/installation-service";
 import { notifySessionStateChanged } from "../../../core/device/session-state-probe";
 import { apiClient } from "../../../core/network/api-client";
@@ -80,39 +80,34 @@ export class HttpSessionGateway implements SessionGateway {
       connector: request.connector,
       chains: request.chains,
     };
-    // 带上安装身份，服务端把会话关联到这台安装（收款推送只发它）
-    const installation = await installationAuthorization();
+    // 登录必须带安装身份（设计 §4.2）：服务端把会话关联到这台安装，定向推送与
+    // 管理端"当前账号"都靠它。凭证缺失就当场注册；注册不了登录失败并给明确原因
+    let installation = await ensureInstallationAuthorization();
     let response: z.infer<typeof verifySchema>;
-    if (Object.keys(installation).length === 0) {
+    try {
       response = await apiClient.post(
         "/v1/mobile/auth/verify",
         body,
         verifySchema,
+        { headers: installation },
       );
-    } else {
-      try {
-        response = await apiClient.post(
-          "/v1/mobile/auth/verify",
-          body,
-          verifySchema,
-          { headers: installation },
-        );
-      } catch (error) {
-        // 安装凭证被撤销 / 轮换了：不能挡登录。丢掉失效凭证让心跳重新注册，本次登录
-        // 不关联安装（服务端在核销 nonce 之前校验，同一挑战可以重试）
-        if (
-          !(error instanceof AppError) ||
-          error.status !== 401 ||
-          error.code !== "INSTALLATION_CREDENTIAL_INVALID"
-        )
-          throw error;
-        await forgetInstallationCredential();
-        response = await apiClient.post(
-          "/v1/mobile/auth/verify",
-          body,
-          verifySchema,
-        );
-      }
+    } catch (error) {
+      // 凭证被撤销 / 轮换了：丢掉后重新注册，用同一挑战重试一次
+      //（服务端在核销 nonce 之前校验）；再失败就让错误原样浮上去
+      if (
+        !(error instanceof AppError) ||
+        error.status !== 401 ||
+        error.code !== "INSTALLATION_CREDENTIAL_INVALID"
+      )
+        throw error;
+      await forgetInstallationCredential();
+      installation = await ensureInstallationAuthorization();
+      response = await apiClient.post(
+        "/v1/mobile/auth/verify",
+        body,
+        verifySchema,
+        { headers: installation },
+      );
     }
     const session: Session = {
       address: response.address,

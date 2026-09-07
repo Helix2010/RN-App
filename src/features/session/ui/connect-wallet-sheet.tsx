@@ -456,7 +456,17 @@ function SignConfirm({
           fontSize={12}
           accessibilityLiveRegion="polite"
         >
-          {error === "timeout" ? t("login.timeout") : t("login.cancelled")}
+          {error === "timeout"
+            ? t("login.timeout")
+            : error === "installation"
+              ? t("login.installationRequired")
+              : error === "blocked"
+                ? t("login.blocked")
+                : error === "blockedPlatform"
+                  ? t("login.blockedPlatform")
+                  : error === "failed"
+                    ? t("login.failed")
+                    : t("login.cancelled")}
         </InlineText>
       ) : null}
       <PrimaryButton onPress={onSign} disabled={busy} testID="login-sign">

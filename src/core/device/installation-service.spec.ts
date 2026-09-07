@@ -6,6 +6,9 @@ import {
   setSessionStateProbe,
 } from "./session-state-probe";
 import {
+  ensureInstallationAuthorization,
+  forgetInstallationCredential,
+  forgetInstallationSyncInputForTests,
   heartbeatFingerprint,
   syncInstallationHeartbeat,
 } from "./installation-service";
@@ -200,13 +203,36 @@ describe("syncInstallationHeartbeat", () => {
     let state: "signed_in" | "signed_out" = "signed_out";
     setSessionStateProbe(async () => state);
     await syncInstallationHeartbeat(config, "system");
-    expect(post.mock.calls[1]?.[1]).toMatchObject({ sessionState: "signed_out" });
+    expect(post.mock.calls[1]?.[1]).toMatchObject({
+      sessionState: "signed_out",
+    });
     state = "signed_in";
     notifySessionStateChanged();
     jest.setSystemTime(new Date("2026-09-01T03:01:00Z"));
     await syncInstallationHeartbeat(config, "system");
     expect(post).toHaveBeenCalledTimes(3);
-    expect(post.mock.calls[2]?.[1]).toMatchObject({ sessionState: "signed_in" });
+    expect(post.mock.calls[2]?.[1]).toMatchObject({
+      sessionState: "signed_in",
+    });
+  });
+
+  // 登录必须带安装身份：凭证没了就当场重新注册；启动心跳还没跑过就明确失败，不退化成无关联登录
+  it("re-registers on demand for sign-in and fails loudly before the first heartbeat", async () => {
+    forgetInstallationSyncInputForTests();
+    await expect(ensureInstallationAuthorization()).rejects.toMatchObject({
+      code: "INSTALLATION_REQUIRED",
+    });
+    await syncInstallationHeartbeat(config, "system");
+    expect(await ensureInstallationAuthorization()).toEqual({
+      "X-Installation-ID": "inst_0123456789abcdef0123456789abcdef",
+      Authorization: "Installation icred_test",
+    });
+    await forgetInstallationCredential();
+    const headers = await ensureInstallationAuthorization();
+    expect(headers.Authorization).toBe("Installation icred_test");
+    expect(
+      calledPaths().filter((path) => path.endsWith("/register")),
+    ).toHaveLength(2);
   });
 
   it("changes the fingerprint for build and metadata but not identity fields", () => {

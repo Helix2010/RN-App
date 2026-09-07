@@ -4,6 +4,7 @@ import { appRuntime } from "../../../core/network/api-client";
 import { useCallback, useEffect, useState } from "react";
 import { AppState } from "react-native";
 import { useGateways } from "../../../core/gateways/gateway-context";
+import { AppError } from "../../../core/network/app-error";
 import type { SignInChallenge } from "../api/gateway";
 import type { Session, WalletConnectorId } from "../model/session";
 import type { WalletAccount } from "../../wallet/model/wallet";
@@ -110,15 +111,32 @@ export type LoginStep =
     }
   | {
       step: "error";
-      reason: "rejected" | "timeout" | "noChain" | "failed";
+      reason: LoginFailureReason;
       account?: WalletAccount;
       challenge?: SignInChallenge;
       connector: WalletConnectorId;
     };
 
-function reasonOf(
-  error: unknown,
-): "rejected" | "timeout" | "noChain" | "failed" {
+export type LoginFailureReason =
+  | "rejected"
+  | "timeout"
+  | "noChain"
+  | "installation"
+  | "blocked"
+  | "blockedPlatform"
+  | "failed";
+
+export function reasonOf(error: unknown): LoginFailureReason {
+  // 服务端给了业务错误码就按码说人话：未关联安装、租户封禁、平台封禁都不能笼统说"失败"
+  if (error instanceof AppError) {
+    if (
+      error.code === "INSTALLATION_REQUIRED" ||
+      error.code === "INSTALLATION_CREDENTIAL_INVALID"
+    )
+      return "installation";
+    if (error.code === "WALLET_USER_BLOCKED") return "blocked";
+    if (error.code === "WALLET_BLOCKED_PLATFORM") return "blockedPlatform";
+  }
   if (
     error instanceof Error &&
     error.name === "WalletConnectNoEnabledChainError"

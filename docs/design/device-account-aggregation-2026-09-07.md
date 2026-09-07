@@ -33,7 +33,7 @@
 
 - `app_installations.ota_revision` 存的是 bootstrap 下发的"最新可用修订号"，不是设备正在跑的版本；管理端"Runtime / OTA"列展示的就是它。
 - 登录与安装实例的关联事实上没有生效：线上 8 条会话 0 条带 `installation_id`。原因是登录时若安装凭证缺失或失效就退化为不关联登录（"登录照常"），而 9 月 2 日到 9 月 7 日之间安装凭证因应用身份改写问题（RN-Server 87e88d7 已修）持续失效。可选关联在实践中等于没有关联。
-- `wallet_user.status='blocked'` 登录时没有校验。
+- 租户级封禁在登录时已校验（`WALLET_USER_BLOCKED`），但封禁不结束已有会话，也没有管理端入口。
 - 撤销安装实例只撤凭证和推送 Token，不结束该实例上的会话。
 - `wallet_session` 没有清理任务。
 - 心跳指纹在 55ef275 之前不含应用身份（已修，随 OTA rev 5 发布）。
@@ -72,7 +72,7 @@
 - 服务端签发会话时在同一事务里：对该安装实例的其他有效会话写 `revoked_at=now, ended_reason='superseded'`；写入 / 更新 `wallet_user_installation`（首次 / 最近登录、次数、最近连接器）。
 - 登出写 `ended_reason='logout'`；管理端撤销会话写 `'admin'`；封禁写 `'blocked'`。过期不写标记，读取时按 `expires_at` 判断。
 - 撤销安装实例时同时结束该实例的全部有效会话（`'admin'`），App 下次校验会话得到 401 后回到未登录态。
-- 登录时校验封禁：先平台级 `platform_wallet_block`，再租户级 `wallet_user.status='blocked'`；命中返回 403，错误码分别为 `WALLET_BLOCKED_PLATFORM` / `WALLET_BLOCKED`，App 显示对应文案；封禁动作同时结束该账号的有效会话（租户级只结束本租户的）。
+- 登录时校验封禁：先平台级 `platform_wallet_block`，再租户级 `wallet_user.status='blocked'`；命中返回 403，错误码分别为 `WALLET_BLOCKED_PLATFORM` / `WALLET_USER_BLOCKED`（沿用现有码），App 显示对应文案；封禁动作同时结束该账号的有效会话（租户级只结束本租户的）。
 
 ### 4.3 当前活跃账号
 
@@ -165,7 +165,7 @@ CREATE TABLE platform_wallet_block (
 | `GET /platform/devices/:deviceClientId` | 该设备上所有租户的安装实例、版本、当前账号 |
 | `POST /platform/wallet/blocks` / `DELETE /platform/wallet/blocks/:id` | body `{address, reason, confirm:true}`；封禁结束所有租户会话 |
 
-错误码：`INSTALLATION_REQUIRED`（登录缺安装关联）、`WALLET_BLOCKED`、`WALLET_BLOCKED_PLATFORM`、`OTA_RUNNING_UPDATE_INVALID`（心跳字段不符）。
+错误码：`INSTALLATION_REQUIRED`（登录缺安装关联）、`WALLET_USER_BLOCKED`、`WALLET_BLOCKED_PLATFORM`、`WALLET_BLOCK_CHECK_FAILED`（平台封禁表不可读，登录失败而不是放行）、`OTA_RUNNING_UPDATE_INVALID`（心跳字段不符）。
 
 ### 4.8 管理端功能（RN-Admin）
 
@@ -229,7 +229,7 @@ CREATE TABLE platform_wallet_block (
 
 - 新增 `launch_source`：口头方案用 `running_update_id IS NULL` 表示内置，评审发现旧版 App 不上报时也是 NULL，两种含义混在一起违反"不猜"原则，改为显式枚举，NULL 只表示未上报。
 - 登录关联从"可选、失效时重试无关联登录"改为"必须"：核对线上数据发现 8 条会话 0 条关联，可选关联在实践中等于没有。
-- 补上三处现状缺口：`blocked` 未校验、撤销安装不结束会话、会话无清理任务。
+- 补上现状缺口：撤销安装不结束会话、封禁不结束会话且无管理端入口、会话无清理任务（后经用户决定永久保留）。评审稿曾误判"`blocked` 登录时未校验"，实施时核对代码发现已校验（`WALLET_USER_BLOCKED`），二期沿用该错误码。
 - 当前账号明确"从会话派生 + 签发时替代旧会话"，删掉口头方案里的冗余列想法；"活跃"拆成三档，避免已卸载设备的有效会话被算成活跃。
 - 跨租户：租户接口禁止暴露 `device_client_id`；平台查询要求完整地址且逐次审计；平台级封禁独立成表并定义与租户级的叠加关系。
 - 回填预期修正：汇总表回填实际为空，数据从上线后积累。

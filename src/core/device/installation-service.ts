@@ -159,6 +159,41 @@ export async function forgetInstallationCredential(): Promise<void> {
   await SecureStore.deleteItemAsync(CREDENTIAL_KEY);
 }
 
+/**
+ * 登录必须带安装身份（设计 §4.2，用户 2026-09-07 决定）：没有凭证就当场重新注册；
+ * 注册不了（启动心跳还没跑过、服务端不可用）登录失败并报 INSTALLATION_REQUIRED，
+ * 不再退化成"不关联设备"的登录。
+ */
+export async function ensureInstallationAuthorization(): Promise<
+  Record<string, string>
+> {
+  const existing = await installationAuthorization();
+  if (Object.keys(existing).length > 0) return existing;
+  if (!lastSyncInput) {
+    throw new AppError(
+      "configuration",
+      "Installation is not registered yet; sign-in requires a registered installation",
+      false,
+      undefined,
+      undefined,
+      { code: "INSTALLATION_REQUIRED" },
+    );
+  }
+  await syncInstallationHeartbeat(lastSyncInput.config, lastSyncInput.theme);
+  const refreshed = await installationAuthorization();
+  if (Object.keys(refreshed).length === 0) {
+    throw new AppError(
+      "configuration",
+      "Installation registration did not yield a credential",
+      false,
+      undefined,
+      undefined,
+      { code: "INSTALLATION_REQUIRED" },
+    );
+  }
+  return refreshed;
+}
+
 async function installationId(): Promise<string> {
   const current = await SecureStore.getItemAsync(INSTALLATION_KEY);
   if (current) return current;
@@ -185,10 +220,20 @@ async function deviceSourceHash(): Promise<string> {
   }
 }
 
+/** 最近一次心跳用的输入；登录时凭证缺失要靠它重新注册（设计 §4.2） */
+let lastSyncInput: { config: BootstrapConfig; theme: ThemePreference } | null =
+  null;
+
+/** 测试隔离用：清掉进程内记住的心跳输入，让"首个心跳之前"的分支可复现 */
+export function forgetInstallationSyncInputForTests(): void {
+  lastSyncInput = null;
+}
+
 export async function syncInstallationHeartbeat(
   config: BootstrapConfig,
   theme: ThemePreference,
 ): Promise<void> {
+  lastSyncInput = { config, theme };
   const storedCredential = await SecureStore.getItemAsync(CREDENTIAL_KEY);
   const id = await installationId();
   const report = await installationReport(
