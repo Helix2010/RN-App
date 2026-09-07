@@ -163,7 +163,7 @@ CREATE TABLE platform_wallet_block (
 |---|---|
 | `GET /platform/wallet/lookup?address=` | 各租户的账号状态与最近登录；跨租户按设备聚合的安装实例（标注租户）与当前会话；平台级封禁状态 |
 | `GET /platform/devices/:deviceClientId` | 该设备上所有租户的安装实例、版本、当前账号 |
-| `POST /platform/wallet/blocks` / `DELETE /platform/wallet/blocks/:id` | body `{address, reason, confirm:true}`；封禁结束所有租户会话 |
+| `POST /platform/wallet/blocks` / `POST /platform/wallet/blocks/:id/revoke` | body `{address, reason, confirm:true}` / `{reason, confirm:true}`；封禁结束所有租户会话。解除用 POST 而不是 DELETE：解除必须带原因与确认，DELETE 不适合带请求体 |
 
 错误码：`INSTALLATION_REQUIRED`（登录缺安装关联）、`WALLET_USER_BLOCKED`、`WALLET_BLOCKED_PLATFORM`、`WALLET_BLOCK_CHECK_FAILED`（平台封禁表不可读，登录失败而不是放行）、`OTA_RUNNING_UPDATE_INVALID`（心跳字段不符）。
 
@@ -197,7 +197,7 @@ CREATE TABLE platform_wallet_block (
 
 ### 4.12 测试与验证
 
-单元 / 接口测试：会话替代（同安装实例两次登录只剩一条有效）；封禁优先级与会话结束；心跳字段校验（embedded 带 update id → 422）；`running_ota_revision` 关联不上存 NULL；租户接口不泄露 `device_client_id`；平台接口无权限 403 且写审计。
+单元 / 接口测试：会话替代（同安装实例两次登录只剩一条有效）；封禁优先级与会话结束；心跳字段校验（embedded 带 update id → 422）；`running_ota_revision` 关联不上存 NULL；租户接口不泄露 `device_client_id`；平台接口无权限 403 且写审计。依赖数据库的用例在 RN-Server `internal/api/db_integration_test.go`，需要 `RN_TEST_MYSQL_*` 指向可清空的 MySQL 8（运行方法见 RN-Server `docs/OPERATIONS_AND_RELEASE.md`），未设置时跳过。
 
 模拟器场景（emulator-5570 + 第二台模拟器，租户 anyfun 与 test）：
 
