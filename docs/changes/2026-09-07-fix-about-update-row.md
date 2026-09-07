@@ -30,3 +30,10 @@
 - `update-check-row.spec.ts`、`about-screen.spec.tsx`（新增"已下载待重启"用例）。
 - 模拟器：运行 rev 3 时下载 rev 4，设置页与关于页均显示"更新已下载，将在下次启动时自动应用"；
   重启后显示"已是最新版本"。
+
+## 追加：应用身份纳入心跳指纹（同日）
+
+排查中发现服务端曾把 OTA 包的应用身份改写成 APK 包名（RN-Server 87e88d7 已修）。
+装上修复后的 OTA 包，设备的 `X-Application-ID` 会从包名换回租户配置的 `dex-mobile`，
+但心跳指纹里没有应用身份，同一份上报会被节流 30 分钟，服务端这段时间看到的还是旧身份。
+`heartbeatFingerprint` 现在带上 `appRuntime.applicationId`，身份一变立即重新注册并心跳。

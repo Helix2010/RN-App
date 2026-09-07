@@ -46,7 +46,11 @@ jest.mock("../network/api-client", () => ({
 }));
 
 const post = apiClient.post as jest.MockedFunction<typeof apiClient.post>;
-const runtime = appRuntime as { version: string; buildNumber: string };
+const runtime = appRuntime as {
+  version: string;
+  buildNumber: string;
+  applicationId: string;
+};
 const config = createFallbackConfig("zh-CN");
 const iso = "2026-09-01T00:00:00.000Z";
 
@@ -154,6 +158,10 @@ describe("syncInstallationHeartbeat", () => {
       fingerprint,
     );
     runtime.buildNumber = "19";
-    expect(heartbeatFingerprint(base)).not.toBe(fingerprint);
+    const rebuilt = heartbeatFingerprint(base);
+    expect(rebuilt).not.toBe(fingerprint);
+    runtime.applicationId = "com.anyfun.foundation";
+    expect(heartbeatFingerprint(base)).not.toBe(rebuilt);
+    runtime.applicationId = "dex-mobile";
   });
 });

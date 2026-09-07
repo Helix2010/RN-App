@@ -86,6 +86,8 @@ export function heartbeatFingerprint(report: InstallationReport): string {
     buildNumber: appRuntime.buildNumber,
     runtimeVersion: appRuntime.runtimeVersion,
     distributionChannel: appRuntime.distributionChannel,
+    // 应用身份是服务端安装记录的键之一：OTA 换了身份就得立刻重新上报，不能等 30 分钟
+    applicationId: appRuntime.applicationId,
     ...reported,
   });
 }
