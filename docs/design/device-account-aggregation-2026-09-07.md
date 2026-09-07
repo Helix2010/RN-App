@@ -1,4 +1,4 @@
-# 设备、账号与版本信息的管理端聚合设计（2026-09-07，v1 评审稿）
+# 设备、账号与版本信息的管理端聚合设计（2026-09-07，v2 已决）
 
 需求来源：2026-09-07 与用户的四轮讨论。本稿是对讨论中口头方案的评审与完善，
 评审改动见 §7。服务端决策摘要在 RN-Server `docs/decisions/0014-device-account-aggregation.md`。
@@ -70,7 +70,7 @@
 
 - 登录（`/v1/mobile/auth/verify`）**必须**携带安装凭证。App 在启动心跳里已经拿到凭证；凭证失效返回 `INSTALLATION_CREDENTIAL_INVALID` 时，App 先重新注册再带新凭证重试一次；仍失败则登录失败，错误码 `INSTALLATION_REQUIRED`，界面显示明确文案。不再退化为无关联登录。
 - 服务端签发会话时在同一事务里：对该安装实例的其他有效会话写 `revoked_at=now, ended_reason='superseded'`；写入 / 更新 `wallet_user_installation`（首次 / 最近登录、次数、最近连接器）。
-- 登出写 `ended_reason='logout'`；管理端撤销会话写 `'admin'`；封禁写 `'blocked'`；清理任务把已过期未标记的写 `'expired'`。
+- 登出写 `ended_reason='logout'`；管理端撤销会话写 `'admin'`；封禁写 `'blocked'`。过期不写标记，读取时按 `expires_at` 判断。
 - 撤销安装实例时同时结束该实例的全部有效会话（`'admin'`），App 下次校验会话得到 401 后回到未登录态。
 - 登录时校验封禁：先平台级 `platform_wallet_block`，再租户级 `wallet_user.status='blocked'`；命中返回 403，错误码分别为 `WALLET_BLOCKED_PLATFORM` / `WALLET_BLOCKED`，App 显示对应文案；封禁动作同时结束该账号的有效会话（租户级只结束本租户的）。
 
@@ -100,10 +100,11 @@ ALTER TABLE app_installations
   ADD COLUMN launch_source ENUM('embedded','ota') NULL COMMENT '心跳上报的启动来源：embedded=内置 bundle，ota=OTA bundle；NULL=旧版 App 未上报',
   ADD COLUMN running_update_id CHAR(36) NULL COMMENT '正在运行的 expo-updates update id；launch_source=embedded 时为 NULL',
   ADD COLUMN running_ota_revision INT UNSIGNED NULL COMMENT '由 running_update_id 关联本租户 ota_releases.update_id 得到的修订号；关联不上为 NULL，管理端显示未知更新',
+  ADD COLUMN client_session_state ENUM('signed_in','signed_out') NULL COMMENT '心跳上报的客户端登录态，只用于与 wallet_session 对账，不参与任何判定；NULL=旧版 App 未上报',
   MODIFY COLUMN ota_revision INT UNSIGNED NULL COMMENT 'bootstrap 下发的最新可用 OTA 修订号（服务端视角），不是运行中的版本';
 
 ALTER TABLE wallet_session
-  ADD COLUMN ended_reason ENUM('logout','superseded','expired','admin','blocked') NULL COMMENT '会话结束原因：logout=用户登出，superseded=同安装实例新登录替代，expired=清理任务标记过期，admin=管理端撤销，blocked=封禁；NULL=仍有效',
+  ADD COLUMN ended_reason ENUM('logout','superseded','admin','blocked') NULL COMMENT '会话主动结束的原因：logout=用户登出，superseded=同安装实例新登录替代，admin=管理端撤销，blocked=封禁；NULL=未被主动结束（是否过期看 expires_at）',
   ADD KEY ix_wallet_session_installation (tenant_id, installation_id, revoked_at, expires_at) COMMENT '按安装实例取当前有效会话';
 
 ALTER TABLE wallet_user
@@ -179,13 +180,13 @@ CREATE TABLE platform_wallet_block (
 - 心跳：`launchSource`、`runningUpdateId` 两字段并纳入指纹。
 - 登录：安装凭证必带；`INSTALLATION_CREDENTIAL_INVALID` 时重新注册后重试一次；新增 `INSTALLATION_REQUIRED`、`WALLET_BLOCKED`、`WALLET_BLOCKED_PLATFORM` 的界面文案（i18n 种子两种语言）。
 - 会话校验得到 401 时回到未登录态（现有 revalidator 已覆盖，补测试）。
-- 不上报账号列表：账号是否登录以服务端会话为准。可选（第三期）：心跳带 `sessionState`（signed_in / signed_out）只用于对账，服务端认为有会话而客户端说未登录时在管理端标出差异，不用它做任何决策。
+- 不上报账号列表：账号是否登录以服务端会话为准。心跳带 `sessionState`（`signed_in` / `signed_out`）只用于对账：服务端存为 `client_session_state`，与会话表比对不一致时在管理端标"状态不一致"，不用它做任何决策（用户 2026-09-07 决定实施，字段随一期心跳一起上，差异展示在二期）。
 
-### 4.10 数据保留与清理
+### 4.10 数据保留
 
-- `wallet_session`：结束（撤销或过期）超过 90 天的行由每日任务删除；过期未标记的先写 `ended_reason='expired'`。
+- `wallet_session`：永久保留，不做自动清理（用户 2026-09-07 决定）。过期状态在读取时按 `expires_at` 判断，`ended_reason` 只记录主动结束的原因（logout / superseded / admin / blocked），不设清理任务，因此不写 `expired`。
 - `wallet_user_installation`、`platform_wallet_block`：永久保留。
-- `app_installations`：现状不变（升级为 upsert，不增长）。
+- `app_installations`：现状不变（upsert，不增长）。
 
 ### 4.11 安全与隐私
 
@@ -212,17 +213,17 @@ CREATE TABLE platform_wallet_block (
 
 | 期 | 内容 | 交付 |
 |---|---|---|
-| 一 | §4.1 版本信息：服务端加列与解析、概览与列表的 OTA 字段、分页筛选；App 心跳字段 | RN-Server、RN-Admin 部署；一次 OTA |
-| 二 | §4.2 / 4.3 / 4.5 租户级：会话替代与 ended_reason、汇总表、登录必带安装、封禁校验、撤销安装结束会话、账号接口与页面、安装实例详情、清理任务 | RN-Server、RN-Admin 部署；一次 OTA |
-| 三 | §4.4 平台级：跨租户查询、设备视图、平台级封禁、审计；可选对账字段 | RN-Server、RN-Admin 部署 |
+| 一 | §4.1 版本信息：服务端加列与解析（含 `client_session_state`）、概览与列表的 OTA 字段、分页筛选；App 心跳字段（`launchSource`、`runningUpdateId`、`sessionState`） | RN-Server、RN-Admin 部署；一次 OTA |
+| 二 | §4.2 / 4.3 / 4.5 租户级：会话替代与 ended_reason、汇总表、登录必带安装、封禁校验、撤销安装结束会话、账号接口与页面、安装实例详情、登录态对账差异展示 | RN-Server、RN-Admin 部署；一次 OTA |
+| 三 | §4.4 平台级：跨租户查询、设备视图、平台级封禁、审计 | RN-Server、RN-Admin 部署 |
 
-## 6. 待确认事项
+## 6. 已决事项（用户 2026-09-07）
 
-1. 登录必须关联安装：安装注册接口不可用时登录会失败（可见错误）。推荐接受，理由见 §4.11；若不接受，需要明确"无关联会话"在管理端如何呈现与告警。
-2. 会话保留期 90 天；汇总表永久。
+1. 登录必须关联安装：按 §4.2 实施，安装注册不可用时登录失败并显示 `INSTALLATION_REQUIRED`。
+2. 会话数据永久保留，不做自动清理。
 3. 租户管理员可见"同设备的其他安装实例（本租户）"。
-4. 封禁立即结束会话（而不是只拒绝新登录）。
-5. 第三期的心跳对账字段是否要做。
+4. 封禁立即结束现有会话。
+5. 心跳对账字段实施：字段随一期心跳上报，差异展示在二期。
 
 ## 7. 评审记录（相对讨论中口头方案的修改）
 

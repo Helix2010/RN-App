@@ -2,6 +2,10 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createFallbackConfig } from "../config/fallback-config";
 import { apiClient, appRuntime } from "../network/api-client";
 import {
+  notifySessionStateChanged,
+  setSessionStateProbe,
+} from "./session-state-probe";
+import {
   heartbeatFingerprint,
   syncInstallationHeartbeat,
 } from "./installation-service";
@@ -31,6 +35,27 @@ jest.mock("expo-crypto", () => ({
   digestStringAsync: async () => "a".repeat(64),
 }));
 jest.mock("expo-notifications", () => ({}));
+// babel 的 namespace import 会在导入时拷贝模块属性，直接改对象字段测试看不到；
+// 用 getter 让每次读取都回到这份可变状态
+const mockUpdatesState = {
+  isEnabled: true,
+  updateId: null as string | null,
+  isEmbeddedLaunch: true,
+};
+jest.mock("expo-updates", () => ({
+  get isEnabled() {
+    return mockUpdatesState.isEnabled;
+  },
+  get updateId() {
+    return mockUpdatesState.updateId;
+  },
+  get isEmbeddedLaunch() {
+    return mockUpdatesState.isEmbeddedLaunch;
+  },
+  runtimeVersion: "1.2.4",
+  channel: "production",
+  createdAt: null,
+}));
 jest.mock("../network/api-client", () => ({
   apiClient: { post: jest.fn() },
   appRuntime: {
@@ -88,6 +113,10 @@ describe("syncInstallationHeartbeat", () => {
     answerRequests();
     runtime.version = "1.2.4";
     runtime.buildNumber = "18";
+    mockUpdatesState.isEnabled = true;
+    mockUpdatesState.isEmbeddedLaunch = true;
+    mockUpdatesState.updateId = null;
+    setSessionStateProbe(null);
     jest.useFakeTimers({ now: new Date("2026-09-01T03:00:00Z") });
   });
   afterEach(() => {
@@ -136,6 +165,50 @@ describe("syncInstallationHeartbeat", () => {
     expect(post).toHaveBeenCalledTimes(3);
   });
 
+  // 设计 §4.1：内置包报 embedded 且不带 update id；OTA 包报 ota 并带正在运行的 update id；
+  // OTA 生效后的第一次启动指纹必须变化，立刻上报，不能等 30 分钟
+  it("reports the running bundle and heartbeats as soon as an OTA takes effect", async () => {
+    await syncInstallationHeartbeat(config, "system");
+    expect(post.mock.calls[1]?.[1]).toMatchObject({
+      launchSource: "embedded",
+      runningUpdateId: null,
+      sessionState: null,
+    });
+    mockUpdatesState.isEmbeddedLaunch = false;
+    mockUpdatesState.updateId = "7c5c1363-8685-42b2-864e-38b6790471ca";
+    jest.setSystemTime(new Date("2026-09-01T03:01:00Z"));
+    await syncInstallationHeartbeat(config, "system");
+    expect(post).toHaveBeenCalledTimes(3);
+    expect(post.mock.calls[2]?.[1]).toMatchObject({
+      launchSource: "ota",
+      runningUpdateId: "7c5c1363-8685-42b2-864e-38b6790471ca",
+    });
+  });
+
+  it("treats a build without expo-updates as the embedded bundle", async () => {
+    mockUpdatesState.isEnabled = false;
+    mockUpdatesState.isEmbeddedLaunch = false;
+    await syncInstallationHeartbeat(config, "system");
+    expect(post.mock.calls[1]?.[1]).toMatchObject({
+      launchSource: "embedded",
+      runningUpdateId: null,
+    });
+  });
+
+  // 登录态只给服务端对账：探针注册后随心跳上报，状态翻转时指纹变化立即再报
+  it("reports the client session state from the registered probe", async () => {
+    let state: "signed_in" | "signed_out" = "signed_out";
+    setSessionStateProbe(async () => state);
+    await syncInstallationHeartbeat(config, "system");
+    expect(post.mock.calls[1]?.[1]).toMatchObject({ sessionState: "signed_out" });
+    state = "signed_in";
+    notifySessionStateChanged();
+    jest.setSystemTime(new Date("2026-09-01T03:01:00Z"));
+    await syncInstallationHeartbeat(config, "system");
+    expect(post).toHaveBeenCalledTimes(3);
+    expect(post.mock.calls[2]?.[1]).toMatchObject({ sessionState: "signed_in" });
+  });
+
   it("changes the fingerprint for build and metadata but not identity fields", () => {
     const base = {
       installationId: "inst_a",
@@ -143,6 +216,9 @@ describe("syncInstallationHeartbeat", () => {
       packageId: "com.anyfun.foundation",
       otaChannel: "production",
       otaRevision: null,
+      launchSource: "embedded" as const,
+      runningUpdateId: null,
+      sessionState: null,
       localizationVersion: "1",
       brandingVersion: 2,
       locale: "zh-CN",

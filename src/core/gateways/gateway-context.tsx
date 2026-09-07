@@ -30,6 +30,7 @@ import { OnchainTransfers } from "../../features/wallet/api/onchain-transfers";
 import { KeystoreVault } from "../wallet/vault/keystore-vault";
 import { expoAuthenticate, expoSecureStore } from "../wallet/vault/expo-ports";
 import { appRuntime } from "../network/api-client";
+import { setSessionStateProbe } from "../device/session-state-probe";
 import type { KeyValueStorage } from "./types";
 
 export type Gateways = {
@@ -84,6 +85,10 @@ function createGateways(storage: KeyValueStorage): Gateways {
   // 会话是真的：挑战由 RN-Server 构造并核销 nonce，签名换回的令牌进安全存储。
   // 测试通过 GatewayProvider 注入 Mock 会话，不走这条路径。
   const session = new HttpSessionGateway(storage);
+  // 心跳顺带上报客户端登录态给服务端对账；本地缓存的会话过期即视为未登录
+  setSessionStateProbe(async () =>
+    (await session.get()) ? "signed_in" : "signed_out",
+  );
   const wallet = new EmbeddedWalletGateway({
     vault,
     chainData,

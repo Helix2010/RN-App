@@ -3,12 +3,18 @@ import * as Application from "expo-application";
 import * as Crypto from "expo-crypto";
 import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
+import * as Updates from "expo-updates";
 import { Platform } from "react-native";
 import { z } from "zod";
 import type { BootstrapConfig } from "../config/bootstrap.schema";
 import type { ThemePreference } from "../preferences/preferences-store";
 import { apiClient, appRuntime } from "../network/api-client";
 import { AppError } from "../network/app-error";
+import { getCurrentUpdateMetadata } from "../updates/update-service";
+import {
+  probeSessionState,
+  type ReportedSessionState,
+} from "./session-state-probe";
 
 const INSTALLATION_KEY = "foundation.installation-id.v1";
 const CREDENTIAL_KEY = "foundation.installation-credential.v1";
@@ -44,7 +50,14 @@ type InstallationReport = {
   deviceSourceHash: string;
   packageId: string;
   otaChannel: string;
+  /** bootstrap 下发的最新可用修订号（服务端视角），不是正在跑的版本 */
   otaRevision: number | null;
+  /** 设备实际在跑什么：内置 bundle 还是 OTA bundle（设计 §4.1） */
+  launchSource: "embedded" | "ota";
+  /** 正在运行的 expo-updates update id；内置包为 null */
+  runningUpdateId: string | null;
+  /** 客户端登录态，只给服务端对账；探针未注册时为 null（服务端记"未上报"） */
+  sessionState: ReportedSessionState | null;
   localizationVersion: string;
   brandingVersion: number | null;
   locale: string;
@@ -53,18 +66,35 @@ type InstallationReport = {
   deviceClass: string;
 };
 
-function installationReport(
+/**
+ * 正在运行的 bundle 来源。expo-updates 关闭（开发构建）时跑的就是打包进去的 bundle，按内置算；
+ * 开着且不是内置启动却拿不到 update id 是不可能的状态，原样上报让服务端 422 暴露出来，不猜。
+ */
+function runningBundle(): Pick<
+  InstallationReport,
+  "launchSource" | "runningUpdateId"
+> {
+  const current = getCurrentUpdateMetadata();
+  if (!Updates.isEnabled || current.isEmbedded) {
+    return { launchSource: "embedded", runningUpdateId: null };
+  }
+  return { launchSource: "ota", runningUpdateId: current.updateId };
+}
+
+async function installationReport(
   id: string,
   sourceHash: string,
   config: BootstrapConfig,
   theme: ThemePreference,
-): InstallationReport {
+): Promise<InstallationReport> {
   return {
     installationId: id,
     deviceSourceHash: sourceHash,
     packageId: Application.applicationId ?? appRuntime.applicationId,
     otaChannel: appRuntime.otaChannel,
     otaRevision: config.update.ota.revision ?? null,
+    ...runningBundle(),
+    sessionState: await probeSessionState(),
     localizationVersion: config.localization.messagesVersion,
     brandingVersion: config.branding?.version ?? null,
     locale: config.localization.selectedLocale,
@@ -161,7 +191,7 @@ export async function syncInstallationHeartbeat(
 ): Promise<void> {
   const storedCredential = await SecureStore.getItemAsync(CREDENTIAL_KEY);
   const id = await installationId();
-  const report = installationReport(
+  const report = await installationReport(
     id,
     await deviceSourceHash(),
     config,

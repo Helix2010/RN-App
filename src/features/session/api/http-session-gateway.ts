@@ -5,6 +5,7 @@ import {
   forgetInstallationCredential,
   installationAuthorization,
 } from "../../../core/device/installation-service";
+import { notifySessionStateChanged } from "../../../core/device/session-state-probe";
 import { apiClient } from "../../../core/network/api-client";
 import { AppError } from "../../../core/network/app-error";
 import type { Session } from "../model/session";
@@ -124,6 +125,7 @@ export class HttpSessionGateway implements SessionGateway {
       keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
     });
     await this.storage.setItem(SESSION_KEY, JSON.stringify(session));
+    notifySessionStateChanged();
     return session;
   }
 
@@ -143,6 +145,7 @@ export class HttpSessionGateway implements SessionGateway {
       }
     }
     await this.clear();
+    notifySessionStateChanged();
   }
 
   /** 让服务端确认会话仍然有效；令牌被撤销或过期时本地一并清除。 */
@@ -169,6 +172,7 @@ export class HttpSessionGateway implements SessionGateway {
     } catch (error) {
       if (error instanceof AppError && error.status === 401) {
         await this.clear();
+        notifySessionStateChanged();
         return null;
       }
       // 网络问题不代表会话失效，保留本地会话
