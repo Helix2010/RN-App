@@ -109,6 +109,11 @@ const zhCN = {
   "login.signing": "等待钱包签名…",
   "login.cancelled": "已取消登录",
   "login.timeout": "钱包未响应，可换一个钱包重试",
+  "login.installationRequired":
+    "设备还没有完成注册，登录无法关联到这台设备。请检查网络后重试",
+  "login.blocked": "该钱包已被限制登录，请联系客服",
+  "login.blockedPlatform": "该钱包已被平台限制登录",
+  "login.failed": "登录没有成功，请重试",
   "login.success": "登录成功",
   "login.balance": "余额",
   "account.title": "钱包账户",
@@ -1079,6 +1084,11 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "login.signing": "Waiting for wallet signature…",
   "login.cancelled": "Login cancelled",
   "login.timeout": "Wallet did not respond. Try another wallet.",
+  "login.installationRequired":
+    "This device is not registered yet, so sign-in cannot be linked to it. Check your connection and try again",
+  "login.blocked": "This wallet is not allowed to sign in. Contact support",
+  "login.blockedPlatform": "This wallet has been restricted by the platform",
+  "login.failed": "Sign-in did not succeed. Try again",
   "login.success": "Logged in",
   "login.balance": "Balance",
   "account.title": "Wallet accounts",
