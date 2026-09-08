@@ -56,6 +56,9 @@ const positionSchema = z.object({
   questionTranslation: z.string().nullish(),
   negRisk: z.boolean().nullish(),
   negativeRisk: z.boolean().nullish(),
+  /** 周期市场富化（data-service positions.go）：所属系列 slug 与周期 */
+  seriesSlug: z.string().nullish(),
+  seriesRecurrence: z.string().nullish(),
 });
 export type PlatformPosition = z.infer<typeof positionSchema>;
 

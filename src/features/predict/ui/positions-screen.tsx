@@ -50,6 +50,7 @@ import {
 } from "../hooks/use-predict";
 import type { PriceRange, Order, Position } from "../model/predict";
 import { OrderSheet, type OrderSheetHandle } from "./order-sheet";
+import { isSeriesPosition, positionWindowLabel } from "./series-card";
 import { SplitMergeSheet, type SplitMergeHandle } from "./split-merge-sheet";
 import { StatusBadge, closesText, fill, outcomeLabel } from "./shared";
 
@@ -57,11 +58,14 @@ import { StatusBadge, closesText, fill, outcomeLabel } from "./shared";
 export function PositionsScreen({
   onBack,
   onOpenEvent,
+  onOpenSeries,
   onOpenSettlement,
   onOpenTransfer,
 }: {
   onBack?: () => void;
   onOpenEvent: (eventId: string, marketId: string) => void;
+  /** 周期市场的仓位进系列页并定位到那一期（网页版 resolvePositionHref） */
+  onOpenSeries?: (seriesSlug: string, periodMarketId: string) => void;
   onOpenSettlement: (marketId: string, eventId: string) => void;
   onOpenTransfer: () => void;
 }) {
@@ -400,6 +404,7 @@ export function PositionsScreen({
                       position={position}
                       locale={locale}
                       onOpen={onOpenEvent}
+                      onOpenSeries={onOpenSeries}
                       onSell={(item) => void sellPosition(item)}
                       sellDisabled={region.blocked}
                       onSettlement={onOpenSettlement}
@@ -489,6 +494,7 @@ function PositionRow({
   position,
   locale,
   onOpen,
+  onOpenSeries,
   onSell,
   sellDisabled,
   onSettlement,
@@ -497,6 +503,7 @@ function PositionRow({
   position: Position;
   locale: string;
   onOpen: (eventId: string, marketId: string) => void;
+  onOpenSeries?: (seriesSlug: string, periodMarketId: string) => void;
   onSell: (position: Position) => void;
   /** 地区限制时不能卖出（领取 / 划转不受影响） */
   sellDisabled: boolean;
@@ -504,9 +511,18 @@ function PositionRow({
   onClaim: () => void;
 }) {
   const { t } = useFoundationRuntime();
-  const title = position.outcomeLabel
+  // 周期市场：标题后带上那一期的窗口，一期只活几分钟，光看问题分不清是哪期
+  const window = isSeriesPosition(position)
+    ? positionWindowLabel(position, locale)
+    : null;
+  const baseTitle = position.outcomeLabel
     ? `${pickTranslation(position.title, locale)} — ${pickTranslation(position.outcomeLabel, locale)}`
     : pickTranslation(position.title, locale);
+  const title = window ? `${baseTitle} · ${window}` : baseTitle;
+  const open = () =>
+    isSeriesPosition(position) && onOpenSeries
+      ? onOpenSeries(position.seriesSlug, position.marketId)
+      : onOpen(position.eventId, position.marketId);
   const disputed =
     position.status === "disputed" || position.status === "arbitrating";
   const pnlColor =
@@ -517,7 +533,7 @@ function PositionRow({
       borderRadius="$4"
       backgroundColor="$surfaceVariant"
       gap="$2"
-      onPress={() => onOpen(position.eventId, position.marketId)}
+      onPress={open}
       accessibilityRole="button"
       testID={`position-${position.id}`}
     >

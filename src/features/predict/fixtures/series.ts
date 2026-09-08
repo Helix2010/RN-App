@@ -62,17 +62,18 @@ function periodEvent(id: string, windowEnd: string, yes: number): PredictEvent {
 }
 
 /**
- * 以 nowMs 所在的 5 分钟窗口为当期，向前生成 pastCount 期已结算、向后一期待开。
- * 窗口对齐到整 5 分钟，和平台的 recurrence 一致。
+ * 以 nowMs 所在的 5 分钟窗口为当期，向前生成 pastCount 期已结算、向后 futureCount 期待开。
+ * 窗口对齐到整 5 分钟，和平台的 recurrence 一致；id 由窗口起点决定，多次生成互相对得上。
  */
 export function seriesPeriods(
   seriesId: string,
   nowMs: number,
   pastCount = 6,
+  futureCount = 1,
 ): SeriesPeriod[] {
   const currentStart = Math.floor(nowMs / WINDOW_MS) * WINDOW_MS;
   const periods: SeriesPeriod[] = [];
-  for (let offset = -pastCount; offset <= 1; offset += 1) {
+  for (let offset = -pastCount; offset <= futureCount; offset += 1) {
     const start = currentStart + offset * WINDOW_MS;
     const end = start + WINDOW_MS;
     const id = `${seriesId}-${start}`;
@@ -86,12 +87,16 @@ export function seriesPeriods(
       marketId: `m-${id}`,
       windowStart: new Date(start).toISOString(),
       windowEnd: new Date(end).toISOString(),
-      stage: settled ? "settled" : offset === 0 ? "published" : "generated",
-      priceToBeat: {
-        price: priceToBeat.toFixed(2),
-        source: "chainlink",
-        sampledAt: new Date(start).toISOString(),
-      },
+      stage: settled ? "settled" : "published",
+      // 参考价 = 开盘价：未来期开盘前还没有（与平台一致）
+      priceToBeat:
+        offset > 0
+          ? null
+          : {
+              price: priceToBeat.toFixed(2),
+              source: "chainlink",
+              sampledAt: new Date(start).toISOString(),
+            },
       finalPrice: settled
         ? {
             price: (priceToBeat + (up ? 42 : -37)).toFixed(2),

@@ -355,14 +355,14 @@ export async function fetchSeries(
 export async function fetchSeriesPeriods(
   service: PredictServiceConfig,
   seriesId: string,
-  input: { scope: "current" | "closed"; limit: number },
-): Promise<GammaSeriesPeriod[]> {
+  input: { scope: "current" | "closed"; limit: number; cursor?: string },
+): Promise<{ data: GammaSeriesPeriod[]; nextCursor: string | null }> {
   const hosts = platformHosts(service);
   const response = await platformRequest({
     url: `${hosts.gamma}/series/${encodeURIComponent(seriesId)}/periods${query(
       input.scope === "current"
         ? { current: true, limit: input.limit }
-        : { closed: true, limit: input.limit },
+        : { closed: true, limit: input.limit, cursor: input.cursor },
     )}`,
     tenantDomain: service.domain,
     schema: z.object({
@@ -370,7 +370,7 @@ export async function fetchSeriesPeriods(
       nextCursor: z.string().nullish(),
     }),
   });
-  return response.data;
+  return { data: response.data, nextCursor: response.nextCursor ?? null };
 }
 
 /**

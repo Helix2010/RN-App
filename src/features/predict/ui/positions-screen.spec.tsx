@@ -1,4 +1,6 @@
-import { screen, waitFor } from "@testing-library/react-native";
+import { fireEvent, screen, waitFor } from "@testing-library/react-native";
+import { mockNow } from "../../../core/mock/mock-runtime";
+import { fromDecimal } from "../../../core/money/money";
 import {
   createTestGateways,
   renderWithProviders,
@@ -50,6 +52,31 @@ describe("PositionsScreen", () => {
     await waitFor(() =>
       expect(screen.queryByTestId("positions-claim")).toBeNull(),
     );
+  });
+
+  it("opens a periodic-market position in its series page at that window", async () => {
+    const gateways = createTestGateways();
+    const session = await signIn(gateways);
+    const start = Math.floor(mockNow() / 300_000) * 300_000;
+    const marketId = `m-series-btc-5m-${start}`;
+    await gateways.predict.placeOrder(session.address, {
+      marketId,
+      outcome: "yes",
+      side: "buy",
+      type: "market",
+      amount: fromDecimal("10", 6, "USDW"),
+    });
+    const onOpenSeries = jest.fn();
+    await renderWithProviders(
+      <PositionsScreen {...props()} onOpenSeries={onOpenSeries} />,
+      { gateways },
+    );
+    // 标题带那一期的窗口（HH:MM – HH:MM）
+    const title = await screen.findByText(
+      /BTC 本期收涨？ · \d{2}:\d{2} – \d{2}:\d{2}/,
+    );
+    await fireEvent.press(title);
+    expect(onOpenSeries).toHaveBeenCalledWith("btc-updown-5m", marketId);
   });
 
   it("shows a back button only when pushed on top of another tab", async () => {

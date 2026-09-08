@@ -1,10 +1,11 @@
 import {
+  useInfiniteQuery,
   useMutation,
   useQueries,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Page } from "../../../core/gateways/types";
 import { useGateways } from "../../../core/gateways/gateway-context";
 import { PREDICT_ACCOUNT_KEY } from "./use-predict-account";
@@ -162,6 +163,39 @@ export function useSeriesPeriods(
     staleTime: scope === "current" ? 5_000 : 60_000,
     refetchInterval: scope === "current" ? 15_000 : false,
   });
+}
+
+/** 历史期分页（系列页"更早" / 加载更多）：按平台 nextCursor 往前翻 */
+export function useClosedSeriesPeriods(
+  seriesId: string | undefined,
+  limit = 12,
+) {
+  const { predict } = useGateways();
+  return useInfiniteQuery({
+    queryKey: ["predict-series-periods", seriesId, "closed-pages", limit],
+    queryFn: ({ pageParam }) =>
+      predict.listSeriesPeriods(seriesId as string, "closed", limit, pageParam),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+    enabled: Boolean(seriesId),
+    staleTime: 60_000,
+  });
+}
+
+/** 某个市场（周期市场的一期）上我的仓位：含已结算 / 已领取的，系列页仓位条用 */
+export function useSeriesPositions(
+  address: string | undefined,
+  marketId: string | null | undefined,
+) {
+  const positions = usePositions(address, true);
+  const items = useMemo(
+    () =>
+      marketId
+        ? (positions.data ?? []).filter((item) => item.marketId === marketId)
+        : [],
+    [marketId, positions.data],
+  );
+  return { ...positions, items };
 }
 
 /**
@@ -553,15 +587,26 @@ export function useCryptoPriceHistory(
 }
 
 /** 1 分钟 K 线，20 秒重拉；source 固定 binance（dev 上唯一有 K 线的源，网页版默认同此） */
-export function useCryptoCandles(symbol: string | null, limit = 30) {
+/** 1 分钟 K 线；endTime（毫秒）= 看某个历史期时只要它结束前的，那时不再定时刷新 */
+export function useCryptoCandles(
+  symbol: string | null,
+  limit = 30,
+  endTime?: number,
+) {
   const { predict } = useGateways();
   return useQuery({
-    queryKey: ["predict-crypto-candles", symbol, limit],
+    queryKey: ["predict-crypto-candles", symbol, limit, endTime ?? null],
     queryFn: () =>
-      predict.getCryptoCandles(symbol as string, "1m", limit, "binance"),
+      predict.getCryptoCandles(
+        symbol as string,
+        "1m",
+        limit,
+        "binance",
+        endTime,
+      ),
     enabled: Boolean(symbol),
-    staleTime: 10_000,
-    refetchInterval: 20_000,
+    staleTime: endTime === undefined ? 10_000 : Infinity,
+    refetchInterval: endTime === undefined ? 20_000 : false,
   });
 }
 

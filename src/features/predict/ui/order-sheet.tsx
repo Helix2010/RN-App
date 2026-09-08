@@ -50,7 +50,14 @@ import type {
   Outcome,
   PlaceOrderRequest,
   PredictEvent,
+  SeriesPeriod,
 } from "../model/predict";
+import {
+  periodCountdown,
+  periodPhase,
+  useTicking,
+  windowLabel,
+} from "./series-card";
 import { fill, outcomeLabel } from "./shared";
 import { useRequireVerification } from "../../security/use-require-verification";
 
@@ -74,6 +81,9 @@ const EXPIRY_SECONDS: Record<ExpiryPreset, number> = {
   "12h": 12 * 60 * 60,
 };
 
+/** 周期市场从系列页下单时的期上下文：面板头部标明是哪一期、状态与倒计时，到期即禁止提交 */
+export type OrderSheetContext = { seriesTitle: string; period: SeriesPeriod };
+
 export type OrderSheetHandle = {
   open: (
     market: Market,
@@ -81,6 +91,7 @@ export type OrderSheetHandle = {
     side?: OrderSide,
     /** 从盘口点档位进来：直接切限价并预填这个价 */
     limitPriceCents?: number,
+    context?: OrderSheetContext,
   ) => void;
   dismiss: () => void;
 };
@@ -117,6 +128,11 @@ export const OrderSheet = forwardRef<
   /** market = 跟随盘口自动填；user = 用户改过，不再覆盖 */
   const [priceSource, setPriceSource] = useState<"market" | "user">("market");
   const [expiry, setExpiry] = useState<ExpiryPreset>("never");
+  const [context, setContext] = useState<OrderSheetContext | undefined>();
+  // 只有带期上下文时才每秒刷新（倒计时 + 到期判定）；普通市场的面板不订阅秒表
+  const now = useTicking(context !== undefined);
+  const periodEnded =
+    context !== undefined && periodPhase(context.period, now) === "ended";
 
   const balance = usePredictAccountBalance(address);
   const positions = usePositions(address);
@@ -131,10 +147,12 @@ export const OrderSheet = forwardRef<
     nextOutcome: Outcome,
     nextSide: OrderSide,
     limitPriceCents?: number,
+    nextContext?: OrderSheetContext,
   ) => {
     setMarket(nextMarket);
     setOutcome(nextOutcome);
     setSide(nextSide);
+    setContext(nextContext);
     setType(limitPriceCents !== undefined ? "limit" : "market");
     setAmountText("");
     setSharesText("");
@@ -149,7 +167,13 @@ export const OrderSheet = forwardRef<
   };
 
   useImperativeHandle(ref, () => ({
-    open: (nextMarket, nextOutcome, nextSide = "buy", limitPriceCents) => {
+    open: (
+      nextMarket,
+      nextOutcome,
+      nextSide = "buy",
+      limitPriceCents,
+      nextContext,
+    ) => {
       if (!address) {
         requestAuth({
           type: "open_order",
@@ -158,7 +182,7 @@ export const OrderSheet = forwardRef<
         });
         return;
       }
-      reset(nextMarket, nextOutcome, nextSide, limitPriceCents);
+      reset(nextMarket, nextOutcome, nextSide, limitPriceCents, nextContext);
       sheet.current?.present();
     },
     dismiss: () => sheet.current?.dismiss(),
@@ -312,8 +336,12 @@ export const OrderSheet = forwardRef<
     !insufficientShares &&
     !belowMin &&
     !belowMinAmount &&
+    !periodEnded &&
     !place.isPending,
   );
+  // 周期市场：成功提示带上是哪一期，用户不必回头核对
+  const withWindow = (text: string) =>
+    context ? `${text} · ${windowLabel(context.period, locale)}` : text;
 
   const submit = async () => {
     if (!request || !market) return;
@@ -327,16 +355,18 @@ export const OrderSheet = forwardRef<
         }
         sheet.current?.dismiss();
         toast(
-          result.status !== "filled"
-            ? t("predict.order.placed")
-            : result.avgPriceCents === null
-              ? fill(t("predict.order.filledShares"), {
-                  shares: result.filledShares,
-                })
-              : fill(t("predict.order.filled"), {
-                  shares: result.filledShares,
-                  price: formatCents(result.avgPriceCents),
-                }),
+          withWindow(
+            result.status !== "filled"
+              ? t("predict.order.placed")
+              : result.avgPriceCents === null
+                ? fill(t("predict.order.filledShares"), {
+                    shares: result.filledShares,
+                  })
+                : fill(t("predict.order.filled"), {
+                    shares: result.filledShares,
+                    price: formatCents(result.avgPriceCents),
+                  }),
+          ),
           "success",
         );
       },
@@ -387,22 +417,50 @@ export const OrderSheet = forwardRef<
     <Sheet
       ref={sheet}
       title={
-        market && event
-          ? pickTranslation(market.outcomeLabel ?? event.title, locale)
-          : market
-            ? pickTranslation(market.question, locale)
-            : ""
+        context
+          ? context.seriesTitle
+          : market && event
+            ? pickTranslation(market.outcomeLabel ?? event.title, locale)
+            : market
+              ? pickTranslation(market.question, locale)
+              : ""
       }
       subtitle={
-        market?.outcomeLabel && event
-          ? pickTranslation(event.title, locale)
-          : undefined
+        context
+          ? windowLabel(context.period, locale)
+          : market?.outcomeLabel && event
+            ? pickTranslation(event.title, locale)
+            : undefined
       }
       closeLabel={t("common.close")}
       scroll
       locked={place.isPending}
       testID="order-sheet"
     >
+      {context ? (
+        <Row alignItems="center" gap="$2" testID="order-period-context">
+          <InlineText
+            fontSize={11}
+            fontWeight="800"
+            color={
+              periodEnded
+                ? "$danger"
+                : periodPhase(context.period, now) === "live"
+                  ? "$success"
+                  : "$textMuted"
+            }
+          >
+            {periodEnded
+              ? t("predict.series.ended")
+              : t(`predict.series.${periodPhase(context.period, now)}`)}
+          </InlineText>
+          <Body fontSize={12}>
+            {periodEnded
+              ? t("predict.series.orderEnded")
+              : periodCountdown(context.period, now, t)}
+          </Body>
+        </Row>
+      ) : null}
       <Row alignItems="center" justifyContent="space-between" gap="$3">
         <Stack flex={1}>
           <SegmentedControl

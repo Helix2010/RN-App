@@ -202,6 +202,8 @@ export async function fetchCandles(
     interval: RtdsCandleInterval;
     limit: number;
     source: string;
+    /** 只要这个时刻（毫秒）之前的 K 线：看历史期用；不传 = 最新 */
+    endTime?: number;
   },
 ): Promise<RtdsCandle[]> {
   const hosts = platformHosts(service);

@@ -1,10 +1,15 @@
 import type { SeriesPeriod } from "../model/predict";
 import {
   isPeriodLive,
+  isSeriesPosition,
+  nextPeriodAfter,
   periodCountdown,
   periodPhase,
   periodResultLabel,
   pickCurrentPeriod,
+  positionWindowLabel,
+  recurrenceToMs,
+  rolloverDecision,
   subscribeTick,
 } from "./series-card";
 
@@ -108,5 +113,83 @@ describe("series periods", () => {
     jest.advanceTimersByTime(1_000);
     expect(b).toHaveBeenCalledTimes(2);
     jest.useRealTimers();
+  });
+});
+
+describe("series period helpers", () => {
+  it("parses platform recurrence text into milliseconds and refuses what it cannot read", () => {
+    expect(recurrenceToMs("5m")).toBe(300_000);
+    expect(recurrenceToMs("15m")).toBe(900_000);
+    expect(recurrenceToMs("1h")).toBe(3_600_000);
+    expect(recurrenceToMs("1d")).toBe(86_400_000);
+    expect(recurrenceToMs("weekly")).toBeNull();
+    expect(recurrenceToMs(null)).toBeNull();
+  });
+
+  it("treats a position as periodic only when both series fields are present", () => {
+    expect(
+      isSeriesPosition({ seriesSlug: "btc-updown-5m", seriesRecurrence: "5m" }),
+    ).toBe(true);
+    expect(
+      isSeriesPosition({ seriesSlug: "btc-updown-5m", seriesRecurrence: null }),
+    ).toBe(false);
+    expect(isSeriesPosition({ seriesSlug: " ", seriesRecurrence: "5m" })).toBe(
+      false,
+    );
+  });
+
+  it("derives the position's window from its close time and recurrence", () => {
+    const label = positionWindowLabel(
+      { endsAt: "2026-08-30T12:00:00Z", seriesRecurrence: "5m" },
+      "en-US",
+    );
+    expect(label).toMatch(/^\d{2}:\d{2} – \d{2}:\d{2}$/);
+    expect(
+      positionWindowLabel({ endsAt: null, seriesRecurrence: "5m" }, "en-US"),
+    ).toBeNull();
+    expect(
+      positionWindowLabel(
+        { endsAt: "2026-08-30T12:00:00Z", seriesRecurrence: "x" },
+        "en-US",
+      ),
+    ).toBeNull();
+  });
+
+  it("finds the window that starts right after the current one", () => {
+    expect(nextPeriodAfter([p3, p1, p2], p1)?.id).toBe("2");
+    expect(nextPeriodAfter([p1, p2], p2)).toBeNull();
+    expect(nextPeriodAfter([p1, p2], null)).toBeNull();
+  });
+
+  it("stays on an ended window only when following and holding a position in it", () => {
+    const held = new Set(["m-1"]);
+    expect(
+      rolloverDecision({
+        following: true,
+        endedMarketId: "m-1",
+        heldMarketIds: held,
+      }),
+    ).toBe("stay");
+    expect(
+      rolloverDecision({
+        following: true,
+        endedMarketId: "m-2",
+        heldMarketIds: held,
+      }),
+    ).toBe("switch");
+    expect(
+      rolloverDecision({
+        following: true,
+        endedMarketId: null,
+        heldMarketIds: held,
+      }),
+    ).toBe("switch");
+    expect(
+      rolloverDecision({
+        following: false,
+        endedMarketId: "m-1",
+        heldMarketIds: held,
+      }),
+    ).toBe("none");
   });
 });

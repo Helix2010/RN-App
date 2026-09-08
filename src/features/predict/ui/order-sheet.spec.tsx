@@ -8,10 +8,31 @@ import {
 } from "../../../test/harness";
 import { useSession } from "../../session/hooks/use-session";
 import { EVENTS } from "../fixtures/events";
-import { OrderSheet, type OrderSheetHandle } from "./order-sheet";
+import type { SeriesPeriod } from "../model/predict";
+import {
+  OrderSheet,
+  type OrderSheetContext,
+  type OrderSheetHandle,
+} from "./order-sheet";
 
 const EVENT = EVENTS[0]!;
 const MARKET = EVENT.markets[0]!;
+
+/** 已结束的一期（周期市场从系列页下单时带的上下文） */
+const ENDED_PERIOD: SeriesPeriod = {
+  id: "p-ended",
+  seriesId: "series-btc-5m",
+  eventId: EVENT.id,
+  marketId: MARKET.id,
+  windowStart: "2020-01-01T00:00:00Z",
+  windowEnd: "2020-01-01T00:05:00Z",
+  stage: "settled",
+  priceToBeat: null,
+  finalPrice: null,
+  result: "up",
+  resolutionSource: null,
+};
+let hostContext: OrderSheetContext | undefined;
 
 function Host() {
   const ref = useRef<OrderSheetHandle>(null);
@@ -20,7 +41,12 @@ function Host() {
   return (
     <>
       {session.data?.address ? <Text testID="session-ready">ready</Text> : null}
-      <Pressable testID="open" onPress={() => ref.current?.open(MARKET, "yes")}>
+      <Pressable
+        testID="open"
+        onPress={() =>
+          ref.current?.open(MARKET, "yes", "buy", undefined, hostContext)
+        }
+      >
         <Text>open</Text>
       </Pressable>
       <OrderSheet ref={ref} event={EVENT} onInsufficient={() => {}} />
@@ -47,6 +73,23 @@ const submitDisabled = () =>
   screen.getByTestId("order-submit").props["aria-disabled"];
 
 describe("OrderSheet", () => {
+  afterEach(() => {
+    hostContext = undefined;
+  });
+
+  it("names the window it is trading and refuses to submit once that window has ended", async () => {
+    hostContext = { seriesTitle: "BTC 5 分钟涨跌", period: ENDED_PERIOD };
+    await openSheet();
+    expect(await screen.findByTestId("order-period-context")).toBeTruthy();
+    expect(screen.getByText("本期已结束，无法下单")).toBeTruthy();
+    await fireEvent.changeText(screen.getByTestId("order-amount"), "10");
+    // 金额够了也不能提交：这期已经结束
+    await waitFor(() => expect(screen.queryByText(/市价买入至少/)).toBeNull(), {
+      timeout: 4_000,
+    });
+    expect(submitDisabled()).toBe(true);
+  });
+
   it("blocks a market buy under 1 USDW (platform makerAmount floor) and lifts the block once it is met", async () => {
     await openSheet();
     // 0.5 USDW：市价买入最少 1 USDW（validateOrderAmounts）

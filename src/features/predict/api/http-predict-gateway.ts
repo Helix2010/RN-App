@@ -129,6 +129,7 @@ import type {
   PricePoint,
   Series,
   SeriesPeriod,
+  SeriesPeriodPage,
   Tag,
   Trade,
   OrderBookLevel,
@@ -558,6 +559,8 @@ export class HttpPredictGateway implements PredictGateway {
         position.size > 0 &&
         position.curPrice > 0,
       closed: position.size <= 0,
+      seriesSlug: position.seriesSlug?.trim() || null,
+      seriesRecurrence: position.seriesRecurrence?.trim() || null,
     };
   }
 
@@ -798,13 +801,18 @@ export class HttpPredictGateway implements PredictGateway {
     seriesId: string,
     scope: "current" | "closed",
     limit = 12,
-  ): Promise<SeriesPeriod[]> {
+    cursor?: string,
+  ): Promise<SeriesPeriodPage> {
     const service = await this.service();
-    const periods = await fetchSeriesPeriods(service, seriesId, {
+    const page = await fetchSeriesPeriods(service, seriesId, {
       scope,
       limit,
+      cursor,
     });
-    return periods.map((raw) => this.mapSeriesPeriod(raw));
+    return {
+      items: page.data.map((raw) => this.mapSeriesPeriod(raw)),
+      nextCursor: page.nextCursor,
+    };
   }
 
   async checkRegion(): Promise<RegionAccess> {
@@ -855,12 +863,14 @@ export class HttpPredictGateway implements PredictGateway {
     interval: "1m" | "5m" | "15m" | "1h",
     limit: number,
     source: string,
+    endTime?: number,
   ): Promise<CryptoCandle[]> {
     const candles = await fetchCandles(await this.service(), {
       symbol,
       interval,
       limit,
       source,
+      endTime,
     });
     return candles
       .map((c) => ({

@@ -98,19 +98,34 @@ describe("MockPredictGateway", () => {
     expect(series.map((item) => item.slug)).toEqual(["btc-updown-5m"]);
     expect((await gateway.getSeries("btc-updown-5m")).id).toBe(series[0]!.id);
     const now = new Date(FIXTURE_NOW).getTime();
-    const current = await gateway.listSeriesPeriods(
-      series[0]!.id,
-      "current",
-      2,
-    );
+    const current = (
+      await gateway.listSeriesPeriods(series[0]!.id, "current", 2)
+    ).items;
     expect(current).toHaveLength(2);
     expect(new Date(current[0]!.windowStart).getTime()).toBeLessThanOrEqual(
       now,
     );
     expect(new Date(current[0]!.windowEnd).getTime()).toBeGreaterThan(now);
     expect(current[0]?.event?.markets[0]?.id).toBe(current[0]?.marketId);
-    const past = await gateway.listSeriesPeriods(series[0]!.id, "closed", 3);
+    const firstPage = await gateway.listSeriesPeriods(
+      series[0]!.id,
+      "closed",
+      3,
+    );
+    const past = firstPage.items;
     expect(past).toHaveLength(3);
+    // 历史期按 cursor 往前翻：下一页紧接着上一页，不重复
+    expect(firstPage.nextCursor).not.toBeNull();
+    const secondPage = await gateway.listSeriesPeriods(
+      series[0]!.id,
+      "closed",
+      3,
+      firstPage.nextCursor ?? undefined,
+    );
+    expect(secondPage.items).toHaveLength(3);
+    expect(new Date(secondPage.items[0]!.windowEnd).getTime()).toBeLessThan(
+      new Date(past[2]!.windowEnd).getTime(),
+    );
     expect(new Date(past[0]!.windowEnd).getTime()).toBeLessThanOrEqual(now);
     expect(new Date(past[0]!.windowEnd).getTime()).toBeGreaterThan(
       new Date(past[1]!.windowEnd).getTime(),

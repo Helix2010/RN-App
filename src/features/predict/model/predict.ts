@@ -150,6 +150,11 @@ export type SeriesPeriod = {
   /** 该期对应的事件（带市场与代币），平台带出时才有 */
   event?: PredictEvent;
 };
+/** 分期分页：历史期按 cursor 往前翻（平台 `/periods?closed=true&cursor=`） */
+export type SeriesPeriodPage = {
+  items: SeriesPeriod[];
+  nextCursor: string | null;
+};
 
 /** 实时数据服务（RTDS）的取价源与订阅参数（`/recurring/live-source`） */
 export type CryptoLiveSource = {
@@ -298,6 +303,9 @@ export type Position = {
   settledPayoutCents?: number;
   /** 已领取（或已归零结算）的历史仓位 */
   closed?: boolean;
+  /** 周期市场：所属系列 slug 与周期（平台持仓接口富化）；两者同时非空才当周期市场看（网页版 resolvePositionHref） */
+  seriesSlug: string | null;
+  seriesRecurrence: string | null;
 };
 
 export type Adjudication = {

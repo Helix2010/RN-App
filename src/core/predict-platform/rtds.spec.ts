@@ -129,6 +129,27 @@ describe("rtds rest", () => {
     );
   });
 
+  it("passes endTime through when asked for candles before a past window's close", async () => {
+    const seen: string[] = [];
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      seen.push(String(input));
+      return new Response(JSON.stringify({ candles: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as unknown as typeof fetch;
+    await fetchCandles(service, {
+      symbol: "BTCUSD",
+      interval: "1m",
+      limit: 5,
+      source: "binance",
+      endTime: 1_788_856_800_000,
+    });
+    expect(seen[0]).toBe(
+      "https://predict.prax1s.xyz/rtds/api/v1/candles?symbol=BTCUSD&interval=1m&limit=5&source=binance&endTime=1788856800000",
+    );
+  });
+
   it("rejects a candle payload that breaks the contract", async () => {
     setPlatformFetch(
       async () =>

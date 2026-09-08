@@ -206,6 +206,8 @@ describe("MarketListScreen", () => {
   it("lists recurring series and opens one", async () => {
     const p = props();
     await renderWithProviders(<MarketListScreen {...p} showPositionsEntry />);
+    // 列表卡就能看出周期性：当期行下有"下一期 HH:MM"
+    expect(await screen.findByTestId("series-next")).toBeTruthy();
     await fireEvent.press(await screen.findByTestId("series-btc-updown-5m"));
     expect(p.onOpenSeries).toHaveBeenCalledWith(
       expect.objectContaining({ slug: "btc-updown-5m" }),

@@ -159,6 +159,7 @@ function platform() {
               result: "up",
             },
           ],
+          nextCursor: url.searchParams.get("closed") ? "c2" : null,
         });
     }
     if (host === "geo-api" && path === "/geoblock")
@@ -332,6 +333,9 @@ function platform() {
               eventSlug: "btc-120k",
               outcome: "Yes",
               outcomeIndex: 0,
+              // 周期市场富化：所属系列与周期
+              seriesSlug: "btc-updown-5m",
+              seriesRecurrence: "5m",
             },
             {
               proxyWallet: SAFE,
@@ -619,7 +623,7 @@ describe("HttpPredictGateway", () => {
         .find((item) => item.url.pathname === "/series/slug/btc-updown-5m")
         ?.url.searchParams.get("series_id"),
     ).toBe("5");
-    const periods = await gateway.listSeriesPeriods("5", "current", 2);
+    const periods = (await gateway.listSeriesPeriods("5", "current", 2)).items;
     const call = seen.find((item) => item.url.pathname === "/series/5/periods");
     expect(call?.url.searchParams.get("current")).toBe("true");
     expect(call?.url.searchParams.get("limit")).toBe("2");
@@ -642,12 +646,22 @@ describe("HttpPredictGateway", () => {
       result: "up",
     });
     expect(periods[1]?.event).toBeUndefined();
-    await gateway.listSeriesPeriods("5", "closed", 12);
+    const closedPage = await gateway.listSeriesPeriods("5", "closed", 12);
     const closedCall = seen
       .filter((item) => item.url.pathname === "/series/5/periods")
       .at(-1);
     expect(closedCall?.url.searchParams.get("closed")).toBe("true");
     expect(closedCall?.url.searchParams.get("current")).toBeNull();
+    expect(closedCall?.url.searchParams.get("cursor")).toBeNull();
+    // 历史分页：平台的 nextCursor 原样带回，下一页把它作为 cursor 传回去
+    expect(closedPage.nextCursor).toBe("c2");
+    await gateway.listSeriesPeriods("5", "closed", 12, "c2");
+    expect(
+      seen
+        .filter((item) => item.url.pathname === "/series/5/periods")
+        .at(-1)
+        ?.url.searchParams.get("cursor"),
+    ).toBe("c2");
   });
 
   it("reports a market order that filled nothing as canceled instead of open", async () => {
@@ -741,6 +755,9 @@ describe("HttpPredictGateway", () => {
       status: "settled",
       redeemable: true,
       settledPayoutCents: 100,
+      // 非周期市场：平台不给系列字段
+      seriesSlug: null,
+      seriesRecurrence: null,
     });
     expect(positions[0]).toMatchObject({
       id: `${CONDITION}:111`,
@@ -748,6 +765,8 @@ describe("HttpPredictGateway", () => {
       eventId: "btc-120k",
       outcome: "yes",
       shares: 12.5,
+      seriesSlug: "btc-updown-5m",
+      seriesRecurrence: "5m",
       avgPriceCents: 55,
       curPriceCents: 62,
       status: "trading",

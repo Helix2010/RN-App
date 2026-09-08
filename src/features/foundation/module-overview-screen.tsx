@@ -60,6 +60,9 @@ function PredictPositionsTab() {
       onOpenEvent={(eventId, marketId) =>
         navigation.navigate("PredictEvent", { eventId, marketId })
       }
+      onOpenSeries={(slug, periodMarketId) =>
+        navigation.navigate("PredictSeries", { slug, periodMarketId })
+      }
       onOpenSettlement={(marketId, eventId) =>
         navigation.navigate("PredictSettlement", { marketId, eventId })
       }

@@ -25,7 +25,7 @@ import type {
   PriceRange,
   PricePoint,
   Series,
-  SeriesPeriod,
+  SeriesPeriodPage,
   Tag,
   Trade,
   DisputeInput,
@@ -61,11 +61,13 @@ export interface PredictGateway {
   listSeries(): Promise<Series[]>;
   /** 按 slug 取系列，能给 id 就一起给（同名 slug 定位） */
   getSeries(slug: string, id?: string): Promise<Series>;
+  /** 分期：current = 进行中 + 未来期；closed = 历史期，可按上一页的 nextCursor 往前翻 */
   listSeriesPeriods(
     seriesId: string,
     scope: "current" | "closed",
     limit?: number,
-  ): Promise<SeriesPeriod[]>;
+    cursor?: string,
+  ): Promise<SeriesPeriodPage>;
   /** 地区限制：租户没配检查服务时 `{restricted:false, checked:false}`；服务不可用时抛错，不放行 */
   checkRegion(): Promise<RegionAccess>;
   // ---- 实时数据服务（周期市场的标的价） ----
@@ -82,12 +84,13 @@ export interface PredictGateway {
     source: string,
     limit: number,
   ): Promise<CryptoTick[]>;
-  /** 1 分钟 K 线，按时间升序；source 只能是有 K 线的真实源（binance） */
+  /** 1 分钟 K 线，按时间升序；source 只能是有 K 线的真实源（binance）；endTime（毫秒）= 只要该时刻之前的，看历史期用 */
   getCryptoCandles(
     symbol: string,
     interval: "1m" | "5m" | "15m" | "1h",
     limit: number,
     source: string,
+    endTime?: number,
   ): Promise<CryptoCandle[]>;
   /** 订阅实时价；返回取消函数 */
   subscribeCryptoPrice(

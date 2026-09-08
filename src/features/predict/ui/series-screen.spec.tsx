@@ -1,5 +1,11 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react-native";
-import { createTestGateways, renderWithProviders } from "../../../test/harness";
+import { fromDecimal } from "../../../core/money/money";
+import { mockNow, useMockRuntime } from "../../../core/mock/mock-runtime";
+import {
+  createTestGateways,
+  renderWithProviders,
+  signIn,
+} from "../../../test/harness";
 import { SeriesScreen } from "./series-screen";
 
 // 价格图用手势 + reanimated，jest 的 reanimated mock 没有 useEvent：换成记录 props 的空组件
@@ -12,9 +18,139 @@ jest.mock("../../../design-system/charts", () => ({
   },
 }));
 
-function props() {
-  return { slug: "btc-updown-5m", onBack: jest.fn(), onOpenEvent: jest.fn() };
+function props(extra: { periodMarketId?: string } = {}) {
+  return {
+    slug: "btc-updown-5m",
+    onBack: jest.fn(),
+    onOpenEvent: jest.fn(),
+    onOpenTransfer: jest.fn(),
+    ...extra,
+  };
 }
+
+const WINDOW_MS = 5 * 60_000;
+/** 夹具的分期 id / 市场 id 由窗口起点决定（features/predict/fixtures/series.ts）；时钟是 Mock 世界的 mockNow */
+const periodId = (offset: number) =>
+  `series-btc-5m-${(Math.floor(mockNow() / WINDOW_MS) + offset) * WINDOW_MS}`;
+const phaseText = () =>
+  screen.getByTestId("series-period-phase").props.children as string;
+const orderDisabled = (id: string) =>
+  screen.getByTestId(id).props.accessibilityState?.disabled as boolean;
+
+describe("SeriesScreen periods", () => {
+  // 单个用例会快进 Mock 时钟；用完把偏移量还原成 setup 里定的
+  let baseOffset = 0;
+  beforeEach(() => {
+    baseOffset = useMockRuntime.getState().clockOffsetMs;
+  });
+  afterEach(() => useMockRuntime.getState().set({ clockOffsetMs: baseOffset }));
+
+  it("follows the live window by default and lets me pre-order the next one, then come back", async () => {
+    const { runtime } = await renderWithProviders(
+      <SeriesScreen {...props()} />,
+    );
+    await screen.findByTestId("series-rail");
+    await waitFor(() =>
+      expect(phaseText()).toBe(runtime.t("predict.series.live")),
+    );
+    // 当期没有"回到当期"；轨道上有历史 3 期 + 当期 + 未来 3 期 + "更多"
+    expect(screen.queryByTestId("series-back-current")).toBeNull();
+    expect(screen.getByTestId("series-rail-more")).toBeTruthy();
+    expect(screen.getByTestId(`series-chip-${periodId(-3)}`)).toBeTruthy();
+    expect(screen.queryByTestId(`series-chip-${periodId(-4)}`)).toBeNull();
+
+    await fireEvent.press(screen.getByTestId(`series-chip-${periodId(1)}`));
+    expect(phaseText()).toBe(runtime.t("predict.series.upcoming"));
+    // 未来期：参考价"开盘时确定"、可提前下注（平台 acceptingOrders）
+    expect(
+      screen.getByText(runtime.t("predict.series.priceAtOpen")),
+    ).toBeTruthy();
+    expect(screen.getByText(runtime.t("predict.series.preOrder"))).toBeTruthy();
+    expect(orderDisabled("series-order-up")).toBe(false);
+    expect(screen.queryByTestId("series-live-price")).toBeNull();
+
+    await fireEvent.press(screen.getByTestId("series-back-current"));
+    expect(phaseText()).toBe(runtime.t("predict.series.live"));
+  });
+
+  it("shows a settled window as a result panel without order buttons", async () => {
+    const { runtime } = await renderWithProviders(
+      <SeriesScreen {...props()} />,
+    );
+    const row = await screen.findByTestId(`series-period-${periodId(-1)}`);
+    await fireEvent.press(row);
+    expect([
+      runtime.t("predict.series.up"),
+      runtime.t("predict.series.down"),
+    ]).toContain(phaseText());
+    expect(screen.queryByTestId("series-order-up")).toBeNull();
+    expect(screen.queryByTestId("series-book-card")).toBeNull();
+    expect(
+      screen.getByText(runtime.t("predict.series.finalPrice")),
+    ).toBeTruthy();
+    expect(screen.getByTestId("series-back-current")).toBeTruthy();
+  });
+
+  it("locates the window a position came from, and says so when it is gone", async () => {
+    await renderWithProviders(
+      <SeriesScreen {...props({ periodMarketId: `m-${periodId(-2)}` })} />,
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("series-period-card").props.accessibilityState,
+      ).toBeUndefined(),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("series-back-current")).toBeTruthy(),
+    );
+    expect(
+      screen.getByTestId(`series-period-${periodId(-2)}`).props
+        .accessibilityState,
+    ).toEqual({ selected: true });
+    expect(screen.queryByTestId("series-locate-missing")).toBeNull();
+
+    await screen.unmount();
+    await renderWithProviders(
+      <SeriesScreen {...props({ periodMarketId: "m-gone" })} />,
+    );
+    expect(await screen.findByTestId("series-locate-missing")).toBeTruthy();
+    expect(screen.queryByTestId("series-back-current")).toBeNull();
+  });
+
+  it("shows my position on the selected window and lets me claim once it settles", async () => {
+    const gateways = createTestGateways();
+    const session = await signIn(gateways);
+    const marketId = `m-${periodId(0)}`;
+    await gateways.predict.placeOrder(session.address, {
+      marketId,
+      outcome: "yes",
+      side: "buy",
+      type: "market",
+      amount: fromDecimal("10", 6, "USDW"),
+    });
+    const { runtime } = await renderWithProviders(
+      <SeriesScreen {...props()} />,
+      { gateways },
+    );
+    expect(await screen.findByTestId("series-position-live")).toBeTruthy();
+    expect(screen.getByTestId(`series-chip-held-${periodId(0)}`)).toBeTruthy();
+    await screen.unmount();
+
+    // 快进 20 分钟：那期结束、提案、零争议期 → 结算；夹具 Yes 52¢ ≥ 50 → 涨方赢
+    useMockRuntime
+      .getState()
+      .set({ clockOffsetMs: baseOffset + 4 * WINDOW_MS });
+    await renderWithProviders(
+      <SeriesScreen {...props({ periodMarketId: marketId })} />,
+      { gateways },
+    );
+    const claim = await screen.findByTestId(/^series-claim-/);
+    expect(screen.getByText(/可领取/)).toBeTruthy();
+    await fireEvent.press(claim);
+    expect(await screen.findByTestId("series-position-claimed")).toBeTruthy();
+    expect(runtime.t("predict.series.positionClaimed")).toBe("已领取");
+  });
+});
 
 describe("SeriesScreen chart", () => {
   beforeEach(() => mockLineChart.mockClear());

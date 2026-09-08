@@ -146,6 +146,12 @@ export function FoundationNavigator() {
                     marketId,
                   })
                 }
+                onOpenSeries={(slug, periodMarketId) =>
+                  props.navigation.navigate("PredictSeries", {
+                    slug,
+                    periodMarketId,
+                  })
+                }
                 onOpenSettlement={(marketId, eventId) =>
                   props.navigation.navigate("PredictSettlement", {
                     marketId,
@@ -163,14 +169,15 @@ export function FoundationNavigator() {
               <SeriesScreen
                 slug={props.route.params.slug}
                 id={props.route.params.id}
+                periodMarketId={props.route.params.periodMarketId}
                 onBack={() => props.navigation.goBack()}
-                onOpenEvent={(eventId, marketId, outcome) =>
+                onOpenEvent={(eventId, marketId) =>
                   props.navigation.navigate("PredictEvent", {
                     eventId,
                     marketId,
-                    outcome,
                   })
                 }
+                onOpenTransfer={() => props.navigation.navigate("Transfer")}
               />
             </ModuleGate>
           )}

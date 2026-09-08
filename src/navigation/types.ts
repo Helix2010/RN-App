@@ -8,7 +8,8 @@ export type RootStackParamList = {
   PredictEvent: { eventId: string; marketId?: string; outcome?: "yes" | "no" };
   PredictSettlement: { marketId: string; eventId: string };
   PredictEnable: undefined;
-  PredictSeries: { slug: string; id?: string };
+  /** periodMarketId：从持仓进来时定位到那一期（该期市场的 conditionId） */
+  PredictSeries: { slug: string; id?: string; periodMarketId?: string };
   Leaderboard: undefined;
   Positions: undefined;
   DexToken: { chain: ChainId; address: string };

@@ -59,7 +59,7 @@ import type {
   PriceRange,
   PricePoint,
   Series,
-  SeriesPeriod,
+  SeriesPeriodPage,
   Tag,
   Trade,
   DisputeInput,
@@ -81,6 +81,9 @@ const usdc = (text: string) => fromDecimal(text, USDW.decimals, USDW.symbol);
 const BOND = usdc("50");
 /** 交易截止后多久商户"提交结果"（Mock 加速：10 分钟） */
 const PROPOSE_DELAY_MS = 10 * 60 * 1_000;
+/** 周期市场夹具：往前 36 期（够翻三页历史）、往后 7 期（当期 + 未来 7 期的轨道） */
+const MOCK_PAST_PERIODS = 36;
+const MOCK_FUTURE_PERIODS = 7;
 
 type StoredPosition = {
   id: string;
@@ -289,7 +292,12 @@ export class MockPredictGateway implements PredictGateway {
     }
     // 周期市场的分期市场由夹具按时间生成，不在 EVENTS 里
     for (const series of SERIES)
-      for (const period of seriesPeriods(series.id, mockNow())) {
+      for (const period of seriesPeriods(
+        series.id,
+        mockNow(),
+        MOCK_PAST_PERIODS,
+        MOCK_FUTURE_PERIODS,
+      )) {
         const market = period.event?.markets.find(
           (item) => item.id === marketId,
         );
@@ -554,6 +562,8 @@ export class MockPredictGateway implements PredictGateway {
     symbol: string,
     interval: "1m" | "5m" | "15m" | "1h",
     limit: number,
+    _source?: string,
+    endTime?: number,
   ): Promise<CryptoCandle[]> {
     return simulate(() => {
       const step =
@@ -564,7 +574,7 @@ export class MockPredictGateway implements PredictGateway {
             : interval === "15m"
               ? 900_000
               : 3_600_000;
-      const end = Math.floor(mockNow() / step) * step;
+      const end = Math.floor((endTime ?? mockNow()) / step) * step;
       return Array.from({ length: limit }, (_, i) => {
         const t = end - (limit - 1 - i) * step;
         const o = this.cryptoPrice(symbol, t);
@@ -614,18 +624,35 @@ export class MockPredictGateway implements PredictGateway {
     seriesId: string,
     scope: "current" | "closed",
     limit = 12,
-  ): Promise<SeriesPeriod[]> {
+    cursor?: string,
+  ): Promise<SeriesPeriodPage> {
     return simulate(() => {
-      if (isEmptyMode()) return [];
-      const all = seriesPeriods(seriesId, mockNow(), Math.max(limit, 6));
+      if (isEmptyMode()) return { items: [], nextCursor: null };
       const now = mockNow();
-      const closed = all.filter(
-        (period) => new Date(period.windowEnd).getTime() <= now,
+      const all = seriesPeriods(
+        seriesId,
+        now,
+        MOCK_PAST_PERIODS,
+        MOCK_FUTURE_PERIODS,
       );
-      const current = all.filter(
-        (period) => new Date(period.windowEnd).getTime() > now,
-      );
-      return (scope === "closed" ? closed.reverse() : current).slice(0, limit);
+      if (scope === "current")
+        return {
+          items: all
+            .filter((period) => new Date(period.windowEnd).getTime() > now)
+            .slice(0, limit),
+          nextCursor: null,
+        };
+      // 历史期最新在前；cursor 就是偏移量（平台是不透明字符串，这里只要能往前翻）
+      const closed = all
+        .filter((period) => new Date(period.windowEnd).getTime() <= now)
+        .reverse();
+      const offset = cursor ? Number(cursor) : 0;
+      const items = closed.slice(offset, offset + limit);
+      return {
+        items,
+        nextCursor:
+          offset + limit < closed.length ? String(offset + limit) : null,
+      };
     });
   }
 
@@ -1051,6 +1078,7 @@ export class MockPredictGateway implements PredictGateway {
     this.ensureAccount(state, address);
     return (state.positions[address] ?? []).map((stored) => {
       const { event, market } = this.market(stored.marketId);
+      const series = this.seriesOf(stored.marketId);
       const adjudication = this.adjudicationOf(state, stored.marketId);
       const yes = this.priceOf(state, stored.marketId);
       let curPriceCents = stored.outcome === "yes" ? yes : 100 - yes;
@@ -1090,8 +1118,17 @@ export class MockPredictGateway implements PredictGateway {
           settledPayoutCents === 100,
         settledPayoutCents,
         closed: stored.redeemed,
+        seriesSlug: series?.slug ?? null,
+        seriesRecurrence: series?.recurrence ?? null,
       };
     });
+  }
+
+  /** 分期市场 id 形如 `m-<seriesId>-<窗口起点>`（夹具规则），据此认出所属系列 */
+  private seriesOf(marketId: string): Series | null {
+    return (
+      SERIES.find((series) => marketId.startsWith(`m-${series.id}-`)) ?? null
+    );
   }
 
   async listPositions(
