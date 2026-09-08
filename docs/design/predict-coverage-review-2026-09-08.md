@@ -126,8 +126,13 @@
 
 - `GEO_CHECK_URL/geoblock` 是否对租户开放，或由 RN-Server 代理并纳入 bootstrap。
 - `/curation/events`、`/series`、`/series/{id}/periods`、data `/holders` 在租户头下的可用性与限流。
-- 事件 / 市场 `image`、`icon` 的资源域名与跨域策略。
-- 提案提交（propose）的合约入口、押金币种与是否走 relayer 白名单（与争议同样受 LightOracle 白名单限制）。
+
+用户已定（2026-09-08）：
+
+- 提案提交（propose）：App 与 C 端都没有这个功能，不列为待办。
+- AI 翻译代理：不做。
+- 事件 / 市场图片：不是阻塞项。原生图片加载没有跨域限制；dev 平台 12 个活跃事件都带 `image` / `icon`，
+  域名是华为云 OBS 与 Polymarket S3 公开桶，市场级图片为空。schema 已解析字段，何时在卡片 / 轮播 / 详情渲染只是排期。
 - 沿用 `predict-platform-integration-2026-09-02.md` §5 的四项：dev 水龙头阈值、`POST /order` 成交额、EIP-712 `app_name` 不在 public-info、CLOB secret 编码。
 
 ## 6. 验证
