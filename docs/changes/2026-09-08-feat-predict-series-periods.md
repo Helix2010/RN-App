@@ -45,3 +45,8 @@
 - `order-sheet.spec.tsx`：期上下文与到期禁用提交；`positions-screen.spec.tsx`：周期仓位标题带窗口、点行进系列页；`market-list-screen.spec.tsx`：列表卡"下一期"行；
   网关 / 契约：历史分页 cursor 与 nextCursor、仓位系列字段、K 线 endTime。
 - 全量 jest 106 套 735 例、lint、typecheck、format 通过；文案已走 fallback-config → seed → RN-Server（6996b6f）。模拟器记录见设计文档 §7.1。
+
+## 发布
+
+- OTA rev 14 `ota_QVTsnDfaDIB0e5JbKZLD9A`（immediate，0656a0b）：本需求主体。
+- OTA rev 15 `ota_2fFA9eVbvIpFNcp3fdvjLA`（immediate，5e0972f）：模拟器核对后的两处收敛——下单面板的结果叫 Up / Down（与所选期卡一致），从历史列表选中一期后回到页顶。

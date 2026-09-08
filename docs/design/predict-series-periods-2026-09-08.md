@@ -180,7 +180,16 @@ App 的系列页只有"当期窗口"一张卡：`pickCurrentPeriod` 选出进行
 - 实现与设计的两处收敛：
   - 从持仓定位不到那一期时用页内提示行而不是 toast（toast 几秒就没了，用户回头看不到原因）。
   - 标的认不出来时所选期卡不显示当前价（没有订阅，显示 "—" 只会误导）。
-- 模拟器记录见下方"模拟器"小节（发布后补）。
+- 模拟器（anyfun 租户 → prax1s dev，OTA rev 14 `ota_QVTsnDfaDIB0e5JbKZLD9A` / rev 15 `ota_2fFA9eVbvIpFNcp3fdvjLA`，均 immediate）：
+  - 列表卡当期行下显示"Next 10:15 · bet ahead"。
+  - 系列页：规则一行 + "Show rules"；轨道 更早 ▾ │ 09:55▲ 10:00▼ 10:05▼ │ 10:10●（当期描边）│ 10:15 10:20 10:25 ○ │ More ▾；选中期自动滚到可见位置。
+  - 进行中卡：倒计时大字，最后 30 秒橙色 + "Ending soon"；参考价、当前价与较参考价（+$34.23 绿）；"Up · No quote / Down · No quote" + 无挂单提示；View details；盘口折叠块 "Bid — / Ask —"（dev 分期市场没有挂单）。
+  - 未来期卡：Upcoming，"Starts in 00:01:55 / Opens 10:15"，参考价 "Set at open" + 说明，"Bet ahead" 与两个按钮可点，"Back to current" 回到当期。
+  - 已结算卡：Down 徽章、参考价 → 结算价、取价来源 polymarket_crypto_price；不显示下单按钮与盘口；走势图切到该期窗口（还在 360 tick 范围内时画线，翻出范围显示"Tick history … see candles"）。
+  - 下单面板：标题系列名、副标题窗口、"Upcoming · Starts in …" / "Live · Ends in …" 每秒走；结果叫 Up / Down（rev 15）。
+  - "更早"面板 12 期 + "Load earlier" 再补 12 期；历史列表选中一期后回到页顶（rev 15）。
+  - 翻期：10:15 到点后轨道当期变 10:15、历史列表补上 "10:10 – 10:15 · Pending"（随后结算为 Up）；用户固定选中某期时页面不跳走，"Back to current" 后进入新当期（新参考价、走势图重画）。
+  - 仓位条 / 领取 / 持仓页深链需要已启用的预测账户，模拟器没有可签名的账户，只有单测覆盖（快进 20 分钟结算后领取）。
 
 ## 8. 已确认（2026-09-08，按建议方案）
 
