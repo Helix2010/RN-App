@@ -1,6 +1,10 @@
 import { z } from "zod";
 import type { PredictServiceConfig } from "../config/bootstrap.schema";
-import { platformHosts, platformRequest } from "./tenant-client";
+import {
+  PlatformHttpError,
+  platformHosts,
+  platformRequest,
+} from "./tenant-client";
 
 /**
  * 预测平台的用户资料（gamma-service `Profile`）。
@@ -28,16 +32,25 @@ export class ProfileNameTooLongError extends Error {
   }
 }
 
+/**
+ * 按地址读资料。平台对从未登录过的地址回 404（`{"code":40400}`）：这是"还没有资料"，返回 null；
+ * 其它错误照常抛出。
+ */
 export async function fetchProfile(
   service: PredictServiceConfig,
   address: string,
-): Promise<PlatformProfile> {
+): Promise<PlatformProfile | null> {
   const hosts = platformHosts(service);
-  return platformRequest({
-    url: `${hosts.gamma}/profiles/user_address/${encodeURIComponent(address.toLowerCase())}`,
-    tenantDomain: service.domain,
-    schema: profileSchema,
-  });
+  try {
+    return await platformRequest({
+      url: `${hosts.gamma}/profiles/user_address/${encodeURIComponent(address.toLowerCase())}`,
+      tenantDomain: service.domain,
+      schema: profileSchema,
+    });
+  } catch (error) {
+    if (error instanceof PlatformHttpError && error.status === 404) return null;
+    throw error;
+  }
 }
 
 export async function updateProfile(

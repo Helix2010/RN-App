@@ -211,7 +211,9 @@ export function LeaderboardScreen({
             <Stack flex={1}>
               <Row alignItems="center" gap="$1">
                 <SectionTitle fontSize={14} numberOfLines={1} flexShrink={1}>
-                  {profile.data?.displayName ?? shortenAddress(address)}
+                  {profile.isError
+                    ? t("state.error")
+                    : (profile.data?.displayName ?? shortenAddress(address))}
                 </SectionTitle>
                 {enablement.data?.loggedIn ? (
                   <IconButton

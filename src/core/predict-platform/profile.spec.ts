@@ -44,11 +44,24 @@ describe("platform profile", () => {
       service,
       "0xABCDEF0000000000000000000000000000000001",
     );
-    expect(profile.name).toBe("Keen Bear");
+    expect(profile?.name).toBe("Keen Bear");
     expect(seen[0]?.url).toBe(
       "https://gamma-api.predict.prax1s.xyz/profiles/user_address/0xabcdef0000000000000000000000000000000001",
     );
     expect(seen[0]?.headers.Authorization).toBeUndefined();
+  });
+
+  it("treats the platform's 404 as 'no profile yet' and surfaces every other failure", async () => {
+    setPlatformFetch(
+      async () =>
+        new Response(JSON.stringify({ code: 40400, message: "not found" }), {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    await expect(fetchProfile(service, "0xdead")).resolves.toBeNull();
+    setPlatformFetch(async () => new Response("boom", { status: 500 }));
+    await expect(fetchProfile(service, "0xdead")).rejects.toBeTruthy();
   });
 
   it("updates the nickname with the gamma bearer token and only the name field", async () => {

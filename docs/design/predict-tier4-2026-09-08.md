@@ -74,3 +74,12 @@
   排行榜"我"卡与个人页行、面板保存与错误。
 - 模拟器：列表 / 轮播 / 详情图片显示（prax1s dev 全部事件带图）；昵称需要已登录的预测账户，模拟器里没有可签名的启用账户，
   只能用单测覆盖，真机留待有测试账户时核对。
+
+### 5.1 结果（2026-09-08）
+
+- 单测：`profile.spec.ts`（读资料不带鉴权、404 = 还没有资料、其它错误抛出、改昵称带 Bearer 且 body 只含 name、超长本地拒绝）、
+  `http-predict-gateway.spec.ts`（image / icon 映射）、`market-list-screen.spec.tsx`（只有带图标的事件渲染图标）、
+  `leaderboard-screen.spec.tsx`（显示化名、登录后改昵称、未登录无编辑入口）；全量 jest 104 套 716 例、lint、typecheck、format 通过。
+- 模拟器（`pnpm android:release anyfun` 直装包，连线上租户 → prax1s dev）：首页热门预测卡图标、精选轮播横幅（Powell 图）、
+  列表卡图标、详情头部图标均按平台 `image` / `icon` 显示；排行榜"我"卡对未登录平台的钱包显示地址缩写且无编辑入口
+  （平台对该地址回 404 = 还没有资料）。昵称修改需要已登录平台的账户，模拟器没有可签名的启用账户，留待有测试账户时核对。

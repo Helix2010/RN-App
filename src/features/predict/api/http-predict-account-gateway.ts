@@ -1275,14 +1275,18 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
   }
 }
 
-function toProfile(raw: PlatformProfile, address: string): PredictProfile {
+/** raw = null：平台还没有这个地址的资料（没登录过），显示名退到地址缩写 */
+function toProfile(
+  raw: PlatformProfile | null,
+  address: string,
+): PredictProfile {
   const profile = {
-    name: raw.name?.trim() || null,
-    pseudonym: raw.pseudonym?.trim() || null,
+    name: raw?.name?.trim() || null,
+    pseudonym: raw?.pseudonym?.trim() || null,
   };
   return {
     ...profile,
-    imageUrl: raw.profileImage || null,
+    imageUrl: raw?.profileImage || null,
     displayName: profileDisplayName(profile, shortenAddress(address)),
   };
 }
