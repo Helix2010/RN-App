@@ -48,6 +48,12 @@ App 的系列页只有"当期窗口"一张卡：`pickCurrentPeriod` 选出进行
   显示结果面板与"回到当期"），与网页一致。
 - **交易**：所选期 `phase !== "ended"` 且 `market.acceptingOrders` 且地区允许 → 显示涨 / 跌下单按钮，点击 `OrderSheet.open(market, outcome)`
   （与详情页、持仓页同一个 sheet）。未来期下单前在 sheet 头部标注"未开始 · HH:MM 开盘"，避免误以为是当期。
+- **盘口**：所选期卡下方放"盘口"区块（复用详情页的 `OrderBookView` + `useOrderBook(marketId)`，Yes / No 切换、点价进限价单），
+  走势图已在本页（标的价格 / 概率 / K 线）。这样系列页 = 周期市场的完整交易面：期轨道 + 走势 + 盘口 + 下单，与网页版一致
+  （网页在系列页内也是 TradeForm + 可折叠的盘口 / 成交明细）。
+- **为什么不跳详情下单**：详情页按单个事件组织，一期一个事件，切下一期要退回再进；它的走势图是该市场的 Yes 价历史，
+  刚生成的 5 分钟市场没有成交时是空的；参考价、期轨道、标的价格线都不在详情页。持有人 / 规则 / 成交明细这些低频信息仍从
+  "查看详情"进入。下单面板本身已按盘口深度算成本与最差价（`previewOrder`），不看盘口也不是盲下。
 - **参考价**：未来期 `priceToBeat` 为 null 时显示"开盘时确定"，不是 "—"。
 
 ### 2.3 系列卡（列表页）
@@ -71,7 +77,7 @@ App 的系列页只有"当期窗口"一张卡：`pickCurrentPeriod` 选出进行
 | --- | --- |
 | 网关 | `listSeriesPeriods(..., cursor?)` 返回 `{ items, nextCursor }`；Mock 同步 |
 | hooks | `useSeriesPeriods` 当期 limit 8；`useClosedSeriesPeriods`（`useInfiniteQuery`） |
-| UI | 新 `series-period-rail.tsx`（轨道 + 两个底部面板）、系列页重排（所选期卡 / 结果面板 / OrderSheet）、`series-card.tsx` 加"下一期"行、`series-chart.tsx` 接受所选期 |
+| UI | 新 `series-period-rail.tsx`（轨道 + 两个底部面板）、系列页重排（所选期卡 / 结果面板 / 盘口区块 / OrderSheet）、`series-card.tsx` 加"下一期"行、`series-chart.tsx` 接受所选期 |
 | 导航 | `PredictSeries` 参数增 `periodEventId?`；持仓页跳转 |
 | 文案 | 期状态、"开盘时确定"、"回到当期"、"更早 / 更多"、"下一期"、结果面板 |
 | 测试 | 期轨道选择与跟随、未来期可下单 / 已结束期结果面板、历史加载更多、持仓定位 |
@@ -81,5 +87,6 @@ App 的系列页只有"当期窗口"一张卡：`pickCurrentPeriod` 选出进行
 ## 4. 需你确认
 
 1. 未来期是否允许在 App 下单（网页允许；平台 `acceptingOrders=true`）。方案默认允许。
-2. 系列页直接拉起下单面板（不跳详情）是否可接受；详情仍可从"查看盘口与详情"进入。
+2. 系列页直接拉起下单面板并内嵌盘口（不跳详情）是否可接受；详情仍可从"查看详情"进入看持有人 / 规则 / 成交。
+   备选：只跳详情——实现最省，但切期要来回退进、详情页没有标的价格线和参考价，5 分钟市场上体验明显差。
 3. 历史侧默认显示 3 个结果圆点 + "更早"面板，是否够用。
