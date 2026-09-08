@@ -1,4 +1,9 @@
-import { usePredictAccountBalance } from "../predict/hooks/use-predict-account";
+import {
+  usePredictAccountBalance,
+  usePredictEnablement,
+  usePredictProfile,
+} from "../predict/hooks/use-predict-account";
+import { NicknameSheet } from "../predict/ui/nickname-sheet";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import {
   fill,
@@ -54,6 +59,14 @@ export function ProfileScreen({
   const appLock = usePreferencesStore((state) => state.appLockEnabled);
   const receive = useRef<SheetHandle>(null);
   const logout = useRef<SheetHandle>(null);
+  const nickname = useRef<SheetHandle>(null);
+  // 预测市场昵称：模块开着才查；没登录平台就引导去启用
+  const enablement = usePredictEnablement(
+    config.modules.predict ? address : undefined,
+  );
+  const predictProfile = usePredictProfile(
+    config.modules.predict ? address : undefined,
+  );
   const hasUpdate = config.update.decision !== "none";
 
   // 游客态：直接拉起登录 sheet，不显示空页面
@@ -207,6 +220,22 @@ export function ProfileScreen({
                 testID="profile-predict-portfolio"
               />
             ) : null}
+            {config.modules.predict ? (
+              <SRow
+                icon="account-edit-outline"
+                title={t("predict.profile.nickname")}
+                value={
+                  enablement.data?.loggedIn
+                    ? (predictProfile.data?.displayName ?? "—")
+                    : t("predict.profile.needEnable")
+                }
+                onPress={() => {
+                  if (enablement.data?.loggedIn) nickname.current?.present();
+                  else navigation.navigate("PredictEnable");
+                }}
+                testID="profile-predict-nickname"
+              />
+            ) : null}
             {config.modules.dex ? (
               <SRow
                 icon="star-outline"
@@ -312,6 +341,9 @@ export function ProfileScreen({
           {t("common.cancel")}
         </SecondaryButton>
       </Sheet>
+      {config.modules.predict ? (
+        <NicknameSheet ref={nickname} address={address} />
+      ) : null}
     </Page>
   );
 }

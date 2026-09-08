@@ -58,7 +58,13 @@ import type {
   Series,
 } from "../model/predict";
 import { SeriesCard } from "./series-card";
-import { EventCard, RegionNotice, YesNoButtons, fill } from "./shared";
+import {
+  EventCard,
+  EventImage,
+  RegionNotice,
+  YesNoButtons,
+  fill,
+} from "./shared";
 
 type StatusFilter = NonNullable<EventQuery["status"]>;
 const STATUS_OPTIONS: StatusFilter[] = ["trading", "closed", "all"];
@@ -376,6 +382,13 @@ export function MarketListScreen({
                   accessibilityRole="button"
                   testID={`predict-hero-${event.id}`}
                 >
+                  <EventImage
+                    uri={event.imageUrl}
+                    width={276}
+                    height={110}
+                    radius={12}
+                    testID={`hero-image-${event.id}`}
+                  />
                   <Row alignItems="center" gap="$2">
                     <AppIcon
                       name="star-four-points"

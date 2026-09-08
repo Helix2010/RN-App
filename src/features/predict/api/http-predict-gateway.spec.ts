@@ -50,6 +50,8 @@ function platform() {
     closed: false,
     featured: true,
     volume: "1000",
+    image: "https://images.example.net/events/btc.png",
+    icon: "",
     tags: [{ id: 3, label: "Crypto", slug: "crypto", tagType: "category" }],
     markets: [
       {
@@ -518,6 +520,10 @@ describe("HttpPredictGateway", () => {
     expect(event?.kind).toBe("binary");
     expect(event?.closed).toBe(false);
     expect(event?.tags.map((tag) => tag.id)).toEqual(["3"]);
+    // 图片：平台给了 URL 才有；空串当作没有
+    expect(event?.imageUrl).toBe("https://images.example.net/events/btc.png");
+    expect(event?.iconUrl).toBeNull();
+    expect(event?.markets[0]?.iconUrl).toBeNull();
     expect(event?.title).toEqual({
       default: "Will BTC hit 120k?",
       zh: "BTC 会到 12 万吗？",

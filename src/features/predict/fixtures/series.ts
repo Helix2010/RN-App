@@ -38,6 +38,7 @@ function periodEvent(id: string, windowEnd: string, yes: number): PredictEvent {
         closed: false,
         result: null,
         acceptingOrders: true,
+        iconUrl: null,
         yesTokenId: `${marketId}-yes`,
         noTokenId: `${marketId}-no`,
       },
@@ -46,6 +47,8 @@ function periodEvent(id: string, windowEnd: string, yes: number): PredictEvent {
     volume24hUsd: 4_200,
     liquidityUsd: 900,
     closed: false,
+    imageUrl: null,
+    iconUrl: null,
     endsAt: windowEnd,
     featured: false,
     rules: localized(

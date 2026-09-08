@@ -1,3 +1,5 @@
+import { Image } from "react-native";
+import { useState } from "react";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import {
   formatCents,
@@ -150,6 +152,43 @@ export function YesNoButtons({
   );
 }
 
+/**
+ * 事件 / 市场图片：平台给了 URL 才渲染，没给或加载失败都不占位。
+ * 隐藏坏图是界面层处理，不替换成别的图，也不影响其它字段。
+ */
+export function EventImage({
+  uri,
+  size,
+  width,
+  height,
+  radius = 8,
+  testID,
+}: {
+  uri: string | null;
+  size?: number;
+  width?: number;
+  height?: number;
+  radius?: number;
+  testID?: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  if (!uri || failed) return null;
+  return (
+    <Image
+      source={{ uri }}
+      onError={() => setFailed(true)}
+      accessibilityIgnoresInvertColors
+      style={{
+        width: width ?? size,
+        height: height ?? size,
+        borderRadius: radius,
+        backgroundColor: "transparent",
+      }}
+      testID={testID}
+    />
+  );
+}
+
 /** 收藏星标：本机收藏，与网页版一样不上报平台 */
 export function FavoriteButton({
   eventId,
@@ -292,9 +331,16 @@ export function EventCard({
         <SportsBody event={event} onOrder={onOrder} />
       ) : event.kind === "multi" ? (
         <Stack gap="$2">
-          <SectionTitle numberOfLines={2}>
-            {pickTranslation(event.title, locale)}
-          </SectionTitle>
+          <Row gap="$2" alignItems="flex-start">
+            <EventImage
+              uri={event.iconUrl}
+              size={40}
+              testID={`event-icon-${event.id}`}
+            />
+            <SectionTitle flex={1} numberOfLines={2}>
+              {pickTranslation(event.title, locale)}
+            </SectionTitle>
+          </Row>
           {event.markets.slice(0, 3).map((market) => (
             <Row key={market.id} alignItems="center" gap="$2">
               <Body flex={1} numberOfLines={1} color="$color">
@@ -321,6 +367,11 @@ export function EventCard({
       ) : primary ? (
         <Stack gap="$2">
           <Row alignItems="center" gap="$3">
+            <EventImage
+              uri={event.iconUrl}
+              size={40}
+              testID={`event-icon-${event.id}`}
+            />
             <SectionTitle flex={1} numberOfLines={2}>
               {pickTranslation(event.title, locale)}
             </SectionTitle>

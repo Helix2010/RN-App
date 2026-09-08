@@ -45,6 +45,12 @@ import {
   faucetStatus,
   type FaucetStatus,
 } from "../../../core/predict-platform/faucet";
+import { shortenAddress } from "../../../core/i18n/format";
+import {
+  fetchProfile,
+  updateProfile,
+  type PlatformProfile,
+} from "../../../core/predict-platform/profile";
 import {
   fetchPublicInfo,
   platformContracts,
@@ -94,6 +100,8 @@ import {
   type PredictEnablement,
   type PredictWalletFunds,
   type UnwrapTerms,
+  profileDisplayName,
+  type PredictProfile,
 } from "./account-gateway";
 
 /**
@@ -1237,6 +1245,24 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
     await claimFaucet(ctx.service, jwt);
   }
 
+  // ---- profile ----
+
+  async profile(address: string): Promise<PredictProfile> {
+    const ctx = await this.contextFor();
+    return toProfile(await fetchProfile(ctx.service, address), address);
+  }
+
+  async updateProfile(
+    address: string,
+    patch: { name: string },
+  ): Promise<PredictProfile> {
+    const ctx = await this.contextFor();
+    const status = await this.enablement(address);
+    if (!status.loggedIn) throw new PredictNotEnabledError(status);
+    const jwt = await this.ensureJwt(ctx, address);
+    return toProfile(await updateProfile(ctx.service, jwt, patch), address);
+  }
+
   async forgetCredentials(address: string): Promise<void> {
     this.enabled.delete(address.toLowerCase());
     if (!isPredictServiceConfigured()) return;
@@ -1247,4 +1273,16 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
   dispose(): void {
     this.unsubscribe();
   }
+}
+
+function toProfile(raw: PlatformProfile, address: string): PredictProfile {
+  const profile = {
+    name: raw.name?.trim() || null,
+    pseudonym: raw.pseudonym?.trim() || null,
+  };
+  return {
+    ...profile,
+    imageUrl: raw.profileImage || null,
+    displayName: profileDisplayName(profile, shortenAddress(address)),
+  };
 }

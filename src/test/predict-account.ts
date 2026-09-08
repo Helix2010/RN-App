@@ -1,3 +1,4 @@
+import { shortenAddress } from "../core/i18n/format";
 import { fromDecimal, money, type Money } from "../core/money/money";
 import type { PlatformAgreement } from "../core/predict-platform/agreements";
 import { pendingAgreements } from "../core/predict-platform/agreements";
@@ -15,6 +16,8 @@ import {
   type PredictEnablement,
   type PredictWalletFunds,
   type UnwrapTerms,
+  profileDisplayName,
+  type PredictProfile,
 } from "../features/predict/api/account-gateway";
 import type { FundRecord } from "../features/predict/model/fund-record";
 import type { PredictTx } from "../features/predict/model/predict";
@@ -295,5 +298,35 @@ export class InMemoryPredictAccountGateway implements PredictAccountGateway {
   async forgetCredentials(): Promise<void> {
     this.calls.push("forget");
     this.status = { ...this.status, loggedIn: false, clobKey: false };
+  }
+
+  /** 平台资料：登录时平台给的化名 + 用户改的昵称 */
+  profileState: { name: string | null; pseudonym: string | null } = {
+    name: null,
+    pseudonym: "Quiet-Fox",
+  };
+
+  async profile(address: string): Promise<PredictProfile> {
+    return {
+      ...this.profileState,
+      imageUrl: null,
+      displayName: profileDisplayName(
+        this.profileState,
+        shortenAddress(address),
+      ),
+    };
+  }
+
+  async updateProfile(
+    address: string,
+    patch: { name: string },
+  ): Promise<PredictProfile> {
+    if (!this.status.loggedIn) throw new PredictNotEnabledError(this.status);
+    this.calls.push("profile");
+    this.profileState = {
+      ...this.profileState,
+      name: patch.name.trim() || null,
+    };
+    return this.profile(address);
   }
 }

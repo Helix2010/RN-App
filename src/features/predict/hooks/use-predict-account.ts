@@ -272,3 +272,32 @@ export function useFaucet(address: string | undefined, enabled: boolean) {
   });
   return { status, claim };
 }
+
+/** 自己的平台资料（昵称 / 化名 / 头像）；只由预测模块内的入口调用 */
+export function usePredictProfile(address: string | undefined) {
+  const { predictAccount } = useGateways();
+  return useQuery({
+    queryKey: [PREDICT_ACCOUNT_KEY, "profile", address?.toLowerCase()],
+    queryFn: () => predictAccount.profile(address as string),
+    enabled: Boolean(address),
+    staleTime: 60_000,
+    retry: predictRetry,
+  });
+}
+
+export function useUpdatePredictProfile(address: string | undefined) {
+  const { predictAccount } = useGateways();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: { name: string }) =>
+      predictAccount.updateProfile(address as string, patch),
+    onSuccess: (profile) => {
+      queryClient.setQueryData(
+        [PREDICT_ACCOUNT_KEY, "profile", address?.toLowerCase()],
+        profile,
+      );
+      // 排行榜里显示的名字来自平台，改完刷新
+      void queryClient.invalidateQueries({ queryKey: ["predict-leaderboard"] });
+    },
+  });
+}

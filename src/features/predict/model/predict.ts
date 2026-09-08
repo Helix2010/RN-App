@@ -26,6 +26,8 @@ export type Tag = {
 
 export type Market = {
   id: string;
+  /** 市场图标（gamma `icon`）；平台没给就是 null，界面不占位 */
+  iconUrl: string | null;
   eventId: string;
   /** 多结果事件中该市场代表的选项名（如"法国"、"降 25 bp"）；二元市场为空 */
   outcomeLabel?: LocalizedText;
@@ -50,6 +52,9 @@ export type Market = {
 
 export type PredictEvent = {
   id: string;
+  /** 事件横幅图与图标（gamma `image` / `icon`）；平台没给就是 null，界面不占位 */
+  imageUrl: string | null;
+  iconUrl: string | null;
   slug: string;
   title: LocalizedText;
   kind: EventKind;

@@ -45,6 +45,7 @@ import {
   usePredictEvents,
 } from "../predict/hooks/use-predict";
 import type { PredictEvent } from "../predict/model/predict";
+import { EventImage } from "../predict/ui/shared";
 import { useSession } from "../session/hooks/use-session";
 import { requestAuth } from "../session/model/auth-sheet-store";
 import { AccountSheet } from "../session/ui/account-sheet";
@@ -508,9 +509,12 @@ function PredictionHomeCard({
           {volumeLabel} {formatUsd(event.volumeUsd, locale, { compact: true })}
         </Body>
       </Row>
-      <SectionTitle numberOfLines={2}>
-        {pickTranslation(event.title, locale)}
-      </SectionTitle>
+      <Row gap="$2" alignItems="flex-start">
+        <EventImage uri={event.iconUrl} size={40} />
+        <SectionTitle flex={1} numberOfLines={2}>
+          {pickTranslation(event.title, locale)}
+        </SectionTitle>
+      </Row>
       <Body fontSize={12}>
         {closesLabel} {formatTimeUntil(event.endsAt, mockNow(), locale)}
       </Body>

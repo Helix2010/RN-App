@@ -420,6 +420,7 @@ export class HttpPredictGateway implements PredictGateway {
       result: outcomeFromText(market.adjudication?.settledOutcome) ?? null,
       // 平台明确说不接单才禁用；字段缺失按可交易处理（与 user-dapp 一致）
       acceptingOrders: market.acceptingOrders !== false,
+      iconUrl: market.icon || null,
       // 市场级规则只在与事件规则不同时保留，避免详情页重复一段
       description:
         marketRules && marketRules !== (event.description ?? "").trim()
@@ -467,6 +468,8 @@ export class HttpPredictGateway implements PredictGateway {
         event.liquidity ??
         rawMarkets.reduce((sum, market) => sum + (market.liquidity ?? 0), 0),
       closed: event.closed ?? false,
+      imageUrl: event.image || null,
+      iconUrl: event.icon || null,
       endsAt: (!multi ? primary?.endDate : undefined) ?? event.endDate ?? "",
       featured: event.featured ?? false,
       rules: { default: event.description ?? "" },

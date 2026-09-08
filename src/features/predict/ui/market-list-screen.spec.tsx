@@ -111,6 +111,9 @@ describe("MarketListScreen", () => {
     );
     expect(await screen.findByTestId("predict-hero-ev-worldcup")).toBeTruthy();
     expect(await screen.findByTestId("event-ev-btc-120k")).toBeTruthy();
+    // 只有平台给了图标的事件才渲染图标，其它卡不占位
+    expect(screen.getByTestId("event-icon-ev-btc-120k")).toBeTruthy();
+    expect(screen.queryByTestId("event-icon-ev-fomc-sep")).toBeNull();
   });
 
   it("filters the loaded list locally by search text", async () => {

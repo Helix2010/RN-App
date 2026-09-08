@@ -76,6 +76,21 @@ export type PredictAgreements = {
   pending: PlatformAgreement[];
 };
 
+/** 平台资料里 App 用到的部分；displayName 规则同网页版：昵称 → 平台化名 → 地址缩写 */
+export type PredictProfile = {
+  name: string | null;
+  pseudonym: string | null;
+  imageUrl: string | null;
+  displayName: string;
+};
+
+export function profileDisplayName(
+  profile: { name: string | null; pseudonym: string | null },
+  shortAddress: string,
+): string {
+  return profile.name || profile.pseudonym || shortAddress;
+}
+
 export class PredictNotEnabledError extends Error {
   constructor(readonly status: PredictEnablement) {
     super("the prediction account is not enabled for this address");
@@ -139,4 +154,11 @@ export interface PredictAccountGateway {
   claimFaucet(address: string): Promise<void>;
   /** 登出 / 切换地址：丢掉这个地址在当前平台的凭证 */
   forgetCredentials(address: string): Promise<void>;
+  /** 自己的平台资料（不需要登录：按地址公开可读） */
+  profile(address: string): Promise<PredictProfile>;
+  /** 改昵称：需要平台登录（启用第 1 步）；没登录抛 PredictNotEnabledError */
+  updateProfile(
+    address: string,
+    patch: { name: string },
+  ): Promise<PredictProfile>;
 }

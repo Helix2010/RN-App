@@ -71,6 +71,7 @@ function market(
     closed: new Date(endsAt).getTime() <= new Date(FIXTURE_NOW).getTime(),
     result: null,
     acceptingOrders: true,
+    iconUrl: null,
     yesTokenId: `${id}-yes`,
     noTokenId: `${id}-no`,
   };
@@ -78,7 +79,7 @@ function market(
 
 const RAW_EVENTS: Omit<
   PredictEvent,
-  "tags" | "volume24hUsd" | "liquidityUsd" | "closed"
+  "tags" | "volume24hUsd" | "liquidityUsd" | "closed" | "imageUrl" | "iconUrl"
 >[] = [
   {
     id: "ev-btc-120k",
@@ -405,6 +406,15 @@ export const EVENTS: PredictEvent[] = RAW_EVENTS.map((event) => ({
   volume24hUsd: event.markets.reduce((sum, m) => sum + m.volume24hUsd, 0),
   liquidityUsd: event.markets.reduce((sum, m) => sum + m.liquidityUsd, 0),
   closed: new Date(event.endsAt).getTime() <= new Date(FIXTURE_NOW).getTime(),
+  // 夹具不编图片；只给 BTC 一条示例图，供渲染用例
+  imageUrl:
+    event.id === "ev-btc-120k"
+      ? "https://images.example.net/events/btc-120k.png"
+      : null,
+  iconUrl:
+    event.id === "ev-btc-120k"
+      ? "https://images.example.net/events/btc-120k-icon.png"
+      : null,
 }));
 
 export const SEED_POSITIONS = [

@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import { formatUsd, NO_QUOTE, shortenAddress } from "../../../core/i18n/format";
 import {
   Body,
   Content,
+  IconButton,
   InlineText,
   Page,
   PageScroll,
@@ -16,13 +17,18 @@ import {
   SkeletonBlock,
   Stack,
   Tabs,
+  type SheetHandle,
 } from "../../../design-system";
 import { useSession } from "../../session/hooks/use-session";
 import { requestAuth } from "../../session/model/auth-sheet-store";
-import { usePredictEnablement } from "../hooks/use-predict-account";
+import {
+  usePredictEnablement,
+  usePredictProfile,
+} from "../hooks/use-predict-account";
 import { useLeaderboard } from "../hooks/use-predict";
 import type { LeaderboardPeriod } from "../model/predict";
-import { fill } from "./shared";
+import { NicknameSheet } from "./nickname-sheet";
+import { EventImage, fill } from "./shared";
 
 /** P-06 排行榜：时间段 Tabs + 排序；底部常驻"我的排名"（游客态 → 连接钱包）。 */
 export function LeaderboardScreen({
@@ -42,6 +48,9 @@ export function LeaderboardScreen({
   const address = session.data?.address;
   // 平台排行榜按 Safe（proxyWallet）计名，没有"查我的名次"接口：在返回的榜单里找自己，找不到就是未上榜
   const enablement = usePredictEnablement(address);
+  // 平台资料：昵称 / 化名显示在"我"卡上；登录后才能改
+  const profile = usePredictProfile(address);
+  const nickname = useRef<SheetHandle>(null);
   const safe = enablement.data?.safe?.address.toLowerCase();
   const me = safe
     ? rows.data?.find((row) => row.address.toLowerCase() === safe)
@@ -178,26 +187,49 @@ export function LeaderboardScreen({
             borderRadius="$4"
             backgroundColor="$surfaceVariant"
           >
-            <Stack
-              width={36}
-              height={36}
-              borderRadius={18}
-              backgroundColor="$primary"
-              alignItems="center"
-              justifyContent="center"
-            >
-              <InlineText fontWeight="900" color="$onPrimary">
-                {address.slice(2, 4).toUpperCase()}
-              </InlineText>
-            </Stack>
+            {profile.data?.imageUrl ? (
+              <EventImage
+                uri={profile.data.imageUrl}
+                size={36}
+                radius={18}
+                testID="leaderboard-avatar"
+              />
+            ) : (
+              <Stack
+                width={36}
+                height={36}
+                borderRadius={18}
+                backgroundColor="$primary"
+                alignItems="center"
+                justifyContent="center"
+              >
+                <InlineText fontWeight="900" color="$onPrimary">
+                  {address.slice(2, 4).toUpperCase()}
+                </InlineText>
+              </Stack>
+            )}
             <Stack flex={1}>
-              <SectionTitle fontSize={14}>
+              <Row alignItems="center" gap="$1">
+                <SectionTitle fontSize={14} numberOfLines={1} flexShrink={1}>
+                  {profile.data?.displayName ?? shortenAddress(address)}
+                </SectionTitle>
+                {enablement.data?.loggedIn ? (
+                  <IconButton
+                    label={t("predict.profile.edit")}
+                    icon="pencil-outline"
+                    size={22}
+                    onPress={() => nickname.current?.present()}
+                    testID="leaderboard-edit-nickname"
+                  />
+                ) : null}
+              </Row>
+              <Body fontSize={12} testID="leaderboard-my-rank">
                 {me
                   ? fill(t("predict.leaderboard.myRank"), {
                       rank: me.rank.toLocaleString(locale),
                     })
                   : t("predict.leaderboard.unranked")}
-              </SectionTitle>
+              </Body>
               <Body fontSize={12}>
                 {t("predict.leaderboard.pnl")}{" "}
                 <InlineText
@@ -236,6 +268,7 @@ export function LeaderboardScreen({
           </PrimaryButton>
         )}
       </Stack>
+      {address ? <NicknameSheet ref={nickname} address={address} /> : null}
     </Page>
   );
 }

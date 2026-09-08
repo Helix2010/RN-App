@@ -45,6 +45,7 @@ import { HoldersView } from "./holders-view";
 import { OrderBookView } from "./order-book";
 import { OrderSheet, type OrderSheetHandle } from "./order-sheet";
 import {
+  EventImage,
   FavoriteButton,
   OutcomeResultBadge,
   RegionNotice,
@@ -227,7 +228,17 @@ export function EventDetailScreen({
           {event.data && market ? (
             <>
               <Stack gap="$1">
-                <SectionTitle fontSize={20}>{title}</SectionTitle>
+                <Row gap="$3" alignItems="flex-start">
+                  <EventImage
+                    uri={event.data.iconUrl}
+                    size={48}
+                    radius={10}
+                    testID="detail-icon"
+                  />
+                  <SectionTitle flex={1} fontSize={20}>
+                    {title}
+                  </SectionTitle>
+                </Row>
                 <Body fontSize={12}>
                   {closesText(event.data.endsAt, locale, t)} ·{" "}
                   {fill(t("predict.volume"), {
