@@ -38,6 +38,7 @@ import {
   usePredictEvent,
   usePriceHistories,
   useTrades,
+  useRegionGate,
 } from "../hooks/use-predict";
 import type { Market, OrderSide, Outcome, PriceRange } from "../model/predict";
 import { HoldersView } from "./holders-view";
@@ -46,6 +47,7 @@ import { OrderSheet, type OrderSheetHandle } from "./order-sheet";
 import {
   FavoriteButton,
   OutcomeResultBadge,
+  RegionNotice,
   StatusBadge,
   closesText,
   fill,
@@ -174,6 +176,9 @@ export function EventDetailScreen({
     return formatDate(iso, locale);
   };
 
+  // 地区限制：hook 必须在早退之前调用
+  const region = useRegionGate();
+
   if (event.isError)
     return (
       <Page>
@@ -181,8 +186,9 @@ export function EventDetailScreen({
       </Page>
     );
   const status = adjudication.data?.status ?? "trading";
-  // 只有交易中且平台接单的市场才有下单入口（大钮、Yes/No 块、盘口点价、底栏）
-  const canOrder = status === "trading" && Boolean(market?.acceptingOrders);
+  // 只有交易中、平台接单且所在地区允许的市场才有下单入口（大钮、Yes/No 块、盘口点价、底栏）
+  const canOrder =
+    status === "trading" && Boolean(market?.acceptingOrders) && !region.blocked;
   const openOrder = (
     outcome: Outcome,
     side: OrderSide = "buy",
@@ -436,6 +442,12 @@ export function EventDetailScreen({
                   );
                 })}
               </Row>
+
+              <RegionNotice
+                state={region.state}
+                onRetry={region.retry}
+                detail
+              />
 
               {market && status === "trading" && !market.acceptingOrders ? (
                 <Body color="$textMuted" testID="detail-not-accepting">

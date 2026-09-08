@@ -22,6 +22,8 @@ type PlatformHosts = {
   data: string;
   relayer: string;
   faucet: string;
+  /** 地区限制检查服务；管理端没填就是 null（不做地区限制），没有按域名派生 */
+  geo: string | null;
 };
 
 /**
@@ -41,6 +43,7 @@ export function platformHosts(service: {
     data: custom.data ?? `https://data-api.${domain}`,
     relayer: custom.relayer ?? `https://relayer.${domain}`,
     faucet: custom.faucet ?? `https://faucet.${domain}`,
+    geo: custom.geo ?? null,
   };
 }
 

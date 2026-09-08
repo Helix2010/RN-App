@@ -375,3 +375,6 @@ export type LeaderboardPeriod = "today" | "week" | "month" | "all";
 export type PredictTx = Tx & {
   kind: "deposit" | "withdraw" | "redeem" | "split" | "merge" | "dispute";
 };
+
+/** 地区限制检查结果（`core/predict-platform/geo.ts`）：没配检查服务时 checked=false */
+export type { RegionAccess } from "../../../core/predict-platform/geo";

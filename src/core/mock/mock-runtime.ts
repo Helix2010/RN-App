@@ -18,6 +18,8 @@ export type MockRuntimeState = {
   offline: boolean;
   /** 时间偏移（毫秒），用于把结算 / 争议期倒计时"快进" */
   clockOffsetMs: number;
+  /** 地区限制检查返回"受限"，用于验收预测市场的受限展示 */
+  regionRestricted: boolean;
   set: (patch: Partial<Omit<MockRuntimeState, "set" | "reset">>) => void;
   reset: () => void;
 };
@@ -29,6 +31,7 @@ const defaults = {
   emptyMode: false,
   offline: false,
   clockOffsetMs: 0,
+  regionRestricted: false,
 };
 
 export const useMockRuntime = create<MockRuntimeState>()(

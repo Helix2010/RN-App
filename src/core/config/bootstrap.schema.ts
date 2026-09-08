@@ -32,6 +32,8 @@ export const predictEndpointsSchema = z.object({
   data: httpsBaseSchema.optional(),
   relayer: httpsBaseSchema.optional(),
   faucet: httpsBaseSchema.optional(),
+  /** 地区限制检查服务（平台前端的 GEO_CHECK_URL）。没有派生规则：不填 = 不做地区限制 */
+  geo: httpsBaseSchema.optional(),
 });
 export type PredictEndpoints = z.infer<typeof predictEndpointsSchema>;
 

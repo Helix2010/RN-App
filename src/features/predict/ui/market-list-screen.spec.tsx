@@ -6,6 +6,7 @@ import {
   signIn,
 } from "../../../test/harness";
 import type { InMemoryPredictAccountGateway } from "../../../test/predict-account";
+import { useMockRuntime } from "../../../core/mock/mock-runtime";
 import { useFavoritesStore } from "../model/favorites-store";
 import { MarketListScreen } from "./market-list-screen";
 
@@ -182,6 +183,21 @@ describe("MarketListScreen", () => {
     expect(p.onOpenSeries).toHaveBeenCalledWith(
       expect.objectContaining({ slug: "btc-updown-5m" }),
     );
+  });
+
+  it("shows the region banner and disables ordering when the region is restricted", async () => {
+    useMockRuntime.getState().set({ regionRestricted: true });
+    const p = props();
+    await renderWithProviders(<MarketListScreen {...p} showPositionsEntry />);
+    expect(await screen.findByTestId("region-notice-restricted")).toBeTruthy();
+    expect(screen.getByText("您所在地区不支持交易")).toBeTruthy();
+    expect(await screen.findByTestId("event-ev-btc-120k")).toBeTruthy();
+    // 精选轮播、周期市场卡与列表卡上的买卖按钮全部禁用
+    const buttons = screen.getAllByLabelText(/Yes/);
+    expect(buttons.length).toBeGreaterThan(0);
+    for (const button of buttons)
+      expect(button.props.accessibilityState).toEqual({ disabled: true });
+    useMockRuntime.getState().set({ regionRestricted: false });
   });
 
   it("keeps a zero balance from being treated as missing", async () => {

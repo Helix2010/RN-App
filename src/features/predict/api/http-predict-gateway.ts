@@ -61,6 +61,7 @@ import {
   translationOf,
 } from "../../../core/predict-platform/gamma";
 import { fetchHolders } from "../../../core/predict-platform/data-holders";
+import { fetchRegionAccess } from "../../../core/predict-platform/geo";
 import {
   alignBuyPriceToTick,
   computeOrderAmounts,
@@ -90,6 +91,7 @@ import {
 import type { WalletGateway } from "../../wallet/api/gateway";
 import type { OnchainTransfers } from "../../wallet/api/onchain-transfers";
 import type {
+  RegionAccess,
   Activity,
   ActivityType,
   Adjudication,
@@ -787,6 +789,10 @@ export class HttpPredictGateway implements PredictGateway {
       limit,
     });
     return periods.map((raw) => this.mapSeriesPeriod(raw));
+  }
+
+  async checkRegion(): Promise<RegionAccess> {
+    return fetchRegionAccess(await this.service());
   }
 
   private mapSeriesPeriod(raw: GammaSeriesPeriod): SeriesPeriod {

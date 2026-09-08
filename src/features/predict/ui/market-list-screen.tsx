@@ -39,6 +39,7 @@ import {
   useMarketStream,
   usePredictEvents,
   usePredictTags,
+  useRegionGate,
   useSeriesList,
 } from "../hooks/use-predict";
 import {
@@ -57,7 +58,7 @@ import type {
   Series,
 } from "../model/predict";
 import { SeriesCard } from "./series-card";
-import { EventCard, YesNoButtons, fill } from "./shared";
+import { EventCard, RegionNotice, YesNoButtons, fill } from "./shared";
 
 type StatusFilter = NonNullable<EventQuery["status"]>;
 const STATUS_OPTIONS: StatusFilter[] = ["trading", "closed", "all"];
@@ -119,6 +120,8 @@ export function MarketListScreen({
   const [search, setSearch] = useState("");
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const favoriteIds = useFavoritesStore((state) => state.ids);
+  // 地区限制：列表页在预测页签内（模块开着才挂载），这里发起一次检查
+  const region = useRegionGate();
   const events = usePredictEvents(
     { tagId, sort, status, limit: 20 },
     { enabled: !favoritesOnly },
@@ -277,6 +280,8 @@ export function MarketListScreen({
             </Row>
           </Row>
 
+          <RegionNotice state={region.state} onRetry={region.retry} />
+
           <TextField
             value={search}
             onChangeText={setSearch}
@@ -401,7 +406,7 @@ export function MarketListScreen({
                         <YesNoButtons
                           yes={market.yesPriceCents}
                           compact
-                          disabled={!market.acceptingOrders}
+                          disabled={!market.acceptingOrders || region.blocked}
                           onPress={(outcome) => onOrder(market, outcome)}
                         />
                       </Stack>
@@ -496,6 +501,7 @@ export function MarketListScreen({
                   series={series}
                   onOpen={onOpenSeries}
                   onOrder={onOrder}
+                  orderDisabled={region.blocked}
                 />
               ))}
             </Stack>
@@ -528,6 +534,7 @@ export function MarketListScreen({
                   event={event}
                   onOpen={onOpenEvent}
                   onOrder={onOrder}
+                  orderDisabled={region.blocked}
                 />
               ))
             )

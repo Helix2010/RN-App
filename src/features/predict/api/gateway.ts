@@ -1,6 +1,7 @@
 import type { Page, Unsubscribe } from "../../../core/gateways/types";
 import type { Money } from "../../../core/money/money";
 import type {
+  RegionAccess,
   Activity,
   Adjudication,
   CuratedEvent,
@@ -62,6 +63,8 @@ export interface PredictGateway {
     scope: "current" | "closed",
     limit?: number,
   ): Promise<SeriesPeriod[]>;
+  /** 地区限制：租户没配检查服务时 `{restricted:false, checked:false}`；服务不可用时抛错，不放行 */
+  checkRegion(): Promise<RegionAccess>;
 
   previewOrder(
     address: string,

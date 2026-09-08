@@ -19,7 +19,11 @@ import {
   SkeletonBlock,
   Stack,
 } from "../../../design-system";
-import { useSeries, useSeriesPeriods } from "../hooks/use-predict";
+import {
+  useRegionGate,
+  useSeries,
+  useSeriesPeriods,
+} from "../hooks/use-predict";
 import type { Outcome, SeriesPeriod } from "../model/predict";
 import {
   periodCountdown,
@@ -30,6 +34,7 @@ import {
   useTicking,
   windowLabel,
 } from "./series-card";
+import { RegionNotice } from "./shared";
 
 /**
  * 周期市场页：当期窗口（参考价、倒计时、交易入口）+ 历史窗口（参考价 / 结算价 / 涨跌）。
@@ -54,6 +59,7 @@ export function SeriesScreen({
   const current = useSeriesPeriods(series.data?.id, "current", 2);
   const past = useSeriesPeriods(series.data?.id, "closed", 12);
   const now = useTicking();
+  const region = useRegionGate();
   const period = current.data ? pickCurrentPeriod(current.data, now) : null;
   const phase = period ? periodPhase(period, now) : "ended";
   const live = phase === "live";
@@ -146,8 +152,11 @@ export function SeriesScreen({
                         </InlineText>
                       </Stack>
                     </Row>
+                    <RegionNotice state={region.state} onRetry={region.retry} />
                     <PrimaryButton
-                      disabled={!live || !market.acceptingOrders}
+                      disabled={
+                        !live || !market.acceptingOrders || region.blocked
+                      }
                       onPress={() =>
                         period.event && onOpenEvent(period.event.id, market.id)
                       }

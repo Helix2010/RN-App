@@ -343,6 +343,9 @@ const zhCN = {
   "predict.curation.hotPicks": "热门精选",
   "predict.curation.breaking": "突发",
   "predict.curation.error": "精选加载失败",
+  "predict.region.restricted": "您所在地区不支持交易",
+  "predict.region.restrictedDetail": "您所在地区因监管要求不支持预测市场。",
+  "predict.region.unknown": "无法确认所在地区，暂不能交易",
   "predict.outcome.won": "{outcome} 胜出",
   "predict.outcome.ended": "已截止",
   "predict.outcome.notAccepting": "暂停接单",
@@ -1408,6 +1411,11 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "predict.curation.hotPicks": "Hot picks",
   "predict.curation.breaking": "Breaking",
   "predict.curation.error": "Featured markets failed to load",
+  "predict.region.restricted": "Trading is not available in your region",
+  "predict.region.restrictedDetail":
+    "Prediction markets are not available in your region due to regulatory requirements.",
+  "predict.region.unknown":
+    "Your region could not be verified, so trading is paused",
   "predict.outcome.won": "{outcome} won",
   "predict.outcome.ended": "Ended",
   "predict.outcome.notAccepting": "Not accepting orders",

@@ -1,4 +1,5 @@
 import { screen, waitFor } from "@testing-library/react-native";
+import { useMockRuntime } from "../../../core/mock/mock-runtime";
 import { createTestGateways, renderWithProviders } from "../../../test/harness";
 import type { PredictEvent } from "../model/predict";
 import { EventDetailScreen } from "./event-detail-screen";
@@ -51,5 +52,35 @@ describe("EventDetailScreen", () => {
     );
     // 底栏的"买 Yes / 买 No"随之消失
     expect(screen.queryByText(/^Buy Yes|^买 Yes/)).toBeNull();
+  });
+
+  it("closes ordering with an explanation when the region is restricted", async () => {
+    useMockRuntime.getState().set({ regionRestricted: true });
+    await renderWithProviders(<EventDetailScreen {...props()} />);
+    expect(await screen.findByTestId("region-notice-restricted")).toBeTruthy();
+    expect(
+      screen.getByText("您所在地区因监管要求不支持预测市场。"),
+    ).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.getByTestId("detail-yes").props.accessibilityState).toEqual(
+        { disabled: true },
+      ),
+    );
+    useMockRuntime.getState().set({ regionRestricted: false });
+  });
+
+  it("keeps ordering closed with a retry when the region check fails", async () => {
+    const gateways = createTestGateways();
+    gateways.predict.checkRegion = async () => {
+      throw new Error("geo service down");
+    };
+    await renderWithProviders(<EventDetailScreen {...props()} />, { gateways });
+    expect(await screen.findByTestId("region-notice-unknown")).toBeTruthy();
+    expect(screen.getByTestId("region-retry")).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.getByTestId("detail-yes").props.accessibilityState).toEqual(
+        { disabled: true },
+      ),
+    );
   });
 });

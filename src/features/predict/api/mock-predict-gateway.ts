@@ -12,6 +12,7 @@ import {
   mockNowIso,
   mockRandom,
   simulate,
+  useMockRuntime,
   scheduleMock,
 } from "../../../core/mock/mock-runtime";
 import {
@@ -30,6 +31,7 @@ import {
 import { EVENTS, LEADERBOARD, SEED_POSITIONS, TAGS } from "../fixtures/events";
 import { SERIES, seriesPeriods } from "../fixtures/series";
 import type {
+  RegionAccess,
   Activity,
   Adjudication,
   CuratedEvent,
@@ -475,6 +477,13 @@ export class MockPredictGateway implements PredictGateway {
       });
       return [holdersFor("yes"), holdersFor("no")];
     });
+  }
+
+  async checkRegion(): Promise<RegionAccess> {
+    return simulate(() => ({
+      restricted: useMockRuntime.getState().regionRestricted,
+      checked: true,
+    }));
   }
 
   async listSeries(): Promise<Series[]> {

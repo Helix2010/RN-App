@@ -29,7 +29,18 @@ describe("platformHosts", () => {
       data: "https://data-api.predict.prax1s.xyz",
       relayer: "https://relayer.predict.prax1s.xyz",
       faucet: "https://faucet.predict.prax1s.xyz",
+      // 地区限制检查没有派生规则：没配就是 null（不做地区限制）
+      geo: null,
     });
+  });
+
+  it("keeps the geo endpoint only when the tenant configured one", () => {
+    expect(
+      platformHosts({
+        domain: "predict.prax1s.xyz",
+        endpoints: { geo: "https://geo.example.net/check" },
+      }).geo,
+    ).toBe("https://geo.example.net/check");
   });
 
   it("prefers the per-service endpoints the tenant configured and derives the rest", () => {
@@ -48,6 +59,7 @@ describe("platformHosts", () => {
       data: "https://data-api.predict.prax1s.xyz",
       relayer: "https://relayer.predict.prax1s.xyz",
       faucet: "https://faucet.predict.prax1s.xyz",
+      geo: null,
     });
   });
 });

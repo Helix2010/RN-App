@@ -17,6 +17,7 @@ import {
   IconButton,
   InlineText,
   Row,
+  SecondaryButton,
   SectionTitle,
   Stack,
 } from "../../../design-system";
@@ -171,6 +172,49 @@ export function FavoriteButton({
   );
 }
 
+/**
+ * 地区限制提示：受限 → 红色横幅；检查失败 / 未回来 → "无法确认所在地区" + 重试；允许 → 不渲染。
+ * 详情页用 detail 取更长的说明文案。
+ */
+export function RegionNotice({
+  state,
+  onRetry,
+  detail = false,
+}: {
+  state: "allowed" | "restricted" | "unknown";
+  onRetry: () => void;
+  detail?: boolean;
+}) {
+  const { t } = useFoundationRuntime();
+  if (state === "allowed") return null;
+  return (
+    <Row
+      alignItems="center"
+      justifyContent="space-between"
+      gap="$2"
+      padding="$3"
+      borderRadius="$4"
+      backgroundColor="$surfaceVariant"
+      testID={`region-notice-${state}`}
+    >
+      <Body color="$danger" flex={1}>
+        {state === "restricted"
+          ? t(
+              detail
+                ? "predict.region.restrictedDetail"
+                : "predict.region.restricted",
+            )
+          : t("predict.region.unknown")}
+      </Body>
+      {state === "unknown" ? (
+        <SecondaryButton height={32} onPress={onRetry} testID="region-retry">
+          {t("action.retryNow")}
+        </SecondaryButton>
+      ) : null}
+    </Row>
+  );
+}
+
 /** 已截止 / 已结算市场在卡片上的结果标签，替代买卖按钮 */
 export function OutcomeResultBadge({ market }: { market: Market }) {
   const { t } = useFoundationRuntime();
@@ -203,10 +247,13 @@ export function EventCard({
   event,
   onOpen,
   onOrder,
+  orderDisabled = false,
 }: {
   event: PredictEvent;
   onOpen: (event: PredictEvent, market?: Market) => void;
   onOrder: (market: Market, outcome: Outcome) => void;
+  /** 地区限制等外部原因不给下单：按钮禁用但仍显示价格 */
+  orderDisabled?: boolean;
 }) {
   const { config, t } = useFoundationRuntime();
   const locale = config.localization.selectedLocale;
@@ -263,7 +310,7 @@ export function EventCard({
                   <YesNoButtons
                     yes={market.yesPriceCents}
                     compact
-                    disabled={!market.acceptingOrders}
+                    disabled={!market.acceptingOrders || orderDisabled}
                     onPress={(outcome) => onOrder(market, outcome)}
                   />
                 )}
@@ -301,7 +348,7 @@ export function EventCard({
           ) : (
             <YesNoButtons
               yes={primary.yesPriceCents}
-              disabled={!primary.acceptingOrders}
+              disabled={!primary.acceptingOrders || orderDisabled}
               onPress={(outcome) => onOrder(primary, outcome)}
             />
           )}

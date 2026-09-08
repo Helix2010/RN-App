@@ -144,10 +144,13 @@ export function SeriesCard({
   series,
   onOpen,
   onOrder,
+  orderDisabled = false,
 }: {
   series: Series;
   onOpen: (series: Series) => void;
   onOrder: (market: Market, outcome: Outcome) => void;
+  /** 地区限制等外部原因不给下单 */
+  orderDisabled?: boolean;
 }) {
   const { config, t } = useFoundationRuntime();
   const locale = config.localization.selectedLocale;
@@ -214,7 +217,7 @@ export function SeriesCard({
                 <YesNoButtons
                   yes={market.yesPriceCents}
                   compact
-                  disabled={!live || !market.acceptingOrders}
+                  disabled={!live || !market.acceptingOrders || orderDisabled}
                   onPress={(outcome) => onOrder(market, outcome)}
                 />
               </Stack>

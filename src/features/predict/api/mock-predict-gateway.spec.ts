@@ -118,6 +118,19 @@ describe("MockPredictGateway", () => {
     expect(past.every((period) => period.result !== null)).toBe(true);
   });
 
+  it("reports the region verdict from the mock runtime switch", async () => {
+    const gateway = new MockPredictGateway(memoryStorage());
+    await expect(gateway.checkRegion()).resolves.toEqual({
+      restricted: false,
+      checked: true,
+    });
+    useMockRuntime.getState().set({ regionRestricted: true });
+    await expect(gateway.checkRegion()).resolves.toEqual({
+      restricted: true,
+      checked: true,
+    });
+  });
+
   it("returns empty lists in empty mode and fails when offline", async () => {
     const gateway = new MockPredictGateway(memoryStorage());
     useMockRuntime.getState().set({ emptyMode: true });

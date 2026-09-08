@@ -46,6 +46,7 @@ import {
   usePredictActivity,
   usePredictPnl,
   useRedeem,
+  useRegionGate,
 } from "../hooks/use-predict";
 import type { PriceRange, Order, Position } from "../model/predict";
 import { OrderSheet, type OrderSheetHandle } from "./order-sheet";
@@ -85,6 +86,7 @@ export function PositionsScreen({
   };
   // 本期盈亏来自平台盈亏曲线，区间可切；没有数据就显示占位而不编数
   const [pnlRange, setPnlRange] = useState<PriceRange>("1d");
+  const region = useRegionGate();
   const pnlSeries = usePredictPnl(address, pnlRange);
   const todayPnl = (() => {
     const points = pnlSeries.data;
@@ -399,6 +401,7 @@ export function PositionsScreen({
                       locale={locale}
                       onOpen={onOpenEvent}
                       onSell={(item) => void sellPosition(item)}
+                      sellDisabled={region.blocked}
                       onSettlement={onOpenSettlement}
                       onClaim={() => redeem.mutate([position.id])}
                     />
@@ -487,6 +490,7 @@ function PositionRow({
   locale,
   onOpen,
   onSell,
+  sellDisabled,
   onSettlement,
   onClaim,
 }: {
@@ -494,6 +498,8 @@ function PositionRow({
   locale: string;
   onOpen: (eventId: string, marketId: string) => void;
   onSell: (position: Position) => void;
+  /** 地区限制时不能卖出（领取 / 划转不受影响） */
+  sellDisabled: boolean;
   onSettlement: (marketId: string, eventId: string) => void;
   onClaim: () => void;
 }) {
@@ -604,6 +610,7 @@ function PositionRow({
             height={34}
             paddingHorizontal="$3"
             fontSize={13}
+            disabled={sellDisabled}
             onPress={() => onSell(position)}
             testID={`sell-${position.id}`}
           >

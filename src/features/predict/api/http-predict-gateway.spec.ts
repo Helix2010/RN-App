@@ -159,6 +159,8 @@ function platform() {
           ],
         });
     }
+    if (host === "geo-api" && path === "/geoblock")
+      return json({ restricted: true });
     if (host === "data-api" && path === "/holders")
       return json([
         {
@@ -420,12 +422,20 @@ const CONTRACTS = {
   usdcDecimals: 6,
 };
 
-function build(options: { onchain?: Partial<OnchainTransfers> } = {}) {
+function build(
+  options: {
+    onchain?: Partial<OnchainTransfers>;
+    service?: typeof service & { endpoints?: { geo?: string } };
+  } = {},
+) {
   const seen = platform();
   const wallet = Wallet.createRandom();
   const relayed: { to: string; data: string; operation: number }[] = [];
   const account = {
-    platformContext: async () => ({ service, contracts: CONTRACTS }),
+    platformContext: async () => ({
+      service: options.service ?? service,
+      contracts: CONTRACTS,
+    }),
     tradingContext: async () => ({
       service,
       contracts: CONTRACTS,
@@ -1281,6 +1291,30 @@ describe("HttpPredictGateway disputes", () => {
       }),
     ).rejects.toMatchObject({ reason: "evidence_rejected" });
     expect(evidencePosts).toHaveLength(0);
+  });
+
+  it("checks the region only when the tenant configured a geo endpoint", async () => {
+    const plain = build();
+    await expect(plain.gateway.checkRegion()).resolves.toEqual({
+      restricted: false,
+      checked: false,
+    });
+    expect(plain.seen.some((item) => item.url.pathname === "/geoblock")).toBe(
+      false,
+    );
+    const gated = build({
+      service: {
+        ...service,
+        endpoints: { geo: `https://geo-api.${DOMAIN}` },
+      },
+    });
+    await expect(gated.gateway.checkRegion()).resolves.toEqual({
+      restricted: true,
+      checked: true,
+    });
+    expect(
+      gated.seen.find((item) => item.url.pathname === "/geoblock")?.url.host,
+    ).toBe(`geo-api.${DOMAIN}`);
   });
 
   it("surfaces the platform's cancellation phases as a canceled status", async () => {

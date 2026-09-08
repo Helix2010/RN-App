@@ -27,6 +27,8 @@ import {
 } from "../../../design-system";
 import { useRequireVerification } from "../../security/use-require-verification";
 import { useSession } from "../../session/hooks/use-session";
+import { RegionNotice } from "./shared";
+import { useRegionGate } from "../hooks/use-predict";
 import { requestAuth } from "../../session/model/auth-sheet-store";
 import {
   enablementComplete,
@@ -147,6 +149,8 @@ export function PredictEnableScreen({
   const enable = useEnablePredict(address);
   const requireVerification = useRequireVerification();
   const status = enablement.data;
+  // 受限地区不能启用账户（网页版 selectAuthStep 在 need_setup 之前就返回 geo_restricted）
+  const region = useRegionGate();
   const complete = status ? enablementComplete(status) : false;
   const started = status ? STEPS.some((step) => stepDone(status, step)) : false;
   const locale = config.localization.selectedLocale;
@@ -304,9 +308,14 @@ export function PredictEnableScreen({
                 {messageOf(agreements.error)}
               </Body>
             ) : null}
+            <RegionNotice state={region.state} onRetry={region.retry} detail />
             <PrimaryButton
               disabled={
-                !status || complete || enable.isPending || agreementsBlock
+                !status ||
+                complete ||
+                enable.isPending ||
+                agreementsBlock ||
+                region.blocked
               }
               onPress={() => void run()}
               testID="predict-enable-run"

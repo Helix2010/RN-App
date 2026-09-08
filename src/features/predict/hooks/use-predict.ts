@@ -88,6 +88,39 @@ export function useHolders(marketId: string | undefined, options: Gated = {}) {
   });
 }
 
+/**
+ * 地区限制：一次进程查一次（网页版一次会话查一次），失败不放行，界面给重试。
+ * 只由预测模块内的页面调用；共享入口不发起。
+ */
+export function useRegionAccess(options: Gated = {}) {
+  const { predict } = useGateways();
+  return useQuery({
+    queryKey: ["predict-region"],
+    queryFn: () => predict.checkRegion(),
+    enabled: options.enabled ?? true,
+    staleTime: Number.POSITIVE_INFINITY,
+    gcTime: Number.POSITIVE_INFINITY,
+  });
+}
+
+/** 三态：allowed / restricted / unknown（检查失败或还没回来）；blocked = 不是 allowed */
+export function useRegionGate(options: Gated = {}) {
+  const region = useRegionAccess(options);
+  const state: "allowed" | "restricted" | "unknown" = region.isError
+    ? "unknown"
+    : region.data === undefined
+      ? "unknown"
+      : region.data.restricted
+        ? "restricted"
+        : "allowed";
+  return {
+    state,
+    blocked: state !== "allowed",
+    failed: region.isError,
+    retry: () => void region.refetch(),
+  };
+}
+
 export function useSeriesList(options: { enabled?: boolean } = {}) {
   const { predict } = useGateways();
   return useQuery({
