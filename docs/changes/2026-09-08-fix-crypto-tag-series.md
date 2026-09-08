@@ -22,3 +22,7 @@ dev 平台 crypto 标签（id 430）下的活跃事件全部是周期市场的�
 
 - `market-list-screen.spec.tsx` 新增：crypto 标签下列表为空时仍显示周期系列卡，不显示"暂无数据"；体育标签不显示系列卡。
 - 模拟器：见下方记录。
+
+## 发布
+
+- OTA rev 11（`ota_jhK4y9Ea9V_MUaF1ZxwIKQ`，applyStrategy immediate，source f7dc524）已发布到 anyfun production 渠道。
