@@ -4,7 +4,6 @@ import {
   fakeNavigation,
   renderWithProviders,
 } from "../../../test/harness";
-import { ToastHost } from "../../../design-system";
 import { WalletsScreen } from "./wallets-screen";
 import type { Session } from "../../session/model/session";
 import type { WalletAccount } from "../model/wallet";
@@ -40,11 +39,7 @@ async function renderScreen(
   gateways.wallet.listAccounts = jest.fn(async () => [account()]);
   const navigation = fakeNavigation({ popToTop: jest.fn() });
   const rendered = await renderWithProviders(
-    <>
-      <WalletsScreen navigation={navigation} route={fakeNavigation()} />
-      {/* 真实 App 里 ToastHost 挂在根组件；断言提示就得把它渲染出来 */}
-      <ToastHost />
-    </>,
+    <WalletsScreen navigation={navigation} route={fakeNavigation()} />,
     { gateways },
   );
   return { ...rendered, navigation };

@@ -5,7 +5,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { FoundationRuntimeProvider } from "./src/app/runtime-context";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { GatewayProvider } from "./src/core/gateways/gateway-context";
-import { ToastHost } from "./src/design-system";
+import { OverlayLayer } from "./src/design-system";
 import { AppLockGate } from "./src/features/security/app-lock-gate";
 import { FoundationNavigator } from "./src/navigation/foundation-navigator";
 import { UpdateModal } from "./src/features/updates/update-modal";
@@ -31,8 +31,10 @@ export default function App() {
                   <FoundationNavigator />
                   <UpdateModal />
                   <AppLockGate />
-                  <ToastHost />
                 </BottomSheetModalProvider>
+                {/* 覆盖层必须在 BottomSheetModalProvider 之外且之后：
+                    弹层宿主渲染在 Provider 的 children 之后，放在里面的 toast / loading 会被弹层压住 */}
+                <OverlayLayer />
               </GatewayProvider>
             </FoundationRuntimeProvider>
           </QueryClientProvider>

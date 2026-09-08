@@ -19,7 +19,7 @@ import {
 import { usePreferencesStore } from "../core/preferences/preferences-store";
 import { memoryStorage } from "../core/gateways/types";
 import { translateMessage } from "../core/config/localization";
-import { FoundationThemeProvider } from "../design-system";
+import { FoundationThemeProvider, OverlayLayer } from "../design-system";
 import { InMemoryPredictAccountGateway } from "./predict-account";
 import { MockDexGateway } from "../features/dex/api/mock-dex-gateway";
 import { MockPredictGateway } from "../features/predict/api/mock-predict-gateway";
@@ -133,6 +133,8 @@ export async function renderWithProviders(
                 <BottomSheetModalProvider>
                   <NavigationContainer>{children}</NavigationContainer>
                 </BottomSheetModalProvider>
+                {/* 与 App.tsx 一致：toast / 全屏遮罩 / 阻塞 loading 都在这一层渲染 */}
+                <OverlayLayer />
               </GatewayProvider>
             </FoundationThemeProvider>
           </RuntimeContext.Provider>

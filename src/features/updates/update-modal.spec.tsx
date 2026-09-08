@@ -62,6 +62,8 @@ describe("UpdateModal (S-07)", () => {
     await waitFor(() =>
       expect(useUpdatePromptStore.getState().lastPromptedVersion).toBe("1.5.0"),
     );
+    // 弹窗现在挂在应用级覆盖层（全局 store）：先卸载第一次渲染，再模拟"下一次冷启动"
+    await screen.unmount();
     await renderWithProviders(<UpdateModal />, {
       config: withUpdate("optional"),
     });

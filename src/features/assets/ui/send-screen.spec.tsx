@@ -11,7 +11,6 @@ import { InsufficientGasError } from "../../../core/chain/transfer-service";
 import { CHAINS } from "../../../core/gateways/types";
 import { withWallet } from "../../../test/wallet-config";
 import { fromDecimal, money } from "../../../core/money/money";
-import { ToastHost } from "../../../design-system";
 import * as LocalAuthentication from "expo-local-authentication";
 import * as Clipboard from "expo-clipboard";
 import {
@@ -70,11 +69,8 @@ async function openConfirm(options: {
   );
   options.prepare?.(gateways);
   const rendered = await renderWithProviders(
-    <>
-      <SendScreen onBack={jest.fn()} initialChain="bsc" />
-      {/* 失败原因是通过 toast 说出来的，不挂 host 就断言不到用户真正看到的东西 */}
-      <ToastHost />
-    </>,
+    // 失败原因是通过 toast 说出来的；harness 的 OverlayLayer 会把它渲染出来
+    <SendScreen onBack={jest.fn()} initialChain="bsc" />,
     { gateways },
   );
 

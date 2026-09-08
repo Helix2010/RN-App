@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { fill } from "../../core/i18n/format";
-import { Linking, Modal } from "react-native";
+import { Linking } from "react-native";
 import { useFoundationRuntime } from "../../app/runtime-context";
 import {
   downloadAndInstallApk,
@@ -14,6 +14,7 @@ import {
   AppIcon,
   Body,
   Card,
+  FullScreenOverlay,
   InlineText,
   Label,
   PrimaryButton,
@@ -122,10 +123,9 @@ export function UpdateModal() {
   };
 
   return (
-    <Modal
+    // 走应用级覆盖层而不是原生 Modal：下载失败等 toast 要能盖在弹窗上面
+    <FullScreenOverlay
       visible
-      transparent
-      animationType="fade"
       // 强制更新：系统返回键不关闭
       onRequestClose={() => {
         if (!forced) {
@@ -247,6 +247,6 @@ export function UpdateModal() {
           )}
         </Card>
       </Stack>
-    </Modal>
+    </FullScreenOverlay>
   );
 }
