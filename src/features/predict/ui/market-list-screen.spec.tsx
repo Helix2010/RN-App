@@ -179,6 +179,30 @@ describe("MarketListScreen", () => {
     useFavoritesStore.setState({ ids: [] });
   });
 
+  it("keeps the recurring series on the crypto tag, where the list itself is empty on the platform", async () => {
+    const gateways = createTestGateways();
+    const original = gateways.predict.listEvents.bind(gateways.predict);
+    // 平台在 crypto 标签下只有周期单期事件，排除后列表为空
+    gateways.predict.listEvents = async (query) =>
+      query.tagId === "crypto"
+        ? { items: [], nextCursor: null }
+        : original(query);
+    await renderWithProviders(
+      <MarketListScreen {...props()} showPositionsEntry />,
+      { gateways },
+    );
+    expect(await screen.findByTestId("predict-series")).toBeTruthy();
+    await fireEvent.press(screen.getByText("加密"));
+    expect(await screen.findByTestId("series-btc-updown-5m")).toBeTruthy();
+    expect(screen.queryByTestId("predict-hero-ev-worldcup")).toBeNull();
+    expect(screen.queryByText("暂无数据")).toBeNull();
+    // 其它标签不带周期市场
+    await fireEvent.press(screen.getByText("体育"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("predict-series")).toBeNull(),
+    );
+  });
+
   it("lists recurring series and opens one", async () => {
     const p = props();
     await renderWithProviders(<MarketListScreen {...p} showPositionsEntry />);

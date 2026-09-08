@@ -141,7 +141,16 @@ export function MarketListScreen({
     !favoritesOnly &&
     search.trim() === "";
   const curated = useCuratedEvents({ enabled: discovery });
-  const seriesList = useSeriesList({ enabled: discovery });
+  // 周期市场（BTC 涨跌等）：列表按网页版排除了周期单期事件，系列卡在默认标签和 crypto 标签下显示
+  // （网页版 `loadRecurringSeries`：type 为 all / crypto 且没有搜索词）。dev 上 crypto 标签只有周期事件，
+  // 不这样做 crypto 页就是空的。
+  const selectedTagSlug = tags.data?.find((tag) => tag.id === tagId)?.slug;
+  const showSeries =
+    status === "trading" &&
+    !favoritesOnly &&
+    search.trim() === "" &&
+    (tagId === defaultTag || selectedTagSlug === "crypto");
+  const seriesList = useSeriesList({ enabled: showSeries });
   // 策展三区：hero 轮播、highlight"热门精选"、normal"突发"，都按运营位次排
   const heroes = useMemo(
     () => curationZone(curated.data ?? [], "hero"),
@@ -203,10 +212,8 @@ export function MarketListScreen({
   };
   const refreshAll = () => {
     retry();
-    if (discovery) {
-      void curated.refetch();
-      void seriesList.refetch();
-    }
+    if (discovery) void curated.refetch();
+    if (showSeries) void seriesList.refetch();
   };
 
   return (
@@ -494,7 +501,7 @@ export function MarketListScreen({
             </Row>
           ) : null}
 
-          {discovery && seriesList.isError ? (
+          {showSeries && seriesList.isError ? (
             <InlineError
               message={t("predict.series.error")}
               retryLabel={t("action.retryNow")}
@@ -503,7 +510,7 @@ export function MarketListScreen({
             />
           ) : null}
 
-          {discovery && seriesList.data && seriesList.data.length > 0 ? (
+          {showSeries && seriesList.data && seriesList.data.length > 0 ? (
             <Stack gap="$2" testID="predict-series">
               <SectionTitle fontSize={14}>
                 {t("predict.series.title")}
@@ -537,9 +544,12 @@ export function MarketListScreen({
             </Body>
           ) : !listLoading && !listError ? (
             listItems.length === 0 ? (
-              <Body>
-                {search.trim() ? t("predict.search.empty") : t("state.empty")}
-              </Body>
+              // 周期市场卡已经是内容时不再提示"暂无数据"
+              showSeries && (seriesList.data?.length ?? 0) > 0 ? null : (
+                <Body>
+                  {search.trim() ? t("predict.search.empty") : t("state.empty")}
+                </Body>
+              )
             ) : (
               listItems.map((event) => (
                 <EventCard
