@@ -53,3 +53,8 @@
   窗口 04:15–04:20 从"待结算"变成"涨"与平台一致。
 - 审计修复后重新出包复核：精选轮播标签不再带空分类；"热门精选 / 突发"两栏来自策展 highlight / normal 区；
   系列页参考价 / 结算价显示为 $78,803.27 这样的两位小数；搜索时策展与周期市场区块收起。
+
+## 发布
+
+- 2026-09-08 以 OTA rev 10（`ota_9yH5ZhA20TI5CWA8Tza4YQ`，applyStrategy immediate，source 8123257）发布到 anyfun production 渠道，
+  同批包含审计修复、地区限制、图片与昵称；基线整包仍为 1.2.9 build 23（`rel_4-zTQ22Cq1WneDS7ls9yNg`）。
