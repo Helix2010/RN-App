@@ -212,11 +212,14 @@ export function PriceLineChart({
   onScrub,
   onScrubbing,
   empty,
+  axisWidth = AXIS_WIDTH,
 }: {
   series: ChartSeries[];
   height?: number;
   /** 虚线基准（如 50¢） */
   baseline?: number;
+  /** 右侧刻度栏宽度：五位数美元价（$78,475）需要比默认的 46 更宽 */
+  axisWidth?: number;
   formatValue: (value: number) => string;
   formatTime: (tMs: number) => string;
   onScrub?: (sample: ChartSample | null) => void;
@@ -228,7 +231,7 @@ export function PriceLineChart({
   const theme = useTheme();
   const [width, setWidth] = useState(0);
   const [scrubX, setScrubX] = useState<number | null>(null);
-  const plotWidth = Math.max(0, width - AXIS_WIDTH);
+  const plotWidth = Math.max(0, width - axisWidth);
   const plotHeight = Math.max(0, height - PAD_TOP - PAD_BOTTOM);
 
   const domain = useMemo(() => {

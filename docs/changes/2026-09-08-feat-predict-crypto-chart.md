@@ -37,3 +37,8 @@
 - `rtds.spec.ts`：标的解析、三条 REST 契约与参数、schema 拒绝、WS 订阅帧 / PING / 消息路由 / 退订断开。
 - `series-screen.spec.tsx`：当前价与参考价基准线、三种模式切换、标的认不出来的提示。
 - 全量 jest / lint / typecheck / format 通过；模拟器记录见设计文档 §5。
+
+## 发布
+
+- anyfun 租户配置：`services.predict.endpoints.rtds / rtdsWs` 已通过管理接口写入（配置版本 15 → 16），bootstrap 已下发。
+- OTA rev 12（`ota_qpB5O5xem74OdUCouPX43g`，applyStrategy immediate，source 7c25fe6）已发布到 anyfun production 渠道。

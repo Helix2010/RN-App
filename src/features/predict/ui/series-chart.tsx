@@ -135,22 +135,21 @@ export function SeriesChart({
             </Body>
           ) : null}
         </Stack>
-        <Stack width={210}>
-          <SegmentedControl
-            value={mode}
-            options={[
-              { value: "price", label: t("predict.series.chart.price") },
-              {
-                value: "probability",
-                label: t("predict.series.chart.probability"),
-              },
-              { value: "candles", label: t("predict.series.chart.candles") },
-            ]}
-            onChange={setMode}
-            accessibilityLabel={t("predict.series.chart.price")}
-          />
-        </Stack>
       </Row>
+      <SegmentedControl
+        value={mode}
+        options={[
+          { value: "price", label: t("predict.series.chart.price") },
+          {
+            value: "probability",
+            label: t("predict.series.chart.probability"),
+          },
+          { value: "candles", label: t("predict.series.chart.candles") },
+        ]}
+        onChange={setMode}
+        accessibilityLabel={t("predict.series.chart.price")}
+        testID="series-chart-mode"
+      />
 
       {mode === "price" ? (
         liveSource.isError || history.isError ? (
@@ -165,6 +164,7 @@ export function SeriesChart({
         ) : (
           <PriceLineChart
             height={180}
+            axisWidth={78}
             series={[
               {
                 key: "price",
