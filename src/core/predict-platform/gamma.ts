@@ -158,6 +158,8 @@ const gammaSeriesSchema = z.object({
   recurrence: z.string().nullish(),
   active: z.boolean().nullish(),
   closed: z.boolean().nullish(),
+  /** 标的代号（如 BTCUSD），实时价与 K 线按它订阅 */
+  ticker: z.string().nullish(),
 });
 export type GammaSeries = z.infer<typeof gammaSeriesSchema>;
 
@@ -178,6 +180,8 @@ const gammaSeriesPeriodSchema = z.object({
   finalPrice: gammaSeriesPeriodPriceSchema.nullish(),
   // 结果只有涨 / 跌两种；别的值说明契约变了，让 schema 直接报错而不是悄悄当作待结算
   result: z.enum(["up", "down"]).nullish(),
+  /** 上游对该期声明的结算取价源（如 chainlink twap-60s 流）；实时价按它选流，与结算同源 */
+  resolutionSource: z.string().nullish(),
   event: gammaEventSchema.nullish(),
 });
 export type GammaSeriesPeriod = z.infer<typeof gammaSeriesPeriodSchema>;

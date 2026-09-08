@@ -31,6 +31,9 @@ import {
 import { EVENTS, LEADERBOARD, SEED_POSITIONS, TAGS } from "../fixtures/events";
 import { SERIES, seriesPeriods } from "../fixtures/series";
 import type {
+  CryptoCandle,
+  CryptoLiveSource,
+  CryptoTick,
   RegionAccess,
   Activity,
   Adjudication,
@@ -284,6 +287,14 @@ export class MockPredictGateway implements PredictGateway {
       const market = event.markets.find((item) => item.id === marketId);
       if (market) return { event, market };
     }
+    // 周期市场的分期市场由夹具按时间生成，不在 EVENTS 里
+    for (const series of SERIES)
+      for (const period of seriesPeriods(series.id, mockNow())) {
+        const market = period.event?.markets.find(
+          (item) => item.id === marketId,
+        );
+        if (market && period.event) return { event: period.event, market };
+      }
     throw new Error(`unknown market ${marketId}`);
   }
 
@@ -484,6 +495,105 @@ export class MockPredictGateway implements PredictGateway {
       restricted: useMockRuntime.getState().regionRestricted,
       checked: true,
     }));
+  }
+
+  // ---- 实时数据服务（夹具：围绕 78,000 的随机游走，秒级 tick） ----
+
+  private cryptoPrice(symbol: string, tMs: number): number {
+    const base = symbol.startsWith("ETH") ? 3_200 : 78_000;
+    const seconds = Math.floor(tMs / 1000);
+    // 确定性伪随机：同一秒同一价，图形连续
+    const wave =
+      Math.sin(seconds / 37) * 40 +
+      Math.sin(seconds / 11) * 15 +
+      ((seconds * 7919) % 13) -
+      6;
+    return Math.round((base + wave) * 100) / 100;
+  }
+
+  async getCryptoLiveSource(input: {
+    symbol: string;
+    recurrence?: string;
+  }): Promise<CryptoLiveSource> {
+    return simulate(() => ({
+      symbol: input.symbol,
+      rtdsSymbol: input.symbol.toLowerCase().replace(/usd$/, "/usd"),
+      source: "polymarket_twap_30",
+      topic: "crypto_prices_twap_thirty",
+      filters: JSON.stringify({
+        source: "polymarket_twap_30",
+        symbol: input.symbol.toLowerCase().replace(/usd$/, "/usd"),
+      }),
+      declared: false,
+    }));
+  }
+
+  async getCryptoLatest(symbol: string, source: string): Promise<CryptoTick> {
+    return simulate(() => ({
+      t: mockNow(),
+      value: this.cryptoPrice(symbol, mockNow()),
+      source,
+    }));
+  }
+
+  async getCryptoPriceHistory(
+    symbol: string,
+    source: string,
+    limit: number,
+  ): Promise<CryptoTick[]> {
+    return simulate(() => {
+      const now = mockNow();
+      return Array.from({ length: limit }, (_, i) => {
+        const t = now - (limit - 1 - i) * 1000;
+        return { t, value: this.cryptoPrice(symbol, t), source };
+      });
+    });
+  }
+
+  async getCryptoCandles(
+    symbol: string,
+    interval: "1m" | "5m" | "15m" | "1h",
+    limit: number,
+  ): Promise<CryptoCandle[]> {
+    return simulate(() => {
+      const step =
+        interval === "1m"
+          ? 60_000
+          : interval === "5m"
+            ? 300_000
+            : interval === "15m"
+              ? 900_000
+              : 3_600_000;
+      const end = Math.floor(mockNow() / step) * step;
+      return Array.from({ length: limit }, (_, i) => {
+        const t = end - (limit - 1 - i) * step;
+        const o = this.cryptoPrice(symbol, t);
+        const c = this.cryptoPrice(symbol, t + step - 1000);
+        const mid = this.cryptoPrice(symbol, t + step / 2);
+        return {
+          t,
+          o,
+          h: Math.max(o, c, mid) + 5,
+          l: Math.min(o, c, mid) - 5,
+          c,
+        };
+      });
+    });
+  }
+
+  subscribeCryptoPrice(
+    source: CryptoLiveSource,
+    listener: (tick: CryptoTick) => void,
+  ): () => void {
+    const timer = setInterval(() => {
+      const t = mockNow();
+      listener({
+        t,
+        value: this.cryptoPrice(source.symbol, t),
+        source: source.source,
+      });
+    }, 1000);
+    return () => clearInterval(timer);
   }
 
   async listSeries(): Promise<Series[]> {

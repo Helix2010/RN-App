@@ -22,6 +22,7 @@ function period(id: string, start: string, end: string): SeriesPeriod {
     priceToBeat: null,
     finalPrice: null,
     result: null,
+    resolutionSource: null,
   };
 }
 

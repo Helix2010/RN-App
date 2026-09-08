@@ -9,6 +9,7 @@ export const SERIES: Series[] = [
     title: localized("BTC 5 分钟涨跌", "BTC Up or Down · 5m"),
     recurrence: "5m",
     seriesType: "recurring",
+    ticker: "BTCUSD",
   },
 ];
 
@@ -99,6 +100,7 @@ export function seriesPeriods(
           }
         : null,
       result: settled ? (up ? "up" : "down") : null,
+      resolutionSource: null,
       event: periodEvent(
         id,
         new Date(end).toISOString(),

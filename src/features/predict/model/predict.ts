@@ -122,6 +122,8 @@ export type Series = {
   /** 平台的周期文本（5m / 15m / 1h …） */
   recurrence: string;
   seriesType: string;
+  /** 标的代号（gamma `ticker`，如 BTCUSD）；平台没给就是 null，由 slug / 标题推断 */
+  ticker: string | null;
 };
 export type SeriesPeriodPrice = {
   price: string;
@@ -143,8 +145,30 @@ export type SeriesPeriod = {
   priceToBeat: SeriesPeriodPrice | null;
   finalPrice: SeriesPeriodPrice | null;
   result: "up" | "down" | null;
+  /** 上游声明的结算取价源；实时价订阅按它选流 */
+  resolutionSource: string | null;
   /** 该期对应的事件（带市场与代币），平台带出时才有 */
   event?: PredictEvent;
+};
+
+/** 实时数据服务（RTDS）的取价源与订阅参数（`/recurring/live-source`） */
+export type CryptoLiveSource = {
+  symbol: string;
+  rtdsSymbol: string;
+  source: string;
+  topic: string;
+  /** WS 订阅的 filters 字符串（JSON 文本，原样回传） */
+  filters: string;
+  /** true = 流来自上游对该期的取价声明（与结算同源）；false = 按周期兜底映射 */
+  declared: boolean;
+};
+export type CryptoTick = { t: number; value: number; source: string };
+export type CryptoCandle = {
+  t: number;
+  o: number;
+  h: number;
+  l: number;
+  c: number;
 };
 
 export type OrderBookLevel = { priceCents: number; shares: number };

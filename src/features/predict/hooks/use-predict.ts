@@ -4,12 +4,14 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { Page } from "../../../core/gateways/types";
 import { useGateways } from "../../../core/gateways/gateway-context";
 import { PREDICT_ACCOUNT_KEY } from "./use-predict-account";
 import type { Money } from "../../../core/money/money";
 import type {
+  CryptoLiveSource,
+  CryptoTick,
   EventQuery,
   LeaderboardPeriod,
   OrderBook,
@@ -501,4 +503,108 @@ export function usePredictTx(id: string | undefined) {
         ? false
         : 800,
   });
+}
+
+// ---- 实时数据服务（周期市场标的价）；只由系列页调用 ----
+
+export function useCryptoLiveSource(
+  input: {
+    symbol: string | null;
+    recurrence?: string;
+    resolutionSource?: string | null;
+  },
+  options: Gated = {},
+) {
+  const { predict } = useGateways();
+  return useQuery({
+    queryKey: [
+      "predict-crypto-source",
+      input.symbol,
+      input.recurrence,
+      input.resolutionSource,
+    ],
+    queryFn: () =>
+      predict.getCryptoLiveSource({
+        symbol: input.symbol as string,
+        recurrence: input.recurrence,
+        resolutionSource: input.resolutionSource,
+      }),
+    enabled: Boolean(input.symbol) && (options.enabled ?? true),
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function useCryptoPriceHistory(
+  source: CryptoLiveSource | undefined,
+  limit: number,
+) {
+  const { predict } = useGateways();
+  return useQuery({
+    queryKey: ["predict-crypto-history", source?.symbol, source?.source, limit],
+    queryFn: () =>
+      predict.getCryptoPriceHistory(
+        (source as CryptoLiveSource).symbol,
+        (source as CryptoLiveSource).source,
+        limit,
+      ),
+    enabled: Boolean(source),
+    staleTime: 5_000,
+  });
+}
+
+/** 1 分钟 K 线，20 秒重拉；source 固定 binance（dev 上唯一有 K 线的源，网页版默认同此） */
+export function useCryptoCandles(symbol: string | null, limit = 30) {
+  const { predict } = useGateways();
+  return useQuery({
+    queryKey: ["predict-crypto-candles", symbol, limit],
+    queryFn: () =>
+      predict.getCryptoCandles(symbol as string, "1m", limit, "binance"),
+    enabled: Boolean(symbol),
+    staleTime: 10_000,
+    refetchInterval: 20_000,
+  });
+}
+
+/** 实时价：首屏取最新价，再订阅 WS；返回的 ticks 按时间升序累积（最多 maxTicks 条） */
+export function useCryptoLivePrice(
+  source: CryptoLiveSource | undefined,
+  maxTicks = 1200,
+) {
+  const { predict } = useGateways();
+  const key = source ? `${source.symbol}|${source.source}|${source.topic}` : "";
+  // 状态带上取价源的键：换源后旧 tick 不再显示，且不需要在 effect 里同步清空
+  const [feed, setFeed] = useState<{
+    key: string;
+    latest: CryptoTick | null;
+    ticks: CryptoTick[];
+  }>({ key: "", latest: null, ticks: [] });
+  useEffect(() => {
+    if (!source) return;
+    let active = true;
+    const accept = (tick: CryptoTick) => {
+      if (!active || !Number.isFinite(tick.value)) return;
+      setFeed((old) => {
+        const ticks = old.key === key ? old.ticks : [];
+        const last = ticks[ticks.length - 1];
+        const next = last && last.t >= tick.t ? ticks : [...ticks, tick];
+        return {
+          key,
+          latest: tick,
+          ticks:
+            next.length > maxTicks ? next.slice(next.length - maxTicks) : next,
+        };
+      });
+    };
+    void predict
+      .getCryptoLatest(source.symbol, source.source)
+      .then(accept, () => {});
+    const stop = predict.subscribeCryptoPrice(source, accept);
+    return () => {
+      active = false;
+      stop();
+    };
+  }, [key, maxTicks, predict, source]);
+  return feed.key === key && key !== ""
+    ? { latest: feed.latest, ticks: feed.ticks }
+    : { latest: null, ticks: [] as CryptoTick[] };
 }

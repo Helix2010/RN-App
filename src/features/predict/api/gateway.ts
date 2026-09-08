@@ -1,6 +1,9 @@
 import type { Page, Unsubscribe } from "../../../core/gateways/types";
 import type { Money } from "../../../core/money/money";
 import type {
+  CryptoCandle,
+  CryptoLiveSource,
+  CryptoTick,
   RegionAccess,
   Activity,
   Adjudication,
@@ -65,6 +68,32 @@ export interface PredictGateway {
   ): Promise<SeriesPeriod[]>;
   /** 地区限制：租户没配检查服务时 `{restricted:false, checked:false}`；服务不可用时抛错，不放行 */
   checkRegion(): Promise<RegionAccess>;
+  // ---- 实时数据服务（周期市场的标的价） ----
+  /** 按周期 / 结算声明解析取价源与 WS 订阅参数 */
+  getCryptoLiveSource(input: {
+    symbol: string;
+    recurrence?: string;
+    resolutionSource?: string | null;
+  }): Promise<CryptoLiveSource>;
+  getCryptoLatest(symbol: string, source: string): Promise<CryptoTick>;
+  /** 最近的 tick 历史（价格图回填），按时间升序 */
+  getCryptoPriceHistory(
+    symbol: string,
+    source: string,
+    limit: number,
+  ): Promise<CryptoTick[]>;
+  /** 1 分钟 K 线，按时间升序；source 只能是有 K 线的真实源（binance） */
+  getCryptoCandles(
+    symbol: string,
+    interval: "1m" | "5m" | "15m" | "1h",
+    limit: number,
+    source: string,
+  ): Promise<CryptoCandle[]>;
+  /** 订阅实时价；返回取消函数 */
+  subscribeCryptoPrice(
+    source: CryptoLiveSource,
+    listener: (tick: CryptoTick) => void,
+  ): () => void;
 
   previewOrder(
     address: string,

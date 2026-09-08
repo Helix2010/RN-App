@@ -34,6 +34,7 @@ import {
   useTicking,
   windowLabel,
 } from "./series-card";
+import { SeriesChart } from "./series-chart";
 import { RegionNotice } from "./shared";
 
 /**
@@ -171,6 +172,12 @@ export function SeriesScreen({
               <Body>{t("predict.series.noPeriods")}</Body>
             )}
           </Card>
+
+          {series.data ? (
+            <Card padding="$3" gap="$2" testID="series-chart-card">
+              <SeriesChart series={series.data} period={period} />
+            </Card>
+          ) : null}
 
           <Stack gap="$2">
             <SectionTitle fontSize={14}>

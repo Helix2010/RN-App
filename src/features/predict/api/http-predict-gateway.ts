@@ -1,3 +1,4 @@
+import { predictService } from "../../../core/predict-platform/config";
 import type { LocalizedText } from "../../../core/i18n/localized-text";
 import type { Page, Unsubscribe } from "../../../core/gateways/types";
 import { money, toBigInt, type Money } from "../../../core/money/money";
@@ -63,6 +64,14 @@ import {
 import { fetchHolders } from "../../../core/predict-platform/data-holders";
 import { fetchRegionAccess } from "../../../core/predict-platform/geo";
 import {
+  RtdsWsClient,
+  fetchCandles,
+  fetchLatestPrice,
+  fetchLiveSource,
+  fetchPriceHistory as fetchCryptoTicks,
+  type RtdsTickMessage,
+} from "../../../core/predict-platform/rtds";
+import {
   alignBuyPriceToTick,
   computeOrderAmounts,
 } from "../../../core/predict-platform/order-amounts";
@@ -91,6 +100,9 @@ import {
 import type { WalletGateway } from "../../wallet/api/gateway";
 import type { OnchainTransfers } from "../../wallet/api/onchain-transfers";
 import type {
+  CryptoCandle,
+  CryptoLiveSource,
+  CryptoTick,
   RegionAccess,
   Activity,
   ActivityType,
@@ -328,6 +340,7 @@ function mapSeries(raw: GammaSeries): Series {
     title: translationOf(raw.titleTranslation, raw.title ?? raw.slug),
     recurrence: raw.recurrence ?? "",
     seriesType: raw.seriesType ?? "",
+    ticker: raw.ticker?.trim() || null,
   };
 }
 
@@ -798,6 +811,83 @@ export class HttpPredictGateway implements PredictGateway {
     return fetchRegionAccess(await this.service());
   }
 
+  // ---- 实时数据服务 ----
+
+  async getCryptoLiveSource(input: {
+    symbol: string;
+    recurrence?: string;
+    resolutionSource?: string | null;
+  }): Promise<CryptoLiveSource> {
+    const raw = await fetchLiveSource(await this.service(), input);
+    return {
+      symbol: raw.symbol,
+      rtdsSymbol: raw.rtdsSymbol,
+      source: raw.source,
+      topic: raw.subscription.topic,
+      filters:
+        raw.subscription.filters ??
+        JSON.stringify({ source: raw.source, symbol: raw.rtdsSymbol }),
+      declared: raw.declared === true,
+    };
+  }
+
+  async getCryptoLatest(symbol: string, source: string): Promise<CryptoTick> {
+    return toTick(
+      await fetchLatestPrice(await this.service(), { symbol, source }),
+    );
+  }
+
+  async getCryptoPriceHistory(
+    symbol: string,
+    source: string,
+    limit: number,
+  ): Promise<CryptoTick[]> {
+    const messages = await fetchCryptoTicks(await this.service(), {
+      symbol,
+      source,
+      limit,
+    });
+    return messages.map(toTick).sort((a, b) => a.t - b.t);
+  }
+
+  async getCryptoCandles(
+    symbol: string,
+    interval: "1m" | "5m" | "15m" | "1h",
+    limit: number,
+    source: string,
+  ): Promise<CryptoCandle[]> {
+    const candles = await fetchCandles(await this.service(), {
+      symbol,
+      interval,
+      limit,
+      source,
+    });
+    return candles
+      .map((c) => ({
+        t: c.time * 1000,
+        o: c.open,
+        h: c.high,
+        l: c.low,
+        c: c.close,
+      }))
+      .sort((a, b) => a.t - b.t);
+  }
+
+  private rtdsWs: RtdsWsClient | null = null;
+
+  subscribeCryptoPrice(
+    source: CryptoLiveSource,
+    listener: (tick: CryptoTick) => void,
+  ): () => void {
+    // WS 地址来自当前下发的平台关联；换平台时旧客户端随 listeners 清空而断开
+    const hosts = platformHosts(predictService());
+    if (!this.rtdsWs) this.rtdsWs = new RtdsWsClient({ url: hosts.rtdsWs });
+    return this.rtdsWs.subscribe(
+      { topic: source.topic, filters: source.filters },
+      (message) => listener(toTick(message)),
+    );
+  }
+
   private mapSeriesPeriod(raw: GammaSeriesPeriod): SeriesPeriod {
     const event = raw.event ? this.mapEvent(raw.event) : undefined;
     return {
@@ -824,6 +914,7 @@ export class HttpPredictGateway implements PredictGateway {
           }
         : null,
       result: raw.result ?? null,
+      resolutionSource: raw.resolutionSource?.trim() || null,
       event,
     };
   }
@@ -1740,4 +1831,13 @@ export class HttpPredictGateway implements PredictGateway {
       volumeUsd: entry.vol,
     }));
   }
+}
+
+/** RTDS 消息 → tick：时间取 payload.timestamp（毫秒），缺省用信封时间 */
+function toTick(message: RtdsTickMessage): CryptoTick {
+  return {
+    t: message.payload.timestamp ?? message.timestamp ?? Date.now(),
+    value: message.payload.value,
+    source: message.payload.source ?? "",
+  };
 }

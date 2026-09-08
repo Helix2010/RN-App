@@ -65,7 +65,7 @@
 | 详情：相关市场、分享 | 未对接 | related-tags；分享为本地 | |
 | 市场级规则（`rules-market`） | 已对接 | 市场 `description` | 与事件规则不同时在规则页签单独显示 |
 | AI 翻译按钮 | 未对接 | C 端 Next 路由代理 Anthropic，密钥在服务端 | App 若要做需 RN-Server 代理，不能内置密钥 |
-| 周期性加密市场（5m/15m/1h 涨跌、K 线、实时价、历史窗口、结果） | 部分 | `/series`（首页 8 个）、`/series/slug/{slug}?series_id=`、`/series/{id}/periods` | 系列卡 + 系列页（当期窗口、参考价、倒计时、历史窗口与结果）；K 线与实时价流未做，交易复用事件详情 |
+| 周期性加密市场（5m/15m/1h 涨跌、K 线、实时价、历史窗口、结果） | 已对接 | `/series`、`/series/{id}/periods`、RTDS `/recurring/live-source` `/prices/*` `/candles` + WS | 系列卡 + 系列页（当期窗口、参考价、倒计时、历史窗口与结果、价格 / 概率 / K 线图与实时价，`predict-crypto-chart-2026-09-08.md`）；交易复用事件详情 |
 | 体育枢纽（联赛导航、赛程、比分、盘口类型） | 部分 | `/sports-events`、`/config/sport-types` | App 只有对阵卡 |
 
 ### 3.2 账户与资金

@@ -31,6 +31,8 @@ describe("platformHosts", () => {
       faucet: "https://faucet.predict.prax1s.xyz",
       // 地区限制检查没有派生规则：没配就是 null（不做地区限制）
       geo: null,
+      rtds: "https://rtds.predict.prax1s.xyz",
+      rtdsWs: "wss://rtds-ws.predict.prax1s.xyz",
     });
   });
 
@@ -60,6 +62,8 @@ describe("platformHosts", () => {
       relayer: "https://relayer.predict.prax1s.xyz",
       faucet: "https://faucet.predict.prax1s.xyz",
       geo: null,
+      rtds: "https://rtds.predict.prax1s.xyz",
+      rtdsWs: "wss://rtds-ws.predict.prax1s.xyz",
     });
   });
 });

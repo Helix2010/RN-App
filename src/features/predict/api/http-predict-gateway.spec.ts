@@ -611,6 +611,7 @@ describe("HttpPredictGateway", () => {
       title: { default: "BTC Up or Down · 5m", zh: "BTC 5 分钟涨跌" },
       recurrence: "5m",
       seriesType: "crypto_periodic",
+      ticker: null,
     });
     // 带 series_id 定位，避免同名 slug 打开别的系列
     expect(

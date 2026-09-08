@@ -34,6 +34,9 @@ export const predictEndpointsSchema = z.object({
   faucet: httpsBaseSchema.optional(),
   /** 地区限制检查服务（平台前端的 GEO_CHECK_URL）。没有派生规则：不填 = 不做地区限制 */
   geo: httpsBaseSchema.optional(),
+  /** 实时数据服务（周期市场实时价 / K 线）：REST 与 WS，不填按 rtds / rtds-ws 子域派生 */
+  rtds: httpsBaseSchema.optional(),
+  rtdsWs: wssBaseSchema.optional(),
 });
 export type PredictEndpoints = z.infer<typeof predictEndpointsSchema>;
 
