@@ -66,4 +66,15 @@ describe("FoundationHomeScreen", () => {
     expect(screen.queryByText(runtime.t("home.predict"))).toBeNull();
     await waitFor(() => expect(screen.getByText("PEPE")).toBeTruthy());
   });
+
+  it("never asks the platform for prediction events while Predict is off", async () => {
+    const gateways = createTestGateways();
+    const listEvents = jest.spyOn(gateways.predict, "listEvents");
+    await renderWithProviders(<FoundationHomeScreen {...props()} />, {
+      gateways,
+      modules: { predict: false },
+    });
+    await waitFor(() => expect(screen.getByText("PEPE")).toBeTruthy());
+    expect(listEvents).not.toHaveBeenCalled();
+  });
 });

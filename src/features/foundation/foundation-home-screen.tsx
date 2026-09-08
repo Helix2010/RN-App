@@ -77,7 +77,10 @@ export function FoundationHomeScreen({
   const address = session.data?.address;
   const overview = useAssetsOverview(address, config.modules.predict);
   // 热门 = 平台按成交量排序的前几条，不写死标签 id
-  const events = usePredictEvents({ sort: "volume", limit: 4 });
+  const events = usePredictEvents(
+    { sort: "volume", limit: 4 },
+    { enabled: config.modules.predict },
+  );
   useMarketStream(
     (events.data?.items ?? []).flatMap((item) =>
       item.markets.slice(0, 2).map((market) => market.id),

@@ -196,7 +196,8 @@ export function SwapScreen({
       return;
     }
     if (insufficient) {
-      onOpenTransfer();
+      // "去划转"是预测账户的能力：预测模块关着时只报余额不足，不进划转页
+      if (config.modules.predict) onOpenTransfer();
       return;
     }
     if (!quote.data) return;
@@ -502,8 +503,9 @@ export function SwapScreen({
           <PrimaryButton
             disabled={
               Boolean(address) &&
-              (!quote.data || approve.isPending) &&
-              !insufficient
+              ((!quote.data || approve.isPending) && !insufficient
+                ? true
+                : insufficient && !config.modules.predict)
             }
             onPress={onPrimary}
             testID="swap-submit"
@@ -511,7 +513,11 @@ export function SwapScreen({
             {!address
               ? t("home.connectWallet")
               : insufficient
-                ? t("swap.insufficient")
+                ? t(
+                    config.modules.predict
+                      ? "swap.insufficient"
+                      : "transfer.insufficient",
+                  )
                 : approve.isPending
                   ? t("swap.approving")
                   : needsApproval

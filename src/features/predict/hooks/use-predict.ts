@@ -28,11 +28,16 @@ export function usePredictTags() {
   });
 }
 
-export function usePredictEvents(query: EventQuery) {
+export function usePredictEvents(
+  query: EventQuery,
+  options: { enabled?: boolean } = {},
+) {
   const { predict } = useGateways();
   return useQuery({
     queryKey: ["predict-events", query],
     queryFn: () => predict.listEvents(query),
+    // 预测模块关着时不能有任何请求打到平台：首页热门榜等共享入口按开关关掉查询
+    enabled: options.enabled ?? true,
     staleTime: 10_000,
   });
 }

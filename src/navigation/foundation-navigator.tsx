@@ -7,6 +7,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { useTheme } from "tamagui";
 import { useFoundationRuntime } from "../app/runtime-context";
 import { AppShellScreen } from "../features/foundation/app-shell-screen";
+import { ModuleGate } from "../features/foundation/module-gate";
 import { SettingsScreen } from "../features/settings/settings-screen";
 import { LanguageSettingsScreen } from "../features/settings/language-settings-screen";
 import { AppearanceSettingsScreen } from "../features/settings/appearance-settings-screen";
@@ -101,81 +102,94 @@ export function FoundationNavigator() {
         />
         <Stack.Screen name="PredictEvent">
           {(props) => (
-            <EventDetailScreen
-              eventId={props.route.params.eventId}
-              marketId={props.route.params.marketId}
-              initialOutcome={props.route.params.outcome}
-              onBack={() => props.navigation.goBack()}
-              onOpenSettlement={(marketId, eventId) =>
-                props.navigation.navigate("PredictSettlement", {
-                  marketId,
-                  eventId,
-                })
-              }
-              onOpenTransfer={(amount) =>
-                props.navigation.navigate("Transfer", {
-                  direction: "deposit",
-                  amount,
-                })
-              }
-            />
+            <ModuleGate module="predict">
+              <EventDetailScreen
+                eventId={props.route.params.eventId}
+                marketId={props.route.params.marketId}
+                initialOutcome={props.route.params.outcome}
+                onBack={() => props.navigation.goBack()}
+                onOpenSettlement={(marketId, eventId) =>
+                  props.navigation.navigate("PredictSettlement", {
+                    marketId,
+                    eventId,
+                  })
+                }
+                onOpenTransfer={(amount) =>
+                  props.navigation.navigate("Transfer", {
+                    direction: "deposit",
+                    amount,
+                  })
+                }
+              />
+            </ModuleGate>
           )}
         </Stack.Screen>
         <Stack.Screen name="Leaderboard">
           {(props) => (
-            <LeaderboardScreen
-              onBack={() => props.navigation.goBack()}
-              onOpenPositions={() => props.navigation.navigate("Positions")}
-            />
+            <ModuleGate module="predict">
+              <LeaderboardScreen
+                onBack={() => props.navigation.goBack()}
+                onOpenPositions={() => props.navigation.navigate("Positions")}
+              />
+            </ModuleGate>
           )}
         </Stack.Screen>
         <Stack.Screen name="Positions">
           {(props) => (
-            <PositionsScreen
-              onBack={() => props.navigation.goBack()}
-              onOpenEvent={(eventId, marketId) =>
-                props.navigation.navigate("PredictEvent", { eventId, marketId })
-              }
-              onOpenSettlement={(marketId, eventId) =>
-                props.navigation.navigate("PredictSettlement", {
-                  marketId,
-                  eventId,
-                })
-              }
-              onOpenTransfer={() => props.navigation.navigate("Transfer")}
-            />
+            <ModuleGate module="predict">
+              <PositionsScreen
+                onBack={() => props.navigation.goBack()}
+                onOpenEvent={(eventId, marketId) =>
+                  props.navigation.navigate("PredictEvent", {
+                    eventId,
+                    marketId,
+                  })
+                }
+                onOpenSettlement={(marketId, eventId) =>
+                  props.navigation.navigate("PredictSettlement", {
+                    marketId,
+                    eventId,
+                  })
+                }
+                onOpenTransfer={() => props.navigation.navigate("Transfer")}
+              />
+            </ModuleGate>
           )}
         </Stack.Screen>
         <Stack.Screen name="PredictSettlement">
           {(props) => (
-            <SettlementScreen
-              marketId={props.route.params.marketId}
-              eventId={props.route.params.eventId}
-              onBack={() => props.navigation.goBack()}
-            />
+            <ModuleGate module="predict">
+              <SettlementScreen
+                marketId={props.route.params.marketId}
+                eventId={props.route.params.eventId}
+                onBack={() => props.navigation.goBack()}
+              />
+            </ModuleGate>
           )}
         </Stack.Screen>
         <Stack.Screen name="DexToken">
           {(props) => (
-            <TokenDetailScreen
-              chain={props.route.params.chain}
-              address={props.route.params.address}
-              onBack={() => props.navigation.goBack()}
-              onSwap={(side) =>
-                props.navigation.navigate(
-                  "Swap",
-                  side === "buy"
-                    ? {
-                        chain: props.route.params.chain,
-                        buyAddress: props.route.params.address,
-                      }
-                    : {
-                        chain: props.route.params.chain,
-                        sellAddress: props.route.params.address,
-                      },
-                )
-              }
-            />
+            <ModuleGate module="dex">
+              <TokenDetailScreen
+                chain={props.route.params.chain}
+                address={props.route.params.address}
+                onBack={() => props.navigation.goBack()}
+                onSwap={(side) =>
+                  props.navigation.navigate(
+                    "Swap",
+                    side === "buy"
+                      ? {
+                          chain: props.route.params.chain,
+                          buyAddress: props.route.params.address,
+                        }
+                      : {
+                          chain: props.route.params.chain,
+                          sellAddress: props.route.params.address,
+                        },
+                  )
+                }
+              />
+            </ModuleGate>
           )}
         </Stack.Screen>
         <Stack.Screen name="Swap">
@@ -190,49 +204,59 @@ export function FoundationNavigator() {
                   )
                 : undefined;
             return (
-              <SwapScreen
-                onBack={() => props.navigation.goBack()}
-                onOpenHistory={() => props.navigation.navigate("SwapHistory")}
-                onOpenTransfer={() => props.navigation.navigate("Transfer")}
-                initialChain={props.route.params?.chain}
-                initialSell={find(props.route.params?.sellAddress)}
-                initialBuy={find(props.route.params?.buyAddress)}
-              />
+              <ModuleGate module="dex">
+                <SwapScreen
+                  onBack={() => props.navigation.goBack()}
+                  onOpenHistory={() => props.navigation.navigate("SwapHistory")}
+                  onOpenTransfer={() => props.navigation.navigate("Transfer")}
+                  initialChain={props.route.params?.chain}
+                  initialSell={find(props.route.params?.sellAddress)}
+                  initialBuy={find(props.route.params?.buyAddress)}
+                />
+              </ModuleGate>
             );
           }}
         </Stack.Screen>
         <Stack.Screen name="Approvals">
           {(props) => (
-            <ApprovalsScreen onBack={() => props.navigation.goBack()} />
+            <ModuleGate module="dex">
+              <ApprovalsScreen onBack={() => props.navigation.goBack()} />
+            </ModuleGate>
           )}
         </Stack.Screen>
         <Stack.Screen name="SwapHistory">
           {(props) => (
-            <SwapHistoryScreen
-              onBack={() => props.navigation.goBack()}
-              onOpenApprovals={() => props.navigation.navigate("Approvals")}
-            />
+            <ModuleGate module="dex">
+              <SwapHistoryScreen
+                onBack={() => props.navigation.goBack()}
+                onOpenApprovals={() => props.navigation.navigate("Approvals")}
+              />
+            </ModuleGate>
           )}
         </Stack.Screen>
         <Stack.Screen name="PredictEnable">
           {(props) => (
-            <PredictEnableScreen
-              onBack={() => props.navigation.goBack()}
-              onDone={() => props.navigation.goBack()}
-            />
+            <ModuleGate module="predict">
+              <PredictEnableScreen
+                onBack={() => props.navigation.goBack()}
+                onDone={() => props.navigation.goBack()}
+              />
+            </ModuleGate>
           )}
         </Stack.Screen>
         <Stack.Screen name="Transfer">
           {(props) => (
-            <TransferScreen
-              direction={props.route.params?.direction}
-              amount={props.route.params?.amount}
-              onBack={() => props.navigation.goBack()}
-              onOpenEnable={() => props.navigation.navigate("PredictEnable")}
-              onOpenRecords={() =>
-                props.navigation.navigate("Records", { tab: "predict" })
-              }
-            />
+            <ModuleGate module="predict">
+              <TransferScreen
+                direction={props.route.params?.direction}
+                amount={props.route.params?.amount}
+                onBack={() => props.navigation.goBack()}
+                onOpenEnable={() => props.navigation.navigate("PredictEnable")}
+                onOpenRecords={() =>
+                  props.navigation.navigate("Records", { tab: "predict" })
+                }
+              />
+            </ModuleGate>
           )}
         </Stack.Screen>
         <Stack.Screen name="Send">
@@ -245,18 +269,22 @@ export function FoundationNavigator() {
         </Stack.Screen>
         <Stack.Screen name="AccountDetail">
           {(props) => (
-            <AccountDetailScreen
-              kind={props.route.params.kind}
-              onBack={() => props.navigation.goBack()}
-              onOpenSend={() => props.navigation.navigate("Send")}
-              onOpenSwap={() => props.navigation.navigate("Swap")}
-              onOpenPredictEnable={() =>
-                props.navigation.navigate("PredictEnable")
-              }
-              onOpenRecords={(tab) =>
-                props.navigation.navigate("Records", { tab })
-              }
-            />
+            <ModuleGate
+              module={props.route.params.kind === "predict" ? "predict" : null}
+            >
+              <AccountDetailScreen
+                kind={props.route.params.kind}
+                onBack={() => props.navigation.goBack()}
+                onOpenSend={() => props.navigation.navigate("Send")}
+                onOpenSwap={() => props.navigation.navigate("Swap")}
+                onOpenPredictEnable={() =>
+                  props.navigation.navigate("PredictEnable")
+                }
+                onOpenRecords={(tab) =>
+                  props.navigation.navigate("Records", { tab })
+                }
+              />
+            </ModuleGate>
           )}
         </Stack.Screen>
         <Stack.Screen name="Records">
