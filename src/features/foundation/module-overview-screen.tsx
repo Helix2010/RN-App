@@ -39,7 +39,10 @@ function PredictMarketsTab() {
         })
       }
       onOpenSeries={(series) =>
-        navigation.navigate("PredictSeries", { slug: series.slug })
+        navigation.navigate("PredictSeries", {
+          slug: series.slug,
+          id: series.id,
+        })
       }
       onOpenTransfer={() => navigation.navigate("Transfer")}
       onOpenEnable={() => navigation.navigate("PredictEnable")}

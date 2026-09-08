@@ -52,10 +52,6 @@ export function usePredictEvent(slugOrId: string | undefined) {
   });
 }
 
-/**
- * 订阅一批市场的实时行情（clob-ws）：订单簿写入 `predict-book`，价格写回已缓存的事件与事件列表，
- * 界面不用额外状态。没有市场时不建连接；id 集合变化时重新订阅。
- */
 /** 首页策展位；调用方按模块开关决定 enabled，关着时不得请求平台 */
 export function useCuratedEvents(options: { enabled?: boolean } = {}) {
   const { predict } = useGateways();
@@ -67,24 +63,27 @@ export function useCuratedEvents(options: { enabled?: boolean } = {}) {
   });
 }
 
-/** 收藏列表：逐个取事件，收藏的 id 不在当前分页里也能看到 */
-export function useFavoriteEvents(ids: string[]) {
+type Gated = { enabled?: boolean };
+
+/** 收藏列表：逐个取事件，收藏的 id 不在当前分页里也能看到；单个失败不影响其余 */
+export function useFavoriteEvents(ids: string[], options: Gated = {}) {
   const { predict } = useGateways();
   return useQueries({
     queries: ids.map((id) => ({
       queryKey: ["predict-event", id],
       queryFn: () => predict.getEvent(id),
+      enabled: options.enabled ?? true,
       staleTime: 10_000,
     })),
   });
 }
 
-export function useHolders(marketId: string | undefined) {
+export function useHolders(marketId: string | undefined, options: Gated = {}) {
   const { predict } = useGateways();
   return useQuery({
     queryKey: ["predict-holders", marketId],
     queryFn: () => predict.getHolders(marketId as string),
-    enabled: Boolean(marketId),
+    enabled: Boolean(marketId) && (options.enabled ?? true),
     staleTime: 60_000,
   });
 }
@@ -99,12 +98,16 @@ export function useSeriesList(options: { enabled?: boolean } = {}) {
   });
 }
 
-export function useSeries(slug: string | undefined) {
+export function useSeries(
+  slug: string | undefined,
+  id?: string,
+  options: Gated = {},
+) {
   const { predict } = useGateways();
   return useQuery({
-    queryKey: ["predict-series", slug],
-    queryFn: () => predict.getSeries(slug as string),
-    enabled: Boolean(slug),
+    queryKey: ["predict-series", slug, id],
+    queryFn: () => predict.getSeries(slug as string, id),
+    enabled: Boolean(slug) && (options.enabled ?? true),
     staleTime: 5 * 60_000,
   });
 }
@@ -114,17 +117,22 @@ export function useSeriesPeriods(
   seriesId: string | undefined,
   scope: "current" | "closed",
   limit?: number,
+  options: Gated = {},
 ) {
   const { predict } = useGateways();
   return useQuery({
     queryKey: ["predict-series-periods", seriesId, scope, limit],
     queryFn: () => predict.listSeriesPeriods(seriesId as string, scope, limit),
-    enabled: Boolean(seriesId),
+    enabled: Boolean(seriesId) && (options.enabled ?? true),
     staleTime: scope === "current" ? 5_000 : 60_000,
     refetchInterval: scope === "current" ? 15_000 : false,
   });
 }
 
+/**
+ * 订阅一批市场的实时行情（clob-ws）：订单簿写入 `predict-book`，价格写回已缓存的事件与事件列表，
+ * 界面不用额外状态。没有市场时不建连接；id 集合变化时重新订阅。
+ */
 export function useMarketStream(marketIds: string[]) {
   const { predict } = useGateways();
   const queryClient = useQueryClient();

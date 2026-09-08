@@ -176,7 +176,8 @@ const gammaSeriesPeriodSchema = z.object({
   stage: z.string().nullish(),
   priceToBeat: gammaSeriesPeriodPriceSchema.nullish(),
   finalPrice: gammaSeriesPeriodPriceSchema.nullish(),
-  result: z.string().nullish(),
+  // 结果只有涨 / 跌两种；别的值说明契约变了，让 schema 直接报错而不是悄悄当作待结算
+  result: z.enum(["up", "down"]).nullish(),
   event: gammaEventSchema.nullish(),
 });
 export type GammaSeriesPeriod = z.infer<typeof gammaSeriesPeriodSchema>;
@@ -297,14 +298,6 @@ export async function fetchMarketsByCondition(
   });
 }
 
-/**
- * 展示价：`(bestBid+bestAsk)/2`，缺一取另一个，都缺取最新成交价（`marketSorting.ts:23-30`）。
- * 都没有返回 null，不编一个 0.5。
- */
-/**
- * 可成交价：0 < p < 1。网页版 adapters.ts:566-567 / orderbookPricing.ts isTradablePrice 同规则；
- * gamma 用 0 表示没数据，1 也不是概率。
- */
 /** 首页策展位（user-dapp `getCurationEvents`）：运营手工排的英雄 / 高亮 / 普通三区 */
 export async function fetchCuratedEvents(
   service: PredictServiceConfig,
@@ -337,13 +330,15 @@ export async function fetchSeriesList(
   });
 }
 
+/** 按 slug 取系列；带 `series_id` 定位（网页版 gamma.ts:267-295：只按 slug 可能打开同名的另一个系列） */
 export async function fetchSeries(
   service: PredictServiceConfig,
   slug: string,
+  seriesId?: string,
 ): Promise<GammaSeries> {
   const hosts = platformHosts(service);
   return platformRequest({
-    url: `${hosts.gamma}/series/slug/${encodeURIComponent(slug)}${query({ exclude_events: true })}`,
+    url: `${hosts.gamma}/series/slug/${encodeURIComponent(slug)}${query({ exclude_events: true, series_id: seriesId })}`,
     tenantDomain: service.domain,
     schema: gammaSeriesSchema,
   });
@@ -374,12 +369,20 @@ export async function fetchSeriesPeriods(
   return response.data;
 }
 
+/**
+ * 可成交价：0 < p < 1。网页版 adapters.ts:566-567 / orderbookPricing.ts isTradablePrice 同规则；
+ * gamma 用 0 表示没数据，1 也不是概率。
+ */
 export function tradablePrice(value: number | null | undefined): number | null {
   return value !== null && value !== undefined && value > 0 && value < 1
     ? value
     : null;
 }
 
+/**
+ * 展示价：`(bestBid+bestAsk)/2`，缺一取另一个，都缺取最新成交价（`marketSorting.ts:23-30`）。
+ * 都没有返回 null，不编一个 0.5。
+ */
 export function displayPrice(market: GammaMarket): number | null {
   const valid = tradablePrice;
   const bid = valid(market.bestBid);

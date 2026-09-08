@@ -181,12 +181,16 @@ export function EventDetailScreen({
       </Page>
     );
   const status = adjudication.data?.status ?? "trading";
+  // 只有交易中且平台接单的市场才有下单入口（大钮、Yes/No 块、盘口点价、底栏）
+  const canOrder = status === "trading" && Boolean(market?.acceptingOrders);
   const openOrder = (
     outcome: Outcome,
     side: OrderSide = "buy",
     limitPriceCents?: number,
   ) =>
-    market && orderSheet.current?.open(market, outcome, side, limitPriceCents);
+    canOrder &&
+    market &&
+    orderSheet.current?.open(market, outcome, side, limitPriceCents);
   const title = event.data ? pickTranslation(event.data.title, locale) : "";
   const maxReturn = (price: number | null) =>
     price === null || price <= 0
@@ -294,7 +298,7 @@ export function EventDetailScreen({
                             })}
                           </Body>
                         </Stack>
-                        {item.closed || item.result ? (
+                        {item.closed || item.result || !item.acceptingOrders ? (
                           <OutcomeResultBadge market={item} />
                         ) : (
                           <InlineText
@@ -407,8 +411,10 @@ export function EventDetailScreen({
                       borderRadius="$4"
                       backgroundColor="$surfaceVariant"
                       gap="$0.5"
-                      onPress={() => openOrder(outcome)}
+                      opacity={canOrder ? 1 : 0.45}
+                      onPress={canOrder ? () => openOrder(outcome) : undefined}
                       accessibilityRole="button"
+                      accessibilityState={{ disabled: !canOrder }}
                       testID={`detail-${outcome}`}
                       pressStyle={{ opacity: 0.8 }}
                     >
@@ -430,6 +436,12 @@ export function EventDetailScreen({
                   );
                 })}
               </Row>
+
+              {market && status === "trading" && !market.acceptingOrders ? (
+                <Body color="$textMuted" testID="detail-not-accepting">
+                  {t("predict.outcome.notAccepting")}
+                </Body>
+              ) : null}
 
               {status !== "trading" ? (
                 <Row
@@ -476,7 +488,7 @@ export function EventDetailScreen({
                   outcome={bookOutcome}
                   onOutcomeChange={setBookOutcome}
                   onPickPrice={
-                    status === "trading"
+                    canOrder
                       ? (priceCents, side) =>
                           openOrder(bookOutcome, side, priceCents)
                       : undefined
@@ -605,7 +617,7 @@ export function EventDetailScreen({
           )}
         </Content>
       </PageScroll>
-      {market && status === "trading" && market.acceptingOrders ? (
+      {market && canOrder ? (
         <Row
           position="absolute"
           left={0}

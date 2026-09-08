@@ -51,21 +51,21 @@
 | C 端 | App | 平台接口 | 备注 |
 | --- | --- | --- | --- |
 | 分类标签条、精选、按成交量 / 临近截止 / 最新排序、分页 | 已对接 | `/tags?is_carousel`、`/events?order=…` | |
-| 状态筛选：交易中 / 全部 / 已结束 | 未对接 | `/events?active=&closed=` | App 写死 `active=true&closed=false`，已结算市场从列表消失 |
-| 24h 成交量排序与展示、流动性排序与展示 | 未对接 | `order=volume24hr`；流动性 C 端本地排序；字段已解析 | |
-| 搜索 | 未对接 | C 端在本地对已加载列表过滤（`MarketList.tsx`） | App 可同样本地过滤，不依赖平台 |
-| 收藏 | 未对接 | C 端本地星标 | 本地存储即可 |
-| 首页策展：英雄轮播、概率榜、今日成交榜、按分类分区 | 未对接 | `/curation/events`（featuredOrderHero / Highlight / Normal、featuredLevel） | App 只取 `featured=true` 一条 |
+| 状态筛选：交易中 / 全部 / 已结束 | 已对接 | `/events?active=&closed=` | 列表状态 chip：trading = `active=true&closed=false`、closed = `closed=true`、all 不带 |
+| 24h 成交量排序与展示、流动性排序与展示 | 已对接 | `order=volume24hr`；流动性按当前页本地排序（与 C 端一致，分页各自排） | 卡片与详情显示 24h / 流动性 |
+| 搜索 | 已对接 | 本地对已加载列表过滤（`event-search.ts`） | 搜索时收起策展与周期市场区块 |
+| 收藏 | 已对接 | 本地星标（`favorites-store`，上限 50） | 收藏视图逐个取事件，单个失败只提示那几个 |
+| 首页策展：英雄轮播、概率榜、今日成交榜、按分类分区 | 已对接 | `/curation/events`（featuredOrderHero / Highlight / Normal、featuredLevel） | hero 轮播、highlight"热门精选"、normal"突发"按运营位次排；高概率 / 今日热门榜按当前页本地算，只在默认排序下显示；按分类分区未做 |
 | 事件 / 市场图片与图标 | 未对接 | `image`、`icon` 字段；App schema 未解析 | 需确认图片域名可被 App 直连 |
-| 详情：完整标签列表、子分类导航 | 未对接 | `tagIds` 已有、`/tags/{id}/related-tags` | App 只显示首个标签 |
-| 详情：每个结果的成交量、结算结果（NO Won / Market Ended） | 未对接 | 每个市场的 `volume`、`closed`、`adjudication` 已解析 | 只在事件级显示一个状态徽章 |
-| 详情：持有人分布（Top Holders） | 未对接 | data-service `GET /holders?market=<conditionId>&limit=` | 纠正此前"平台不提供持有人数"的判断：事件对象不带，但 data 接口有 |
+| 详情：完整标签列表、子分类导航 | 部分 | 事件 `tags` | 完整标签已显示；子分类导航（related-tags）未做 |
+| 详情：每个结果的成交量、结算结果（NO Won / Market Ended） | 已对接 | 每个市场的 `volume`、`closed`、`result`、`acceptingOrders` | 多结果行显示成交量与结果徽章；不接单的市场不给买卖 |
+| 详情：持有人分布（Top Holders） | 已对接 | data-service `GET /holders?market=<conditionId>&limit=` | Yes / No 两列各前 10，名字规则同网页版（name → pseudonym → 地址缩写） |
 | 详情：价格图区间 | 已对接 | `/prices-history` | App 1h/6h/1d/1w/1m/all 比 C 端更多 |
 | 详情：24h 涨跌 | 部分 | `oneDayPriceChange` 字段 | App 用历史序列自算 |
 | 详情：相关市场、分享 | 未对接 | related-tags；分享为本地 | |
-| 市场级规则（`rules-market`） | 部分 | 市场 `description` | App 只显示事件 `description` |
+| 市场级规则（`rules-market`） | 已对接 | 市场 `description` | 与事件规则不同时在规则页签单独显示 |
 | AI 翻译按钮 | 未对接 | C 端 Next 路由代理 Anthropic，密钥在服务端 | App 若要做需 RN-Server 代理，不能内置密钥 |
-| 周期性加密市场（5m/15m/1h 涨跌、K 线、实时价、历史窗口、结果） | 未对接 | `/series`、`/series/{id}/periods`、`SeriesPeriodPrice` | App 主动 `exclude_tag_slug=recurring` |
+| 周期性加密市场（5m/15m/1h 涨跌、K 线、实时价、历史窗口、结果） | 部分 | `/series`（首页 8 个）、`/series/slug/{slug}?series_id=`、`/series/{id}/periods` | 系列卡 + 系列页（当期窗口、参考价、倒计时、历史窗口与结果）；K 线与实时价流未做，交易复用事件详情 |
 | 体育枢纽（联赛导航、赛程、比分、盘口类型） | 部分 | `/sports-events`、`/config/sport-types` | App 只有对阵卡 |
 
 ### 3.2 账户与资金
@@ -86,10 +86,10 @@
 | 市价 / 限价、有效期 5m/1h/12h/永久、错误码映射 | 已对接 | `POST /order`、`/book` | 与 C 端 `orderExpiry.ts` 一致 |
 | 卡片快捷下单 | 部分 | 无新增 | 卡片有 Yes/No，需进详情页下单 |
 | 平仓（限价 / 市价卖出、预估盈亏） | 已对接 | 同下单 | 持仓页"卖出" |
-| 领取、一键领取、零收益清仓、分步进度 | 部分 | `redeemPositions` 经 relayer | 有一键领取；缺零收益清仓与进度对话框；dev 尚无已结算市场可验 |
+| 领取、一键领取、零收益清仓、分步进度 | 部分 | `redeemPositions` 经 relayer | 一键领取、零收益清仓已做；进度对话框简化为按钮"领取中…"文案；dev 尚无已结算市场可验 |
 | 活动类型 | 已对接 | data `/activity` | TRADE / SPLIT / MERGE / REDEEM / CONVERSION / MAKER_REBATE 都已映射（`ACTIVITY_TYPES`）；初稿误记为缺 conversion / rebate，已复核更正 |
 | 持仓 / 挂单搜索与分类筛选、最大盈利 | 未对接 | 本地 | |
-| 盈亏曲线区间 | 部分 | `/user-pnl` | App 固定 1d，C 端 今日 / 7d / 30d / 全部 |
+| 盈亏曲线区间 | 已对接 | `/user-pnl` | 1d / 1w / 1m / 全部 |
 | 实时盘口推送 | 已对接 | `wss://clob-ws/ws/market` | C 端同样只有行情频道，无用户成交推送 |
 
 ### 3.4 结算生命周期
@@ -98,8 +98,8 @@
 | --- | --- | --- | --- |
 | 争议（押金、证据、参考链接） | 已对接 | `POST /disputes/evidence` + 链上 | 待 dev 端到端 |
 | 提交结果提案（用户作为提案人） | 未对接 | 链上 adapter | 网关无 propose |
-| 市场取消 / 退款 | 未对接 | `adjudication.currentPhase` | App 状态枚举无 canceled |
-| 13 种阶段文案（升级中、仲裁待定、取消中等） | 部分 | 同上 | App 结算页步骤条覆盖主线 |
+| 市场取消 / 退款 | 已对接 | `adjudication.currentPhase` | `cancellation_pending` / `canceled` → 状态 canceled，结算页显示取消提示；持仓状态仍按 data-service 的 settled / redeemable 推，不会是 canceled |
+| 13 种阶段文案（升级中、仲裁待定、取消中等） | 已对接 | 同上 | 结算页"当前阶段"行，13 种（gamma phase.go）全部有文案，未收录的原样显示 |
 
 ### 3.5 个人资料与设置、其他
 
@@ -161,3 +161,27 @@
   失效文案 `predict.special` / `predict.today`；ADR 0009 去掉已在用的 `getPnl` 条目；`event.holders` 计数字段由
   `/holders` 榜替代。
 - 文案链路：fallback-config → `pnpm i18n:seed` → RN-Server `sync-rn-app-i18n-seed.mjs` → 推送部署。
+
+### 6.3 对抗审计与修复（2026-09-08 下午）
+
+对着本文档跑了一轮对抗审计（读 pm-cup2026 user-dapp 与 gamma / data-service 源码核对契约），无 Critical；
+开关合规（§2）逐项通过。High / Medium 项已全部修复：
+
+- **策展只用了一半**：hero 轮播没按运营位次排，highlight / normal 两区没用 → `curationZone` 按位次（同位次按 id）排，
+  highlight 进"热门精选"、normal 进"突发"；本地"高概率 / 今日热门"只在默认排序下显示（按"最新"排的一页取前三没意义）。
+- **发现层失败被吞**：策展 / 系列 / 分期请求失败只是区块消失或永远骨架 → 各区块有错误行 + 重试；下拉刷新一并刷新策展与系列。
+- **不接单只藏了底栏**：详情页的 Yes / No 大块与盘口点价仍能开单 → 统一 `canOrder = trading && acceptingOrders`，
+  三处入口一起关，并给出"暂不接单"提示；卡片对不接单的市场也换成徽章。
+- **收藏视图一个失败全黑**：改为已加载的照常显示、失败的只提示条数并可重试；上限 200 → 50（平台按 IP 限流）。
+- **系列卡定时器与轮询**：每张卡一个 `setInterval` → 全局共用一个秒表；首页系列数上限 8（网页版同上限），当期仍 15 秒轮询。
+- **`/series/slug/{slug}` 没带 `series_id`**：路由参数带上 id，请求带 `series_id`，避免同名 slug 打开别的系列。
+- **阶段文案**：补 `manual_needed`，删掉平台没有的 `arbitrated`。
+- **持有人名字规则**：改成与网页版一致（name → pseudonym → 地址缩写），不再按 `displayUsernamePublic` 额外隐藏。
+- **契约收紧（不写兜底）**：分期 `result` 只接受 up / down（其它值让 schema 报错），持有人 `outcomeIndex` 只接受 0 / 1、
+  `amount` 必须是数字；没带事件的分期 `marketId` 为 null 而不是 gamma 数字 id。
+- **24h 成交量口径**：与网页版 adapters.ts 一致，多结果先累加各市场再退到事件级。
+- **窗口已结束但下一期未生成**：显示"已结束"，不再显示"00:00:00 后开始"；历史期按 `stage` 显示结算失败 / 已暂停。
+- **死代码**：`Series.active / closed` 未使用已删；`predict.outcome.notAccepting` 现在可达（不接单徽章）；
+  gamma.ts / use-predict.ts 里被挪走的 JSDoc 归位。
+- 已知未做（记录在 §5 与 ADR 0009）：`/series` 周期市场的 K 线与实时价流；持仓状态不会是 canceled（data-service 不带裁决）；
+  流动性排序是当前页本地排序。

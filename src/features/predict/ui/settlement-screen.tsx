@@ -43,16 +43,16 @@ const PHASE_KEYS = new Set([
   "escalation_pending",
   "awaiting_arbitration",
   "arbitration_pending",
-  "arbitrated",
   "awaiting_settlement",
   "settlement_pending",
   "settled",
   "cancellation_pending",
+  "manual_needed",
   "canceled",
 ]);
 
-/** 阶段文案：平台 currentPhase 是 snake_case；没收录的阶段原样显示，不猜 */
-function phaseLabel(phase: string, t: (key: string) => string): string {
+/** 阶段文案：平台 currentPhase（gamma phase.go 13 种）是 snake_case；没收录的阶段原样显示，不猜 */
+export function phaseLabel(phase: string, t: (key: string) => string): string {
   const key = phase
     .trim()
     .toLowerCase()

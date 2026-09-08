@@ -8,7 +8,7 @@ export type RootStackParamList = {
   PredictEvent: { eventId: string; marketId?: string; outcome?: "yes" | "no" };
   PredictSettlement: { marketId: string; eventId: string };
   PredictEnable: undefined;
-  PredictSeries: { slug: string };
+  PredictSeries: { slug: string; id?: string };
   Leaderboard: undefined;
   Positions: undefined;
   DexToken: { chain: ChainId; address: string };

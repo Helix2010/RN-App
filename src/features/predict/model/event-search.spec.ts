@@ -1,8 +1,10 @@
 import { EVENTS } from "../fixtures/events";
 import {
+  curationZone,
   matchesEventSearch,
   topByProbability,
   topByVolume24h,
+  topYesCents,
 } from "./event-search";
 
 const btc = EVENTS.find((event) => event.id === "ev-btc-120k")!;
@@ -56,5 +58,43 @@ describe("event search", () => {
         3,
       ),
     ).toEqual([]);
+  });
+});
+
+describe("curation zones", () => {
+  const [a, b, c, d] = EVENTS;
+  const items = [
+    { event: a!, hero: 2, highlight: null, normal: 0 },
+    { event: b!, hero: 1, highlight: 5, normal: null },
+    { event: c!, hero: null, highlight: 5, normal: 1 },
+    { event: d!, hero: null, highlight: null, normal: null },
+  ];
+
+  it("orders each zone by the operator rank, ties by numeric id, and skips events outside the zone", () => {
+    expect(curationZone(items, "hero").map((e) => e.id)).toEqual([
+      b!.id,
+      a!.id,
+    ]);
+    // 同位次按 id 排（字符串 id 里的数字按数值比）
+    const tie = [b!, c!].sort((x, y) =>
+      x.id.localeCompare(y.id, undefined, { numeric: true }),
+    );
+    expect(curationZone(items, "highlight").map((e) => e.id)).toEqual(
+      tie.map((e) => e.id),
+    );
+    expect(curationZone(items, "normal", 1).map((e) => e.id)).toEqual([a!.id]);
+    expect(curationZone([], "hero")).toEqual([]);
+  });
+
+  it("reports the top yes price per event or null without quotes", () => {
+    expect(topYesCents(a!)).toBe(
+      Math.max(...a!.markets.map((m) => m.yesPriceCents ?? -1)),
+    );
+    expect(
+      topYesCents({
+        ...a!,
+        markets: a!.markets.map((m) => ({ ...m, yesPriceCents: null })),
+      }),
+    ).toBeNull();
   });
 });

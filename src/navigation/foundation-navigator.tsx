@@ -162,6 +162,7 @@ export function FoundationNavigator() {
             <ModuleGate module="predict">
               <SeriesScreen
                 slug={props.route.params.slug}
+                id={props.route.params.id}
                 onBack={() => props.navigation.goBack()}
                 onOpenEvent={(eventId, marketId, outcome) =>
                   props.navigation.navigate("PredictEvent", {

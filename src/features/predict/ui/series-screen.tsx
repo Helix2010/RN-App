@@ -1,11 +1,6 @@
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
-import {
-  formatCountdown,
-  formatDate,
-  formatPercentCents,
-  NO_QUOTE,
-} from "../../../core/i18n/format";
+import { formatDate, formatPercentCents } from "../../../core/i18n/format";
 import { pickTranslation } from "../../../core/i18n/localized-text";
 import {
   Body,
@@ -19,6 +14,7 @@ import {
   PrimaryButton,
   Row,
   ScreenHeader,
+  SecondaryButton,
   SectionTitle,
   SkeletonBlock,
   Stack,
@@ -26,12 +22,14 @@ import {
 import { useSeries, useSeriesPeriods } from "../hooks/use-predict";
 import type { Outcome, SeriesPeriod } from "../model/predict";
 import {
-  isPeriodLive,
+  periodCountdown,
+  periodPhase,
+  periodResultLabel,
   pickCurrentPeriod,
+  priceLabel,
   useTicking,
   windowLabel,
 } from "./series-card";
-import { fill } from "./shared";
 
 /**
  * 周期市场页：当期窗口（参考价、倒计时、交易入口）+ 历史窗口（参考价 / 结算价 / 涨跌）。
@@ -39,22 +37,26 @@ import { fill } from "./shared";
  */
 export function SeriesScreen({
   slug,
+  id,
   onBack,
   onOpenEvent,
 }: {
   slug: string;
+  /** 平台系列 id：有就带上，避免同名 slug 打开别的系列 */
+  id?: string;
   onBack: () => void;
   onOpenEvent: (eventId: string, marketId: string, outcome?: Outcome) => void;
 }) {
   const insets = useSafeAreaInsets();
   const { config, t } = useFoundationRuntime();
   const locale = config.localization.selectedLocale;
-  const series = useSeries(slug);
+  const series = useSeries(slug, id);
   const current = useSeriesPeriods(series.data?.id, "current", 2);
   const past = useSeriesPeriods(series.data?.id, "closed", 12);
   const now = useTicking();
   const period = current.data ? pickCurrentPeriod(current.data, now) : null;
-  const live = period ? isPeriodLive(period, now) : false;
+  const phase = period ? periodPhase(period, now) : "ended";
+  const live = phase === "live";
   const market = period?.event?.markets[0];
 
   if (series.isError)
@@ -97,7 +99,9 @@ export function SeriesScreen({
             <SectionTitle fontSize={14}>
               {t("predict.series.current")}
             </SectionTitle>
-            {current.data === undefined ? (
+            {current.isError ? (
+              <QueryError onRetry={() => void current.refetch()} />
+            ) : current.data === undefined ? (
               <SkeletonBlock height={96} />
             ) : period ? (
               <>
@@ -107,9 +111,7 @@ export function SeriesScreen({
                     fontWeight="800"
                     color={live ? "$success" : "$textMuted"}
                   >
-                    {t(
-                      live ? "predict.series.live" : "predict.series.upcoming",
-                    )}
+                    {t(`predict.series.${phase}`)}
                   </InlineText>
                   <Body fontSize={12}>{windowLabel(period, locale)}</Body>
                 </Row>
@@ -118,25 +120,11 @@ export function SeriesScreen({
                   fontWeight="900"
                   testID="series-countdown"
                 >
-                  {fill(
-                    t(
-                      live
-                        ? "predict.series.endsIn"
-                        : "predict.series.startsIn",
-                    ),
-                    {
-                      time: formatCountdown(
-                        live ? period.windowEnd : period.windowStart,
-                        now,
-                      ),
-                    },
-                  )}
+                  {periodCountdown(period, now, t)}
                 </InlineText>
                 <DetailRow
                   label={t("predict.series.priceToBeat")}
-                  value={
-                    period.priceToBeat ? period.priceToBeat.price : NO_QUOTE
-                  }
+                  value={priceLabel(period.priceToBeat, locale)}
                 />
                 {market ? (
                   <>
@@ -179,7 +167,9 @@ export function SeriesScreen({
             <SectionTitle fontSize={14}>
               {t("predict.series.past")}
             </SectionTitle>
-            {past.data === undefined ? (
+            {past.isError ? (
+              <QueryError onRetry={() => void past.refetch()} />
+            ) : past.data === undefined ? (
               <SkeletonBlock height={120} />
             ) : past.data.length === 0 ? (
               <Body>{t("predict.series.noPeriods")}</Body>
@@ -198,12 +188,7 @@ export function SeriesScreen({
 function PastPeriodRow({ period }: { period: SeriesPeriod }) {
   const { config, t } = useFoundationRuntime();
   const locale = config.localization.selectedLocale;
-  const resultLabel =
-    period.result === "up"
-      ? t("predict.series.up")
-      : period.result === "down"
-        ? t("predict.series.down")
-        : t("predict.series.pending");
+  const resultLabel = periodResultLabel(period, t);
   return (
     <Row
       alignItems="center"
@@ -220,9 +205,9 @@ function PastPeriodRow({ period }: { period: SeriesPeriod }) {
         <Body fontSize={11}>
           {formatDate(period.windowEnd, locale)} ·{" "}
           {t("predict.series.priceToBeat")}{" "}
-          {period.priceToBeat?.price ?? NO_QUOTE} ·{" "}
+          {priceLabel(period.priceToBeat, locale)} ·{" "}
           {t("predict.series.finalPrice")}{" "}
-          {period.finalPrice?.price ?? NO_QUOTE}
+          {priceLabel(period.finalPrice, locale)}
         </Body>
       </Stack>
       <InlineText
@@ -237,6 +222,18 @@ function PastPeriodRow({ period }: { period: SeriesPeriod }) {
       >
         {resultLabel}
       </InlineText>
+    </Row>
+  );
+}
+
+function QueryError({ onRetry }: { onRetry: () => void }) {
+  const { t } = useFoundationRuntime();
+  return (
+    <Row alignItems="center" justifyContent="space-between" gap="$2">
+      <Body color="$danger">{t("state.error")}</Body>
+      <SecondaryButton height={32} onPress={onRetry}>
+        {t("action.retryNow")}
+      </SecondaryButton>
     </Row>
   );
 }

@@ -11,8 +11,12 @@ const holderSchema = z.object({
   asset: z.string().nullish(),
   name: z.string().nullish(),
   pseudonym: z.string().nullish(),
-  amount: z.union([z.number(), z.string()]).transform(Number),
-  outcomeIndex: z.number(),
+  amount: z
+    .union([z.number(), z.string()])
+    .transform(Number)
+    .refine(Number.isFinite, "amount must be numeric"),
+  // 0 = YES、1 = NO；别的下标说明契约变了，直接报 MALFORMED
+  outcomeIndex: z.union([z.literal(0), z.literal(1)]),
   displayUsernamePublic: z.boolean().nullish(),
 });
 const holderGroupSchema = z.object({

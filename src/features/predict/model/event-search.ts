@@ -1,5 +1,5 @@
 import type { LocalizedText } from "../../../core/i18n/localized-text";
-import type { PredictEvent } from "./predict";
+import type { CuratedEvent, PredictEvent } from "./predict";
 
 function texts(value: LocalizedText | undefined | null): string[] {
   if (!value) return [];
@@ -30,19 +30,22 @@ export function matchesEventSearch(
   return haystack.some((text) => text.toLowerCase().includes(needle));
 }
 
+/** 事件里最高的 Yes 价（分）；所有市场都没报价时为 null */
+export function topYesCents(event: PredictEvent): number | null {
+  const cents = Math.max(
+    -1,
+    ...event.markets.map((market) => market.yesPriceCents ?? -1),
+  );
+  return cents >= 0 ? cents : null;
+}
+
 /** 概率榜：每个事件取其最高 Yes 价，按高到低排 */
 export function topByProbability(
   events: PredictEvent[],
   limit = 3,
 ): { event: PredictEvent; cents: number }[] {
   return events
-    .map((event) => ({
-      event,
-      cents: Math.max(
-        -1,
-        ...event.markets.map((market) => market.yesPriceCents ?? -1),
-      ),
-    }))
+    .map((event) => ({ event, cents: topYesCents(event) ?? -1 }))
     .filter((item) => item.cents >= 0)
     .sort((a, b) => b.cents - a.cents)
     .slice(0, limit);
@@ -57,4 +60,24 @@ export function topByVolume24h(
     .filter((event) => event.volume24hUsd > 0)
     .sort((a, b) => b.volume24hUsd - a.volume24hUsd)
     .slice(0, limit);
+}
+
+/**
+ * 策展分区：按运营给的位次升序（网页版 HomepageCurationSection `orderForZone`，同位次按 id 升序），
+ * hero 进轮播，highlight 是"热门精选"，normal 是"突发"。
+ */
+export function curationZone(
+  items: CuratedEvent[],
+  zone: "hero" | "highlight" | "normal",
+  limit = Number.POSITIVE_INFINITY,
+): PredictEvent[] {
+  return items
+    .filter((item) => item[zone] !== null)
+    .sort(
+      (a, b) =>
+        (a[zone] as number) - (b[zone] as number) ||
+        a.event.id.localeCompare(b.event.id, undefined, { numeric: true }),
+    )
+    .slice(0, limit)
+    .map((item) => item.event);
 }

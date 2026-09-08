@@ -9,8 +9,6 @@ export const SERIES: Series[] = [
     title: localized("BTC 5 分钟涨跌", "BTC Up or Down · 5m"),
     recurrence: "5m",
     seriesType: "recurring",
-    active: true,
-    closed: false,
   },
 ];
 

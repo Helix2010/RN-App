@@ -13,11 +13,11 @@ describe("favorites store", () => {
   });
 
   it("keeps insertion order and drops the oldest past the limit", () => {
-    for (let index = 0; index < 205; index += 1)
+    for (let index = 0; index < 55; index += 1)
       useFavoritesStore.getState().toggle(`ev-${index}`);
     const ids = useFavoritesStore.getState().ids;
-    expect(ids).toHaveLength(200);
+    expect(ids).toHaveLength(50);
     expect(ids[0]).toBe("ev-5");
-    expect(ids[ids.length - 1]).toBe("ev-204");
+    expect(ids[ids.length - 1]).toBe("ev-54");
   });
 });

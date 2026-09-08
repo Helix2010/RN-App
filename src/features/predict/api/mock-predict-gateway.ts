@@ -481,10 +481,10 @@ export class MockPredictGateway implements PredictGateway {
     return simulate(() => (isEmptyMode() ? [] : SERIES));
   }
 
-  async getSeries(slug: string): Promise<Series> {
+  async getSeries(slug: string, id?: string): Promise<Series> {
     return simulate(() => {
       const series = SERIES.find(
-        (item) => item.slug === slug || item.id === slug,
+        (item) => item.slug === slug && (id === undefined || item.id === id),
       );
       if (!series) throw new Error(`series not found: ${slug}`);
       return series;

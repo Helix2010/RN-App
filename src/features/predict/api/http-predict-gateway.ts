@@ -326,8 +326,6 @@ function mapSeries(raw: GammaSeries): Series {
     title: translationOf(raw.titleTranslation, raw.title ?? raw.slug),
     recurrence: raw.recurrence ?? "",
     seriesType: raw.seriesType ?? "",
-    active: raw.active ?? true,
-    closed: raw.closed ?? false,
   };
 }
 
@@ -454,9 +452,15 @@ export class HttpPredictGateway implements PredictGateway {
       volumeUsd: multi
         ? rawMarkets.reduce((sum, market) => sum + (market.volume ?? 0), 0)
         : (primary?.volume ?? event.volume ?? 0),
-      volume24hUsd:
-        event.volume24hr ??
-        rawMarkets.reduce((sum, market) => sum + (market.volume24hr ?? 0), 0),
+      // 网页版 adapters.ts:503-505：多结果先累加各市场，再退到事件级；二元取主市场，再退到事件级
+      volume24hUsd: multi
+        ? rawMarkets.reduce(
+            (sum, market) => sum + (market.volume24hr ?? 0),
+            0,
+          ) ||
+          event.volume24hr ||
+          0
+        : (primary?.volume24hr ?? event.volume24hr ?? 0),
       liquidityUsd:
         event.liquidity ??
         rawMarkets.reduce((sum, market) => sum + (market.liquidity ?? 0), 0),
@@ -747,13 +751,11 @@ export class HttpPredictGateway implements PredictGateway {
     };
     for (const group of groups)
       for (const holder of group.holders) {
-        const outcome: Outcome = holder.outcomeIndex === 1 ? "no" : "yes";
+        const outcome: Outcome = holder.outcomeIndex === 0 ? "yes" : "no";
         byOutcome[outcome].holders.push({
           address: holder.proxyWallet,
-          name:
-            holder.displayUsernamePublic && holder.name
-              ? holder.name
-              : holder.pseudonym || null,
+          // 与网页版 OutcomeList.tsx formatHolderName 一致：名字 → 化名 → 无（地址由界面缩写显示）
+          name: holder.name || holder.pseudonym || null,
           shares: holder.amount,
         });
       }
@@ -763,14 +765,15 @@ export class HttpPredictGateway implements PredictGateway {
     }));
   }
 
+  /** 首页最多 8 个系列（网页版 useHomepageCategoryMarkets 同上限）：每个系列卡都轮询当期，不能无上限 */
   async listSeries(): Promise<Series[]> {
     const service = await this.service();
-    return (await fetchSeriesList(service)).map(mapSeries);
+    return (await fetchSeriesList(service, { limit: 8 })).map(mapSeries);
   }
 
-  async getSeries(slug: string): Promise<Series> {
+  async getSeries(slug: string, id?: string): Promise<Series> {
     const service = await this.service();
-    return mapSeries(await fetchSeries(service, slug));
+    return mapSeries(await fetchSeries(service, slug, id));
   }
 
   async listSeriesPeriods(
@@ -792,8 +795,8 @@ export class HttpPredictGateway implements PredictGateway {
       id: raw.id,
       seriesId: raw.seriesId,
       eventId: raw.eventId,
-      // 交易用 conditionId；平台 periods 里的 marketId 是 gamma 数字 id，只在没带事件时保留
-      marketId: event?.markets[0]?.id ?? String(raw.marketId ?? ""),
+      // 交易用 conditionId；平台 periods 里的 marketId 是 gamma 数字 id，不混进来
+      marketId: event?.markets[0]?.id ?? null,
       windowStart: raw.windowStart,
       windowEnd: raw.windowEnd,
       stage: raw.stage ?? "",
@@ -811,7 +814,7 @@ export class HttpPredictGateway implements PredictGateway {
             sampledAt: raw.finalPrice.sampledAt ?? undefined,
           }
         : null,
-      result: raw.result === "up" || raw.result === "down" ? raw.result : null,
+      result: raw.result ?? null,
       event,
     };
   }

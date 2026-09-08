@@ -163,6 +163,18 @@ describe("MarketListScreen", () => {
     expect(screen.queryByTestId("predict-favorites-empty")).toBeNull();
   });
 
+  it("keeps the loaded favorites when one favorite no longer exists on the platform", async () => {
+    useFavoritesStore.setState({ ids: ["ev-btc-120k", "ev-gone"] });
+    await renderWithProviders(
+      <MarketListScreen {...props()} showPositionsEntry />,
+    );
+    await fireEvent.press(await screen.findByTestId("predict-favorites"));
+    expect(await screen.findByTestId("event-ev-btc-120k")).toBeTruthy();
+    expect(await screen.findByTestId("predict-favorites-error")).toBeTruthy();
+    expect(screen.getByText("1 个收藏的市场加载失败")).toBeTruthy();
+    useFavoritesStore.setState({ ids: [] });
+  });
+
   it("lists recurring series and opens one", async () => {
     const p = props();
     await renderWithProviders(<MarketListScreen {...p} showPositionsEntry />);

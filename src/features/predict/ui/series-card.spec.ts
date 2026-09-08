@@ -1,5 +1,14 @@
 import type { SeriesPeriod } from "../model/predict";
-import { isPeriodLive, pickCurrentPeriod } from "./series-card";
+import {
+  isPeriodLive,
+  periodCountdown,
+  periodPhase,
+  periodResultLabel,
+  pickCurrentPeriod,
+  subscribeTick,
+} from "./series-card";
+
+const t = (key: string) => key;
 
 function period(id: string, start: string, end: string): SeriesPeriod {
   return {
@@ -45,5 +54,58 @@ describe("series periods", () => {
     expect(isPeriodLive(p2, at("2026-08-30T11:59:59Z"))).toBe(true);
     expect(isPeriodLive(p2, at("2026-08-30T12:00:00Z"))).toBe(false);
     expect(isPeriodLive(p2, at("2026-08-30T11:54:59Z"))).toBe(false);
+  });
+
+  it("labels the window phase and countdown, and reports failed / held stages", () => {
+    expect(periodPhase(p2, at("2026-08-30T11:57:00Z"))).toBe("live");
+    expect(periodPhase(p2, at("2026-08-30T11:50:00Z"))).toBe("upcoming");
+    expect(periodPhase(p2, at("2026-08-30T12:30:00Z"))).toBe("ended");
+    expect(periodCountdown(p2, at("2026-08-30T11:57:00Z"), t)).toContain(
+      "predict.series.endsIn",
+    );
+    expect(periodCountdown(p2, at("2026-08-30T11:50:00Z"), t)).toContain(
+      "predict.series.startsIn",
+    );
+    expect(periodCountdown(p2, at("2026-08-30T12:30:00Z"), t)).toBe(
+      "predict.series.ended",
+    );
+    expect(periodResultLabel({ ...p1, result: "up" }, t)).toBe(
+      "predict.series.up",
+    );
+    expect(periodResultLabel({ ...p1, result: "down" }, t)).toBe(
+      "predict.series.down",
+    );
+    expect(periodResultLabel({ ...p1, stage: "failed" }, t)).toBe(
+      "predict.series.stage.failed",
+    );
+    expect(periodResultLabel({ ...p1, stage: "held" }, t)).toBe(
+      "predict.series.stage.held",
+    );
+    expect(periodResultLabel({ ...p1, stage: "closing" }, t)).toBe(
+      "predict.series.pending",
+    );
+  });
+
+  it("shares one interval between every ticking subscriber and stops it with the last one", () => {
+    jest.useFakeTimers();
+    const before = jest.getTimerCount();
+    const a = jest.fn();
+    const b = jest.fn();
+    const stopA = subscribeTick(a);
+    const stopB = subscribeTick(b);
+    // 两个订阅者只多出一个秒表
+    expect(jest.getTimerCount()).toBe(before + 1);
+    jest.advanceTimersByTime(1_000);
+    expect(a).toHaveBeenCalledTimes(1);
+    expect(b).toHaveBeenCalledTimes(1);
+    stopA();
+    jest.advanceTimersByTime(1_000);
+    expect(a).toHaveBeenCalledTimes(1);
+    expect(b).toHaveBeenCalledTimes(2);
+    stopB();
+    expect(jest.getTimerCount()).toBe(before);
+    jest.advanceTimersByTime(1_000);
+    expect(b).toHaveBeenCalledTimes(2);
+    jest.useRealTimers();
   });
 });

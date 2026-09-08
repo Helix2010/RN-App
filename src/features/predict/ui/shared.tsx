@@ -257,7 +257,7 @@ export function EventCard({
                 {formatPercentCents(market.yesPriceCents)}
               </InlineText>
               <Stack width={132} alignItems="flex-end">
-                {market.closed || market.result ? (
+                {market.closed || market.result || !market.acceptingOrders ? (
                   <OutcomeResultBadge market={market} />
                 ) : (
                   <YesNoButtons
@@ -294,7 +294,7 @@ export function EventCard({
               <Body fontSize={10}>{t("predict.probability")}</Body>
             </Stack>
           </Row>
-          {primary.closed || primary.result ? (
+          {primary.closed || primary.result || !primary.acceptingOrders ? (
             <Row>
               <OutcomeResultBadge market={primary} />
             </Row>

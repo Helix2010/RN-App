@@ -561,7 +561,7 @@ describe("HttpPredictGateway", () => {
     expect(curated[0]?.event.id).toBe("42");
   });
 
-  it("groups holders by outcome, sorts by shares and hides names that are not public", async () => {
+  it("groups holders by outcome, sorts by shares and names them name → pseudonym like the web", async () => {
     const { gateway, seen } = build();
     const groups = await gateway.getHolders(CONDITION);
     const call = seen.find((item) => item.url.pathname === "/holders");
@@ -570,7 +570,7 @@ describe("HttpPredictGateway", () => {
     expect(call?.url.searchParams.get("limit")).toBe("10");
     expect(groups.map((group) => group.outcome)).toEqual(["yes", "no"]);
     expect(groups[0]?.holders).toEqual([
-      { address: "0xbbb", name: "Loud-Owl", shares: 40 },
+      { address: "0xbbb", name: "Bob", shares: 40 },
       { address: "0xaaa", name: "Alice", shares: 12.5 },
     ]);
     expect(groups[1]?.holders).toEqual([
@@ -582,16 +582,26 @@ describe("HttpPredictGateway", () => {
     const { gateway, seen } = build();
     const list = await gateway.listSeries();
     expect(list.map((item) => item.slug)).toEqual(["btc-updown-5m"]);
-    const series = await gateway.getSeries("btc-updown-5m");
+    // 首页最多 8 个系列（每个都轮询当期）
+    expect(
+      seen
+        .find((item) => item.url.pathname === "/series")
+        ?.url.searchParams.get("limit"),
+    ).toBe("8");
+    const series = await gateway.getSeries("btc-updown-5m", "5");
     expect(series).toEqual({
       id: "5",
       slug: "btc-updown-5m",
       title: { default: "BTC Up or Down · 5m", zh: "BTC 5 分钟涨跌" },
       recurrence: "5m",
       seriesType: "crypto_periodic",
-      active: true,
-      closed: false,
     });
+    // 带 series_id 定位，避免同名 slug 打开别的系列
+    expect(
+      seen
+        .find((item) => item.url.pathname === "/series/slug/btc-updown-5m")
+        ?.url.searchParams.get("series_id"),
+    ).toBe("5");
     const periods = await gateway.listSeriesPeriods("5", "current", 2);
     const call = seen.find((item) => item.url.pathname === "/series/5/periods");
     expect(call?.url.searchParams.get("current")).toBe("true");
@@ -607,9 +617,9 @@ describe("HttpPredictGateway", () => {
       result: null,
     });
     expect(periods[0]?.event?.id).toBe("42");
-    // 没带事件的历史期：市场 id 退到平台的数字 id，结果与结算价原样映射
+    // 没带事件的历史期：没有 conditionId 就是 null（不拿 gamma 数字 id 冒充），结果与结算价原样映射
     expect(periods[1]).toMatchObject({
-      marketId: "6",
+      marketId: null,
       priceToBeat: { price: "64990", source: "" },
       finalPrice: { price: "65000.5", source: "binance" },
       result: "up",

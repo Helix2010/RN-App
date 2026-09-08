@@ -55,7 +55,8 @@ export interface PredictGateway {
   getHolders(marketId: string): Promise<HolderGroup[]>;
   /** 周期性系列（BTC 5m 涨跌等）与分期 */
   listSeries(): Promise<Series[]>;
-  getSeries(slug: string): Promise<Series>;
+  /** 按 slug 取系列，能给 id 就一起给（同名 slug 定位） */
+  getSeries(slug: string, id?: string): Promise<Series>;
   listSeriesPeriods(
     seriesId: string,
     scope: "current" | "closed",

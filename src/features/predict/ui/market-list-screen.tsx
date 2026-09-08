@@ -42,9 +42,11 @@ import {
   useSeriesList,
 } from "../hooks/use-predict";
 import {
+  curationZone,
   matchesEventSearch,
   topByProbability,
   topByVolume24h,
+  topYesCents,
 } from "../model/event-search";
 import { useFavoritesStore } from "../model/favorites-store";
 import type {
@@ -123,49 +125,79 @@ export function MarketListScreen({
   );
   // 收藏视图逐个取事件（收藏的 id 不一定在当前分页里）
   const favoriteQueries = useFavoriteEvents(favoritesOnly ? favoriteIds : []);
-  // 策展（精选轮播 / 榜单）与周期市场只在默认标签 + 交易中视图展示
+  // 策展（精选轮播 / 榜单）与周期市场只在默认标签 + 交易中视图展示；搜索时收起，让结果直接可见
   const discovery =
-    tagId === defaultTag && status === "trading" && !favoritesOnly;
+    tagId === defaultTag &&
+    status === "trading" &&
+    !favoritesOnly &&
+    search.trim() === "";
   const curated = useCuratedEvents({ enabled: discovery });
   const seriesList = useSeriesList({ enabled: discovery });
+  // 策展三区：hero 轮播、highlight"热门精选"、normal"突发"，都按运营位次排
   const heroes = useMemo(
-    () => (curated.data ?? []).filter((item) => item.hero !== null),
+    () => curationZone(curated.data ?? [], "hero"),
+    [curated.data],
+  );
+  const hotPicks = useMemo(
+    () => curationZone(curated.data ?? [], "highlight", 3),
+    [curated.data],
+  );
+  const breaking = useMemo(
+    () => curationZone(curated.data ?? [], "normal", 3),
     [curated.data],
   );
   const heroIds = useMemo(
-    () => new Set(heroes.map((item) => item.event.id)),
+    () => new Set(heroes.map((event) => event.id)),
     [heroes],
   );
-  // 当前视图的事件：收藏视图来自逐个查询，其余来自分页；再套本地搜索
-  const visible = useMemo(() => {
+  // 当前视图的事件：收藏视图来自逐个查询（单个失败不拖累其余），其余来自分页；再套本地搜索，
+  // 已在精选轮播里的不再重复出现在列表
+  const listItems = useMemo(() => {
     const source = favoritesOnly
       ? favoriteQueries.flatMap((query) => (query.data ? [query.data] : []))
       : (events.data?.items ?? []);
-    return source.filter((event) => matchesEventSearch(event, search));
-  }, [events.data, favoriteQueries, favoritesOnly, search]);
+    return source.filter(
+      (event) =>
+        matchesEventSearch(event, search) &&
+        !(discovery && heroIds.has(event.id)),
+    );
+  }, [discovery, events.data, favoriteQueries, favoritesOnly, heroIds, search]);
+  // 本地榜单只在默认排序下有意义（按"最新"排的一页取前三没有"高概率"的含义）
+  const localRanks = discovery && sort === "volume";
   const topProbability = useMemo(
-    () => (discovery ? topByProbability(events.data?.items ?? []) : []),
-    [discovery, events.data],
+    () => (localRanks ? topByProbability(events.data?.items ?? []) : []),
+    [localRanks, events.data],
   );
   const topToday = useMemo(
-    () => (discovery ? topByVolume24h(events.data?.items ?? []) : []),
-    [discovery, events.data],
+    () => (localRanks ? topByVolume24h(events.data?.items ?? []) : []),
+    [localRanks, events.data],
   );
   // 列表与精选卡片里展示的市场走实时行情（每个事件最多前 3 个结果）
   useMarketStream(
-    [...heroes.map((item) => item.event), ...visible].flatMap((item) =>
+    [...heroes, ...listItems].flatMap((item) =>
       item.markets.slice(0, 3).map((market) => market.id),
     ),
   );
+  const favoriteFailed = favoriteQueries.filter((query) => query.isError);
   const listLoading = favoritesOnly
-    ? favoriteQueries.some((query) => query.isPending)
+    ? favoriteQueries.length > 0 &&
+      favoriteQueries.every((query) => query.isPending)
     : events.data === undefined && !events.isError;
+  // 收藏视图里单个失败只提示那几个，其余照常显示；分页视图失败就是整页失败
   const listError = favoritesOnly
-    ? favoriteQueries.some((query) => query.isError)
+    ? favoriteQueries.length > 0 &&
+      favoriteQueries.every((query) => query.isError)
     : events.isError;
   const retry = () => {
-    if (favoritesOnly) favoriteQueries.forEach((query) => void query.refetch());
+    if (favoritesOnly) favoriteFailed.forEach((query) => void query.refetch());
     else void events.refetch();
+  };
+  const refreshAll = () => {
+    retry();
+    if (discovery) {
+      void curated.refetch();
+      void seriesList.refetch();
+    }
   };
 
   return (
@@ -173,7 +205,7 @@ export function MarketListScreen({
       <PageScroll
         refresh={{
           refreshing: events.isRefetching,
-          onRefresh: () => void events.refetch(),
+          onRefresh: refreshAll,
           accessibilityLabel: t("action.refresh"),
         }}
       >
@@ -316,9 +348,18 @@ export function MarketListScreen({
             ))}
           </HorizontalScroll>
 
+          {discovery && curated.isError ? (
+            <InlineError
+              message={t("predict.curation.error")}
+              retryLabel={t("action.retryNow")}
+              onRetry={() => void curated.refetch()}
+              testID="predict-curation-error"
+            />
+          ) : null}
+
           {discovery && heroes.length > 0 ? (
             <HorizontalScroll>
-              {heroes.map(({ event }) => (
+              {heroes.map((event) => (
                 <Stack
                   key={event.id}
                   width={300}
@@ -337,8 +378,12 @@ export function MarketListScreen({
                       colorToken="primary"
                     />
                     <InlineText fontSize={11} fontWeight="800" color="$primary">
-                      {t("predict.curation.hero")} ·{" "}
-                      {pickTranslation(event.category, locale).toUpperCase()}
+                      {[
+                        t("predict.curation.hero"),
+                        pickTranslation(event.category, locale).toUpperCase(),
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
                     </InlineText>
                   </Row>
                   <SectionTitle numberOfLines={2}>
@@ -375,7 +420,34 @@ export function MarketListScreen({
             </HorizontalScroll>
           ) : null}
 
-          {discovery && (topProbability.length > 0 || topToday.length > 0) ? (
+          {discovery && (hotPicks.length > 0 || breaking.length > 0) ? (
+            <Row gap="$2" alignItems="flex-start">
+              {hotPicks.length > 0 ? (
+                <RankList
+                  title={t("predict.curation.hotPicks")}
+                  items={hotPicks.map((event) => ({
+                    event,
+                    value: formatPercentCents(topYesCents(event)),
+                  }))}
+                  onOpen={onOpenEvent}
+                  testID="predict-hot-picks"
+                />
+              ) : null}
+              {breaking.length > 0 ? (
+                <RankList
+                  title={t("predict.curation.breaking")}
+                  items={breaking.map((event) => ({
+                    event,
+                    value: formatPercentCents(topYesCents(event)),
+                  }))}
+                  onOpen={onOpenEvent}
+                  testID="predict-breaking"
+                />
+              ) : null}
+            </Row>
+          ) : null}
+
+          {localRanks && (topProbability.length > 0 || topToday.length > 0) ? (
             <Row gap="$2" alignItems="flex-start">
               {topProbability.length > 0 ? (
                 <RankList
@@ -404,6 +476,15 @@ export function MarketListScreen({
             </Row>
           ) : null}
 
+          {discovery && seriesList.isError ? (
+            <InlineError
+              message={t("predict.series.error")}
+              retryLabel={t("action.retryNow")}
+              onRetry={() => void seriesList.refetch()}
+              testID="predict-series-error"
+            />
+          ) : null}
+
           {discovery && seriesList.data && seriesList.data.length > 0 ? (
             <Stack gap="$2" testID="predict-series">
               <SectionTitle fontSize={14}>
@@ -420,26 +501,35 @@ export function MarketListScreen({
             </Stack>
           ) : null}
 
+          {favoritesOnly && !listError && favoriteFailed.length > 0 ? (
+            <InlineError
+              message={fill(t("predict.favorites.loadFailed"), {
+                n: favoriteFailed.length,
+              })}
+              retryLabel={t("action.retryNow")}
+              onRetry={retry}
+              testID="predict-favorites-error"
+            />
+          ) : null}
+
           {favoritesOnly && favoriteIds.length === 0 ? (
             <Body testID="predict-favorites-empty">
               {t("predict.favorites.empty")}
             </Body>
           ) : !listLoading && !listError ? (
-            visible.length === 0 ? (
+            listItems.length === 0 ? (
               <Body>
                 {search.trim() ? t("predict.search.empty") : t("state.empty")}
               </Body>
             ) : (
-              visible
-                .filter((event) => !(discovery && heroIds.has(event.id)))
-                .map((event) => (
-                  <EventCard
-                    key={event.id}
-                    event={event}
-                    onOpen={onOpenEvent}
-                    onOrder={onOrder}
-                  />
-                ))
+              listItems.map((event) => (
+                <EventCard
+                  key={event.id}
+                  event={event}
+                  onOpen={onOpenEvent}
+                  onOrder={onOrder}
+                />
+              ))
             )
           ) : listError ? (
             <Row alignItems="center" justifyContent="space-between">
@@ -541,5 +631,33 @@ function RankList({
         </Row>
       ))}
     </Stack>
+  );
+}
+
+function InlineError({
+  message,
+  retryLabel,
+  onRetry,
+  testID,
+}: {
+  message: string;
+  retryLabel: string;
+  onRetry: () => void;
+  testID?: string;
+}) {
+  return (
+    <Row
+      alignItems="center"
+      justifyContent="space-between"
+      gap="$2"
+      testID={testID}
+    >
+      <Body color="$danger" flex={1}>
+        {message}
+      </Body>
+      <SecondaryButton height={32} onPress={onRetry}>
+        {retryLabel}
+      </SecondaryButton>
+    </Row>
   );
 }

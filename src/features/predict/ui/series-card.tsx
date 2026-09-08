@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { useFoundationRuntime } from "../../../app/runtime-context";
-import { formatCountdown, formatPercentCents } from "../../../core/i18n/format";
+import {
+  formatCountdown,
+  formatPercentCents,
+  formatUsd,
+  NO_QUOTE,
+} from "../../../core/i18n/format";
 import { pickTranslation } from "../../../core/i18n/localized-text";
 import { mockNow } from "../../../core/mock/mock-runtime";
 import {
@@ -8,6 +13,7 @@ import {
   Card,
   InlineText,
   Row,
+  SecondaryButton,
   SectionTitle,
   SkeletonBlock,
   Stack,
@@ -45,6 +51,46 @@ export function isPeriodLive(period: SeriesPeriod, nowMs: number): boolean {
   );
 }
 
+/** 当期窗口相对现在的状态：进行中 / 未开始 / 已结束（最后一期结束、下一期还没生成时） */
+export function periodPhase(
+  period: SeriesPeriod,
+  nowMs: number,
+): "live" | "upcoming" | "ended" {
+  if (isPeriodLive(period, nowMs)) return "live";
+  return new Date(period.windowStart).getTime() > nowMs ? "upcoming" : "ended";
+}
+
+/** 窗口状态一行：进行中给"剩余"，未开始给"后开始"，已结束只给"已结束" */
+export function periodCountdown(
+  period: SeriesPeriod,
+  nowMs: number,
+  t: (key: string) => string,
+): string {
+  const phase = periodPhase(period, nowMs);
+  if (phase === "ended") return t("predict.series.ended");
+  return fill(
+    t(phase === "live" ? "predict.series.endsIn" : "predict.series.startsIn"),
+    {
+      time: formatCountdown(
+        phase === "live" ? period.windowEnd : period.windowStart,
+        nowMs,
+      ),
+    },
+  );
+}
+
+/** 历史窗口的结果文案：涨 / 跌，没结果时按阶段给失败 / 暂停，否则待结算 */
+export function periodResultLabel(
+  period: SeriesPeriod,
+  t: (key: string) => string,
+): string {
+  if (period.result === "up") return t("predict.series.up");
+  if (period.result === "down") return t("predict.series.down");
+  if (period.stage === "failed" || period.stage === "held")
+    return t(`predict.series.stage.${period.stage}`);
+  return t("predict.series.pending");
+}
+
 export function windowLabel(period: SeriesPeriod, locale: string): string {
   const format = (iso: string) =>
     new Date(iso).toLocaleTimeString(locale, {
@@ -55,13 +101,38 @@ export function windowLabel(period: SeriesPeriod, locale: string): string {
   return `${format(period.windowStart)} – ${format(period.windowEnd)}`;
 }
 
-/** 每秒刷新的"现在"，倒计时用；秒级刷新只在卡片内部，不牵动列表 */
+/** 参考价 / 结算价：平台给的是高精度字符串，展示成美元两位小数（网页版 `formatUsd(priceToBeat)`）；不是数字就原样显示 */
+export function priceLabel(
+  price: { price: string } | null,
+  locale: string,
+): string {
+  if (!price) return NO_QUOTE;
+  const value = Number(price.price);
+  return Number.isFinite(value) ? formatUsd(value, locale) : price.price;
+}
+
+// 所有倒计时共用一个秒表：多少张卡都只有一个 setInterval，最后一个订阅者走了就停
+const tickListeners = new Set<() => void>();
+let tickTimer: ReturnType<typeof setInterval> | null = null;
+export function subscribeTick(listener: () => void): () => void {
+  tickListeners.add(listener);
+  if (tickTimer === null)
+    tickTimer = setInterval(() => {
+      for (const notify of tickListeners) notify();
+    }, 1_000);
+  return () => {
+    tickListeners.delete(listener);
+    if (tickListeners.size === 0 && tickTimer !== null) {
+      clearInterval(tickTimer);
+      tickTimer = null;
+    }
+  };
+}
+
+/** 每秒刷新的"现在"，倒计时用；秒级刷新只在订阅的卡片内部，不牵动列表 */
 export function useTicking(): number {
   const [now, setNow] = useState(mockNow());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(mockNow()), 1_000);
-    return () => clearInterval(timer);
-  }, []);
+  useEffect(() => subscribeTick(() => setNow(mockNow())), []);
   return now;
 }
 
@@ -83,7 +154,8 @@ export function SeriesCard({
   const periods = useSeriesPeriods(series.id, "current", 2);
   const now = useTicking();
   const period = periods.data ? pickCurrentPeriod(periods.data, now) : null;
-  const live = period ? isPeriodLive(period, now) : false;
+  const phase = period ? periodPhase(period, now) : "ended";
+  const live = phase === "live";
   const market = period?.event?.markets[0];
   return (
     <Card
@@ -109,7 +181,16 @@ export function SeriesCard({
           {series.recurrence}
         </InlineText>
       </Row>
-      {periods.data === undefined ? (
+      {periods.isError ? (
+        <Row alignItems="center" justifyContent="space-between" gap="$2">
+          <Body fontSize={12} color="$danger">
+            {t("predict.series.error")}
+          </Body>
+          <SecondaryButton height={28} onPress={() => void periods.refetch()}>
+            {t("action.retryNow")}
+          </SecondaryButton>
+        </Row>
+      ) : periods.data === undefined ? (
         <SkeletonBlock height={44} />
       ) : period ? (
         <>
@@ -119,18 +200,10 @@ export function SeriesCard({
               fontWeight="800"
               color={live ? "$success" : "$textMuted"}
             >
-              {t(live ? "predict.series.live" : "predict.series.upcoming")}
+              {t(`predict.series.${phase}`)}
             </InlineText>
             <Body fontSize={11}>{windowLabel(period, locale)}</Body>
-            <Body fontSize={11}>
-              {live
-                ? fill(t("predict.series.endsIn"), {
-                    time: formatCountdown(period.windowEnd, now),
-                  })
-                : fill(t("predict.series.startsIn"), {
-                    time: formatCountdown(period.windowStart, now),
-                  })}
-            </Body>
+            <Body fontSize={11}>{periodCountdown(period, now, t)}</Body>
           </Row>
           {market ? (
             <Row alignItems="center" gap="$2">

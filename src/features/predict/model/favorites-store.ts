@@ -4,9 +4,9 @@ import { createJSONStorage, persist } from "zustand/middleware";
 
 /**
  * 收藏的事件 id，本机持久化（与网页版一样是本地星标，平台没有收藏接口）。
- * 上限 200 条：超出时丢最早收藏的，避免收藏页逐个取事件时请求失控。
+ * 上限 50 条：超出时丢最早收藏的。收藏页是逐个 `GET /events/{id}`，平台按 IP 限流，不能放开。
  */
-const LIMIT = 200;
+const LIMIT = 50;
 
 type FavoritesState = {
   ids: string[];

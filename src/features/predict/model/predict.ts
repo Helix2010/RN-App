@@ -117,8 +117,6 @@ export type Series = {
   /** 平台的周期文本（5m / 15m / 1h …） */
   recurrence: string;
   seriesType: string;
-  active: boolean;
-  closed: boolean;
 };
 export type SeriesPeriodPrice = {
   price: string;
@@ -126,11 +124,13 @@ export type SeriesPeriodPrice = {
   source: string;
   sampledAt?: string;
 };
+/** 系列的一期：一个固定时间窗口，对应一个事件 / 市场 */
 export type SeriesPeriod = {
   id: string;
   seriesId: string;
   eventId: string;
-  marketId: string;
+  /** 交易用的 conditionId；平台没把事件带回来时为 null（不用 gamma 数字 id 冒充） */
+  marketId: string | null;
   windowStart: string;
   windowEnd: string;
   /** 平台阶段：generated / publishing / published / closing / proposed / settled / failed / held */
