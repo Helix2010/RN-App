@@ -124,8 +124,16 @@
 
 ## 5. 需平台确认
 
-- `GEO_CHECK_URL/geoblock` 是否对租户开放，或由 RN-Server 代理并纳入 bootstrap。
 - `/curation/events`、`/series`、`/series/{id}/periods`、data `/holders` 在租户头下的可用性与限流。
+- 地区限制：见 `predict-geoblock-2026-09-08.md`（已实现管理与展示，等平台给地理服务地址）。
+
+可直接转发给平台的确认清单（2026-09-08）：
+
+1. 正式租户是否开放 gamma `GET /curation/events`、`GET /series`、`GET /series/slug/{slug}?series_id=`、
+   `GET /series/{id}/periods?current|closed`（后者是本平台扩展，不在 Polymarket 原版里）；是否要求 `X-Tenant-Domain`。
+2. data-service `GET /holders?market=<conditionId>&limit=10` 是否对租户开放；`displayUsernamePublic` 为 false 时服务端是否已脱敏 name。
+3. 上述接口按 IP 的限流阈值（每秒 / 每分钟）；手机用户共用运营商出口 IP，App 侧 429 退避 3 次后报错。
+4. 地理检查服务：正式地址；`GET /geoblock` 是否按来源 IP 判定、响应是否只有 `{restricted}`；是否需要租户头；限流。
 
 用户已定（2026-09-08）：
 
