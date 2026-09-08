@@ -75,7 +75,7 @@
 | 钱包登录、建 Safe、API key、授权 + wrap、协议签署 | 已对接 | gamma-auth、relayer、clob derive、`/agreements` | 启用页四步 |
 | 转入、两阶段转出、待领取列表、水龙头 | 已对接 | relayer、`/faucet` | 在资产划转页 |
 | 跨链桥转入（报价、路线、预计时间） | 未对接 | C 端 `bridge-*` 一整套，走桥服务 | 独立需求 |
-| 地区限制横幅、禁止交易 | 未对接 | C 端 `/api/geoblock` 代理到部署环境变量 `GEO_CHECK_URL`，**不在 public-info 里** | 需平台暴露端点或 RN-Server 代理 |
+| 地区限制横幅、禁止交易 | 已对接 | 管理端 `services.predict.endpoints.geo` → App 直连 `{geo}/geoblock` | 见 `predict-geoblock-2026-09-08.md`；线上租户未配地址，待平台给出 |
 | 恢复 API key（换设备 / 重装） | 部分 | clob derive | App 重装即清凭证并重签，无引导页 |
 | 免费签名额度、网络切换提示 | 未对接 / 不适用 | relayer 配额 | App 内置钱包无需切网 |
 
