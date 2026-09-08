@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import { formatCents } from "../../../core/i18n/format";
@@ -241,6 +242,13 @@ export function SeriesScreen({
     displayedPhase !== "ended" ? (displayed?.marketId ?? undefined) : undefined,
   );
   const [rulesOpen, setRulesOpen] = useState(false);
+  // 从页底的历史列表选中一期后，所选期卡在页顶：滚回去，用户不用自己找
+  const scroll = useRef<ScrollView>(null);
+  const selectFromList = (period: SeriesPeriod) => {
+    unpin();
+    setSelected(period);
+    scroll.current?.scrollTo({ y: 0, animated: true });
+  };
   const rules = displayed?.event
     ? pickTranslation(displayed.event.rules, locale)
     : null;
@@ -261,7 +269,7 @@ export function SeriesScreen({
           backLabel={t("action.back")}
         />
       </Content>
-      <PageScroll>
+      <PageScroll scrollRef={scroll}>
         <Content gap="$3" paddingBottom={40}>
           {series.data ? (
             <Row alignItems="center" gap="$2">
@@ -445,10 +453,7 @@ export function SeriesScreen({
                     key={item.id}
                     period={item}
                     selected={item.id === displayed?.id}
-                    onPress={() => {
-                      unpin();
-                      setSelected(item);
-                    }}
+                    onPress={() => selectFromList(item)}
                   />
                 ))}
                 {history.isError ? (

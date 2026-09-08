@@ -82,6 +82,9 @@ describe("OrderSheet", () => {
     await openSheet();
     expect(await screen.findByTestId("order-period-context")).toBeTruthy();
     expect(screen.getByText("本期已结束，无法下单")).toBeTruthy();
+    // 周期市场的结果叫涨 / 跌
+    expect(screen.getAllByText("涨").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("跌").length).toBeGreaterThan(0);
     await fireEvent.changeText(screen.getByTestId("order-amount"), "10");
     // 金额够了也不能提交：这期已经结束
     await waitFor(() => expect(screen.queryByText(/市价买入至少/)).toBeNull(), {

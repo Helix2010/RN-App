@@ -342,6 +342,11 @@ export const OrderSheet = forwardRef<
   // 周期市场：成功提示带上是哪一期，用户不必回头核对
   const withWindow = (text: string) =>
     context ? `${text} · ${windowLabel(context.period, locale)}` : text;
+  // 周期市场的结果叫涨 / 跌，不叫 Yes / No（与所选期卡上的按钮一致）
+  const labelOf = (option: Outcome) =>
+    context
+      ? t(option === "yes" ? "predict.series.up" : "predict.series.down")
+      : outcomeLabel(option);
 
   const submit = async () => {
     if (!request || !market) return;
@@ -391,18 +396,18 @@ export const OrderSheet = forwardRef<
               : "predict.order.submitLimit",
           ),
           {
-            outcome: outcomeLabel(outcome),
+            outcome: labelOf(outcome),
             shares,
             price: formatCents(limitPrice),
           },
         )
       : side === "sell"
         ? fill(t("predict.order.submitSell"), {
-            outcome: outcomeLabel(outcome),
+            outcome: labelOf(outcome),
             shares,
           })
         : fill(t("predict.order.submitBuy"), {
-            outcome: outcomeLabel(outcome),
+            outcome: labelOf(outcome),
             amount: isZero(amount) ? "USDW" : formatMoney(amount, locale),
           });
   const availableNumber = available ? Number(toDecimalString(available)) : null;
@@ -528,7 +533,7 @@ export const OrderSheet = forwardRef<
                   fontWeight="800"
                   color={option === "yes" ? "$success" : "$danger"}
                 >
-                  {outcomeLabel(option)}
+                  {labelOf(option)}
                 </InlineText>
                 <Body fontSize={10}>
                   {bestBid !== undefined && bestAsk !== undefined
@@ -789,7 +794,7 @@ export const OrderSheet = forwardRef<
         {side === "buy" ? (
           <DetailRow
             label={fill(t("predict.order.payout"), {
-              outcome: outcomeLabel(outcome),
+              outcome: labelOf(outcome),
             })}
             value={
               preview.data

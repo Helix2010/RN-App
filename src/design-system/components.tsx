@@ -5,9 +5,14 @@ import {
   type ReactElement,
   type ReactNode,
   useState,
+  type RefObject,
 } from "react";
 import type { RefreshControlProps } from "react-native";
-import { Image, RefreshControl } from "react-native";
+import {
+  Image,
+  RefreshControl,
+  ScrollView as RNScrollView,
+} from "react-native";
 import {
   Button,
   ScrollView,
@@ -607,15 +612,19 @@ export function PageScroll({
   refresh,
   keyboardShouldPersistTaps = "handled",
   scrollEnabled = true,
+  scrollRef,
 }: PropsWithChildren<{
   refresh?: RefreshControlProps;
   keyboardShouldPersistTaps?: "always" | "never" | "handled";
   /** 页内手势（图表刻度）进行中暂停滚动 */
   scrollEnabled?: boolean;
+  /** 需要程序滚动（如选中列表项后回到顶部）时拿到滚动视图 */
+  scrollRef?: RefObject<RNScrollView | null>;
 }>) {
   const theme = useTheme();
   return (
     <ScrollView
+      ref={scrollRef}
       flex={1}
       showsVerticalScrollIndicator={false}
       scrollEnabled={scrollEnabled}
