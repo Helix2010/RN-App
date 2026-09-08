@@ -45,6 +45,79 @@ describe("MockPredictGateway", () => {
     expect(event.markets[0]?.yesPriceCents).toBeGreaterThan(0);
   });
 
+  it("filters by status, sorts by 24h volume and liquidity, and serves curation, holders and series", async () => {
+    const gateway = new MockPredictGateway(memoryStorage());
+    const trading = await gateway.listEvents({ sort: "volume", limit: 50 });
+    const closed = await gateway.listEvents({
+      sort: "volume",
+      status: "closed",
+      limit: 50,
+    });
+    const all = await gateway.listEvents({
+      sort: "volume",
+      status: "all",
+      limit: 50,
+    });
+    expect(trading.items.every((event) => !event.closed)).toBe(true);
+    expect(closed.items.length).toBeGreaterThan(0);
+    expect(closed.items.every((event) => event.closed)).toBe(true);
+    expect(closed.items.map((event) => event.id)).toContain("ev-cpi-jul");
+    expect(all.items).toHaveLength(trading.items.length + closed.items.length);
+
+    const by24h = await gateway.listEvents({ sort: "volume24h", limit: 50 });
+    for (let index = 1; index < by24h.items.length; index += 1)
+      expect(by24h.items[index - 1]!.volume24hUsd).toBeGreaterThanOrEqual(
+        by24h.items[index]!.volume24hUsd,
+      );
+    const byLiquidity = await gateway.listEvents({
+      sort: "liquidity",
+      limit: 50,
+    });
+    for (let index = 1; index < byLiquidity.items.length; index += 1)
+      expect(byLiquidity.items[index - 1]!.liquidityUsd).toBeGreaterThanOrEqual(
+        byLiquidity.items[index]!.liquidityUsd,
+      );
+
+    const curated = await gateway.listCuratedEvents();
+    const heroes = curated.filter((item) => item.hero !== null);
+    expect(heroes.map((item) => item.event.id)).toEqual(["ev-worldcup"]);
+    expect(
+      curated.every((item) => item.hero !== null || item.normal !== null),
+    ).toBe(true);
+
+    const holders = await gateway.getHolders("m-btc-120k");
+    expect(holders.map((group) => group.outcome)).toEqual(["yes", "no"]);
+    expect(holders[0]?.holders).toHaveLength(5);
+    expect(holders[0]?.holders[0]?.shares).toBeGreaterThan(
+      holders[0]?.holders[1]?.shares ?? 0,
+    );
+    // 同一市场两次一致
+    expect(await gateway.getHolders("m-btc-120k")).toEqual(holders);
+
+    const series = await gateway.listSeries();
+    expect(series.map((item) => item.slug)).toEqual(["btc-updown-5m"]);
+    expect((await gateway.getSeries("btc-updown-5m")).id).toBe(series[0]!.id);
+    const now = new Date(FIXTURE_NOW).getTime();
+    const current = await gateway.listSeriesPeriods(
+      series[0]!.id,
+      "current",
+      2,
+    );
+    expect(current).toHaveLength(2);
+    expect(new Date(current[0]!.windowStart).getTime()).toBeLessThanOrEqual(
+      now,
+    );
+    expect(new Date(current[0]!.windowEnd).getTime()).toBeGreaterThan(now);
+    expect(current[0]?.event?.markets[0]?.id).toBe(current[0]?.marketId);
+    const past = await gateway.listSeriesPeriods(series[0]!.id, "closed", 3);
+    expect(past).toHaveLength(3);
+    expect(new Date(past[0]!.windowEnd).getTime()).toBeLessThanOrEqual(now);
+    expect(new Date(past[0]!.windowEnd).getTime()).toBeGreaterThan(
+      new Date(past[1]!.windowEnd).getTime(),
+    );
+    expect(past.every((period) => period.result !== null)).toBe(true);
+  });
+
   it("returns empty lists in empty mode and fails when offline", async () => {
     const gateway = new MockPredictGateway(memoryStorage());
     useMockRuntime.getState().set({ emptyMode: true });

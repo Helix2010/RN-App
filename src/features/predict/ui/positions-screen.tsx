@@ -47,7 +47,7 @@ import {
   usePredictPnl,
   useRedeem,
 } from "../hooks/use-predict";
-import type { Order, Position } from "../model/predict";
+import type { PriceRange, Order, Position } from "../model/predict";
 import { OrderSheet, type OrderSheetHandle } from "./order-sheet";
 import { SplitMergeSheet, type SplitMergeHandle } from "./split-merge-sheet";
 import { StatusBadge, closesText, fill, outcomeLabel } from "./shared";
@@ -83,8 +83,9 @@ export function PositionsScreen({
       toast(error instanceof Error ? error.message : String(error), "error");
     }
   };
-  // 今日盈亏来自平台盈亏曲线（1d），没有数据就显示占位而不编数
-  const pnlSeries = usePredictPnl(address, "1d");
+  // 本期盈亏来自平台盈亏曲线，区间可切；没有数据就显示占位而不编数
+  const [pnlRange, setPnlRange] = useState<PriceRange>("1d");
+  const pnlSeries = usePredictPnl(address, pnlRange);
   const todayPnl = (() => {
     const points = pnlSeries.data;
     if (!points || points.length === 0) return null;
@@ -176,6 +177,28 @@ export function PositionsScreen({
       },
     );
   };
+  // 已归零 = 已结算但输掉的仓位：赎回一次把无价值的代币清掉（网页版 clear-all）
+  const clearable = (positions.data ?? []).filter(
+    (item) =>
+      item.status === "settled" &&
+      !item.redeemable &&
+      !item.closed &&
+      item.shares > 0 &&
+      (item.settledPayoutCents ?? 0) === 0,
+  );
+  const clearAll = () => {
+    redeem.mutate(
+      clearable.map((item) => item.id),
+      {
+        onSuccess: () =>
+          toast(
+            fill(t("predict.positions.cleared"), { n: clearable.length }),
+            "success",
+          ),
+        onError: () => toast(t("state.error"), "error"),
+      },
+    );
+  };
 
   return (
     <Page>
@@ -234,8 +257,29 @@ export function PositionsScreen({
                   )
                 </InlineText>
               </Stack>
-              <Stack>
-                <Body fontSize={11}>{t("predict.today")}</Body>
+              <Stack alignItems="flex-end" gap="$1">
+                <Row gap="$1" testID="positions-pnl-range">
+                  {(["1d", "1w", "1m", "all"] as const).map((option) => (
+                    <InlineText
+                      key={option}
+                      fontSize={10}
+                      fontWeight="700"
+                      paddingHorizontal="$1.5"
+                      paddingVertical="$0.5"
+                      borderRadius={999}
+                      color={pnlRange === option ? "$primary" : "$textMuted"}
+                      backgroundColor={
+                        pnlRange === option ? "$surfaceVariant" : undefined
+                      }
+                      onPress={() => setPnlRange(option)}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: pnlRange === option }}
+                    >
+                      {t(`predict.positions.pnlRange.${option}`)}
+                    </InlineText>
+                  ))}
+                </Row>
+                <Body fontSize={11}>{t("predict.positions.pnlPeriod")}</Body>
                 <InlineText
                   fontWeight="800"
                   color={
@@ -277,9 +321,23 @@ export function PositionsScreen({
                   onPress={claimAll}
                   testID="positions-claim"
                 >
-                  {t("predict.positions.claim")}
+                  {t(
+                    redeem.isPending
+                      ? "predict.positions.claiming"
+                      : "predict.positions.claim",
+                  )}
                 </SecondaryButton>
               </Row>
+            ) : null}
+            {clearable.length > 0 ? (
+              <SecondaryButton
+                height={36}
+                disabled={redeem.isPending}
+                onPress={clearAll}
+                testID="positions-clear"
+              >
+                {fill(t("predict.positions.clear"), { n: clearable.length })}
+              </SecondaryButton>
             ) : null}
             <Row gap="$2">
               <SecondaryButton

@@ -14,11 +14,13 @@ import {
   Badge,
   Body,
   Card,
+  IconButton,
   InlineText,
   Row,
   SectionTitle,
   Stack,
 } from "../../../design-system";
+import { useFavoritesStore, useIsFavorite } from "../model/favorites-store";
 import type {
   Market,
   MarketStatus,
@@ -39,6 +41,7 @@ const STATUS_TONE: Record<
   disputed: "warning",
   arbitrating: "warning",
   settled: "info",
+  canceled: "textMuted",
 };
 
 export function StatusBadge({ status }: { status: MarketStatus }) {
@@ -88,15 +91,18 @@ export function YesNoButtons({
   yes,
   onPress,
   compact,
+  disabled = false,
 }: {
   yes: number | null;
   onPress: (outcome: Outcome) => void;
   compact?: boolean;
+  /** 平台暂停接单：按钮变灰不可点 */
+  disabled?: boolean;
 }) {
   const { t } = useFoundationRuntime();
   const no = yes === null ? null : 100 - yes;
   return (
-    <Row gap="$2">
+    <Row gap="$2" opacity={disabled ? 0.45 : 1}>
       <Stack
         flex={1}
         height={compact ? 34 : 44}
@@ -104,8 +110,9 @@ export function YesNoButtons({
         alignItems="center"
         justifyContent="center"
         backgroundColor="$surfaceVariant"
-        onPress={() => onPress("yes")}
+        onPress={disabled ? undefined : () => onPress("yes")}
         accessibilityRole="button"
+        accessibilityState={{ disabled }}
         accessibilityLabel={`${t("predict.buyYes")} ${formatCents(yes)}`}
         pressStyle={{ opacity: 0.75 }}
       >
@@ -124,8 +131,9 @@ export function YesNoButtons({
         alignItems="center"
         justifyContent="center"
         backgroundColor="$surfaceVariant"
-        onPress={() => onPress("no")}
+        onPress={disabled ? undefined : () => onPress("no")}
         accessibilityRole="button"
+        accessibilityState={{ disabled }}
         accessibilityLabel={`${t("predict.buyNo")} ${formatCents(no)}`}
         pressStyle={{ opacity: 0.75 }}
       >
@@ -141,8 +149,55 @@ export function YesNoButtons({
   );
 }
 
+/** 收藏星标：本机收藏，与网页版一样不上报平台 */
+export function FavoriteButton({
+  eventId,
+  size = 26,
+}: {
+  eventId: string;
+  size?: number;
+}) {
+  const { t } = useFoundationRuntime();
+  const favorite = useIsFavorite(eventId);
+  const toggle = useFavoritesStore((state) => state.toggle);
+  return (
+    <IconButton
+      label={t(favorite ? "predict.favorites.remove" : "predict.favorites.add")}
+      icon={favorite ? "star" : "star-outline"}
+      size={size}
+      onPress={() => toggle(eventId)}
+      testID={`favorite-${eventId}`}
+    />
+  );
+}
+
+/** 已截止 / 已结算市场在卡片上的结果标签，替代买卖按钮 */
+export function OutcomeResultBadge({ market }: { market: Market }) {
+  const { t } = useFoundationRuntime();
+  const label = market.result
+    ? fill(t("predict.outcome.won"), { outcome: outcomeLabel(market.result) })
+    : market.closed
+      ? t("predict.outcome.ended")
+      : !market.acceptingOrders
+        ? t("predict.outcome.notAccepting")
+        : null;
+  if (label === null) return null;
+  return (
+    <Badge paddingVertical={3} testID={`outcome-result-${market.id}`}>
+      <InlineText
+        fontSize={11}
+        fontWeight="700"
+        color={market.result ? "$success" : "$textMuted"}
+      >
+        {label}
+      </InlineText>
+    </Badge>
+  );
+}
+
 /**
  * 市场卡：二元（大概率数 + 双钮）/ 多结果（前 3 行小钮）/ 体育三向。
+ * 已截止或已结算的市场显示结果标签，不再给买卖按钮。
  */
 export function EventCard({
   event,
@@ -167,8 +222,8 @@ export function EventCard({
       accessibilityRole="button"
       testID={`event-${event.id}`}
     >
-      <Row justifyContent="space-between" alignItems="center">
-        <Body fontSize={11}>
+      <Row justifyContent="space-between" alignItems="center" gap="$2">
+        <Body fontSize={11} flex={1} numberOfLines={1}>
           {category} ·{" "}
           {event.kind === "sports" && event.sports
             ? fill(t("predict.kickoff"), {
@@ -184,6 +239,7 @@ export function EventCard({
             {fill(t("predict.outcomes"), { n: event.markets.length })}
           </Body>
         ) : null}
+        <FavoriteButton eventId={event.id} size={24} />
       </Row>
       {event.kind === "sports" && event.sports ? (
         <SportsBody event={event} onOrder={onOrder} />
@@ -200,12 +256,17 @@ export function EventCard({
               <InlineText fontWeight="800" width={44} textAlign="right">
                 {formatPercentCents(market.yesPriceCents)}
               </InlineText>
-              <Stack width={132}>
-                <YesNoButtons
-                  yes={market.yesPriceCents}
-                  compact
-                  onPress={(outcome) => onOrder(market, outcome)}
-                />
+              <Stack width={132} alignItems="flex-end">
+                {market.closed || market.result ? (
+                  <OutcomeResultBadge market={market} />
+                ) : (
+                  <YesNoButtons
+                    yes={market.yesPriceCents}
+                    compact
+                    disabled={!market.acceptingOrders}
+                    onPress={(outcome) => onOrder(market, outcome)}
+                  />
+                )}
               </Stack>
             </Row>
           ))}
@@ -233,10 +294,17 @@ export function EventCard({
               <Body fontSize={10}>{t("predict.probability")}</Body>
             </Stack>
           </Row>
-          <YesNoButtons
-            yes={primary.yesPriceCents}
-            onPress={(outcome) => onOrder(primary, outcome)}
-          />
+          {primary.closed || primary.result ? (
+            <Row>
+              <OutcomeResultBadge market={primary} />
+            </Row>
+          ) : (
+            <YesNoButtons
+              yes={primary.yesPriceCents}
+              disabled={!primary.acceptingOrders}
+              onPress={(outcome) => onOrder(primary, outcome)}
+            />
+          )}
         </Stack>
       ) : null}
       <Row gap="$3">
@@ -245,11 +313,13 @@ export function EventCard({
             amount: formatUsd(event.volumeUsd, locale, { compact: true }),
           })}
         </Body>
-        {event.holders === null ? null : (
+        {event.volume24hUsd > 0 ? (
           <Body fontSize={11}>
-            {fill(t("predict.holders"), { n: event.holders.toLocaleString() })}
+            {fill(t("predict.volume24h"), {
+              amount: formatUsd(event.volume24hUsd, locale, { compact: true }),
+            })}
           </Body>
-        )}
+        ) : null}
       </Row>
     </Card>
   );

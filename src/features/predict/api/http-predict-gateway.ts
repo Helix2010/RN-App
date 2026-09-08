@@ -50,10 +50,17 @@ import {
   postDisputeEvidence,
   type GammaEvent,
   type GammaMarket,
+  type GammaSeries,
+  type GammaSeriesPeriod,
   type GammaTag,
+  fetchCuratedEvents,
+  fetchSeries,
+  fetchSeriesList,
+  fetchSeriesPeriods,
   tradablePrice,
   translationOf,
 } from "../../../core/predict-platform/gamma";
+import { fetchHolders } from "../../../core/predict-platform/data-holders";
 import {
   alignBuyPriceToTick,
   computeOrderAmounts,
@@ -86,7 +93,9 @@ import type {
   Activity,
   ActivityType,
   Adjudication,
+  CuratedEvent,
   EventQuery,
+  HolderGroup,
   LeaderboardEntry,
   LeaderboardPeriod,
   Market,
@@ -104,6 +113,8 @@ import type {
   PredictTx,
   PriceRange,
   PricePoint,
+  Series,
+  SeriesPeriod,
   Tag,
   Trade,
   OrderBookLevel,
@@ -122,18 +133,7 @@ import type { HttpPredictAccountGateway } from "./http-predict-account-gateway";
  *
  * 下单：EIP-712 Order（maker = Safe、signer = EOA）→ `POST /order`；金额换算是 user-dapp
  * `orderAmounts.ts` 的逐行移植。领取 / 拆合：Safe 经 relayer 调 CTF（negRisk 走 adapter）。
- * 平台没有的能力（争议提交）与还没接的能力（WS 推送）如实抛 `PredictUnsupportedError`。
  */
-
-export class PredictUnsupportedError extends Error {
-  constructor(
-    readonly capability: string,
-    detail: string,
-  ) {
-    super(detail);
-    this.name = "PredictUnsupportedError";
-  }
-}
 
 const SIGN_REASON = "predict.sign.reason";
 /** 预测账户内的一切金额（成交额、持仓市值、盈亏、活动）都是 USDW（抵押品，6 位）——与账户余额同一单位才能比较 */
@@ -222,6 +222,8 @@ function outcomeFromText(text: string | null | undefined): Outcome | undefined {
 /** 平台 adjudication 状态 → 我们的展示状态（`adapters.ts:198-212`、`polymarket.ts:100-135`） */
 function marketStatusOf(market: GammaMarket, event: GammaEvent): MarketStatus {
   const adj = market.adjudication;
+  // 平台阶段里的取消态（cancellation-pending / canceled）优先于其它推断
+  if (adj?.currentPhase && /cancel/i.test(adj.currentPhase)) return "canceled";
   if (adj?.settledOutcome) return "settled";
   if (adj?.challenger) return "disputed";
   if (adj?.proposedOutcome) return "result_proposed";
@@ -317,6 +319,18 @@ function tagLabel(tag: GammaTag): LocalizedText {
   return translationOf(tag.labelTranslation, tag.label ?? tag.slug ?? tag.id);
 }
 
+function mapSeries(raw: GammaSeries): Series {
+  return {
+    id: raw.id,
+    slug: raw.slug,
+    title: translationOf(raw.titleTranslation, raw.title ?? raw.slug),
+    recurrence: raw.recurrence ?? "",
+    seriesType: raw.seriesType ?? "",
+    active: raw.active ?? true,
+    closed: raw.closed ?? false,
+  };
+}
+
 export class HttpPredictGateway implements PredictGateway {
   /** conditionId → 代币 id 与事件（列表 / 详情读到就记下，订单簿与持仓靠它找代币） */
   private readonly markets = new Map<string, MarketRef>();
@@ -391,6 +405,7 @@ export class HttpPredictGateway implements PredictGateway {
       question,
       outcomeLabel: outcomeLabel ?? null,
     });
+    const marketRules = (market.description ?? "").trim();
     return {
       id: market.conditionId,
       eventId: event.id,
@@ -398,7 +413,18 @@ export class HttpPredictGateway implements PredictGateway {
       question,
       yesPriceCents: centsOrNull(displayPrice(market)),
       volumeUsd: market.volume ?? 0,
+      volume24hUsd: market.volume24hr ?? 0,
+      liquidityUsd: market.liquidity ?? 0,
       endsAt: market.endDate ?? event.endDate ?? "",
+      closed: market.closed ?? event.closed ?? false,
+      result: outcomeFromText(market.adjudication?.settledOutcome) ?? null,
+      // 平台明确说不接单才禁用；字段缺失按可交易处理（与 user-dapp 一致）
+      acceptingOrders: market.acceptingOrders !== false,
+      // 市场级规则只在与事件规则不同时保留，避免详情页重复一段
+      description:
+        marketRules && marketRules !== (event.description ?? "").trim()
+          ? { default: marketRules }
+          : undefined,
       yesTokenId,
       noTokenId,
     };
@@ -423,12 +449,18 @@ export class HttpPredictGateway implements PredictGateway {
       categoryTagId: tags[0]?.id ?? "",
       category: tags[0] ? tagLabel(tags[0]) : {},
       tagIds: tags.map((tag) => tag.id),
+      tags: tags.map((tag, index) => this.mapTag(tag, index)),
       markets,
       volumeUsd: multi
         ? rawMarkets.reduce((sum, market) => sum + (market.volume ?? 0), 0)
         : (primary?.volume ?? event.volume ?? 0),
-      // 平台不提供持有人数
-      holders: null,
+      volume24hUsd:
+        event.volume24hr ??
+        rawMarkets.reduce((sum, market) => sum + (market.volume24hr ?? 0), 0),
+      liquidityUsd:
+        event.liquidity ??
+        rawMarkets.reduce((sum, market) => sum + (market.liquidity ?? 0), 0),
+      closed: event.closed ?? false,
       endsAt: (!multi ? primary?.endDate : undefined) ?? event.endDate ?? "",
       featured: event.featured ?? false,
       rules: { default: event.description ?? "" },
@@ -659,29 +691,128 @@ export class HttpPredictGateway implements PredictGateway {
   }
 
   async listEvents(query: EventQuery): Promise<Page<PredictEvent>> {
-    if (query.search)
-      throw new PredictUnsupportedError(
-        "search",
-        "event search is not wired to the platform yet",
-      );
     const service = await this.service();
     const limit = query.limit ?? 20;
     const offset = query.cursor ? Number(query.cursor) : 0;
     const events = await fetchEvents(service, {
       tagId: query.tagId,
-      featured: query.featured,
+      status: query.status,
       order:
         query.sort === "endingSoon"
           ? "end_date_iso"
           : query.sort === "newest"
             ? "created_at"
-            : "volume",
+            : query.sort === "volume24h"
+              ? "volume24hr"
+              : "volume",
       limit,
       offset,
     });
+    const items = events.map((event) => this.mapEvent(event));
+    // 平台没有流动性排序：按成交量取回当前页，再本地按流动性排
+    if (query.sort === "liquidity")
+      items.sort((a, b) => b.liquidityUsd - a.liquidityUsd);
     return {
-      items: events.map((event) => this.mapEvent(event)),
+      items,
       nextCursor: events.length === limit ? String(offset + limit) : null,
+    };
+  }
+
+  async listCuratedEvents(): Promise<CuratedEvent[]> {
+    const service = await this.service();
+    const events = await fetchCuratedEvents(service);
+    // featuredLevel 位掩码：normal=1 / highlight=2 / hero=4（HomepageCurationSection.tsx）
+    const rank = (
+      raw: GammaEvent,
+      mask: number,
+      order: number | null | undefined,
+    ) =>
+      ((raw.featuredLevel ?? 0) & mask) !== 0
+        ? (order ?? raw.featuredOrder ?? Number.MAX_SAFE_INTEGER)
+        : null;
+    return events.map((raw) => ({
+      event: this.mapEvent(raw),
+      hero: rank(raw, 4, raw.featuredOrderHero),
+      highlight: rank(raw, 2, raw.featuredOrderHighlight),
+      normal: rank(raw, 1, raw.featuredOrderNormal),
+    }));
+  }
+
+  async getHolders(marketId: string): Promise<HolderGroup[]> {
+    const service = await this.service();
+    const groups = await fetchHolders(service, marketId, 10);
+    const byOutcome: Record<Outcome, HolderGroup> = {
+      yes: { outcome: "yes", holders: [] },
+      no: { outcome: "no", holders: [] },
+    };
+    for (const group of groups)
+      for (const holder of group.holders) {
+        const outcome: Outcome = holder.outcomeIndex === 1 ? "no" : "yes";
+        byOutcome[outcome].holders.push({
+          address: holder.proxyWallet,
+          name:
+            holder.displayUsernamePublic && holder.name
+              ? holder.name
+              : holder.pseudonym || null,
+          shares: holder.amount,
+        });
+      }
+    return [byOutcome.yes, byOutcome.no].map((group) => ({
+      ...group,
+      holders: group.holders.sort((a, b) => b.shares - a.shares),
+    }));
+  }
+
+  async listSeries(): Promise<Series[]> {
+    const service = await this.service();
+    return (await fetchSeriesList(service)).map(mapSeries);
+  }
+
+  async getSeries(slug: string): Promise<Series> {
+    const service = await this.service();
+    return mapSeries(await fetchSeries(service, slug));
+  }
+
+  async listSeriesPeriods(
+    seriesId: string,
+    scope: "current" | "closed",
+    limit = 12,
+  ): Promise<SeriesPeriod[]> {
+    const service = await this.service();
+    const periods = await fetchSeriesPeriods(service, seriesId, {
+      scope,
+      limit,
+    });
+    return periods.map((raw) => this.mapSeriesPeriod(raw));
+  }
+
+  private mapSeriesPeriod(raw: GammaSeriesPeriod): SeriesPeriod {
+    const event = raw.event ? this.mapEvent(raw.event) : undefined;
+    return {
+      id: raw.id,
+      seriesId: raw.seriesId,
+      eventId: raw.eventId,
+      // 交易用 conditionId；平台 periods 里的 marketId 是 gamma 数字 id，只在没带事件时保留
+      marketId: event?.markets[0]?.id ?? String(raw.marketId ?? ""),
+      windowStart: raw.windowStart,
+      windowEnd: raw.windowEnd,
+      stage: raw.stage ?? "",
+      priceToBeat: raw.priceToBeat
+        ? {
+            price: raw.priceToBeat.price,
+            source: raw.priceToBeat.source ?? "",
+            sampledAt: raw.priceToBeat.sampledAt ?? undefined,
+          }
+        : null,
+      finalPrice: raw.finalPrice
+        ? {
+            price: raw.finalPrice.price,
+            source: raw.finalPrice.source ?? "",
+            sampledAt: raw.finalPrice.sampledAt ?? undefined,
+          }
+        : null,
+      result: raw.result === "up" || raw.result === "down" ? raw.result : null,
+      event,
     };
   }
 

@@ -81,7 +81,7 @@ describe("fetchEvents", () => {
       limit: 5,
       offset: 0,
       order: "end_date_iso",
-      featured: true,
+      status: "closed",
     });
     const first = new URL(urls[0] ?? "");
     expect(first.host).toBe("gamma-api.predict.prax1s.xyz");
@@ -99,6 +99,8 @@ describe("fetchEvents", () => {
     const second = new URL(urls[1] ?? "");
     expect(second.searchParams.get("order")).toBe("end_date_iso");
     expect(second.searchParams.get("ascending")).toBe("true");
-    expect(second.searchParams.get("featured")).toBe("true");
+    // 已结束视图：只带 closed=true，不再带 active
+    expect(second.searchParams.get("closed")).toBe("true");
+    expect(second.searchParams.get("active")).toBeNull();
   });
 });

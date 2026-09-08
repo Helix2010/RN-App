@@ -38,6 +38,9 @@ function PredictMarketsTab() {
           outcome,
         })
       }
+      onOpenSeries={(series) =>
+        navigation.navigate("PredictSeries", { slug: series.slug })
+      }
       onOpenTransfer={() => navigation.navigate("Transfer")}
       onOpenEnable={() => navigation.navigate("PredictEnable")}
       onOpenPositions={() => navigation.navigate("Positions")}

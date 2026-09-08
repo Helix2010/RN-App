@@ -13,6 +13,7 @@ import {
   AppIcon,
   Body,
   Content,
+  DetailRow,
   InlineText,
   Page,
   PageScroll,
@@ -33,6 +34,31 @@ import {
 } from "../hooks/use-predict";
 import { DisputeSheet } from "./dispute-sheet";
 import { StatusBadge, fill, outcomeLabel } from "./shared";
+
+const PHASE_KEYS = new Set([
+  "trading",
+  "awaiting_proposal",
+  "proposal_pending",
+  "liveness_period",
+  "escalation_pending",
+  "awaiting_arbitration",
+  "arbitration_pending",
+  "arbitrated",
+  "awaiting_settlement",
+  "settlement_pending",
+  "settled",
+  "cancellation_pending",
+  "canceled",
+]);
+
+/** 阶段文案：平台 currentPhase 是 snake_case；没收录的阶段原样显示，不猜 */
+function phaseLabel(phase: string, t: (key: string) => string): string {
+  const key = phase
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+  return PHASE_KEYS.has(key) ? t(`predict.settlement.phase.${key}`) : phase;
+}
 
 /** 结算页骨架：标题两行、结果卡、四步进度、持仓卡、两个按钮，与真实布局同形，数据到了不跳版 */
 function SettlementSkeleton() {
@@ -95,6 +121,8 @@ export function SettlementScreen({
   const disputeSheet = useRef<SheetHandle>(null);
   const [now, setNow] = useState(mockNow());
   const adj = adjudication.data;
+  // 平台把取消也放在阶段里（cancellation_pending / canceled）：取消后流程步骤没有意义，只提示已取消
+  const canceled = Boolean(adj?.phase && /cancel/i.test(adj.phase));
   const market = event.data?.markets.find((item) => item.id === marketId);
   const mine = positions.data?.find((item) => item.marketId === marketId);
 
@@ -211,7 +239,29 @@ export function SettlementScreen({
                   <Body>{t("predict.settlement.proposed")}</Body>
                 </Row>
               ) : null}
-              <Stack gap="$0">
+              {canceled ? (
+                <Stack
+                  padding="$3"
+                  borderRadius="$4"
+                  backgroundColor="$surfaceVariant"
+                  gap="$1"
+                  testID="settlement-canceled"
+                >
+                  <SectionTitle fontSize={14}>
+                    {t("predict.settlement.canceled")}
+                  </SectionTitle>
+                  <Body>{t("predict.settlement.canceledHint")}</Body>
+                </Stack>
+              ) : null}
+              {adj.phase ? (
+                <Stack testID="settlement-phase">
+                  <DetailRow
+                    label={t("predict.settlement.phase")}
+                    value={phaseLabel(adj.phase, t)}
+                  />
+                </Stack>
+              ) : null}
+              <Stack gap="$0" display={canceled ? "none" : undefined}>
                 {steps.map((step, index) => (
                   <Row key={step.key} gap="$3" alignItems="flex-start">
                     <Stack alignItems="center" width={24}>

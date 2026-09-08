@@ -12,7 +12,6 @@ import {
 import { pickTranslation } from "../../../core/i18n/localized-text";
 import {
   Body,
-  ChipRow,
   Content,
   DetailRow,
   InlineText,
@@ -41,9 +40,17 @@ import {
   useTrades,
 } from "../hooks/use-predict";
 import type { Market, OrderSide, Outcome, PriceRange } from "../model/predict";
+import { HoldersView } from "./holders-view";
 import { OrderBookView } from "./order-book";
 import { OrderSheet, type OrderSheetHandle } from "./order-sheet";
-import { StatusBadge, closesText, fill, outcomeLabel } from "./shared";
+import {
+  FavoriteButton,
+  OutcomeResultBadge,
+  StatusBadge,
+  closesText,
+  fill,
+  outcomeLabel,
+} from "./shared";
 
 const RANGES: PriceRange[] = ["1h", "6h", "1d", "1w", "1m", "all"];
 
@@ -197,7 +204,12 @@ export function EventDetailScreen({
           }
           onBack={onBack}
           backLabel={t("action.back")}
-          action={<StatusBadge status={status} />}
+          action={
+            <Row alignItems="center" gap="$2">
+              {event.data ? <FavoriteButton eventId={event.data.id} /> : null}
+              <StatusBadge status={status} />
+            </Row>
+          }
         />
       </Content>
       <PageScroll scrollEnabled={!scrubbing}>
@@ -214,18 +226,89 @@ export function EventDetailScreen({
                     }),
                   })}
                 </Body>
+                <Body fontSize={12}>
+                  {fill(t("predict.volume24h"), {
+                    amount: formatUsd(event.data.volume24hUsd, locale, {
+                      compact: true,
+                    }),
+                  })}{" "}
+                  ·{" "}
+                  {fill(t("predict.liquidity"), {
+                    amount: formatUsd(event.data.liquidityUsd, locale, {
+                      compact: true,
+                    }),
+                  })}
+                </Body>
+                {event.data.tags.length > 0 ? (
+                  <Row flexWrap="wrap" gap="$1.5" testID="detail-tags">
+                    {event.data.tags.map((tag) => (
+                      <InlineText
+                        key={tag.id}
+                        fontSize={11}
+                        fontWeight="700"
+                        color="$textMuted"
+                        paddingHorizontal="$2"
+                        paddingVertical="$0.5"
+                        borderRadius={999}
+                        backgroundColor="$surfaceVariant"
+                      >
+                        {pickTranslation(tag.label, locale)}
+                      </InlineText>
+                    ))}
+                  </Row>
+                ) : null}
               </Stack>
               {event.data.markets.length > 1 ? (
-                <ChipRow
-                  value={market.id}
-                  options={event.data.markets.map((item) => ({
-                    value: item.id,
-                    label: `${pickTranslation(item.outcomeLabel, locale)} ${formatPercentCents(item.yesPriceCents)}`,
-                  }))}
-                  onChange={setSelectedMarketId}
-                  accessibilityLabel={t("predict.outcomes")}
-                  testID="detail-market"
-                />
+                <Stack gap="$1" testID="detail-market">
+                  {event.data.markets.map((item) => {
+                    const selected = item.id === market.id;
+                    return (
+                      <Row
+                        key={item.id}
+                        alignItems="center"
+                        gap="$2"
+                        paddingVertical="$1.5"
+                        paddingHorizontal="$2"
+                        borderRadius="$3"
+                        backgroundColor={
+                          selected ? "$surfaceVariant" : undefined
+                        }
+                        onPress={() => setSelectedMarketId(item.id)}
+                        accessibilityRole="radio"
+                        accessibilityState={{ selected }}
+                        testID={`detail-outcome-${item.id}`}
+                      >
+                        <Stack flex={1} gap="$0.5">
+                          <Body
+                            color="$color"
+                            fontWeight={selected ? "800" : "500"}
+                            numberOfLines={1}
+                          >
+                            {pickTranslation(item.outcomeLabel, locale)}
+                          </Body>
+                          <Body fontSize={11}>
+                            {fill(t("predict.volume"), {
+                              amount: formatUsd(item.volumeUsd, locale, {
+                                compact: true,
+                              }),
+                            })}
+                          </Body>
+                        </Stack>
+                        {item.closed || item.result ? (
+                          <OutcomeResultBadge market={item} />
+                        ) : (
+                          <InlineText
+                            fontWeight="800"
+                            width={52}
+                            textAlign="right"
+                          >
+                            {formatPercentCents(item.yesPriceCents)}
+                          </InlineText>
+                        )}
+                      </Row>
+                    );
+                  })}
+                </Stack>
               ) : null}
               <Row alignItems="flex-end" gap="$3">
                 <Stack>
@@ -382,13 +465,7 @@ export function EventDetailScreen({
                   { value: "book", label: t("predict.tab.book") },
                   { value: "trades", label: t("predict.tab.trades") },
                   { value: "rules", label: t("predict.tab.rules") },
-                  {
-                    value: "holders",
-                    label:
-                      event.data.holders === null
-                        ? t("predict.tab.holders")
-                        : `${t("predict.tab.holders")} ${event.data.holders.toLocaleString()}`,
-                  },
+                  { value: "holders", label: t("predict.tab.holders") },
                 ]}
                 onChange={setTab}
                 accessibilityLabel={t("predict.tab.book")}
@@ -411,6 +488,14 @@ export function EventDetailScreen({
                     {t("predict.rules.title")}
                   </SectionTitle>
                   <Body>{pickTranslation(event.data.rules, locale)}</Body>
+                  {market.description ? (
+                    <Stack gap="$1" testID="detail-market-rules">
+                      <SectionTitle fontSize={13}>
+                        {t("predict.rules.market")}
+                      </SectionTitle>
+                      <Body>{pickTranslation(market.description, locale)}</Body>
+                    </Stack>
+                  ) : null}
                   <DetailRow
                     label={t("predict.rules.resolver")}
                     value={t("predict.rules.resolverValue")}
@@ -508,13 +593,7 @@ export function EventDetailScreen({
                   )}
                 </Stack>
               ) : (
-                <Body>
-                  {event.data.holders === null
-                    ? t("state.empty")
-                    : fill(t("predict.holders"), {
-                        n: event.data.holders.toLocaleString(),
-                      })}
-                </Body>
+                <HoldersView marketId={market.id} />
               )}
             </>
           ) : (
@@ -526,7 +605,7 @@ export function EventDetailScreen({
           )}
         </Content>
       </PageScroll>
-      {market && status === "trading" ? (
+      {market && status === "trading" && market.acceptingOrders ? (
         <Row
           position="absolute"
           left={0}

@@ -9,7 +9,6 @@
 | --------------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------ |
 | `PredictGateway.subscribeMarkets` | 设计要求价格实时跳动；当前用 `usePredictEvents` / `useOrderBook` 轮询代替                        | 接真实 CLOB WebSocket 时 |
 | `PredictGateway.getFeeBps`        | 费率一期由事件对象携带；真实服务端费率是市场级 > 分类级 > 统一级三层                             | 接真实费率接口时         |
-| `PredictGateway.getPnl`           | 持仓页盈亏曲线（设计稿未画图表，仅汇总数字）                                                     | 增加盈亏走势图时         |
 | `WalletGateway.listTransfers`     | 转出页"最近转出"已在用它（2026-09-02）；完整的交易记录列表（个人中心"交易记录"当前是占位）仍待做 | 做 A 组交易记录页时      |
 | `DexGateway.searchTokens`         | 首页 / 行情搜索框（当前搜索框不可输入）                                                          | 做搜索页时               |
 | `DexGateway.needsApproval`        | 报价已带 `needsApproval`；真实链上查询需要独立调用                                               | 接真实链上读时           |

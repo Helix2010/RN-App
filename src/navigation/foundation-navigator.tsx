@@ -8,6 +8,7 @@ import { useTheme } from "tamagui";
 import { useFoundationRuntime } from "../app/runtime-context";
 import { AppShellScreen } from "../features/foundation/app-shell-screen";
 import { ModuleGate } from "../features/foundation/module-gate";
+import { SeriesScreen } from "../features/predict/ui/series-screen";
 import { SettingsScreen } from "../features/settings/settings-screen";
 import { LanguageSettingsScreen } from "../features/settings/language-settings-screen";
 import { AppearanceSettingsScreen } from "../features/settings/appearance-settings-screen";
@@ -152,6 +153,23 @@ export function FoundationNavigator() {
                   })
                 }
                 onOpenTransfer={() => props.navigation.navigate("Transfer")}
+              />
+            </ModuleGate>
+          )}
+        </Stack.Screen>
+        <Stack.Screen name="PredictSeries">
+          {(props) => (
+            <ModuleGate module="predict">
+              <SeriesScreen
+                slug={props.route.params.slug}
+                onBack={() => props.navigation.goBack()}
+                onOpenEvent={(eventId, marketId, outcome) =>
+                  props.navigation.navigate("PredictEvent", {
+                    eventId,
+                    marketId,
+                    outcome,
+                  })
+                }
               />
             </ModuleGate>
           )}

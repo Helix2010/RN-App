@@ -3,7 +3,9 @@ import type { Money } from "../../../core/money/money";
 import type {
   Activity,
   Adjudication,
+  CuratedEvent,
   EventQuery,
+  HolderGroup,
   LeaderboardEntry,
   LeaderboardPeriod,
   MarketEvent,
@@ -18,6 +20,8 @@ import type {
   PredictTx,
   PriceRange,
   PricePoint,
+  Series,
+  SeriesPeriod,
   Tag,
   Trade,
   DisputeInput,
@@ -45,6 +49,18 @@ export interface PredictGateway {
   ): Unsubscribe;
   getFeeBps(marketId: string): Promise<number>;
   getAdjudication(marketId: string): Promise<Adjudication>;
+  /** 首页策展位（英雄 / 高亮 / 普通三区），平台没配时为空数组 */
+  listCuratedEvents(): Promise<CuratedEvent[]>;
+  /** 按结果分组的持有人榜（data-service /holders） */
+  getHolders(marketId: string): Promise<HolderGroup[]>;
+  /** 周期性系列（BTC 5m 涨跌等）与分期 */
+  listSeries(): Promise<Series[]>;
+  getSeries(slug: string): Promise<Series>;
+  listSeriesPeriods(
+    seriesId: string,
+    scope: "current" | "closed",
+    limit?: number,
+  ): Promise<SeriesPeriod[]>;
 
   previewOrder(
     address: string,

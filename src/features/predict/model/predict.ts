@@ -11,7 +11,9 @@ export type MarketStatus =
   | "result_proposed"
   | "disputed"
   | "arbitrating"
-  | "settled";
+  | "settled"
+  /** 平台取消的市场：不再结算，持仓按平台规则退回 */
+  | "canceled";
 
 export type Outcome = "yes" | "no";
 
@@ -31,7 +33,17 @@ export type Market = {
   /** YES 展示价（分）。平台暂无报价（无买卖盘也无成交）时为 null，界面显示占位而不编数 */
   yesPriceCents: number | null;
   volumeUsd: number;
+  volume24hUsd: number;
+  liquidityUsd: number;
   endsAt: string;
+  /** 交易已截止（平台 closed）；结果见 result */
+  closed: boolean;
+  /** 已结算的胜方；未结算为 null */
+  result: Outcome | null;
+  /** 平台当前是否接单；不接单时买卖按钮禁用 */
+  acceptingOrders: boolean;
+  /** 市场级规则说明（与事件级规则不同的那部分）；平台没给时缺省 */
+  description?: LocalizedText;
   yesTokenId: string;
   noTokenId: string;
 };
@@ -45,10 +57,14 @@ export type PredictEvent = {
   /** 展示用分类标签 = 首个标签的多语言名称（categoryTagId 只用于筛选） */
   category: LocalizedText;
   tagIds: string[];
+  /** 事件的全部标签（详情页展示）；顺序即平台顺序 */
+  tags: Tag[];
   markets: Market[];
   volumeUsd: number;
-  /** 持有人数；平台不提供时为 null（界面不显示，不编数） */
-  holders: number | null;
+  volume24hUsd: number;
+  liquidityUsd: number;
+  /** 事件已截止（平台 closed） */
+  closed: boolean;
   endsAt: string;
   featured: boolean;
   rules: LocalizedText;
@@ -65,11 +81,65 @@ export type PredictEvent = {
 
 export type EventQuery = {
   tagId?: string;
-  sort?: "volume" | "endingSoon" | "newest";
-  featured?: boolean;
-  search?: string;
+  /** liquidity 平台不支持服务端排序，网关按当前页本地排序 */
+  sort?: "volume" | "volume24h" | "liquidity" | "endingSoon" | "newest";
+  /** 默认只列交易中的事件；closed = 已截止 / 已结算；all = 不过滤 */
+  status?: "trading" | "closed" | "all";
   cursor?: string | null;
   limit?: number;
+};
+
+/** 首页策展：平台运营在 /curation/events 里给事件排的位置 */
+export type CuratedEvent = {
+  event: PredictEvent;
+  /** 英雄轮播位次；不在该区为 null */
+  hero: number | null;
+  /** 高亮区位次 */
+  highlight: number | null;
+  /** 普通区位次 */
+  normal: number | null;
+};
+
+export type Holder = {
+  /** 持仓地址（平台代理钱包） */
+  address: string;
+  /** 平台公开的用户名或匿名；两者都没有为 null */
+  name: string | null;
+  shares: number;
+};
+export type HolderGroup = { outcome: Outcome; holders: Holder[] };
+
+/** 周期性市场系列（如 BTC 5 分钟涨跌） */
+export type Series = {
+  id: string;
+  slug: string;
+  title: LocalizedText;
+  /** 平台的周期文本（5m / 15m / 1h …） */
+  recurrence: string;
+  seriesType: string;
+  active: boolean;
+  closed: boolean;
+};
+export type SeriesPeriodPrice = {
+  price: string;
+  /** 取价来源：chainlink 实时 / chainlink-candle K 线兜底 */
+  source: string;
+  sampledAt?: string;
+};
+export type SeriesPeriod = {
+  id: string;
+  seriesId: string;
+  eventId: string;
+  marketId: string;
+  windowStart: string;
+  windowEnd: string;
+  /** 平台阶段：generated / publishing / published / closing / proposed / settled / failed / held */
+  stage: string;
+  priceToBeat: SeriesPeriodPrice | null;
+  finalPrice: SeriesPeriodPrice | null;
+  result: "up" | "down" | null;
+  /** 该期对应的事件（带市场与代币），平台带出时才有 */
+  event?: PredictEvent;
 };
 
 export type OrderBookLevel = { priceCents: number; shares: number };

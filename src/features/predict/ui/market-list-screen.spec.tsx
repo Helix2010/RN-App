@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react-native";
+import { fireEvent, screen, waitFor } from "@testing-library/react-native";
 import { fromDecimal } from "../../../core/money/money";
 import {
   createTestGateways,
@@ -6,6 +6,7 @@ import {
   signIn,
 } from "../../../test/harness";
 import type { InMemoryPredictAccountGateway } from "../../../test/predict-account";
+import { useFavoritesStore } from "../model/favorites-store";
 import { MarketListScreen } from "./market-list-screen";
 
 function props() {
@@ -16,6 +17,7 @@ function props() {
     onOpenEnable: jest.fn(),
     onOpenPositions: jest.fn(),
     onOpenLeaderboard: jest.fn(),
+    onOpenSeries: jest.fn(),
   };
 }
 
@@ -97,7 +99,7 @@ describe("MarketListScreen", () => {
       <MarketListScreen {...props()} showPositionsEntry={false} />,
     );
     await waitFor(() =>
-      expect(screen.getByTestId("predict-featured")).toBeTruthy(),
+      expect(screen.getByTestId("predict-hero-ev-worldcup")).toBeTruthy(),
     );
     expect(screen.queryByLabelText("持仓")).toBeNull();
   });
@@ -106,8 +108,68 @@ describe("MarketListScreen", () => {
     await renderWithProviders(
       <MarketListScreen {...props()} showPositionsEntry />,
     );
-    expect(await screen.findByTestId("predict-featured")).toBeTruthy();
+    expect(await screen.findByTestId("predict-hero-ev-worldcup")).toBeTruthy();
     expect(await screen.findByTestId("event-ev-btc-120k")).toBeTruthy();
+  });
+
+  it("filters the loaded list locally by search text", async () => {
+    await renderWithProviders(
+      <MarketListScreen {...props()} showPositionsEntry />,
+    );
+    expect(await screen.findByTestId("event-ev-btc-120k")).toBeTruthy();
+    await fireEvent.changeText(screen.getByTestId("predict-search"), "FOMC");
+    await waitFor(() =>
+      expect(screen.queryByTestId("event-ev-btc-120k")).toBeNull(),
+    );
+    expect(screen.getByTestId("event-ev-fomc-sep")).toBeTruthy();
+    await fireEvent.changeText(
+      screen.getByTestId("predict-search"),
+      "zzz-nothing",
+    );
+    expect(await screen.findByText("没有匹配的市场")).toBeTruthy();
+  });
+
+  it("switches to closed markets and hides the discovery sections there", async () => {
+    await renderWithProviders(
+      <MarketListScreen {...props()} showPositionsEntry />,
+    );
+    expect(await screen.findByTestId("predict-hero-ev-worldcup")).toBeTruthy();
+    expect(await screen.findByTestId("predict-series")).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("predict-status-closed"));
+    // "热门"标签下没有已结束的市场：空态，且精选 / 周期市场区块收起
+    expect(await screen.findByText("暂无数据")).toBeTruthy();
+    expect(screen.queryByTestId("event-ev-btc-120k")).toBeNull();
+    expect(screen.queryByTestId("predict-hero-ev-worldcup")).toBeNull();
+    expect(screen.queryByTestId("predict-series")).toBeNull();
+    await fireEvent.press(screen.getByText("体育"));
+    expect(await screen.findByTestId("event-ev-mun-liv")).toBeTruthy();
+    expect(screen.queryByTestId("event-ev-worldcup")).toBeNull();
+  });
+
+  it("shows favorites only after the star was toggled on a card", async () => {
+    useFavoritesStore.setState({ ids: [] });
+    const p = props();
+    await renderWithProviders(<MarketListScreen {...p} showPositionsEntry />);
+    expect(await screen.findByTestId("event-ev-btc-120k")).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("predict-favorites"));
+    expect(await screen.findByTestId("predict-favorites-empty")).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("predict-status-trading"));
+    expect(await screen.findByTestId("event-ev-btc-120k")).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("favorite-ev-btc-120k"));
+    expect(useFavoritesStore.getState().ids).toEqual(["ev-btc-120k"]);
+    await fireEvent.press(screen.getByTestId("predict-favorites"));
+    expect(await screen.findByTestId("event-ev-btc-120k")).toBeTruthy();
+    expect(screen.queryByTestId("event-ev-fomc-sep")).toBeNull();
+    expect(screen.queryByTestId("predict-favorites-empty")).toBeNull();
+  });
+
+  it("lists recurring series and opens one", async () => {
+    const p = props();
+    await renderWithProviders(<MarketListScreen {...p} showPositionsEntry />);
+    await fireEvent.press(await screen.findByTestId("series-btc-updown-5m"));
+    expect(p.onOpenSeries).toHaveBeenCalledWith(
+      expect.objectContaining({ slug: "btc-updown-5m" }),
+    );
   });
 
   it("keeps a zero balance from being treated as missing", async () => {

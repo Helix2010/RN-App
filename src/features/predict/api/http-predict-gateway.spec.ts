@@ -68,6 +68,16 @@ function platform() {
       },
     ],
   };
+  const series = {
+    id: 5,
+    slug: "btc-updown-5m",
+    title: "BTC Up or Down · 5m",
+    titleTranslation: '{"zh":"BTC 5 分钟涨跌"}',
+    seriesType: "crypto_periodic",
+    recurrence: "5m",
+    active: true,
+    closed: false,
+  };
   setPlatformFetch(async (input, init) => {
     const url = new URL(String(input));
     const method = (init?.method ?? "GET").toUpperCase();
@@ -92,6 +102,92 @@ function platform() {
       if (path === "/events") return json([event]);
       if (path === "/events/slug/btc-120k" || path === "/events/42")
         return json(event);
+      if (path === "/curation/events")
+        return json([
+          // hero + highlight（位掩码 6），各自有独立次序
+          {
+            ...event,
+            featuredLevel: 6,
+            featuredOrder: 9,
+            featuredOrderHero: 1,
+            featuredOrderHighlight: 3,
+          },
+          // 只有 normal 位（1），没有专门次序时退到 featuredOrder
+          {
+            ...event,
+            id: 43,
+            slug: "eth-5k",
+            featuredLevel: 1,
+            featuredOrder: 2,
+          },
+          { ...event, id: 44, slug: "sol-300", featuredLevel: 0 },
+        ]);
+      if (path === "/series") return json([series]);
+      if (path === "/series/slug/btc-updown-5m") return json(series);
+      if (path === "/series/5/periods")
+        return json({
+          data: [
+            {
+              id: 9,
+              seriesId: 5,
+              eventId: 42,
+              marketId: 7,
+              windowStart: "2027-01-01T00:00:00Z",
+              windowEnd: "2027-01-01T00:05:00Z",
+              stage: "published",
+              priceToBeat: {
+                price: "65000.5",
+                source: "binance",
+                sampledAt: "2027-01-01T00:00:00Z",
+              },
+              finalPrice: null,
+              result: null,
+              event,
+            },
+            {
+              id: 8,
+              seriesId: 5,
+              eventId: 41,
+              marketId: 6,
+              windowStart: "2026-12-31T23:55:00Z",
+              windowEnd: "2027-01-01T00:00:00Z",
+              stage: "settled",
+              priceToBeat: { price: 64990 },
+              finalPrice: { price: "65000.5", source: "binance" },
+              result: "up",
+            },
+          ],
+        });
+    }
+    if (host === "data-api" && path === "/holders")
+      return json([
+        {
+          token: "111",
+          holders: [
+            {
+              proxyWallet: "0xaaa",
+              name: "Alice",
+              pseudonym: "Quiet-Fox",
+              amount: "12.5",
+              outcomeIndex: 0,
+              displayUsernamePublic: true,
+            },
+            {
+              proxyWallet: "0xbbb",
+              name: "Bob",
+              pseudonym: "Loud-Owl",
+              amount: 40,
+              outcomeIndex: 0,
+              displayUsernamePublic: false,
+            },
+          ],
+        },
+        {
+          token: "222",
+          holders: [{ proxyWallet: "0xccc", amount: 3, outcomeIndex: 1 }],
+        },
+      ]);
+    if (host === "gamma-api") {
       if (path === "/markets/information")
         return json([
           {
@@ -410,7 +506,8 @@ describe("HttpPredictGateway", () => {
     expect(event?.id).toBe("42");
     expect(event?.slug).toBe("btc-120k");
     expect(event?.kind).toBe("binary");
-    expect(event?.holders).toBeNull();
+    expect(event?.closed).toBe(false);
+    expect(event?.tags.map((tag) => tag.id)).toEqual(["3"]);
     expect(event?.title).toEqual({
       default: "Will BTC hit 120k?",
       zh: "BTC 会到 12 万吗？",
@@ -429,6 +526,101 @@ describe("HttpPredictGateway", () => {
     });
     for (const request of seen)
       expect(request.headers["X-Tenant-Domain"]).toBe(DOMAIN);
+  });
+
+  it("maps the status filter and sort to gamma query params", async () => {
+    const { gateway, seen } = build();
+    await gateway.listEvents({ sort: "volume", limit: 1 });
+    await gateway.listEvents({ sort: "volume24h", status: "closed", limit: 1 });
+    await gateway.listEvents({ sort: "liquidity", status: "all", limit: 1 });
+    const calls = seen
+      .filter((call) => call.url.pathname === "/events")
+      .map((call) => call.url.searchParams);
+    expect(calls[0]?.get("active")).toBe("true");
+    expect(calls[0]?.get("closed")).toBe("false");
+    expect(calls[0]?.get("order")).toBe("volume");
+    expect(calls[1]?.get("closed")).toBe("true");
+    expect(calls[1]?.get("active")).toBeNull();
+    expect(calls[1]?.get("order")).toBe("volume24hr");
+    expect(calls[2]?.get("closed")).toBeNull();
+    expect(calls[2]?.get("active")).toBeNull();
+    // 流动性平台不排序：按成交量取回来本地排
+    expect(calls[2]?.get("order")).toBe("volume");
+  });
+
+  it("ranks curated events by the featuredLevel bitmask and per-tier order", async () => {
+    const { gateway } = build();
+    const curated = await gateway.listCuratedEvents();
+    expect(
+      curated.map((item) => [item.hero, item.highlight, item.normal]),
+    ).toEqual([
+      [1, 3, null],
+      [null, null, 2],
+      [null, null, null],
+    ]);
+    expect(curated[0]?.event.id).toBe("42");
+  });
+
+  it("groups holders by outcome, sorts by shares and hides names that are not public", async () => {
+    const { gateway, seen } = build();
+    const groups = await gateway.getHolders(CONDITION);
+    const call = seen.find((item) => item.url.pathname === "/holders");
+    expect(call?.url.host).toBe(`data-api.${DOMAIN}`);
+    expect(call?.url.searchParams.get("market")).toBe(CONDITION);
+    expect(call?.url.searchParams.get("limit")).toBe("10");
+    expect(groups.map((group) => group.outcome)).toEqual(["yes", "no"]);
+    expect(groups[0]?.holders).toEqual([
+      { address: "0xbbb", name: "Loud-Owl", shares: 40 },
+      { address: "0xaaa", name: "Alice", shares: 12.5 },
+    ]);
+    expect(groups[1]?.holders).toEqual([
+      { address: "0xccc", name: null, shares: 3 },
+    ]);
+  });
+
+  it("maps series and their periods, trading through the period event's conditionId", async () => {
+    const { gateway, seen } = build();
+    const list = await gateway.listSeries();
+    expect(list.map((item) => item.slug)).toEqual(["btc-updown-5m"]);
+    const series = await gateway.getSeries("btc-updown-5m");
+    expect(series).toEqual({
+      id: "5",
+      slug: "btc-updown-5m",
+      title: { default: "BTC Up or Down · 5m", zh: "BTC 5 分钟涨跌" },
+      recurrence: "5m",
+      seriesType: "crypto_periodic",
+      active: true,
+      closed: false,
+    });
+    const periods = await gateway.listSeriesPeriods("5", "current", 2);
+    const call = seen.find((item) => item.url.pathname === "/series/5/periods");
+    expect(call?.url.searchParams.get("current")).toBe("true");
+    expect(call?.url.searchParams.get("limit")).toBe("2");
+    expect(periods[0]).toMatchObject({
+      id: "9",
+      seriesId: "5",
+      eventId: "42",
+      marketId: CONDITION,
+      stage: "published",
+      priceToBeat: { price: "65000.5", source: "binance" },
+      finalPrice: null,
+      result: null,
+    });
+    expect(periods[0]?.event?.id).toBe("42");
+    // 没带事件的历史期：市场 id 退到平台的数字 id，结果与结算价原样映射
+    expect(periods[1]).toMatchObject({
+      marketId: "6",
+      priceToBeat: { price: "64990", source: "" },
+      finalPrice: { price: "65000.5", source: "binance" },
+      result: "up",
+    });
+    expect(periods[1]?.event).toBeUndefined();
+    await gateway.listSeriesPeriods("5", "closed", 12);
+    const closedCall = seen
+      .filter((item) => item.url.pathname === "/series/5/periods")
+      .at(-1);
+    expect(closedCall?.url.searchParams.get("closed")).toBe("true");
+    expect(closedCall?.url.searchParams.get("current")).toBeNull();
   });
 
   it("reports a market order that filled nothing as canceled instead of open", async () => {
@@ -1079,6 +1271,19 @@ describe("HttpPredictGateway disputes", () => {
       }),
     ).rejects.toMatchObject({ reason: "evidence_rejected" });
     expect(evidencePosts).toHaveLength(0);
+  });
+
+  it("surfaces the platform's cancellation phases as a canceled status", async () => {
+    adjudicationOverride = {
+      ...LIVE_ADJUDICATION,
+      status: "canceled",
+      currentPhase: "cancellation_pending",
+    };
+    const { gateway } = build();
+    const adj = await gateway.getAdjudication(CONDITION);
+    expect(adj.status).toBe("canceled");
+    expect(adj.phase).toBe("cancellation_pending");
+    expect(adj.canDispute).toBe(false);
   });
 
   it("treats crypto_periodic markets as non-disputable", async () => {

@@ -28,10 +28,13 @@ import {
   type Money,
 } from "../../../core/money/money";
 import { EVENTS, LEADERBOARD, SEED_POSITIONS, TAGS } from "../fixtures/events";
+import { SERIES, seriesPeriods } from "../fixtures/series";
 import type {
   Activity,
   Adjudication,
+  CuratedEvent,
   EventQuery,
+  HolderGroup,
   LeaderboardEntry,
   LeaderboardPeriod,
   Market,
@@ -50,6 +53,8 @@ import type {
   PredictTx,
   PriceRange,
   PricePoint,
+  Series,
+  SeriesPeriod,
   Tag,
   Trade,
   DisputeInput,
@@ -383,11 +388,7 @@ export class MockPredictGateway implements PredictGateway {
       const state = await this.load();
       this.drift(state);
       if (isEmptyMode()) return { items: [], nextCursor: null };
-      const now = mockNow();
-      let items = EVENTS.filter(
-        (event) =>
-          new Date(event.endsAt).getTime() > now || query.tagId === undefined,
-      );
+      let items = EVENTS.slice();
       if (query.tagId && query.tagId !== "hot")
         items = items.filter(
           (event) =>
@@ -398,23 +399,22 @@ export class MockPredictGateway implements PredictGateway {
         items = items.filter(
           (event) => event.tagIds.includes("hot") || event.featured,
         );
-      if (query.featured !== undefined)
-        items = items.filter((event) => event.featured === query.featured);
-      if (query.search) {
-        const needle = query.search.toLowerCase();
+      const status = query.status ?? "trading";
+      if (status !== "all")
         items = items.filter((event) =>
-          Object.values(event.title).some((text) =>
-            text?.toLowerCase().includes(needle),
-          ),
+          status === "closed" ? event.closed : !event.closed,
         );
-      }
       const sort = query.sort ?? "volume";
       items = [...items].sort((a, b) =>
         sort === "volume"
           ? b.volumeUsd - a.volumeUsd
-          : sort === "endingSoon"
-            ? new Date(a.endsAt).getTime() - new Date(b.endsAt).getTime()
-            : b.id.localeCompare(a.id),
+          : sort === "volume24h"
+            ? b.volume24hUsd - a.volume24hUsd
+            : sort === "liquidity"
+              ? b.liquidityUsd - a.liquidityUsd
+              : sort === "endingSoon"
+                ? new Date(a.endsAt).getTime() - new Date(b.endsAt).getTime()
+                : b.id.localeCompare(a.id),
       );
       const limit = query.limit ?? 20;
       const start = query.cursor ? Number(query.cursor) : 0;
@@ -436,6 +436,77 @@ export class MockPredictGateway implements PredictGateway {
       );
       if (!event) throw new Error(`event not found: ${slugOrId}`);
       return this.withLivePrices(state, event);
+    });
+  }
+
+  async listCuratedEvents(): Promise<CuratedEvent[]> {
+    return simulate(async () => {
+      const state = await this.load();
+      if (isEmptyMode()) return [];
+      // 夹具：featured 的事件按出现顺序进英雄区，其余按成交量进普通区
+      let hero = 0;
+      return EVENTS.map((event, index) => ({
+        event: this.withLivePrices(state, event),
+        hero: event.featured ? hero++ : null,
+        highlight: null,
+        normal: event.featured ? null : index,
+      }));
+    });
+  }
+
+  async getHolders(marketId: string): Promise<HolderGroup[]> {
+    return simulate(() => {
+      if (isEmptyMode()) return [];
+      // 夹具：由市场 id 派生的固定持有人，保证同一市场每次一致
+      let seed = 0;
+      for (const char of marketId)
+        seed = (seed * 31 + char.charCodeAt(0)) >>> 0;
+      const holdersFor = (outcome: Outcome): HolderGroup => ({
+        outcome,
+        holders: Array.from({ length: 5 }, (_, index) => {
+          const n =
+            (seed + index * 7919 + (outcome === "yes" ? 0 : 104729)) >>> 0;
+          return {
+            address: `0x${n.toString(16).padStart(8, "0")}${"ab".repeat(16)}`,
+            name: index % 2 === 0 ? `trader-${(n % 900) + 100}` : null,
+            shares: Math.round(5_000 / (index + 1)),
+          };
+        }),
+      });
+      return [holdersFor("yes"), holdersFor("no")];
+    });
+  }
+
+  async listSeries(): Promise<Series[]> {
+    return simulate(() => (isEmptyMode() ? [] : SERIES));
+  }
+
+  async getSeries(slug: string): Promise<Series> {
+    return simulate(() => {
+      const series = SERIES.find(
+        (item) => item.slug === slug || item.id === slug,
+      );
+      if (!series) throw new Error(`series not found: ${slug}`);
+      return series;
+    });
+  }
+
+  async listSeriesPeriods(
+    seriesId: string,
+    scope: "current" | "closed",
+    limit = 12,
+  ): Promise<SeriesPeriod[]> {
+    return simulate(() => {
+      if (isEmptyMode()) return [];
+      const all = seriesPeriods(seriesId, mockNow(), Math.max(limit, 6));
+      const now = mockNow();
+      const closed = all.filter(
+        (period) => new Date(period.windowEnd).getTime() <= now,
+      );
+      const current = all.filter(
+        (period) => new Date(period.windowEnd).getTime() > now,
+      );
+      return (scope === "closed" ? closed.reverse() : current).slice(0, limit);
     });
   }
 

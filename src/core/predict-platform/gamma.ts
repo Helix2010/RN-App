@@ -99,9 +99,13 @@ export const gammaMarketSchema = z.object({
   outcomes: jsonArray,
   outcomePrices: jsonArray,
   clobTokenIds: jsonArray,
+  description: z.string().nullish(),
+  image: z.string().nullish(),
+  icon: z.string().nullish(),
   volume: num,
   volume24hr: num,
   liquidity: num,
+  oneDayPriceChange: num,
   endDate: z.string().nullish(),
   active: z.boolean().nullish(),
   closed: z.boolean().nullish(),
@@ -131,16 +135,58 @@ const gammaEventSchema = z.object({
   liquidity: num,
   negRisk: z.boolean().nullish(),
   numMarkets: num,
+  image: z.string().nullish(),
+  icon: z.string().nullish(),
+  // /curation/events 的位次字段（user-dapp HomepageCurationSection.tsx）：
+  // featuredLevel 是位掩码 normal=1 / highlight=2 / hero=4，各区各有自己的顺序号
+  featuredLevel: num,
+  featuredOrder: num,
+  featuredOrderHero: num,
+  featuredOrderHighlight: num,
+  featuredOrderNormal: num,
   markets: z.array(gammaMarketSchema).nullish(),
   tags: z.array(gammaTagSchema).nullish(),
 });
 export type GammaEvent = z.infer<typeof gammaEventSchema>;
 
+const gammaSeriesSchema = z.object({
+  id: z.union([z.string(), z.number()]).transform(String),
+  slug: z.string(),
+  title: z.string().nullish(),
+  titleTranslation: z.string().nullish(),
+  seriesType: z.string().nullish(),
+  recurrence: z.string().nullish(),
+  active: z.boolean().nullish(),
+  closed: z.boolean().nullish(),
+});
+export type GammaSeries = z.infer<typeof gammaSeriesSchema>;
+
+const gammaSeriesPeriodPriceSchema = z.object({
+  price: z.union([z.string(), z.number()]).transform(String),
+  source: z.string().nullish(),
+  sampledAt: z.string().nullish(),
+});
+const gammaSeriesPeriodSchema = z.object({
+  id: z.union([z.string(), z.number()]).transform(String),
+  seriesId: z.union([z.string(), z.number()]).transform(String),
+  eventId: z.union([z.string(), z.number()]).transform(String),
+  marketId: z.union([z.string(), z.number()]).nullish(),
+  windowStart: z.string(),
+  windowEnd: z.string(),
+  stage: z.string().nullish(),
+  priceToBeat: gammaSeriesPeriodPriceSchema.nullish(),
+  finalPrice: gammaSeriesPeriodPriceSchema.nullish(),
+  result: z.string().nullish(),
+  event: gammaEventSchema.nullish(),
+});
+export type GammaSeriesPeriod = z.infer<typeof gammaSeriesPeriodSchema>;
+
 type GammaEventsQuery = {
   tagId?: string;
-  featured?: boolean;
-  /** 与 user-dapp 一致：volume 降序、end_date_iso 升序、created_at 降序 */
-  order?: "volume" | "end_date_iso" | "created_at";
+  /** 与 user-dapp 一致：volume / volume24hr 降序、end_date_iso 升序、created_at 降序 */
+  order?: "volume" | "volume24hr" | "end_date_iso" | "created_at";
+  /** trading = active 且未 closed（默认）；closed = 已截止；all = 不按状态过滤 */
+  status?: "trading" | "closed" | "all";
   limit: number;
   offset: number;
 };
@@ -174,14 +220,16 @@ export async function fetchEvents(
   const order = input.order ?? "volume";
   return platformRequest({
     url: `${hosts.gamma}/events${query({
-      active: true,
-      closed: false,
+      ...(input.status === "all"
+        ? {}
+        : input.status === "closed"
+          ? { closed: true }
+          : { active: true, closed: false }),
       limit: input.limit,
       offset: input.offset,
       order,
       ascending: order === "end_date_iso",
       tag_id: input.tagId,
-      featured: input.featured,
       exclude_tag_slug: "recurring",
     })}`,
     tenantDomain: service.domain,
@@ -257,6 +305,75 @@ export async function fetchMarketsByCondition(
  * 可成交价：0 < p < 1。网页版 adapters.ts:566-567 / orderbookPricing.ts isTradablePrice 同规则；
  * gamma 用 0 表示没数据，1 也不是概率。
  */
+/** 首页策展位（user-dapp `getCurationEvents`）：运营手工排的英雄 / 高亮 / 普通三区 */
+export async function fetchCuratedEvents(
+  service: PredictServiceConfig,
+): Promise<GammaEvent[]> {
+  const hosts = platformHosts(service);
+  return platformRequest({
+    url: `${hosts.gamma}/curation/events`,
+    tenantDomain: service.domain,
+    schema: z.array(gammaEventSchema),
+  });
+}
+
+/** 周期性系列列表（user-dapp `useHomepageCategoryMarkets` 同参数，不带事件） */
+export async function fetchSeriesList(
+  service: PredictServiceConfig,
+  input: { limit: number } = { limit: 20 },
+): Promise<GammaSeries[]> {
+  const hosts = platformHosts(service);
+  return platformRequest({
+    url: `${hosts.gamma}/series${query({
+      closed: false,
+      exclude_events: true,
+      limit: input.limit,
+      offset: 0,
+      order: "id",
+      ascending: false,
+    })}`,
+    tenantDomain: service.domain,
+    schema: z.array(gammaSeriesSchema),
+  });
+}
+
+export async function fetchSeries(
+  service: PredictServiceConfig,
+  slug: string,
+): Promise<GammaSeries> {
+  const hosts = platformHosts(service);
+  return platformRequest({
+    url: `${hosts.gamma}/series/slug/${encodeURIComponent(slug)}${query({ exclude_events: true })}`,
+    tenantDomain: service.domain,
+    schema: gammaSeriesSchema,
+  });
+}
+
+/**
+ * 系列分期（本平台扩展 `GET /series/{id}/periods`）：
+ * current=true 取近场切片（含当期与下一期），closed=true 取已结束的历史分期。
+ */
+export async function fetchSeriesPeriods(
+  service: PredictServiceConfig,
+  seriesId: string,
+  input: { scope: "current" | "closed"; limit: number },
+): Promise<GammaSeriesPeriod[]> {
+  const hosts = platformHosts(service);
+  const response = await platformRequest({
+    url: `${hosts.gamma}/series/${encodeURIComponent(seriesId)}/periods${query(
+      input.scope === "current"
+        ? { current: true, limit: input.limit }
+        : { closed: true, limit: input.limit },
+    )}`,
+    tenantDomain: service.domain,
+    schema: z.object({
+      data: z.array(gammaSeriesPeriodSchema),
+      nextCursor: z.string().nullish(),
+    }),
+  });
+  return response.data;
+}
+
 export function tradablePrice(value: number | null | undefined): number | null {
   return value !== null && value !== undefined && value > 0 && value < 1
     ? value

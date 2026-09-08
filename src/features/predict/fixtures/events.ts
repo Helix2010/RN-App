@@ -64,13 +64,22 @@ function market(
       : undefined,
     yesPriceCents: yes,
     volumeUsd: volume,
+    // 夹具：近 24h 成交按总量的 8% 计，流动性按 3% 计
+    volume24hUsd: Math.round(volume * 0.08),
+    liquidityUsd: Math.round(volume * 0.03),
     endsAt,
+    closed: new Date(endsAt).getTime() <= new Date(FIXTURE_NOW).getTime(),
+    result: null,
+    acceptingOrders: true,
     yesTokenId: `${id}-yes`,
     noTokenId: `${id}-no`,
   };
 }
 
-export const EVENTS: PredictEvent[] = [
+const RAW_EVENTS: Omit<
+  PredictEvent,
+  "tags" | "volume24hUsd" | "liquidityUsd" | "closed"
+>[] = [
   {
     id: "ev-btc-120k",
     slug: "btc-close-above-120k-aug-31",
@@ -96,7 +105,6 @@ export const EVENTS: PredictEvent[] = [
       ),
     ],
     volumeUsd: 1_200_000,
-    holders: 1284,
     endsAt: "2026-08-31T23:59:59Z",
     featured: false,
     rules: rulesCrypto,
@@ -144,7 +152,6 @@ export const EVENTS: PredictEvent[] = [
       ),
     ],
     volumeUsd: 860_000,
-    holders: 842,
     endsAt: "2026-09-18T18:00:00Z",
     featured: false,
     rules: localized(
@@ -201,7 +208,6 @@ export const EVENTS: PredictEvent[] = [
       ),
     ],
     volumeUsd: 3_400_000,
-    holders: 5_120,
     endsAt: "2027-07-19T22:00:00Z",
     featured: true,
     rules: localized(
@@ -236,7 +242,6 @@ export const EVENTS: PredictEvent[] = [
       ),
     ],
     volumeUsd: 380_000,
-    holders: 412,
     endsAt: "2026-09-05T20:00:00Z",
     featured: false,
     rules: localized(
@@ -284,7 +289,6 @@ export const EVENTS: PredictEvent[] = [
       ),
     ],
     volumeUsd: 412_000,
-    holders: 903,
     endsAt: "2026-08-30T14:30:00Z",
     featured: false,
     rules: localized(
@@ -323,7 +327,6 @@ export const EVENTS: PredictEvent[] = [
       ),
     ],
     volumeUsd: 640_000,
-    holders: 1_010,
     endsAt: "2026-08-12T12:30:00Z",
     featured: false,
     rules: localized(
@@ -355,7 +358,6 @@ export const EVENTS: PredictEvent[] = [
       ),
     ],
     volumeUsd: 280_000,
-    holders: 640,
     endsAt: "2026-08-29T16:30:00Z",
     featured: false,
     rules: localized(
@@ -387,7 +389,6 @@ export const EVENTS: PredictEvent[] = [
       ),
     ],
     volumeUsd: 210_000,
-    holders: 332,
     endsAt: "2026-08-30T23:59:59Z",
     featured: false,
     rules: rulesCrypto,
@@ -397,6 +398,15 @@ export const EVENTS: PredictEvent[] = [
 ];
 
 /** 初始持仓（相对 FIXTURE_NOW） */
+/** 夹具事件：标签对象、24h 成交、流动性与截止状态都从市场与标签表推出，不再手写 */
+export const EVENTS: PredictEvent[] = RAW_EVENTS.map((event) => ({
+  ...event,
+  tags: event.tagIds.flatMap((id) => TAGS.filter((tag) => tag.id === id)),
+  volume24hUsd: event.markets.reduce((sum, m) => sum + m.volume24hUsd, 0),
+  liquidityUsd: event.markets.reduce((sum, m) => sum + m.liquidityUsd, 0),
+  closed: new Date(event.endsAt).getTime() <= new Date(FIXTURE_NOW).getTime(),
+}));
+
 export const SEED_POSITIONS = [
   {
     marketId: "m-btc-120k",

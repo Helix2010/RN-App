@@ -87,7 +87,7 @@
 | 卡片快捷下单 | 部分 | 无新增 | 卡片有 Yes/No，需进详情页下单 |
 | 平仓（限价 / 市价卖出、预估盈亏） | 已对接 | 同下单 | 持仓页"卖出" |
 | 领取、一键领取、零收益清仓、分步进度 | 部分 | `redeemPositions` 经 relayer | 有一键领取；缺零收益清仓与进度对话框；dev 尚无已结算市场可验 |
-| 活动类型 | 部分 | data `/activity` | App：TRADE / SPLIT / MERGE / REDEEM；C 端另有 conversion、rebate |
+| 活动类型 | 已对接 | data `/activity` | TRADE / SPLIT / MERGE / REDEEM / CONVERSION / MAKER_REBATE 都已映射（`ACTIVITY_TYPES`）；初稿误记为缺 conversion / rebate，已复核更正 |
 | 持仓 / 挂单搜索与分类筛选、最大盈利 | 未对接 | 本地 | |
 | 盈亏曲线区间 | 部分 | `/user-pnl` | App 固定 1d，C 端 今日 / 7d / 30d / 全部 |
 | 实时盘口推送 | 已对接 | `wss://clob-ws/ws/market` | C 端同样只有行情频道，无用户成交推送 |
@@ -114,7 +114,7 @@
 
 所有条目都在 `modules.predict` 之下：新页面套 `ModuleGate`，共享入口的查询带 `enabled`。
 
-1. **交易闭环小缺口（只改现有网关与页面）**：市场取消状态与阶段文案补全；活动类型补 conversion / rebate；零收益清仓与领取进度；盈亏曲线区间选择。
+1. **交易闭环小缺口（只改现有网关与页面）**：市场取消状态与阶段文案补全；零收益清仓与领取进度；盈亏曲线区间选择。
 2. **发现层（字段已在本地）**：状态筛选、24h 成交量 / 流动性排序与展示、每个结果的成交量与结算结果、完整标签、市场级规则、本地搜索与收藏、持有人分布（接 data `/holders`）。
 3. **需新接口的两块**：首页策展（`/curation/events`）、周期性加密市场（`/series` + periods）。
 4. **独立需求**：个人资料与公开主页、体育枢纽、跨链桥转入、图片资源。
@@ -132,5 +132,32 @@
 
 ## 6. 验证
 
+### 6.1 开关合规（2026-09-08 上午）
+
 - 单元 / 组件测试：`module-gate.spec.tsx`（4 例）、`foundation-home-screen.spec.tsx` 新增"预测关闭不发请求"；全量 jest、lint、typecheck、format 通过。
 - 开关关闭时的人工核对项：底部无预测页签；首页无热门榜且无 `/events` 请求；资产页无预测账户卡与划转；兑换页余额不足只显示"余额不足"且不可点；停留在预测详情页时把开关关掉，页面退回首页。
+
+### 6.2 第 1–3 项实施（2026-09-08 下午）
+
+实施范围：§4 第 1、2、3 项全部落地；第 4 项（个人资料 / 体育枢纽 / 跨链桥 / 图片）与第 5 项（需平台确认）
+**未实施**，仍按 §5 等平台答复。
+
+- 数据层：`gamma.ts` 增 `status` / `volume24hr` 排序、`/curation/events`、`/series`、`/series/slug/{slug}`、
+  `/series/{id}/periods`；新增 `data-holders.ts`（data `/holders`）；模型增 `canceled` 状态、市场级
+  `volume24hUsd / liquidityUsd / closed / result / acceptingOrders / description`、事件级 `tags / volume24hUsd /
+  liquidityUsd / closed`、`CuratedEvent / HolderGroup / Series / SeriesPeriod`；网关接口增
+  `listCuratedEvents / getHolders / listSeries / getSeries / listSeriesPeriods`，Http 与 Mock 两套实现。
+- 页面：市场列表（本地搜索、交易中 / 已结束 / 全部、收藏、24h 成交量 / 流动性排序、策展精选轮播、高概率 / 今日热门榜、
+  周期市场卡）；详情（完整标签、24h / 流动性、每个结果的成交量与结算结果、市场级规则、持有人页签、收藏星标、
+  不接单时隐藏下单）；持仓（盈亏区间 1d / 1w / 1m / 全部、零收益清仓、领取中文案）；结算（取消提示、阶段文案）；
+  新页面 `PredictSeries`（`ModuleGate module="predict"`，`system-back.ts` 登记）。
+- 开关：新页面套 `ModuleGate`；列表页只在预测页签内挂载；`useCuratedEvents / useSeriesList` 带 `enabled`，
+  在非默认标签 / 非交易中 / 收藏视图下不发请求；收藏与搜索是本地能力，不新增平台请求。
+- 测试：`http-predict-gateway.spec.ts` 新增状态 / 排序参数映射、策展位掩码、持有人分组、系列与分期映射、取消阶段；
+  `mock-predict-gateway.spec.ts` 新增状态过滤 / 排序 / 策展 / 持有人 / 分期；`market-list-screen.spec.tsx` 新增搜索、
+  已结束视图、收藏、周期市场；新增 `favorites-store.spec.ts`、`event-search.spec.ts`、`series-card.spec.ts`。
+  全量 jest（99 套 / 693 例）、lint、typecheck、format 通过。
+- 死代码清理：删除无人抛出的 `PredictUnsupportedError`、无人使用的 `EventQuery.featured` 查询参数（列表页改用策展接口）、
+  失效文案 `predict.special` / `predict.today`；ADR 0009 去掉已在用的 `getPnl` 条目；`event.holders` 计数字段由
+  `/holders` 榜替代。
+- 文案链路：fallback-config → `pnpm i18n:seed` → RN-Server `sync-rn-app-i18n-seed.mjs` → 推送部署。
