@@ -42,3 +42,4 @@
 
 - anyfun 租户配置：`services.predict.endpoints.rtds / rtdsWs` 已通过管理接口写入（配置版本 15 → 16），bootstrap 已下发。
 - OTA rev 12（`ota_qpB5O5xem74OdUCouPX43g`，applyStrategy immediate，source 7c25fe6）已发布到 anyfun production 渠道。
+- OTA rev 13（`ota_W-jG2TknpaL-v3HNZH6BCA`，applyStrategy next_launch，source 1d1637a）：价格刻度栏加宽、模式切换整行。
