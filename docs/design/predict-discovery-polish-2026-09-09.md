@@ -1,6 +1,6 @@
 # 预测市场：精选 / 推荐位 / 周期市场操作 UI 与交互优化
 
-日期：2026-09-09 · 状态：设计稿，待确认 §7 · 范围：RN-App（`market-list-screen.tsx`、`series-screen.tsx`、`series-period-card.tsx`、`series-period-rail.tsx`、`series-card.tsx`、design-system）
+日期：2026-09-09 · 状态：§7 四项按建议确认并实现（RN-App 35b330f + 6388ec1，OTA rev 3 `ota_n78byKF9IgAp8PaEEJGwlQ` / rev 4 `ota_1RXbSEd0k_qYfoj4kchdLQ`） · 范围：RN-App（`market-list-screen.tsx`、`series-screen.tsx`、`series-period-card.tsx`、`series-period-rail.tsx`、`series-card.tsx`、design-system）
 
 ## 1. 现状与问题（模拟器 rn_smoke，1.2.11 + OTA rev 2，Politics / Crypto 标签实拍）
 
@@ -167,3 +167,13 @@
 | 测试 | 列表页 / 系列页 / 期卡 spec 调整；新增去重与自动加载用例 |
 
 预计一天；OTA 即可发布（无原生改动）。
+
+## 10. 实现记录（2026-09-09）
+
+- 精选：`curation-sections.tsx` `FeaturedSection / FeaturedCard`；1 张不轮播，≥2 张 `SnapCarousel fullWidth peek=32 showDots`；无报价不画按钮。
+- 榜单：`buildRankBoards`（`event-search.ts`）去重 + 单区块 tab（`RankBoards`）；"查看全部"只在今日热门 tab 上（切到 24h 成交排序），精选没有对应全量视图所以没放。
+- 周期市场：系列卡无报价 / 无窗口态；期卡 `LinkRow` 详情行 + 下一期横幅；轨道图标按钮；历史 20 期一页、按日分组、结算变动额、`CollapsingHeader.onEndReached`（拖动结束 / 惯性停止时判定触底，不进 worklet）自动翻页 + 四态脚注。
+- design-system：`TextLink`、`LinkRow`；`CollapsingHeader` 悬浮模式状态栏底色、折叠过渡分两段、`onEndReached`；`CollapseAnchor` 可包住 hero 内容按底边报告（避免零高度锚点多占一格 gap）；`SnapCarousel` 非当前卡缩放 0.96。
+- 首页：顶部行 → 资产卡 16dp，区块间距用容器默认 18dp（24dp 在 420dpi 上过于松），快捷入口一行五个，轮播 peek 32。
+- 模拟器核对（1.2.11 + rev 4）：首页、预测列表（精选 / 榜单 / 周期卡）、系列页（详情行 / 分组 / 变动额 / 自动翻页）截图通过；历史日期中文"9 月 9 日"。
+- 遗留：`predict.series.viewDetail / earlier / more`、`home.quick.help` 键已不再使用，下一轮清理；`predict.curation.unit.volume` 暂未用到。
