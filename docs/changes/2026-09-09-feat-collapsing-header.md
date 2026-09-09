@@ -61,4 +61,4 @@
 
 - OTA rev 16 `ota_Uu9opkduHjForx_PUyqp5g`（immediate，f8b7610）：**坏包**，见上文事故。
 - OTA rev 17 `ota_HlTsFQi9QdkT3fHoOwF3Xw`（immediate，4bfbb17）：修复。
-- OTA rev 18（next_launch）：chip 拉伸修正。
+- OTA rev 18 `ota_x6_acJGmcv0ad0sf2kcoAg`（next_launch，467ccf7）：chip 拉伸修正；模拟器核对 DEX 行情页钉住链筛选（chip 高度正常）、代币详情折叠后导航显示"UNI / $10.62 −0.60%"。
