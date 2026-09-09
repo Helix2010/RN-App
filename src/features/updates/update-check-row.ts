@@ -53,7 +53,7 @@ export function updateCheckRowValue(input: {
 }): string {
   const { t, state, hasUpdate, latestVersion, otaResult, download } = input;
   if (state === "checking") return t("update.checking");
-  if (state === "error") return t("status.error");
+  if (state === "error") return t("update.checkFailed");
   const downloadValue = apkDownloadRowValue(t, download);
   if (hasUpdate && downloadValue) return downloadValue;
   if (hasUpdate) {

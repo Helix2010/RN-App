@@ -78,7 +78,7 @@ describe("loadBootstrap", () => {
     expect(getBootstrap).toHaveBeenCalledWith(
       "/v1/mobile/bootstrap?locale=en-US",
       expect.anything(),
-      { signal: undefined },
+      { signal: undefined, timeoutMs: 15_000 },
     );
     expect(storage.setItem).toHaveBeenCalledWith(
       "foundation.bootstrap.v3.https%3A%2F%2Ftenant-a.example.com.dex-mobile.en-US",

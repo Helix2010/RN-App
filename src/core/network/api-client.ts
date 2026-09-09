@@ -61,6 +61,8 @@ class ApiClient {
       headers?: Record<string, string>;
       method?: "GET" | "POST";
       body?: string;
+      /** 单次请求的超时；大响应（bootstrap）在弱网下需要比默认 8 秒更宽 */
+      timeoutMs?: number;
     },
   ): Promise<Response> {
     const apiBaseUrl = baseUrl();
@@ -74,7 +76,7 @@ class ApiClient {
     const controller = new AbortController();
     const timeout = setTimeout(
       () => controller.abort("timeout"),
-      DEFAULT_TIMEOUT_MS,
+      options?.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     );
     const abortFromCaller = (): void => controller.abort("cancelled");
     options?.signal?.addEventListener("abort", abortFromCaller, { once: true });
@@ -136,7 +138,11 @@ class ApiClient {
   async get<T>(
     path: string,
     schema: z.ZodType<T>,
-    options?: { signal?: AbortSignal; headers?: Record<string, string> },
+    options?: {
+      signal?: AbortSignal;
+      headers?: Record<string, string>;
+      timeoutMs?: number;
+    },
   ): Promise<T> {
     const response = await this.response(path, options);
     const requestId = response.headers.get("x-request-id") ?? undefined;

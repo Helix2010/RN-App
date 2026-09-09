@@ -40,7 +40,7 @@ describe("updateCheckRowValue", () => {
         latestVersion: "1.2.9",
         otaResult: null,
       }),
-    ).toBe("status.error");
+    ).toBe("update.checkFailed");
   });
 
   it("prefers the full release when the server decided one is available", () => {

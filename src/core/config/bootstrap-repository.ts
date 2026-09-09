@@ -11,6 +11,8 @@ import { createFallbackConfig } from "./fallback-config";
 import { normalizeMessages } from "./localization";
 import { hydrateCachedBranding } from "./branding-assets";
 
+/** bootstrap 请求超时：比通用 8 秒宽，启动门禁与手动检查共用 */
+const BOOTSTRAP_TIMEOUT_MS = 15_000;
 const MAX_CACHE_AGE_MS = 7 * 24 * 60 * 60 * 1_000;
 const cacheSchema = z.object({
   savedAt: z.number(),
@@ -196,7 +198,8 @@ export async function loadBootstrap(
   const config = await apiClient.get(
     `/v1/mobile/bootstrap?locale=${encodeURIComponent(locale)}`,
     bootstrapSchema,
-    { signal },
+    // 60 KB 的下发在弱网下 8 秒会误判超时（真机实测过一次"暂时无法获取远程配置"）
+    { signal, timeoutMs: BOOTSTRAP_TIMEOUT_MS },
   );
   const enriched = await hydrateCachedBranding(
     await applyRemoteLanguagePackage(normalizeConfig(config), signal),

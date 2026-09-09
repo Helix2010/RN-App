@@ -56,7 +56,7 @@ export function createTestGateways(overrides?: Partial<Gateways>): Gateways {
   };
 }
 
-function buildRuntime(options: HarnessOptions): RuntimeValue {
+export function buildRuntime(options: HarnessOptions): RuntimeValue {
   const locale = options.locale ?? "zh-CN";
   const base = createFallbackConfig(locale);
   const withModules: BootstrapConfig = {
