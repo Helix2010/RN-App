@@ -22,6 +22,7 @@ import {
 import { useSession } from "../../session/hooks/use-session";
 import {
   useClosedSeriesPeriods,
+  useFeeBps,
   useOrderBook,
   usePositions,
   useRegionGate,
@@ -249,12 +250,14 @@ export function SeriesScreen({
     });
   };
 
-  // 盘口默认折叠；标题行给买一 / 卖一，展开状态切期不收回
-  const [bookOpen, setBookOpen] = useState(false);
+  // 盘口默认展开（5 分钟市场里深度就是主要决策信息）；标题行给买一 / 卖一，折叠状态切期不复原
+  const [bookOpen, setBookOpen] = useState(true);
   const [bookOutcome, setBookOutcome] = useState<Outcome>("yes");
-  const book = useOrderBook(
-    displayedPhase !== "ended" ? (displayed?.marketId ?? undefined) : undefined,
-  );
+  const tradableMarketId =
+    displayedPhase !== "ended" ? (displayed?.marketId ?? undefined) : undefined;
+  const book = useOrderBook(tradableMarketId);
+  // 预热下单弹层要用的费率（10 分钟内不再请求），点"涨 / 跌"时弹层第一帧就有数
+  useFeeBps(tradableMarketId);
   const [rulesOpen, setRulesOpen] = useState(false);
   // 从页底的历史列表选中一期后，所选期卡在页顶：滚回去，用户不用自己找
   const scroll = useRef<ScrollView>(null);
@@ -417,6 +420,7 @@ export function SeriesScreen({
           nowMs={now}
           isCurrent={isCurrent}
           live={live}
+          book={displayedPhase === "ended" ? null : book.data}
           region={region}
           onOrder={(target, outcome) => openOrder(target, outcome)}
           onBackToCurrent={backToCurrent}

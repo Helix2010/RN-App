@@ -45,6 +45,28 @@ describe("SeriesScreen periods", () => {
   });
   afterEach(() => useMockRuntime.getState().set({ clockOffsetMs: baseOffset }));
 
+  it("quotes the order book on the 涨 / 跌 buttons, same as the order sheet, and shows the book expanded", async () => {
+    const gateways = createTestGateways();
+    const book = await gateways.predict.getOrderBook(`m-${periodId(0)}`);
+    const bestAsk = book.asks[0]!.priceCents;
+    const bestBid = book.bids[0]!.priceCents;
+    await renderWithProviders(<SeriesScreen {...props()} />, { gateways });
+    await screen.findByTestId("series-rail");
+    // 买涨看卖一、买跌看 100 − 买一（与下单弹层同一口径），而不是平台事件价
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("series-order-up").props.accessibilityLabel,
+      ).toContain(`${bestAsk}¢`),
+    );
+    expect(
+      screen.getByTestId("series-order-down").props.accessibilityLabel,
+    ).toContain(`${Math.round((100 - bestBid) * 10) / 10}¢`);
+    expect(screen.queryByTestId("series-no-quote")).toBeNull();
+    // 盘口默认展开
+    expect(screen.getByTestId("series-book-card")).toBeTruthy();
+    expect(screen.getByTestId("order-book")).toBeTruthy();
+  });
+
   it("follows the live window by default and lets me pre-order the next one, then come back", async () => {
     const { runtime } = await renderWithProviders(
       <SeriesScreen {...props()} />,

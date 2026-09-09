@@ -12,7 +12,12 @@ import {
   TextLink,
 } from "../../../design-system";
 import type { useRegionGate } from "../hooks/use-predict";
-import type { Market, Outcome, SeriesPeriod } from "../model/predict";
+import type {
+  Market,
+  OrderBook,
+  Outcome,
+  SeriesPeriod,
+} from "../model/predict";
 import {
   clockLabel,
   periodCountdown,
@@ -49,6 +54,7 @@ export function SeriesPeriodCard({
   nowMs,
   isCurrent,
   live,
+  book,
   region,
   onOrder,
   onBackToCurrent,
@@ -61,6 +67,8 @@ export function SeriesPeriodCard({
   nowMs: number;
   isCurrent: boolean;
   live: SeriesLivePrice;
+  /** 本期市场的订单簿：undefined = 还没拿到，null = 不查（已结束期） */
+  book?: OrderBook | null;
   region: ReturnType<typeof useRegionGate>;
   onOrder: (market: Market, outcome: Outcome) => void;
   onBackToCurrent: () => void;
@@ -94,6 +102,18 @@ export function SeriesPeriodCard({
               ? "$danger"
               : "$textMuted";
   const yes = market?.yesPriceCents ?? null;
+  // 按钮上的价与下单弹层同一口径：买涨看卖一、买跌看 100 − 买一；簿没到 / 为空才退回平台事件价。
+  // 周期市场的事件价常常为空而簿里有挂单，只看事件价会把有报价的市场显示成"暂无报价"。
+  const bestBid = book?.bids[0]?.priceCents;
+  const bestAsk = book?.asks[0]?.priceCents;
+  const upPrice = bestAsk ?? yes;
+  const downPrice =
+    bestBid !== undefined
+      ? Math.round((100 - bestBid) * 10) / 10
+      : yes === null
+        ? null
+        : 100 - yes;
+  const noQuote = upPrice === null && downPrice === null;
   const canTrade = phase !== "ended" && market !== undefined;
   const accepting = market?.acceptingOrders ?? false;
   const disabled = !canTrade || !accepting || region.blocked;
@@ -254,14 +274,14 @@ export function SeriesPeriodCard({
             <OrderButton
               outcome="yes"
               label={t("predict.series.up")}
-              priceCents={yes}
+              priceCents={upPrice}
               disabled={disabled}
               onPress={() => onOrder(market, "yes")}
             />
             <OrderButton
               outcome="no"
               label={t("predict.series.down")}
-              priceCents={yes === null ? null : 100 - yes}
+              priceCents={downPrice}
               disabled={disabled}
               onPress={() => onOrder(market, "no")}
             />
@@ -274,7 +294,7 @@ export function SeriesPeriodCard({
             >
               {t("predict.series.notAcceptingYet")}
             </Body>
-          ) : yes === null ? (
+          ) : noQuote ? (
             <Body fontSize={11} color="$textMuted" testID="series-no-quote">
               {t("predict.series.noQuoteHint")}
             </Body>
