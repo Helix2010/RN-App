@@ -433,8 +433,7 @@ export class MockPredictGateway implements PredictGateway {
   async searchEvents(query: SearchQuery): Promise<SearchPage> {
     return simulate(async () => {
       const state = await this.load();
-      if (isEmptyMode())
-        return { events: [], tags: [], hasMore: false, total: 0 };
+      if (isEmptyMode()) return { events: [], tags: [], hasMore: false };
       const needle = query.q.trim().toLowerCase();
       const textOf = (value: LocalizedText | string | undefined) =>
         typeof value === "string"
@@ -464,7 +463,6 @@ export class MockPredictGateway implements PredictGateway {
         events: slice,
         tags,
         hasMore: start + pageSize < events.length,
-        total: events.length,
       };
     });
   }

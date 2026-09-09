@@ -86,6 +86,8 @@ const PAGE_SIZE = 40;
 const SEARCH_MIN_CHARS = 2;
 /** 搜索结果里最多列几个标签 */
 const SEARCH_TAG_LIMIT = 5;
+/** 搜索输入防抖 */
+const SEARCH_DEBOUNCE_MS = 300;
 
 /**
  * P-01 市场列表（设计 predict-home-filters-2026-09-09）：顶栏余额 chip、搜索（服务端全站）、
@@ -158,7 +160,10 @@ export function MarketListScreen({
       : undefined;
   // 地区限制：列表页在预测页签内（模块开着才挂载），这里发起一次检查
   const region = useRegionGate();
+  // 输入停 300ms 再发请求，不然每个字符都打一次平台
+  const debouncedQ = useDebouncedValue(filters.q, SEARCH_DEBOUNCE_MS);
   const searchActive = searching && filters.q.trim().length >= SEARCH_MIN_CHARS;
+  const searchSettled = debouncedQ === filters.q;
   const favoritesOnly = filters.favorites;
   const events = usePredictEventPages(
     {
@@ -176,8 +181,8 @@ export function MarketListScreen({
     [events.data],
   );
   const search = useSearchEvents(
-    { q: filters.q, status: filters.view },
-    { enabled: searchActive && !favoritesOnly },
+    { q: debouncedQ, status: filters.view },
+    { enabled: searchActive && searchSettled && !favoritesOnly },
   );
   const searchItems = useMemo(
     () => search.data?.pages.flatMap((page) => page.events) ?? [],
@@ -187,7 +192,6 @@ export function MarketListScreen({
     0,
     SEARCH_TAG_LIMIT,
   );
-  const searchTotal = search.data?.pages[0]?.total ?? searchItems.length;
   // 滚到列表底部翻下一页；收藏视图是逐个查询，没有分页
   const loadMoreEvents = () => {
     const source = searchActive ? search : events;
@@ -319,7 +323,7 @@ export function MarketListScreen({
     ? favoriteQueries.length > 0 &&
       favoriteQueries.every((query) => query.isPending)
     : searchActive
-      ? search.data === undefined && !search.isError
+      ? !searchSettled || (search.data === undefined && !search.isError)
       : events.data === undefined && !events.isError;
   // 收藏视图里单个失败只提示那几个，其余照常显示；分页视图失败就是整页失败
   const listError = favoritesOnly
@@ -397,13 +401,20 @@ export function MarketListScreen({
           ? t("predict.list.allMarkets")
           : primaryLabel;
   // 数量只在全部翻完（没有下一页）时显示，不显示"20+"这种估数
+  // 平台搜索的 totalResults 把标签、用户也算进去，不能当市场数用；统一按已加载条数
   const listCount = favoritesOnly
     ? favoriteIds.length
-    : searchActive
-      ? searchTotal
-      : pagination.hasNextPage
-        ? null
-        : eventItems.length;
+    : pagination.hasNextPage || listLoading
+      ? null
+      : listItems.length;
+  // 只有周期市场卡、没有事件时不画列表标题（"Crypto · 0 个"没有信息量）
+  const onlySeries =
+    !favoritesOnly &&
+    !searchActive &&
+    !listLoading &&
+    !listError &&
+    listItems.length === 0 &&
+    visibleSeries.length > 0;
   const emptyInTag =
     !favoritesOnly &&
     !searchActive &&
@@ -710,7 +721,9 @@ export function MarketListScreen({
         />
       ) : null}
 
-      {!(favoritesOnly && favoriteIds.length === 0) && !emptyInTag ? (
+      {!(favoritesOnly && favoriteIds.length === 0) &&
+      !emptyInTag &&
+      !onlySeries ? (
         <Row justifyContent="space-between" alignItems="baseline">
           <SectionTitle fontSize={14}>{listTitle}</SectionTitle>
           {listCount !== null ? (
@@ -917,4 +930,14 @@ function ListFooter({
       )}
     </Row>
   );
+}
+
+/** 值稳定 `delayMs` 后才更新的副本；用于搜索输入防抖 */
+function useDebouncedValue<T>(value: T, delayMs: number) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delayMs);
+    return () => clearTimeout(timer);
+  }, [delayMs, value]);
+  return debounced;
 }

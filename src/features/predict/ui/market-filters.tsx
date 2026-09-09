@@ -1,4 +1,11 @@
-import { Body, InlineText, Row, Stack, TextLink } from "../../../design-system";
+import {
+  AppIcon,
+  Body,
+  InlineText,
+  Row,
+  Stack,
+  TextLink,
+} from "../../../design-system";
 
 /**
  * 一级分类 chip：选中反白（`$color` 底 / `$background` 字），未选 `$surfaceVariant` 底。
@@ -107,9 +114,11 @@ export function EmptyTagCard({
       backgroundColor="$surface"
       testID={testID}
     >
-      <InlineText fontSize={20} color="$textMuted">
-        ◌
-      </InlineText>
+      <AppIcon
+        name="text-box-search-outline"
+        size={24}
+        colorToken="textMuted"
+      />
       <InlineText fontSize={13} fontWeight="700" textAlign="center">
         {title}
       </InlineText>

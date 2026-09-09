@@ -66,7 +66,7 @@ describe("MockPredictGateway", () => {
       status: "all",
       page: 1,
     });
-    expect(search.total).toBeGreaterThan(0);
+    expect(search.events.length).toBeGreaterThan(0);
     expect(
       search.events.every(
         (e) =>
@@ -82,7 +82,8 @@ describe("MockPredictGateway", () => {
     });
     expect(byTag.tags.map((t) => t.id)).toContain("crypto");
     expect(
-      (await gateway.searchEvents({ q: "zzzz", status: "all", page: 1 })).total,
+      (await gateway.searchEvents({ q: "zzzz", status: "all", page: 1 })).events
+        .length,
     ).toBe(0);
   });
 

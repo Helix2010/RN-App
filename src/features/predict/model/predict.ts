@@ -107,7 +107,6 @@ export type SearchPage = {
   events: PredictEvent[];
   tags: Tag[];
   hasMore: boolean;
-  total: number;
 };
 
 /** 首页策展：平台运营在 /curation/events 里给事件排的位置 */

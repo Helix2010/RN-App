@@ -739,7 +739,6 @@ export class HttpPredictGateway implements PredictGateway {
       events: (result.events ?? []).map((event) => this.mapEvent(event)),
       tags: (result.tags ?? []).map((tag, index) => this.mapTag(tag, index)),
       hasMore: result.pagination?.hasMore ?? false,
-      total: result.pagination?.totalResults ?? (result.events ?? []).length,
     };
   }
 
