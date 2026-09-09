@@ -65,3 +65,11 @@
   模拟器：1.2.10 → 弹层"安装" → 系统安装器"更新" → 1.2.11 首次启动即收到该 OTA，重启后 `updates.db` 里运行的是 `506c6fa0-…`。
 - 1.2.9 基线同样已被取代，无法再发 OTA：1.2.9 用户只能走旧的整包升级流程。
 - 服务端策略（2026-09-09 用户确认维持现状）："发布新全量版本 = 旧基线不再接收 OTA"。理由：已经要求用户升级到新全量版本，旧版本无需再收热修复。运营上的含义：修复要覆盖旧版本用户时，用"强制升级"或提高最低支持版本把他们推到新全量包。
+
+## 追加（2026-09-09）：管理端可事后改升级类型 / OTA 生效策略
+
+- RN-Server c65531b：`POST /v1/admin/releases/{id}/set-mandatory`（body `mandatory` + reason + confirm）、`POST /v1/admin/ota/releases/{id}/set-apply-strategy`（body `applyStrategy`）。只允许 `verified / active / paused`，其它状态 409 `RELEASE_FLAG_LOCKED / OTA_FLAG_LOCKED`。审计动作 `release_set_mandatory / ota_set_apply_strategy`（含 previous）。manifest 下发时用数据库里的策略覆盖文件里登记时写死的 `metadata.applyStrategy`，ETag 带策略后缀。
+- RN-Admin f4b09da：全量列表新增"升级类型"列（强制 / 非强制开关），OTA 列表"生效策略"列改为开关；切换不直接生效，走原来的原因面板 + 二次确认；不可改的行置灰并给出原因。
+- 线上验证：OTA `ota_C5etKQQGvZEJNgVbZs8kgw` 切到 next_launch 后 manifest 与 ETag 随之变化，再切回；`completed` 的 1.2.10 全量拒绝修改（409）；审计正常。
+- 顺带确认：OTA 的"取代"按 (platform, channel, runtimeVersion) 算，1.2.10 基线上的 rev 1 仍是 1.2.10 runtime 的活跃 OTA、仍在下发（验证时误切过一次，已恢复为 immediate）；被取代的只是"不能再新建"。
+- App 不改：强制判定与 OTA 策略都以 bootstrap 为准，客户端下一次拉配置（冷启动 / 前台刷新）生效。
