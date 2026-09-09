@@ -294,8 +294,10 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
     if (previous?.key === key && now - previous.at < 15 * 60 * 1_000) return;
     otaLastCheckRef.current = { key, at: now };
     // OTA is deliberately a background, non-blocking operation. The native
-    // module uses checkAutomatically=NEVER, so this path observes the tenant
-    // Bootstrap policy without blocking startup or user interaction.
+    // module uses checkAutomatically=ON_ERROR_RECOVERY: it never checks on a
+    // normal launch (this path observes the tenant Bootstrap policy without
+    // blocking startup) and only fetches on its own while recovering from a
+    // startup crash.
     void checkAndDownloadOta(candidate, {
       onStateChange: (status) =>
         setOtaResult((previous) => (previous ? { ...previous, status } : null)),

@@ -195,9 +195,13 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ? {
         enabled: true,
         url: resolvedUpdatesUrl,
-        // Bootstrap decides whether OTA is enabled for this tenant. Native
-        // startup checks would run before Bootstrap and bypass that policy.
-        checkAutomatically: "NEVER",
+        // Bootstrap decides whether OTA is enabled for this tenant, so the
+        // native side never checks on a normal launch. ON_ERROR_RECOVERY keeps
+        // that and adds one exception: when the JS bundle throws during
+        // startup, expo-updates fetches the latest update (5 s budget) and
+        // relaunches into it, so a bad OTA can be fixed by publishing a good
+        // one instead of asking users to reinstall (rev 16 incident, 2026-09-09).
+        checkAutomatically: "ON_ERROR_RECOVERY",
         fallbackToCacheTimeout: 0,
         requestHeaders: {
           "expo-channel-name": otaChannel,

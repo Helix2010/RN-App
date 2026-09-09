@@ -120,6 +120,12 @@ TypeScript 类型不等于运行时安全。启动配置、认证、升级策略
 
 热更默认策略：后台静默下载，下一次冷启动应用；只有紧急且已验证的安全修复才提示立即重启。更新失败不得阻止进入嵌入版本。
 
+原生侧检查策略（`app.config.ts` `updates.checkAutomatically`）固定为 `ON_ERROR_RECOVERY`（自 anyfun 1.2.10 / build 24 起）：
+正常启动原生侧不检查，是否检查由 JS 侧按租户 bootstrap 策略决定；只有 JS 在启动阶段抛出异常时，expo-updates 才自行拉一次最新更新
+（5 秒预算）并重启进入，拉不到时若坏包从未成功启动过则回退到上一个包。这是坏 OTA 的兜底，不是灰度或回滚机制：
+它只覆盖启动 10 秒内的 JS 异常，依赖网络，且会绕过租户开关直接取 channel 上的最新包。发布规则不变：带 reanimated / worklet 改动的
+OTA 必须先在模拟器跑过；worklet 内只用字面量与入参。
+
 ### 3.2 全量更新（商店、直接分发、MDM）
 
 全量版本不强绑定公开应用商店，统一支持 `store`、`direct`、`mdm` 三种分发通道。当前开发阶段发布管理只做已校验版本的全量激活，不实现 phased rollout。远端 bootstrap 返回结构化策略：
