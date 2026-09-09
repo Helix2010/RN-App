@@ -59,6 +59,9 @@
 
 ### 发布
 
-- OTA（1.2.10 基线 `rel_JHrSsfq0LQtaWX1o1NpZjg`）：rev 1 `ota_fhy0iTvB80TouObj7nXvrQ`（一轮）；二轮见下方追加。
-- 全量 1.2.11 / build 25：`rel_xGci1cDn1HXUsVUyv7Yguw`（用于端到端验证下载→安装）。
-- 1.2.9 基线已被取代，服务端拒绝再给它发 OTA（`OTA_BASE_RELEASE_INVALID`）：1.2.9 用户只能走旧的整包升级流程拿到 1.2.10+。
+- OTA（1.2.10 基线 `rel_JHrSsfq0LQtaWX1o1NpZjg`）：rev 1 `ota_fhy0iTvB80TouObj7nXvrQ`（一轮）。
+  二轮 rev 2 被服务端拒绝：全量 1.2.11 发布后 1.2.10 变成"已取代"，`OTA_BASE_RELEASE_INVALID`。1.2.10 用户停留在一轮实现（有"下载失败"死角），要拿到二轮修复只能整包升到 1.2.11。
+- 全量 1.2.11 / build 25：`rel_xGci1cDn1HXUsVUyv7Yguw`；其上 OTA rev 1 `ota_C5etKQQGvZEJNgVbZs8kgw`（二轮，immediate，源码 480549e）。
+  模拟器：1.2.10 → 弹层"安装" → 系统安装器"更新" → 1.2.11 首次启动即收到该 OTA，重启后 `updates.db` 里运行的是 `506c6fa0-…`。
+- 1.2.9 基线同样已被取代，无法再发 OTA：1.2.9 用户只能走旧的整包升级流程。
+- **待决策（服务端策略）**：目前"发布新全量版本 = 旧基线立刻失去 OTA 资格"。旧版本上仍有真实用户时，热修复无法触达他们；建议允许对"已取代但未撤销"的基线继续发 OTA，或至少给一个宽限窗口。
