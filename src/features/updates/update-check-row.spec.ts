@@ -97,3 +97,55 @@ describe("updateCheckRowValue", () => {
     ).toBe("settings.upToDate");
   });
 });
+
+describe("updateCheckRowValue with an APK download in flight", () => {
+  it("describes the download instead of the bare new-version label", () => {
+    const base = {
+      t,
+      state: "idle" as const,
+      hasUpdate: true,
+      latestVersion: "1.2.10",
+      otaResult: null,
+    };
+    expect(
+      updateCheckRowValue({
+        ...base,
+        download: {
+          phase: "downloading",
+          releaseId: "rel_1",
+          written: 25,
+          total: 100,
+          bytesPerSecond: 0,
+        },
+      }),
+    ).toBe("update.downloadingRow");
+    expect(
+      updateCheckRowValue({
+        ...base,
+        download: {
+          phase: "paused",
+          releaseId: "rel_1",
+          written: 25,
+          total: 100,
+          reason: "network",
+          retriesLeft: 1,
+        },
+      }),
+    ).toBe("update.pausedNetwork");
+    expect(
+      updateCheckRowValue({
+        ...base,
+        download: {
+          phase: "ready",
+          releaseId: "rel_1",
+          fileUri: "f",
+          size: 100,
+        },
+      }),
+    ).toBe("update.readyToInstall");
+    // 没有下载时仍是"发现新版本"
+    expect(updateCheckRowValue({ ...base, download: { phase: "idle" } })).toBe(
+      "settings.newVersion",
+    );
+  });
+});

@@ -1,15 +1,12 @@
-import { useEffect, useState } from "react";
-import { fill } from "../../core/i18n/format";
+import { useState } from "react";
 import { Linking } from "react-native";
 import { useFoundationRuntime } from "../../app/runtime-context";
+import { fill, formatCompactNumber } from "../../core/i18n/format";
+import { getApkDownloadManager } from "../../core/updates/apk-download";
 import {
-  downloadAndInstallApk,
-  type ApkDownloadProgress,
-} from "../../core/updates/apk-update-service";
-import {
-  shouldPromptUpdate,
-  useUpdatePromptStore,
-} from "../../core/updates/update-prompt-store";
+  useApkDownloadStore,
+  type ApkDownloadState,
+} from "../../core/updates/apk-download-manager";
 import {
   AppIcon,
   Body,
@@ -30,109 +27,147 @@ function formatSize(bytes: number | null): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function percentOf(state: ApkDownloadState): number {
+  if (
+    state.phase !== "downloading" &&
+    state.phase !== "paused" &&
+    state.phase !== "failed"
+  )
+    return 0;
+  return state.total > 0
+    ? Math.min(100, Math.round((state.written / state.total) * 100))
+    : 0;
+}
+
 /**
- * S-07 更新弹窗。软更新：冷启动弹一次，同版本 24h 内不重复，可"稍后再说"。
- * 强制更新：无"稍后再说"，遮罩与系统返回都不关闭，副标题说明此版本已停服。
- * Android 直装包走应用内下载（按钮变进度条 → 安装），其余走系统打开更新地址。
+ * S-07 升级弹层（设计 apk-update-flow-2026-09-09 §3.1）。
+ * 何时弹：有新版本时每个进程冷启动一次；手动检查 / 下载就绪时再弹；前台切回不弹；"稍后"只对本次进程有效。
+ * 强制更新：无"稍后"，遮罩与系统返回都不关闭。
+ * 下载由 `ApkDownloadManager` 负责，这里只是它的视图：关掉弹层下载继续，主按钮随下载状态变。
  */
 export function UpdateModal() {
   const {
     config,
     t,
-    manualUpdatePromptVersion,
+    manualUpdatePrompt,
     dismissUpdatePrompt,
     checkForUpdates,
   } = useFoundationRuntime();
-  const lastPromptedVersion = useUpdatePromptStore(
-    (state) => state.lastPromptedVersion,
-  );
-  const lastPromptedAt = useUpdatePromptStore((state) => state.lastPromptedAt);
-  const markPrompted = useUpdatePromptStore((state) => state.markPrompted);
-  const [dismissedVersion, setDismissedVersion] = useState<string | null>(null);
-  const [progress, setProgress] = useState<ApkDownloadProgress | null>(null);
-  const [installing, setInstalling] = useState(false);
-  // "打开商店 / 仅刷新更新信息"两个分支之前没有进行中态，能反复点出多个并发请求
-  const [busy, setBusy] = useState(false);
-
+  const download = useApkDownloadStore((state) => state.state);
   const update = config.update;
   const forced = update.decision === "required";
+  const hasUpdate =
+    update.decision !== "none" && Boolean(update.full.actionUrl);
   const canDirectInstall =
     config.app.platform === "android" &&
     config.app.distribution === "direct" &&
     config.features.directUpdateEnabled &&
-    Boolean(update.full.actionUrl);
-  // 只在挂载时判定一次：随后写入节流记录会让 shouldPromptUpdate 变 false，
-  // 若每次渲染都算，弹窗会在记录写入的瞬间把自己关掉。
-  const [eligible] = useState(() =>
-    shouldPromptUpdate({
-      decision: update.decision,
-      latestVersion: update.latestVersion,
-      lastPromptedVersion,
-      lastPromptedAt,
-      nowMs: Date.now(),
-    }),
-  );
-  const manualPrompt =
-    manualUpdatePromptVersion === update.latestVersion &&
-    update.decision !== "none";
-  const visible =
-    forced ||
-    (dismissedVersion !== update.latestVersion &&
-      Boolean(update.full.actionUrl) &&
-      (eligible || manualPrompt));
+    Boolean(update.full.actionUrl) &&
+    Boolean(update.full.releaseId);
+  const [open, setOpen] = useState(false);
+  // 三种"这次要弹"的来源，各记一次，避免同一来源反复打开被用户关掉的弹层
+  const [promptedVersion, setPromptedVersion] = useState<string | null>(null);
+  const [handledManualAt, setHandledManualAt] = useState<number | null>(null);
+  const [readyPromptedFor, setReadyPromptedFor] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  // 记录本次提醒，供 24h 节流；强制更新不写（每次都要弹）
-  useEffect(() => {
-    if (visible && !forced) markPrompted(update.latestVersion);
-  }, [forced, markPrompted, update.latestVersion, visible]);
+  // 冷启动（进程内首次看到这个版本）弹一次
+  if (hasUpdate && promptedVersion !== update.latestVersion) {
+    setPromptedVersion(update.latestVersion);
+    setOpen(true);
+  }
+  // 手动检查：每次都是新的请求，哪怕上次已经关掉
+  if (
+    hasUpdate &&
+    manualUpdatePrompt &&
+    manualUpdatePrompt.requestedAt !== handledManualAt
+  ) {
+    setHandledManualAt(manualUpdatePrompt.requestedAt);
+    setOpen(true);
+  }
+  // 下载完成：用户主动开始的事，完成时把"安装"送到眼前（后台完成的话回前台就看到）
+  if (
+    hasUpdate &&
+    download.phase === "ready" &&
+    readyPromptedFor !== download.releaseId
+  ) {
+    setReadyPromptedFor(download.releaseId);
+    setOpen(true);
+  }
 
+  const visible = hasUpdate && (forced || open);
   if (!visible) return null;
 
-  const downloading = progress !== null;
-  const percent = progress ? Math.round(progress.percentage) : 0;
+  const close = () => {
+    setOpen(false);
+    dismissUpdatePrompt();
+  };
+  const sameRelease =
+    download.phase !== "idle" && download.releaseId === update.full.releaseId;
+  const phase = sameRelease ? download.phase : "idle";
+  const percent = sameRelease ? percentOf(download) : 0;
 
-  const onUpdate = async () => {
+  const onPrimary = async () => {
     if (busy) return;
     setBusy(true);
     try {
-      await runUpdate();
+      if (!update.full.actionUrl) {
+        await checkForUpdates();
+        return;
+      }
+      if (!canDirectInstall) {
+        await Linking.openURL(update.full.actionUrl);
+        toast(t("update.openedStore"), "info");
+        return;
+      }
+      const manager = getApkDownloadManager();
+      if (phase === "ready" || phase === "installing") {
+        try {
+          await manager.install();
+          toast(t("update.apkInstallerOpened"), "success");
+        } catch {
+          toast(t("update.downloadFailed"), "error");
+        }
+        return;
+      }
+      manager.start();
     } finally {
       setBusy(false);
     }
   };
 
-  const runUpdate = async () => {
-    if (!update.full.actionUrl) {
-      await checkForUpdates();
-      return;
-    }
-    if (!canDirectInstall) {
-      await Linking.openURL(update.full.actionUrl);
-      toast(t("update.openedStore"), "info");
-      return;
-    }
-    setProgress({ written: 0, total: update.full.size ?? 0, percentage: 0 });
-    try {
-      await downloadAndInstallApk(config, setProgress);
-      setInstalling(true);
-      toast(t("update.apkInstallerOpened"), "success");
-    } catch {
-      setProgress(null);
-      toast(t("update.downloadFailed"), "error");
-    }
-  };
+  const primaryLabel = !update.full.actionUrl
+    ? t("action.retry")
+    : phase === "ready" || phase === "installing"
+      ? t("update.install")
+      : phase === "paused"
+        ? t("update.resume")
+        : phase === "failed"
+          ? t("update.retryDownload")
+          : t("update.now");
+  const statusLine =
+    phase === "paused" && sameRelease && download.phase === "paused"
+      ? download.retriesLeft > 0 && download.reason === "network"
+        ? t("update.pausedRetrying")
+        : t(
+            download.reason === "stalled"
+              ? "update.pausedStalled"
+              : "update.pausedNetwork",
+          )
+      : phase === "failed"
+        ? t("update.downloadFailed")
+        : phase === "ready"
+          ? t("update.readyToInstall")
+          : phase === "installing"
+            ? t("update.installerOpened")
+            : null;
 
   return (
     // 走应用级覆盖层而不是原生 Modal：下载失败等 toast 要能盖在弹窗上面
     <FullScreenOverlay
       visible
       // 强制更新：系统返回键不关闭
-      onRequestClose={() => {
-        if (!forced) {
-          setDismissedVersion(update.latestVersion);
-          dismissUpdatePrompt();
-        }
-      }}
+      onRequestClose={forced ? undefined : close}
       testID="update-modal"
     >
       <Stack
@@ -141,14 +176,7 @@ export function UpdateModal() {
         padding="$4"
         backgroundColor="$backdrop"
         // 强制更新：点遮罩不关闭
-        onPress={
-          forced
-            ? undefined
-            : () => {
-                setDismissedVersion(update.latestVersion);
-                dismissUpdatePrompt();
-              }
-        }
+        onPress={forced ? undefined : close}
         accessibilityRole={forced ? undefined : "button"}
         accessibilityLabel={forced ? undefined : t("common.close")}
       >
@@ -203,7 +231,9 @@ export function UpdateModal() {
               </Row>
             ))}
           </Stack>
-          {downloading && !installing ? (
+          {phase === "downloading" &&
+          sameRelease &&
+          download.phase === "downloading" ? (
             <Stack gap="$1.5" testID="update-modal-progress">
               <Stack
                 height={10}
@@ -217,31 +247,58 @@ export function UpdateModal() {
                   backgroundColor="$primary"
                 />
               </Stack>
-              <Body fontSize={12} textAlign="center">
-                {fill(t("update.downloading"), { percent })}
+              <Row justifyContent="space-between">
+                <Body fontSize={12}>
+                  {fill(t("update.downloading"), { percent })}
+                </Body>
+                {download.bytesPerSecond > 0 ? (
+                  <Body fontSize={12}>
+                    {fill(t("update.speed"), {
+                      speed: `${formatCompactNumber(download.bytesPerSecond / 1024 / 1024, config.localization.selectedLocale)} MB`,
+                    })}
+                  </Body>
+                ) : null}
+              </Row>
+              <Body fontSize={11} color="$textMuted">
+                {t("update.backgroundHint")}
               </Body>
             </Stack>
           ) : (
-            <PrimaryButton
-              onPress={() => void onUpdate()}
-              disabled={busy}
-              testID="update-modal-now"
-            >
-              {installing
-                ? t("update.install")
-                : update.full.actionUrl
-                  ? t("update.now")
-                  : t("action.retry")}
-            </PrimaryButton>
+            <Stack gap="$1.5">
+              {phase === "paused" || phase === "failed" ? (
+                <Stack
+                  height={6}
+                  borderRadius={3}
+                  backgroundColor="$surfaceVariant"
+                  overflow="hidden"
+                >
+                  <Stack
+                    height={6}
+                    width={`${percent}%`}
+                    backgroundColor="$primary"
+                  />
+                </Stack>
+              ) : null}
+              {statusLine ? (
+                <Body
+                  fontSize={12}
+                  color={phase === "failed" ? "$danger" : "$textMuted"}
+                  testID="update-modal-status"
+                >
+                  {statusLine}
+                </Body>
+              ) : null}
+              <PrimaryButton
+                onPress={() => void onPrimary()}
+                disabled={busy}
+                testID="update-modal-now"
+              >
+                {primaryLabel}
+              </PrimaryButton>
+            </Stack>
           )}
           {forced ? null : (
-            <SecondaryButton
-              onPress={() => {
-                setDismissedVersion(update.latestVersion);
-                dismissUpdatePrompt();
-              }}
-              testID="update-modal-later"
-            >
+            <SecondaryButton onPress={close} testID="update-modal-later">
               {t("update.later")}
             </SecondaryButton>
           )}

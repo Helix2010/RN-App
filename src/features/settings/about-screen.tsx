@@ -10,7 +10,6 @@ import {
   InlineText,
   Page,
   PageScroll,
-  PrimaryButton,
   Row,
   ScreenHeader,
   SectionTitle,
@@ -22,8 +21,10 @@ import {
 import type { RootStackParamList } from "../../navigation/types";
 import { useTenantLogoUri } from "../../app/use-tenant-logo";
 import { Group, SRow } from "../profile/profile-screen";
+import { ApkUpdateButton } from "../updates/apk-update-button";
 import { updateCheckRowValue } from "../updates/update-check-row";
 import { useManualUpdateCheck } from "../updates/use-manual-update-check";
+import { useApkDownloadStore } from "../../core/updates/apk-download-manager";
 import { getCurrentUpdateMetadata } from "../../core/updates/update-service";
 
 /** S-06 关于：租户品牌、当前版本、版本检查和只读版本信息。 */
@@ -34,6 +35,7 @@ export function AboutScreen({
   const { config, t, otaResult } = useFoundationRuntime();
   const { state: updateCheckState, check: checkUpdate } =
     useManualUpdateCheck();
+  const download = useApkDownloadStore((state) => state.state);
   const versionInfo = useRef<SheetHandle>(null);
   const hasUpdate = config.update.decision !== "none";
   const logoUri = useTenantLogoUri();
@@ -89,12 +91,10 @@ export function AboutScreen({
                   <Body flex={1}>{note}</Body>
                 </Row>
               ))}
-              <PrimaryButton
-                onPress={() => void checkUpdate()}
+              <ApkUpdateButton
+                onCheck={() => void checkUpdate()}
                 testID="about-update-now"
-              >
-                {t("update.viewNow")}
-              </PrimaryButton>
+              />
             </Stack>
           ) : (
             <Group title="">
@@ -106,6 +106,7 @@ export function AboutScreen({
                   hasUpdate,
                   latestVersion: config.update.latestVersion,
                   otaResult,
+                  download,
                 })}
                 onPress={() => void checkUpdate()}
                 testID="about-check-update"

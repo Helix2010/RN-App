@@ -1,6 +1,6 @@
 # 全量升级（APK）体验：提示节奏、后台下载与断点续传
 
-日期：2026-09-09 · 状态：待确认 · 范围：RN-App（升级弹层、下载管理器、关于 / 设置页）、RN-Server（下载接口支持 Range）
+日期：2026-09-09 · 状态：已确认（§9 四项）并实现，变更记录 `docs/changes/2026-09-09-fix-apk-update-flow.md` · 范围：RN-App（升级弹层、下载管理器、关于 / 设置页）、RN-Server（下载接口支持 Range）
 
 ## 1. 真机反馈与根因
 
@@ -102,9 +102,36 @@ type ApkDownloadState =
 
 App 侧走 OTA（1.2.10 基线 `rel_JHrSsfq0LQtaWX1o1NpZjg`）；服务端随 push 自动部署。
 
-## 9. 需你确认
+## 9. 已确认（2026-09-09）
 
 1. 提示节奏：每次冷启动提示一次、前台切回不提示、去掉 24 小时节流（§3.3）。
-2. 关闭弹层不取消下载，完成后 toast 引导安装（§3.1）。
+2. 关闭弹层不取消下载，完成后引导安装（§3.1）。
 3. 续传不区分网络类型（§7 末条）。
 4. 系统级后台下载（原生模块）本轮不做（§7）。
+
+## 10. 实施前评审：对 §2–§8 的补正
+
+| # | 发现 | 处理 |
+| --- | --- | --- |
+| 1 | "完成后 toast 引导安装"：设计系统的 toast 没有点击动作，而且用户在别的页面看到一条会消失的提示等于没提示 | 下载完成直接**重新弹出升级弹层**（主按钮"安装"），每个 releaseId 只自动弹一次；后台完成的话回前台就看到。toast 不再承担引导职责 |
+| 2 | 冷启动自动续传是否算"App 主动用流量" | 不算：文件只在用户点过"立即更新"后才会存在，续传是完成用户自己发起的下载 |
+| 3 | Android 的 `resumeData` 语义 | 核对 expo-file-system 源码：Android 的 resumeData 就是已写字节数，原生按 `Range: bytes=N-` 追加写。所以不需要持久化续传句柄，磁盘上的部分文件就是断点；冷启动只看文件大小 |
+| 4 | 服务端老版本不认 Range 会回 200 整包，追加后文件比预期大 | 完成时核对大小；不符删掉重来一次，再不符进 failed。服务端已先于 App 上线 Range 支持（RN-Server 069e89b） |
+| 5 | 版本在下载途中换了 | `configure` 比较 releaseId：不同就中止、删旧文件、回 idle；目录里其它版本的文件冷启动时清掉 |
+| 6 | 用户在系统安装页取消 | 状态留在 installing，"安装"可再点；App 被替换后自然结束 |
+| 7 | 手动检查时已在下载 | 关于 / 设置页直接打开弹层显示进度（`promptUpdate`，不刷新配置、不重新开始） |
+| 8 | 停滞判定与后台 | 停滞 / 断网 → 暂停 + 退避重试（1 / 3 / 8 秒）；后台时不重试，回前台立即续传；退避用完进 failed 等用户 |
+| 9 | 弹层是应用根部常驻组件，`useState` 记"已弹过"会跨版本残留 | 三个来源各记一份键：冷启动按 latestVersion、手动检查按 requestedAt、下载完成按 releaseId |
+| 10 | 弹层要在启动门禁之后 | 运行时只有 `entered` 后才渲染子树，弹层天然在启动页之后 |
+| 11 | 可测性：jest 没有 expo-file-system 桩 | 管理器全部依赖注入（文件系统 / 下载任务 / 安装器 / 前后台 / 时钟），单测用假实现覆盖续传、停滞、退避、恢复、错包重来、换版本清理 |
+| 12 | 24 小时节流 store 成为死代码 | 删除 `update-prompt-store` 与其单测 |
+
+## 11. 实现（2026-09-09）
+
+- RN-Server 069e89b：`objectstore.Client.GetRange`；下载接口 `Accept-Ranges / ETag / If-Range / 206 / 416`；区间解析单测。
+- RN-App：`core/updates/apk-download-manager.ts`（状态机 + 依赖注入）、`apk-download.ts`（expo 接线与单例）、运行时 `manualUpdatePrompt` 令牌与 `promptUpdate`、
+  `update-modal.tsx` 按状态渲染、关于页 `ApkUpdateButton`、设置页检查行带下载状态；新增文案 11 键；删除旧的 `apk-update-service` 与节流 store。
+- 单测：`apk-download-manager.spec.ts`（6 例：从头下载 / 断网续传与退避 / 停滞与回前台 / 冷启动恢复与清理 / 错包重来 / 换版本清空）、
+  `update-modal.spec.tsx`（冷启动一次、稍后本进程有效、手动检查每次重开、强制、无地址、下载各状态与完成重弹）、检查行单测。
+  全量 jest 107 套 740 例、lint、typecheck、format 通过。
+- 模拟器核对见变更记录。

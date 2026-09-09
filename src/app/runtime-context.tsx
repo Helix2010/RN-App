@@ -34,6 +34,7 @@ import {
   type OtaCheckResult,
 } from "../core/updates/update-service";
 import { useUpdateStatus } from "../core/updates/use-update-status";
+import { getApkDownloadManager } from "../core/updates/apk-download";
 import { resolveUpdatePlan } from "../core/updates/update-coordinator";
 import {
   Body,
@@ -80,7 +81,10 @@ type RuntimeValue = {
   refresh: () => Promise<BootstrapSnapshot>;
   checkForUpdates: () => Promise<UpdateCheckResult>;
   dismissUpdatePrompt: () => void;
-  manualUpdatePromptVersion: string | null;
+  /** 手动检查 / 下载就绪等"这次要弹"的请求：每次都是新对象，弹层据此区分"上次已关"与"这次新的" */
+  manualUpdatePrompt: { version: string; requestedAt: number } | null;
+  /** 不刷新配置，直接打开升级弹层（关于 / 设置页看下载进度用） */
+  promptUpdate: () => void;
   otaResult: OtaCheckResult | null;
   applyPendingOta: () => Promise<void>;
   notificationStatus: "idle" | "registered" | "denied" | "unavailable";
@@ -128,9 +132,10 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   const otaLastCheckRef = useRef<{ key: string; at: number } | null>(null);
   const updateCheckRef = useRef<Promise<UpdateCheckResult> | null>(null);
   const [otaResult, setOtaResult] = useState<OtaCheckResult | null>(null);
-  const [manualUpdatePromptVersion, setManualUpdatePromptVersion] = useState<
-    string | null
-  >(null);
+  const [manualUpdatePrompt, setManualUpdatePrompt] = useState<{
+    version: string;
+    requestedAt: number;
+  } | null>(null);
   const [launchMinimumElapsed, setLaunchMinimumElapsed] = useState(false);
   // 上次成功的 bootstrap（读本地缓存）：undefined = 还没读完；null = 没有缓存
   const [cachedLaunchConfig, setCachedLaunchConfig] = useState<
@@ -217,8 +222,14 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
     throw new Error("Remote Bootstrap is unavailable");
   }, [query]);
   const dismissUpdatePrompt = useCallback(() => {
-    setManualUpdatePromptVersion(null);
+    setManualUpdatePrompt(null);
   }, []);
+  const promptUpdate = useCallback(() => {
+    setManualUpdatePrompt({
+      version: config.update.latestVersion,
+      requestedAt: Date.now(),
+    });
+  }, [config.update.latestVersion]);
   const checkForUpdates = useCallback((): Promise<UpdateCheckResult> => {
     if (updateCheckRef.current) return updateCheckRef.current;
     const task = (async (): Promise<UpdateCheckResult> => {
@@ -233,7 +244,10 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
         const candidate = refreshed.config;
         const plan = resolveUpdatePlan(candidate);
         if (plan === "full") {
-          setManualUpdatePromptVersion(candidate.update.latestVersion);
+          setManualUpdatePrompt({
+            version: candidate.update.latestVersion,
+            requestedAt: Date.now(),
+          });
           return { kind: "full", snapshot: refreshed };
         }
         if (plan === "ota") {
@@ -262,6 +276,34 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
     });
     return task;
   }, [refresh]);
+  // 安装包下载管理器跟着 bootstrap 走：有可直装的全量版本就配置（同版本恢复 / 续传），没有就清空
+  useEffect(() => {
+    if (!snapshot) return;
+    const full = config.update.full;
+    const canDirectInstall =
+      config.app.platform === "android" &&
+      config.app.distribution === "direct" &&
+      config.features.directUpdateEnabled &&
+      config.update.decision !== "none" &&
+      Boolean(full.actionUrl) &&
+      Boolean(full.releaseId);
+    void getApkDownloadManager().configure(
+      canDirectInstall
+        ? {
+            releaseId: full.releaseId as string,
+            url: full.actionUrl as string,
+            size: full.size ?? null,
+          }
+        : null,
+    );
+  }, [
+    config.app.distribution,
+    config.app.platform,
+    config.features.directUpdateEnabled,
+    config.update.decision,
+    config.update.full,
+    snapshot,
+  ]);
   // 最短停留时间按冻结的那版品牌配置；没有品牌配置的租户按平台常量
   const minimumMs =
     activeBranding?.launch.minDisplayMs ?? LAUNCH_MIN_DISPLAY_MS;
@@ -394,9 +436,10 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
               result.data.config.update.decision !== "none" &&
               result.data.config.update.full.actionUrl
             ) {
-              setManualUpdatePromptVersion(
-                result.data.config.update.latestVersion,
-              );
+              setManualUpdatePrompt({
+                version: result.data.config.update.latestVersion,
+                requestedAt: Date.now(),
+              });
             }
           }
         });
@@ -471,7 +514,8 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
       refresh,
       checkForUpdates,
       dismissUpdatePrompt,
-      manualUpdatePromptVersion,
+      manualUpdatePrompt,
+      promptUpdate,
       otaResult,
       applyPendingOta,
       notificationStatus,
@@ -487,7 +531,8 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
       refresh,
       checkForUpdates,
       dismissUpdatePrompt,
-      manualUpdatePromptVersion,
+      manualUpdatePrompt,
+      promptUpdate,
       setLocale,
       setTheme,
       runtimeSnapshot,

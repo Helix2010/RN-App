@@ -35,16 +35,24 @@ import {
 } from "../security/tx-verification-sheet";
 import { updateCheckRowValue } from "../updates/update-check-row";
 import { useManualUpdateCheck } from "../updates/use-manual-update-check";
+import { useApkDownloadStore } from "../../core/updates/apk-download-manager";
 
 /** S-02 设置：通用 / 通知 / 交易偏好 / 安全 / 关于 五组，值列直接显示当前设置。 */
 export function SettingsScreen({
   navigation,
 }: NativeStackScreenProps<RootStackParamList, "Settings">) {
   const insets = useSafeAreaInsets();
-  const { config, localePreference, themePreference, t, otaResult } =
-    useFoundationRuntime();
+  const {
+    config,
+    localePreference,
+    themePreference,
+    t,
+    otaResult,
+    promptUpdate,
+  } = useFoundationRuntime();
   const { state: updateCheckState, check: checkUpdate } =
     useManualUpdateCheck();
+  const download = useApkDownloadStore((state) => state.state);
   const { toggle: toggleAppLock } = useAppLockToggle();
   const session = useSession();
   const address = session.data?.address;
@@ -256,9 +264,15 @@ export function SettingsScreen({
                 hasUpdate,
                 latestVersion: config.update.latestVersion,
                 otaResult,
+                download,
               })}
               dot={hasUpdate}
-              onPress={() => void checkUpdate()}
+              onPress={() =>
+                download.phase !== "idle" &&
+                download.releaseId === config.update.full.releaseId
+                  ? promptUpdate()
+                  : void checkUpdate()
+              }
               testID="settings-check-update"
             />
             <SRow
