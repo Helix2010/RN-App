@@ -167,14 +167,19 @@ export type PickerItem = {
 };
 
 /** 分组键：拉丁字母 / 数字取大写首字符，其它（中文等）取原首字符 */
+/** 分组键：数字开头统一进 "0–9"，拉丁字母按首字母大写，其它（中文等）按首字 */
 export function pickerGroupKey(label: string): string {
   const first = label.trim().charAt(0);
   if (!first) return "#";
-  return /[A-Z0-9]/i.test(first) ? first.toUpperCase() : first;
+  if (/[0-9]/.test(first)) return DIGIT_GROUP;
+  return /[A-Z]/i.test(first) ? first.toUpperCase() : first;
 }
+const DIGIT_GROUP = "0–9";
 
+/** 排序：0–9 最前，再 A–Z，其它（中文等）在后 */
 function groupOrder(key: string): number {
-  return /^[A-Z0-9]$/.test(key) ? 0 : 1;
+  if (key === DIGIT_GROUP) return 0;
+  return /^[A-Z]$/.test(key) ? 1 : 2;
 }
 
 /**

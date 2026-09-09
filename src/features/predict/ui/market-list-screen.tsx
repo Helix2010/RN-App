@@ -5,7 +5,7 @@ import {
 import { enablementComplete } from "../api/account-gateway";
 import { shouldPromptEnable } from "../model/enable-prompt";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ScrollView } from "react-native";
+import { Keyboard, type ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import { formatMoney } from "../../../core/i18n/format";
@@ -228,6 +228,7 @@ export function MarketListScreen({
   const toggleFavorites = () =>
     setFilters((current) => ({ ...current, favorites: !current.favorites }));
   const exitSearch = () => {
+    Keyboard.dismiss();
     setSearching(false);
     setFilters((current) => ({ ...current, q: "" }));
   };

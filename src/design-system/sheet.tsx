@@ -95,6 +95,8 @@ export const Sheet = forwardRef<
     <BottomSheetModal
       ref={modal}
       enableDynamicSizing
+      // 内容再多也不盖到状态栏（"全部分类"188 项曾把标题顶进时钟下面）
+      topInset={insets.top + 8}
       enablePanDownToClose={!locked}
       enableDismissOnClose
       backdropComponent={renderBackdrop}

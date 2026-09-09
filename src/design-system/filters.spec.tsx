@@ -143,7 +143,8 @@ describe("PickerSheet", () => {
 
   it("derives group keys", () => {
     expect(pickerGroupKey("album")).toBe("A");
-    expect(pickerGroupKey("2026 World Cup")).toBe("2");
+    expect(pickerGroupKey("2026 World Cup")).toBe("0–9");
+    expect(pickerGroupKey("15M")).toBe("0–9");
     expect(pickerGroupKey("比特币")).toBe("比");
     expect(pickerGroupKey("")).toBe("#");
   });
