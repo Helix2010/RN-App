@@ -20,13 +20,12 @@ import {
   Badge,
   Body,
   Card,
-  Content,
+  CollapseAnchor,
+  CollapsingHeader,
   SnapCarousel,
   IconButton,
   InlineText,
   Label,
-  Page,
-  PageScroll,
   PriceChange,
   PrimaryButton,
   Row,
@@ -102,307 +101,319 @@ export function FoundationHomeScreen({
   };
 
   return (
-    <Page>
-      <PageScroll
-        refresh={{
-          refreshing,
-          onRefresh: refresh,
-          accessibilityLabel: t("action.refresh"),
-        }}
-      >
-        <Content paddingTop={insets.top + 24}>
-          <Row alignItems="center" gap="$2">
-            <IconButton
-              label={t("profile.title")}
-              icon="account-circle-outline"
-              size={32}
-              onPress={onOpenProfile}
-            />
-            <Stack
-              flex={1}
-              height={42}
-              borderRadius="$4"
-              backgroundColor="$surfaceVariant"
-              justifyContent="center"
-              paddingHorizontal="$3"
-            >
-              <Row alignItems="center" gap="$2">
-                <AppIcon name="magnify" size={17} colorToken="textMuted" />
-                <InlineText color="$textMuted" fontSize={13}>
-                  {t("home.search")}
-                </InlineText>
-              </Row>
-            </Stack>
-            <IconButton label={t("home.scan")} icon="line-scan" size={32} />
-            <IconButton label={t("home.support")} icon="headset" size={32} />
-            {address ? (
-              <IconButton
-                label={t("home.notifications")}
-                icon="bell-outline"
-                size={32}
-              />
-            ) : null}
-          </Row>
-
-          <Card
-            backgroundColor="$surface"
-            accessibilityLabel={t("home.portfolio")}
+    <CollapsingHeader
+      mode="floating"
+      refresh={{
+        refreshing,
+        onRefresh: refresh,
+        accessibilityLabel: t("action.refresh"),
+      }}
+      contentProps={{ paddingTop: insets.top + 24 }}
+      collapsed={
+        address ? (
+          <Row
+            alignItems="center"
+            gap="$2"
+            flex={1}
+            testID="home-compact-total"
           >
-            {address ? (
+            <Label>{t("home.portfolio")}</Label>
+            <AmountText fontSize={16} lineHeight={20}>
+              {overview.data
+                ? balanceVisible
+                  ? formatUsd(overview.data.totalUsd, locale)
+                  : "••••••"
+                : ""}
+            </AmountText>
+          </Row>
+        ) : undefined
+      }
+      footer={<AccountSheet ref={accountSheet} />}
+    >
+      <Row alignItems="center" gap="$2">
+        <IconButton
+          label={t("profile.title")}
+          icon="account-circle-outline"
+          size={32}
+          onPress={onOpenProfile}
+        />
+        <Stack
+          flex={1}
+          height={42}
+          borderRadius="$4"
+          backgroundColor="$surfaceVariant"
+          justifyContent="center"
+          paddingHorizontal="$3"
+        >
+          <Row alignItems="center" gap="$2">
+            <AppIcon name="magnify" size={17} colorToken="textMuted" />
+            <InlineText color="$textMuted" fontSize={13}>
+              {t("home.search")}
+            </InlineText>
+          </Row>
+        </Stack>
+        <IconButton label={t("home.scan")} icon="line-scan" size={32} />
+        <IconButton label={t("home.support")} icon="headset" size={32} />
+        {address ? (
+          <IconButton
+            label={t("home.notifications")}
+            icon="bell-outline"
+            size={32}
+          />
+        ) : null}
+      </Row>
+
+      <Card backgroundColor="$surface" accessibilityLabel={t("home.portfolio")}>
+        {address ? (
+          <>
+            <Row justifyContent="space-between" alignItems="center">
+              <Row alignItems="center" gap="$2">
+                <Label>{t("home.portfolio")}</Label>
+                <Stack
+                  onPress={() => setBalanceVisible((visible) => !visible)}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    balanceVisible
+                      ? t("home.hideBalance")
+                      : t("home.showBalance")
+                  }
+                >
+                  <AppIcon
+                    name={balanceVisible ? "eye-outline" : "eye-off-outline"}
+                    size={18}
+                    colorToken="textMuted"
+                  />
+                </Stack>
+              </Row>
+              <Row
+                alignItems="center"
+                gap="$1"
+                onPress={() => accountSheet.current?.present()}
+                accessibilityRole="button"
+                accessibilityLabel={t("account.title")}
+                testID="home-account"
+              >
+                <Body fontSize={12}>
+                  {session.data?.ens ?? shortenAddress(address)}
+                </Body>
+                <AppIcon name="chevron-down" size={15} colorToken="textMuted" />
+              </Row>
+            </Row>
+            {overview.data ? (
               <>
-                <Row justifyContent="space-between" alignItems="center">
-                  <Row alignItems="center" gap="$2">
-                    <Label>{t("home.portfolio")}</Label>
-                    <Stack
-                      onPress={() => setBalanceVisible((visible) => !visible)}
-                      accessibilityRole="button"
-                      accessibilityLabel={
-                        balanceVisible
-                          ? t("home.hideBalance")
-                          : t("home.showBalance")
-                      }
-                    >
-                      <AppIcon
-                        name={
-                          balanceVisible ? "eye-outline" : "eye-off-outline"
-                        }
-                        size={18}
-                        colorToken="textMuted"
-                      />
-                    </Stack>
-                  </Row>
-                  <Row
-                    alignItems="center"
-                    gap="$1"
-                    onPress={() => accountSheet.current?.present()}
-                    accessibilityRole="button"
-                    accessibilityLabel={t("account.title")}
-                    testID="home-account"
-                  >
-                    <Body fontSize={12}>
-                      {session.data?.ens ?? shortenAddress(address)}
-                    </Body>
-                    <AppIcon
-                      name="chevron-down"
-                      size={15}
-                      colorToken="textMuted"
-                    />
-                  </Row>
+                <AmountText fontSize={30} lineHeight={36}>
+                  {balanceVisible
+                    ? formatUsd(overview.data.totalUsd, locale)
+                    : "••••••"}
+                </AmountText>
+                <Row alignItems="center" gap="$2">
+                  <InlineText color="$textMuted" fontSize={12}>
+                    {t("home.walletAccount")}{" "}
+                    {balanceVisible
+                      ? formatUsd(overview.data.wallet.usd, locale)
+                      : "••••"}
+                    {overview.data.predict?.status === "enabled"
+                      ? ` · ${t("home.predictAccount")} ${balanceVisible ? formatUsd(overview.data.predict.usd, locale) : "••••"}`
+                      : ""}
+                  </InlineText>
                 </Row>
-                {overview.data ? (
-                  <>
-                    <AmountText fontSize={30} lineHeight={36}>
-                      {balanceVisible
-                        ? formatUsd(overview.data.totalUsd, locale)
-                        : "••••••"}
-                    </AmountText>
-                    <Row alignItems="center" gap="$2">
-                      <InlineText color="$textMuted" fontSize={12}>
-                        {t("home.walletAccount")}{" "}
-                        {balanceVisible
-                          ? formatUsd(overview.data.wallet.usd, locale)
-                          : "••••"}
-                        {overview.data.predict?.status === "enabled"
-                          ? ` · ${t("home.predictAccount")} ${balanceVisible ? formatUsd(overview.data.predict.usd, locale) : "••••"}`
-                          : ""}
-                      </InlineText>
-                    </Row>
-                    <Row alignItems="center" gap="$2">
-                      <InlineText
-                        color={
-                          overview.data.change24hUsd >= 0
-                            ? "$pricePositive"
-                            : "$priceNegative"
-                        }
-                        fontWeight="800"
-                      >
-                        {balanceVisible
-                          ? `${formatUsd(overview.data.change24hUsd, locale, { sign: true })} (${overview.data.change24hPct >= 0 ? "+" : ""}${overview.data.change24hPct.toFixed(2)}%)`
-                          : "••••"}
-                      </InlineText>
-                    </Row>
-                  </>
-                ) : (
-                  <Stack gap="$2">
-                    <SkeletonBlock height={36} width={180} />
-                    <SkeletonBlock height={14} width={240} />
-                  </Stack>
-                )}
-                <Row gap="$2" marginTop="$1">
-                  <ActionTile
-                    label={t("home.deposit")}
-                    icon="qrcode"
-                    primary
-                    onPress={onOpenAssets}
-                    testID="home-deposit"
-                  />
-                  <ActionTile
-                    label={t("home.withdraw")}
-                    icon="arrow-top-right"
-                    onPress={onOpenAssets}
-                    testID="home-withdraw"
-                  />
-                  <ActionTile
-                    label={t("home.transfer")}
-                    icon="swap-vertical"
-                    onPress={onOpenAssets}
-                    testID="home-transfer"
-                  />
+                <Row alignItems="center" gap="$2">
+                  <InlineText
+                    color={
+                      overview.data.change24hUsd >= 0
+                        ? "$pricePositive"
+                        : "$priceNegative"
+                    }
+                    fontWeight="800"
+                  >
+                    {balanceVisible
+                      ? `${formatUsd(overview.data.change24hUsd, locale, { sign: true })} (${overview.data.change24hPct >= 0 ? "+" : ""}${overview.data.change24hPct.toFixed(2)}%)`
+                      : "••••"}
+                  </InlineText>
                 </Row>
               </>
             ) : (
-              <>
-                <Label>{t("login.welcome")}</Label>
-                <SectionTitle>{t("login.welcomeTitle")}</SectionTitle>
-                <Body>{t("login.welcomeHint")}</Body>
-                <Row gap="$2" marginTop="$1">
-                  <PrimaryButton
-                    height={40}
-                    flex={1}
-                    disabled={session.isLoading}
-                    onPress={() => requestAuth()}
-                    testID="guest-connect"
-                  >
-                    {t("home.connectWallet")}
-                  </PrimaryButton>
-                  <SecondaryButton
-                    height={40}
-                    flex={1}
-                    onPress={() => requestAuth()}
-                    testID="guest-create"
-                  >
-                    {t("login.createWallet")}
-                  </SecondaryButton>
-                </Row>
-              </>
+              <Stack gap="$2">
+                <SkeletonBlock height={36} width={180} />
+                <SkeletonBlock height={14} width={240} />
+              </Stack>
             )}
-          </Card>
+            <Row gap="$2" marginTop="$1">
+              <ActionTile
+                label={t("home.deposit")}
+                icon="qrcode"
+                primary
+                onPress={onOpenAssets}
+                testID="home-deposit"
+              />
+              <ActionTile
+                label={t("home.withdraw")}
+                icon="arrow-top-right"
+                onPress={onOpenAssets}
+                testID="home-withdraw"
+              />
+              <ActionTile
+                label={t("home.transfer")}
+                icon="swap-vertical"
+                onPress={onOpenAssets}
+                testID="home-transfer"
+              />
+            </Row>
+          </>
+        ) : (
+          <>
+            <Label>{t("login.welcome")}</Label>
+            <SectionTitle>{t("login.welcomeTitle")}</SectionTitle>
+            <Body>{t("login.welcomeHint")}</Body>
+            <Row gap="$2" marginTop="$1">
+              <PrimaryButton
+                height={40}
+                flex={1}
+                disabled={session.isLoading}
+                onPress={() => requestAuth()}
+                testID="guest-connect"
+              >
+                {t("home.connectWallet")}
+              </PrimaryButton>
+              <SecondaryButton
+                height={40}
+                flex={1}
+                onPress={() => requestAuth()}
+                testID="guest-create"
+              >
+                {t("login.createWallet")}
+              </SecondaryButton>
+            </Row>
+          </>
+        )}
+      </Card>
+      <CollapseAnchor />
 
-          <Row flexWrap="wrap" gap="$3" paddingVertical="$2">
-            <QuickAction
-              label={t("home.quick.predict")}
-              icon="chart-timeline-variant"
-              enabled={config.modules.predict}
-              onPress={onOpenPredict}
-            />
-            <QuickAction
-              label={t("home.quick.swap")}
-              icon="swap-horizontal"
-              enabled={config.modules.dex}
-              onPress={onOpenSwap}
-            />
-            <QuickAction
-              label={t("home.quick.rank")}
-              icon="trophy-outline"
-              enabled={config.modules.predict}
-              onPress={onOpenLeaderboard}
-            />
-            <QuickAction
-              label={t("home.quick.invite")}
-              icon="gift-outline"
-              enabled
-            />
-            <QuickAction
-              label={t("home.quick.help")}
-              icon="help-circle-outline"
-              enabled
-            />
-            <QuickAction
-              label={t("home.quick.more")}
-              icon="dots-grid"
-              enabled
-            />
+      <Row flexWrap="wrap" gap="$3" paddingVertical="$2">
+        <QuickAction
+          label={t("home.quick.predict")}
+          icon="chart-timeline-variant"
+          enabled={config.modules.predict}
+          onPress={onOpenPredict}
+        />
+        <QuickAction
+          label={t("home.quick.swap")}
+          icon="swap-horizontal"
+          enabled={config.modules.dex}
+          onPress={onOpenSwap}
+        />
+        <QuickAction
+          label={t("home.quick.rank")}
+          icon="trophy-outline"
+          enabled={config.modules.predict}
+          onPress={onOpenLeaderboard}
+        />
+        <QuickAction
+          label={t("home.quick.invite")}
+          icon="gift-outline"
+          enabled
+        />
+        <QuickAction
+          label={t("home.quick.help")}
+          icon="help-circle-outline"
+          enabled
+        />
+        <QuickAction label={t("home.quick.more")} icon="dots-grid" enabled />
+      </Row>
+
+      {config.modules.predict ? (
+        <Stack gap="$2">
+          <Row
+            justifyContent="space-between"
+            alignItems="center"
+            onPress={onOpenPredict}
+          >
+            <SectionTitle>{t("home.predict")}</SectionTitle>
+            <InlineText color="$textMuted" fontSize={13}>
+              {t("home.viewAll")} ›
+            </InlineText>
           </Row>
-
-          {config.modules.predict ? (
-            <Stack gap="$2">
-              <Row
-                justifyContent="space-between"
-                alignItems="center"
-                onPress={onOpenPredict}
+          {events.data ? (
+            events.data.items.length === 0 ? (
+              <Body>{t("state.empty")}</Body>
+            ) : (
+              <SnapCarousel
+                itemWidth={236}
+                gap={12}
+                fullWidth
+                peek={44}
+                showDots
+                testID="home-predict-carousel"
               >
-                <SectionTitle>{t("home.predict")}</SectionTitle>
-                <InlineText color="$textMuted" fontSize={13}>
-                  {t("home.viewAll")} ›
-                </InlineText>
-              </Row>
-              {events.data ? (
-                events.data.items.length === 0 ? (
-                  <Body>{t("state.empty")}</Body>
-                ) : (
-                  <SnapCarousel itemWidth={236} gap={12} fullWidth>
-                    {events.data.items.map((event) => (
-                      <PredictionHomeCard
-                        key={event.id}
-                        event={event}
-                        locale={locale}
-                        volumeLabel={t("home.volume")}
-                        closesLabel={t("home.closesIn")}
-                        outcomesLabel={t("home.outcomes")}
-                        onPress={onOpenPredict}
-                      />
-                    ))}
-                  </SnapCarousel>
-                )
-              ) : events.isError ? (
-                <InlineErrorRow
-                  message={t("state.error")}
-                  onRetry={() => void events.refetch()}
-                  retryLabel={t("action.retryNow")}
-                />
-              ) : (
-                <SnapCarousel itemWidth={236} gap={12} fullWidth>
-                  <SkeletonBlock width="100%" height={132} borderRadius="$4" />
-                  <SkeletonBlock width="100%" height={132} borderRadius="$4" />
-                </SnapCarousel>
-              )}
-            </Stack>
-          ) : null}
+                {events.data.items.map((event) => (
+                  <PredictionHomeCard
+                    key={event.id}
+                    event={event}
+                    locale={locale}
+                    volumeLabel={t("home.volume")}
+                    closesLabel={t("home.closesIn")}
+                    outcomesLabel={t("home.outcomes")}
+                    onPress={onOpenPredict}
+                  />
+                ))}
+              </SnapCarousel>
+            )
+          ) : events.isError ? (
+            <InlineErrorRow
+              message={t("state.error")}
+              onRetry={() => void events.refetch()}
+              retryLabel={t("action.retryNow")}
+            />
+          ) : (
+            <SnapCarousel itemWidth={236} gap={12} fullWidth peek={44}>
+              <SkeletonBlock width="100%" height={132} borderRadius="$4" />
+              <SkeletonBlock width="100%" height={132} borderRadius="$4" />
+            </SnapCarousel>
+          )}
+        </Stack>
+      ) : null}
 
-          {config.modules.dex ? (
-            <Stack gap="$2">
-              <Row
-                justifyContent="space-between"
-                alignItems="center"
-                onPress={onOpenDex}
-              >
-                <SectionTitle>{t("home.dexHotTokens")}</SectionTitle>
-                <InlineText color="$textMuted" fontSize={13}>
-                  {t("home.market")} ›
-                </InlineText>
-              </Row>
-              {tokens.data ? (
-                tokens.data.items.length === 0 ? (
-                  <Body>{t("state.empty")}</Body>
-                ) : (
-                  tokens.data.items.map((token) => (
-                    <TokenHomeRow
-                      key={`${token.token.chain}:${token.token.address}`}
-                      summary={token}
-                      locale={locale}
-                      onPress={onOpenDex}
-                    />
-                  ))
-                )
-              ) : tokens.isError ? (
-                <InlineErrorRow
-                  message={t("state.error")}
-                  onRetry={() => void tokens.refetch()}
-                  retryLabel={t("action.retryNow")}
+      {config.modules.dex ? (
+        <Stack gap="$2">
+          <Row
+            justifyContent="space-between"
+            alignItems="center"
+            onPress={onOpenDex}
+          >
+            <SectionTitle>{t("home.dexHotTokens")}</SectionTitle>
+            <InlineText color="$textMuted" fontSize={13}>
+              {t("home.market")} ›
+            </InlineText>
+          </Row>
+          {tokens.data ? (
+            tokens.data.items.length === 0 ? (
+              <Body>{t("state.empty")}</Body>
+            ) : (
+              tokens.data.items.map((token) => (
+                <TokenHomeRow
+                  key={`${token.token.chain}:${token.token.address}`}
+                  summary={token}
+                  locale={locale}
+                  onPress={onOpenDex}
                 />
-              ) : (
-                <Stack gap="$2">
-                  <SkeletonBlock height={52} />
-                  <SkeletonBlock height={52} />
-                  <SkeletonBlock height={52} />
-                </Stack>
-              )}
+              ))
+            )
+          ) : tokens.isError ? (
+            <InlineErrorRow
+              message={t("state.error")}
+              onRetry={() => void tokens.refetch()}
+              retryLabel={t("action.retryNow")}
+            />
+          ) : (
+            <Stack gap="$2">
+              <SkeletonBlock height={52} />
+              <SkeletonBlock height={52} />
+              <SkeletonBlock height={52} />
             </Stack>
-          ) : null}
-        </Content>
-      </PageScroll>
-      <AccountSheet ref={accountSheet} />
-    </Page>
+          )}
+        </Stack>
+      ) : null}
+    </CollapsingHeader>
   );
 }
 

@@ -12,15 +12,15 @@ import {
 import { pickTranslation } from "../../../core/i18n/localized-text";
 import {
   Body,
-  Content,
+  CollapseAnchor,
+  CollapsingHeader,
   DetailRow,
   InlineText,
+  Label,
   Page,
-  PageScroll,
   PageState,
   PriceLineChart,
   Row,
-  ScreenHeader,
   SectionTitle,
   SegmentedControl,
   SkeletonBlock,
@@ -204,442 +204,8 @@ export function EventDetailScreen({
       ? NO_QUOTE
       : `${Math.round(((100 - price) / price) * 100)}%`;
 
-  return (
-    <Page>
-      <Content paddingTop={insets.top + 8} paddingBottom={0}>
-        <ScreenHeader
-          title={
-            event.data
-              ? pickTranslation(event.data.category, locale).toUpperCase()
-              : ""
-          }
-          onBack={onBack}
-          backLabel={t("action.back")}
-          action={
-            <Row alignItems="center" gap="$2">
-              {event.data ? <FavoriteButton eventId={event.data.id} /> : null}
-              <StatusBadge status={status} />
-            </Row>
-          }
-        />
-      </Content>
-      <PageScroll scrollEnabled={!scrubbing}>
-        <Content paddingTop="$1" gap="$4" paddingBottom={120}>
-          {event.data && market ? (
-            <>
-              <Stack gap="$1">
-                <Row gap="$3" alignItems="flex-start">
-                  <EventImage
-                    uri={event.data.iconUrl}
-                    size={48}
-                    radius={10}
-                    testID="detail-icon"
-                  />
-                  <SectionTitle flex={1} fontSize={20}>
-                    {title}
-                  </SectionTitle>
-                </Row>
-                <Body fontSize={12}>
-                  {closesText(event.data.endsAt, locale, t)} ·{" "}
-                  {fill(t("predict.volume"), {
-                    amount: formatUsd(event.data.volumeUsd, locale, {
-                      compact: true,
-                    }),
-                  })}
-                </Body>
-                <Body fontSize={12}>
-                  {fill(t("predict.volume24h"), {
-                    amount: formatUsd(event.data.volume24hUsd, locale, {
-                      compact: true,
-                    }),
-                  })}{" "}
-                  ·{" "}
-                  {fill(t("predict.liquidity"), {
-                    amount: formatUsd(event.data.liquidityUsd, locale, {
-                      compact: true,
-                    }),
-                  })}
-                </Body>
-                {event.data.tags.length > 0 ? (
-                  <Row flexWrap="wrap" gap="$1.5" testID="detail-tags">
-                    {event.data.tags.map((tag) => (
-                      <InlineText
-                        key={tag.id}
-                        fontSize={11}
-                        fontWeight="700"
-                        color="$textMuted"
-                        paddingHorizontal="$2"
-                        paddingVertical="$0.5"
-                        borderRadius={999}
-                        backgroundColor="$surfaceVariant"
-                      >
-                        {pickTranslation(tag.label, locale)}
-                      </InlineText>
-                    ))}
-                  </Row>
-                ) : null}
-              </Stack>
-              {event.data.markets.length > 1 ? (
-                <Stack gap="$1" testID="detail-market">
-                  {event.data.markets.map((item) => {
-                    const selected = item.id === market.id;
-                    return (
-                      <Row
-                        key={item.id}
-                        alignItems="center"
-                        gap="$2"
-                        paddingVertical="$1.5"
-                        paddingHorizontal="$2"
-                        borderRadius="$3"
-                        backgroundColor={
-                          selected ? "$surfaceVariant" : undefined
-                        }
-                        onPress={() => setSelectedMarketId(item.id)}
-                        accessibilityRole="radio"
-                        accessibilityState={{ selected }}
-                        testID={`detail-outcome-${item.id}`}
-                      >
-                        <Stack flex={1} gap="$0.5">
-                          <Body
-                            color="$color"
-                            fontWeight={selected ? "800" : "500"}
-                            numberOfLines={1}
-                          >
-                            {pickTranslation(item.outcomeLabel, locale)}
-                          </Body>
-                          <Body fontSize={11}>
-                            {fill(t("predict.volume"), {
-                              amount: formatUsd(item.volumeUsd, locale, {
-                                compact: true,
-                              }),
-                            })}
-                          </Body>
-                        </Stack>
-                        {item.closed || item.result || !item.acceptingOrders ? (
-                          <OutcomeResultBadge market={item} />
-                        ) : (
-                          <InlineText
-                            fontWeight="800"
-                            width={52}
-                            textAlign="right"
-                          >
-                            {formatPercentCents(item.yesPriceCents)}
-                          </InlineText>
-                        )}
-                      </Row>
-                    );
-                  })}
-                </Stack>
-              ) : null}
-              <Row alignItems="flex-end" gap="$3">
-                <Stack>
-                  <InlineText
-                    fontSize={40}
-                    fontWeight="900"
-                    lineHeight={44}
-                    color={
-                      shownCents === null
-                        ? "$textMuted"
-                        : shownCents >= 50
-                          ? "$success"
-                          : "$danger"
-                    }
-                    testID="detail-price"
-                  >
-                    {formatPercentCents(shownCents)}
-                  </InlineText>
-                  <Body fontSize={12}>
-                    {scrub
-                      ? formatDateTime(new Date(scrub.t).toISOString(), locale)
-                      : t("predict.yesProbability")}
-                  </Body>
-                </Stack>
-                {!scrub && change !== null ? (
-                  <Stack paddingBottom="$3">
-                    <InlineText
-                      fontWeight="700"
-                      color={change >= 0 ? "$pricePositive" : "$priceNegative"}
-                    >
-                      {change >= 0 ? "+" : ""}
-                      {change.toFixed(1)}
-                    </InlineText>
-                    <Body fontSize={11}>{t("predict.chart.change")}</Body>
-                  </Stack>
-                ) : null}
-              </Row>
-              {historyLoading && series.every((s) => s.points.length === 0) ? (
-                <SkeletonBlock height={180} />
-              ) : (
-                <PriceLineChart
-                  series={series}
-                  height={180}
-                  baseline={50}
-                  formatValue={(value) => `${Math.round(value)}%`}
-                  formatTime={formatAxisTime}
-                  onScrub={setScrub}
-                  onScrubbing={setScrubbing}
-                  empty={<Body fontSize={12}>{t("predict.chart.empty")}</Body>}
-                />
-              )}
-              {series.length > 1 ? (
-                <Row gap="$3" flexWrap="wrap">
-                  {series.map((item) => (
-                    <Row key={item.key} alignItems="center" gap="$1">
-                      <Stack
-                        width={8}
-                        height={8}
-                        borderRadius={4}
-                        style={{ backgroundColor: item.color }}
-                      />
-                      <Body fontSize={11}>
-                        {item.label}
-                        {scrub && scrub.values[item.key] !== null
-                          ? ` ${formatPercentCents(scrub.values[item.key] ?? null)}`
-                          : ""}
-                      </Body>
-                    </Row>
-                  ))}
-                </Row>
-              ) : null}
-              <SegmentedControl
-                size="sm"
-                value={range}
-                options={RANGES.map((option) => ({
-                  value: option,
-                  label:
-                    option === "all"
-                      ? t("predict.leaderboard.all")
-                      : option.toUpperCase(),
-                }))}
-                onChange={setRange}
-                accessibilityLabel={t("predict.tab.book")}
-                testID="detail-range"
-              />
-
-              <Row gap="$2">
-                {(["yes", "no"] as const).map((outcome) => {
-                  const price =
-                    yes === null ? null : outcome === "yes" ? yes : 100 - yes;
-                  return (
-                    <Stack
-                      key={outcome}
-                      flex={1}
-                      padding="$3"
-                      borderRadius="$4"
-                      backgroundColor="$surfaceVariant"
-                      gap="$0.5"
-                      opacity={canOrder ? 1 : 0.45}
-                      onPress={canOrder ? () => openOrder(outcome) : undefined}
-                      accessibilityRole="button"
-                      accessibilityState={{ disabled: !canOrder }}
-                      testID={`detail-${outcome}`}
-                      pressStyle={{ opacity: 0.8 }}
-                    >
-                      <Row justifyContent="space-between">
-                        <InlineText
-                          fontWeight="800"
-                          color={outcome === "yes" ? "$success" : "$danger"}
-                        >
-                          {outcomeLabel(outcome)}
-                        </InlineText>
-                        <InlineText fontSize={18} fontWeight="900">
-                          {formatCents(price)}
-                        </InlineText>
-                      </Row>
-                      <Body fontSize={11}>
-                        {t("predict.buy")} · {t("predict.win1")}
-                      </Body>
-                    </Stack>
-                  );
-                })}
-              </Row>
-
-              <RegionNotice
-                state={region.state}
-                onRetry={region.retry}
-                detail
-              />
-
-              {market && status === "trading" && !market.acceptingOrders ? (
-                <Body color="$textMuted" testID="detail-not-accepting">
-                  {t("predict.outcome.notAccepting")}
-                </Body>
-              ) : null}
-
-              {status !== "trading" ? (
-                <Row
-                  alignItems="center"
-                  justifyContent="space-between"
-                  padding="$3"
-                  borderRadius="$4"
-                  backgroundColor="$surfaceVariant"
-                  onPress={() => onOpenSettlement(market.id, event.data.id)}
-                  accessibilityRole="button"
-                  testID="detail-settlement"
-                >
-                  <Stack>
-                    <SectionTitle fontSize={14}>
-                      {t("predict.settlement.title")}
-                    </SectionTitle>
-                    <Body fontSize={12}>
-                      {t(`predict.status.${status}`)}
-                      {adjudication.data?.proposedOutcome
-                        ? ` · ${outcomeLabel(adjudication.data.proposedOutcome)}`
-                        : ""}
-                    </Body>
-                  </Stack>
-                  <InlineText color="$primary" fontWeight="700">
-                    ›
-                  </InlineText>
-                </Row>
-              ) : null}
-
-              <Tabs
-                value={tab}
-                options={[
-                  { value: "book", label: t("predict.tab.book") },
-                  { value: "trades", label: t("predict.tab.trades") },
-                  { value: "rules", label: t("predict.tab.rules") },
-                  { value: "holders", label: t("predict.tab.holders") },
-                ]}
-                onChange={setTab}
-                accessibilityLabel={t("predict.tab.book")}
-              />
-              {tab === "book" ? (
-                <OrderBookView
-                  book={book.data}
-                  outcome={bookOutcome}
-                  onOutcomeChange={setBookOutcome}
-                  onPickPrice={
-                    canOrder
-                      ? (priceCents, side) =>
-                          openOrder(bookOutcome, side, priceCents)
-                      : undefined
-                  }
-                />
-              ) : tab === "rules" ? (
-                <Stack gap="$2">
-                  <SectionTitle fontSize={14}>
-                    {t("predict.rules.title")}
-                  </SectionTitle>
-                  <Body>{pickTranslation(event.data.rules, locale)}</Body>
-                  {market.description ? (
-                    <Stack gap="$1" testID="detail-market-rules">
-                      <SectionTitle fontSize={13}>
-                        {t("predict.rules.market")}
-                      </SectionTitle>
-                      <Body>{pickTranslation(market.description, locale)}</Body>
-                    </Stack>
-                  ) : null}
-                  <DetailRow
-                    label={t("predict.rules.resolver")}
-                    value={t("predict.rules.resolverValue")}
-                  />
-                  <DetailRow
-                    label={t("predict.rules.disputeWindow")}
-                    value={fill(t("predict.rules.disputeWindowValue"), {
-                      hours: Math.round(event.data.disputeWindowSec / 3600),
-                    })}
-                  />
-                  <DetailRow
-                    label={t("predict.rules.fee")}
-                    value={fill(t("predict.rules.feeValue"), {
-                      pct:
-                        fee.data === undefined
-                          ? NO_QUOTE
-                          : `${(fee.data / 100).toFixed(2)}%`,
-                    })}
-                  />
-                  <Body fontSize={12}>
-                    {pickTranslation(event.data.resolutionSource, locale)}
-                  </Body>
-                </Stack>
-              ) : tab === "trades" ? (
-                <Stack gap="$1" testID="detail-trades">
-                  <Row paddingVertical="$1">
-                    <Body fontSize={11} flex={1.2}>
-                      {t("predict.trades.time")}
-                    </Body>
-                    <Body fontSize={11} flex={1} textAlign="center">
-                      {t("predict.trades.price")}
-                    </Body>
-                    <Body fontSize={11} flex={1} textAlign="right">
-                      {t("predict.trades.shares")}
-                    </Body>
-                  </Row>
-                  {trades.data ? (
-                    trades.data.length === 0 ? (
-                      <Body fontSize={12}>{t("predict.trades.empty")}</Body>
-                    ) : (
-                      trades.data.slice(0, 20).map((trade) => (
-                        <Row
-                          key={trade.id}
-                          alignItems="center"
-                          paddingVertical="$1.5"
-                          borderBottomWidth={1}
-                          borderColor="$borderColor"
-                        >
-                          <Stack flex={1.2}>
-                            <Body fontSize={12}>
-                              {formatDateTime(trade.at, locale)}
-                            </Body>
-                            <InlineText
-                              fontSize={11}
-                              fontWeight="700"
-                              color={
-                                trade.side === "buy" ? "$success" : "$danger"
-                              }
-                            >
-                              {trade.side === "buy"
-                                ? t("predict.buy")
-                                : t("predict.sell")}{" "}
-                              {outcomeLabel(trade.outcome)}
-                            </InlineText>
-                          </Stack>
-                          <InlineText
-                            flex={1}
-                            fontSize={13}
-                            fontWeight="700"
-                            textAlign="center"
-                          >
-                            {formatCents(
-                              trade.outcome === "yes"
-                                ? trade.priceCents
-                                : Math.round((100 - trade.priceCents) * 10) /
-                                    10,
-                            )}
-                          </InlineText>
-                          <InlineText flex={1} fontSize={13} textAlign="right">
-                            {trade.shares.toLocaleString(undefined, {
-                              maximumFractionDigits: 2,
-                            })}
-                          </InlineText>
-                        </Row>
-                      ))
-                    )
-                  ) : trades.isError ? (
-                    <Body fontSize={12} color="$priceNegative">
-                      {trades.error instanceof Error
-                        ? trades.error.message
-                        : String(trades.error)}
-                    </Body>
-                  ) : (
-                    <SkeletonBlock height={120} />
-                  )}
-                </Stack>
-              ) : (
-                <HoldersView marketId={market.id} />
-              )}
-            </>
-          ) : (
-            <Stack gap="$3">
-              <SkeletonBlock height={28} width={260} />
-              <SkeletonBlock height={180} />
-              <SkeletonBlock height={80} />
-            </Stack>
-          )}
-        </Content>
-      </PageScroll>
+  const footer = (
+    <>
       {market && canOrder ? (
         <Row
           position="absolute"
@@ -701,6 +267,445 @@ export function EventDetailScreen({
         event={event.data}
         onInsufficient={onOpenTransfer}
       />
-    </Page>
+    </>
+  );
+  return (
+    <CollapsingHeader
+      onBack={onBack}
+      backLabel={t("action.back")}
+      expanded={
+        <Label>
+          {event.data
+            ? pickTranslation(event.data.category, locale).toUpperCase()
+            : ""}
+        </Label>
+      }
+      collapsed={
+        event.data ? (
+          <Row alignItems="center" gap="$2" flex={1}>
+            <EventImage uri={event.data.iconUrl} size={22} radius={6} />
+            <InlineText
+              fontSize={15}
+              fontWeight="700"
+              numberOfLines={1}
+              flex={1}
+            >
+              {title}
+            </InlineText>
+          </Row>
+        ) : undefined
+      }
+      actions={
+        <Row alignItems="center" gap="$2">
+          {event.data ? <FavoriteButton eventId={event.data.id} /> : null}
+          <StatusBadge status={status} />
+        </Row>
+      }
+      scrollEnabled={!scrubbing}
+      contentProps={{ paddingTop: 4, gap: "$4", paddingBottom: 120 }}
+      footer={footer}
+    >
+      {event.data && market ? (
+        <>
+          <Stack gap="$1">
+            <Row gap="$3" alignItems="flex-start">
+              <EventImage
+                uri={event.data.iconUrl}
+                size={48}
+                radius={10}
+                testID="detail-icon"
+              />
+              <SectionTitle flex={1} fontSize={20}>
+                {title}
+              </SectionTitle>
+            </Row>
+            <Body fontSize={12}>
+              {closesText(event.data.endsAt, locale, t)} ·{" "}
+              {fill(t("predict.volume"), {
+                amount: formatUsd(event.data.volumeUsd, locale, {
+                  compact: true,
+                }),
+              })}
+            </Body>
+            <Body fontSize={12}>
+              {fill(t("predict.volume24h"), {
+                amount: formatUsd(event.data.volume24hUsd, locale, {
+                  compact: true,
+                }),
+              })}{" "}
+              ·{" "}
+              {fill(t("predict.liquidity"), {
+                amount: formatUsd(event.data.liquidityUsd, locale, {
+                  compact: true,
+                }),
+              })}
+            </Body>
+            {event.data.tags.length > 0 ? (
+              <Row flexWrap="wrap" gap="$1.5" testID="detail-tags">
+                {event.data.tags.map((tag) => (
+                  <InlineText
+                    key={tag.id}
+                    fontSize={11}
+                    fontWeight="700"
+                    color="$textMuted"
+                    paddingHorizontal="$2"
+                    paddingVertical="$0.5"
+                    borderRadius={999}
+                    backgroundColor="$surfaceVariant"
+                  >
+                    {pickTranslation(tag.label, locale)}
+                  </InlineText>
+                ))}
+              </Row>
+            ) : null}
+          </Stack>
+          <CollapseAnchor />
+          {event.data.markets.length > 1 ? (
+            <Stack gap="$1" testID="detail-market">
+              {event.data.markets.map((item) => {
+                const selected = item.id === market.id;
+                return (
+                  <Row
+                    key={item.id}
+                    alignItems="center"
+                    gap="$2"
+                    paddingVertical="$1.5"
+                    paddingHorizontal="$2"
+                    borderRadius="$3"
+                    backgroundColor={selected ? "$surfaceVariant" : undefined}
+                    onPress={() => setSelectedMarketId(item.id)}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected }}
+                    testID={`detail-outcome-${item.id}`}
+                  >
+                    <Stack flex={1} gap="$0.5">
+                      <Body
+                        color="$color"
+                        fontWeight={selected ? "800" : "500"}
+                        numberOfLines={1}
+                      >
+                        {pickTranslation(item.outcomeLabel, locale)}
+                      </Body>
+                      <Body fontSize={11}>
+                        {fill(t("predict.volume"), {
+                          amount: formatUsd(item.volumeUsd, locale, {
+                            compact: true,
+                          }),
+                        })}
+                      </Body>
+                    </Stack>
+                    {item.closed || item.result || !item.acceptingOrders ? (
+                      <OutcomeResultBadge market={item} />
+                    ) : (
+                      <InlineText fontWeight="800" width={52} textAlign="right">
+                        {formatPercentCents(item.yesPriceCents)}
+                      </InlineText>
+                    )}
+                  </Row>
+                );
+              })}
+            </Stack>
+          ) : null}
+          <Row alignItems="flex-end" gap="$3">
+            <Stack>
+              <InlineText
+                fontSize={40}
+                fontWeight="900"
+                lineHeight={44}
+                color={
+                  shownCents === null
+                    ? "$textMuted"
+                    : shownCents >= 50
+                      ? "$success"
+                      : "$danger"
+                }
+                testID="detail-price"
+              >
+                {formatPercentCents(shownCents)}
+              </InlineText>
+              <Body fontSize={12}>
+                {scrub
+                  ? formatDateTime(new Date(scrub.t).toISOString(), locale)
+                  : t("predict.yesProbability")}
+              </Body>
+            </Stack>
+            {!scrub && change !== null ? (
+              <Stack paddingBottom="$3">
+                <InlineText
+                  fontWeight="700"
+                  color={change >= 0 ? "$pricePositive" : "$priceNegative"}
+                >
+                  {change >= 0 ? "+" : ""}
+                  {change.toFixed(1)}
+                </InlineText>
+                <Body fontSize={11}>{t("predict.chart.change")}</Body>
+              </Stack>
+            ) : null}
+          </Row>
+          {historyLoading && series.every((s) => s.points.length === 0) ? (
+            <SkeletonBlock height={180} />
+          ) : (
+            <PriceLineChart
+              series={series}
+              height={180}
+              baseline={50}
+              formatValue={(value) => `${Math.round(value)}%`}
+              formatTime={formatAxisTime}
+              onScrub={setScrub}
+              onScrubbing={setScrubbing}
+              empty={<Body fontSize={12}>{t("predict.chart.empty")}</Body>}
+            />
+          )}
+          {series.length > 1 ? (
+            <Row gap="$3" flexWrap="wrap">
+              {series.map((item) => (
+                <Row key={item.key} alignItems="center" gap="$1">
+                  <Stack
+                    width={8}
+                    height={8}
+                    borderRadius={4}
+                    style={{ backgroundColor: item.color }}
+                  />
+                  <Body fontSize={11}>
+                    {item.label}
+                    {scrub && scrub.values[item.key] !== null
+                      ? ` ${formatPercentCents(scrub.values[item.key] ?? null)}`
+                      : ""}
+                  </Body>
+                </Row>
+              ))}
+            </Row>
+          ) : null}
+          <SegmentedControl
+            size="sm"
+            value={range}
+            options={RANGES.map((option) => ({
+              value: option,
+              label:
+                option === "all"
+                  ? t("predict.leaderboard.all")
+                  : option.toUpperCase(),
+            }))}
+            onChange={setRange}
+            accessibilityLabel={t("predict.tab.book")}
+            testID="detail-range"
+          />
+
+          <Row gap="$2">
+            {(["yes", "no"] as const).map((outcome) => {
+              const price =
+                yes === null ? null : outcome === "yes" ? yes : 100 - yes;
+              return (
+                <Stack
+                  key={outcome}
+                  flex={1}
+                  padding="$3"
+                  borderRadius="$4"
+                  backgroundColor="$surfaceVariant"
+                  gap="$0.5"
+                  opacity={canOrder ? 1 : 0.45}
+                  onPress={canOrder ? () => openOrder(outcome) : undefined}
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: !canOrder }}
+                  testID={`detail-${outcome}`}
+                  pressStyle={{ opacity: 0.8 }}
+                >
+                  <Row justifyContent="space-between">
+                    <InlineText
+                      fontWeight="800"
+                      color={outcome === "yes" ? "$success" : "$danger"}
+                    >
+                      {outcomeLabel(outcome)}
+                    </InlineText>
+                    <InlineText fontSize={18} fontWeight="900">
+                      {formatCents(price)}
+                    </InlineText>
+                  </Row>
+                  <Body fontSize={11}>
+                    {t("predict.buy")} · {t("predict.win1")}
+                  </Body>
+                </Stack>
+              );
+            })}
+          </Row>
+
+          <RegionNotice state={region.state} onRetry={region.retry} detail />
+
+          {market && status === "trading" && !market.acceptingOrders ? (
+            <Body color="$textMuted" testID="detail-not-accepting">
+              {t("predict.outcome.notAccepting")}
+            </Body>
+          ) : null}
+
+          {status !== "trading" ? (
+            <Row
+              alignItems="center"
+              justifyContent="space-between"
+              padding="$3"
+              borderRadius="$4"
+              backgroundColor="$surfaceVariant"
+              onPress={() => onOpenSettlement(market.id, event.data.id)}
+              accessibilityRole="button"
+              testID="detail-settlement"
+            >
+              <Stack>
+                <SectionTitle fontSize={14}>
+                  {t("predict.settlement.title")}
+                </SectionTitle>
+                <Body fontSize={12}>
+                  {t(`predict.status.${status}`)}
+                  {adjudication.data?.proposedOutcome
+                    ? ` · ${outcomeLabel(adjudication.data.proposedOutcome)}`
+                    : ""}
+                </Body>
+              </Stack>
+              <InlineText color="$primary" fontWeight="700">
+                ›
+              </InlineText>
+            </Row>
+          ) : null}
+
+          <Tabs
+            value={tab}
+            options={[
+              { value: "book", label: t("predict.tab.book") },
+              { value: "trades", label: t("predict.tab.trades") },
+              { value: "rules", label: t("predict.tab.rules") },
+              { value: "holders", label: t("predict.tab.holders") },
+            ]}
+            onChange={setTab}
+            accessibilityLabel={t("predict.tab.book")}
+          />
+          {tab === "book" ? (
+            <OrderBookView
+              book={book.data}
+              outcome={bookOutcome}
+              onOutcomeChange={setBookOutcome}
+              onPickPrice={
+                canOrder
+                  ? (priceCents, side) =>
+                      openOrder(bookOutcome, side, priceCents)
+                  : undefined
+              }
+            />
+          ) : tab === "rules" ? (
+            <Stack gap="$2">
+              <SectionTitle fontSize={14}>
+                {t("predict.rules.title")}
+              </SectionTitle>
+              <Body>{pickTranslation(event.data.rules, locale)}</Body>
+              {market.description ? (
+                <Stack gap="$1" testID="detail-market-rules">
+                  <SectionTitle fontSize={13}>
+                    {t("predict.rules.market")}
+                  </SectionTitle>
+                  <Body>{pickTranslation(market.description, locale)}</Body>
+                </Stack>
+              ) : null}
+              <DetailRow
+                label={t("predict.rules.resolver")}
+                value={t("predict.rules.resolverValue")}
+              />
+              <DetailRow
+                label={t("predict.rules.disputeWindow")}
+                value={fill(t("predict.rules.disputeWindowValue"), {
+                  hours: Math.round(event.data.disputeWindowSec / 3600),
+                })}
+              />
+              <DetailRow
+                label={t("predict.rules.fee")}
+                value={fill(t("predict.rules.feeValue"), {
+                  pct:
+                    fee.data === undefined
+                      ? NO_QUOTE
+                      : `${(fee.data / 100).toFixed(2)}%`,
+                })}
+              />
+              <Body fontSize={12}>
+                {pickTranslation(event.data.resolutionSource, locale)}
+              </Body>
+            </Stack>
+          ) : tab === "trades" ? (
+            <Stack gap="$1" testID="detail-trades">
+              <Row paddingVertical="$1">
+                <Body fontSize={11} flex={1.2}>
+                  {t("predict.trades.time")}
+                </Body>
+                <Body fontSize={11} flex={1} textAlign="center">
+                  {t("predict.trades.price")}
+                </Body>
+                <Body fontSize={11} flex={1} textAlign="right">
+                  {t("predict.trades.shares")}
+                </Body>
+              </Row>
+              {trades.data ? (
+                trades.data.length === 0 ? (
+                  <Body fontSize={12}>{t("predict.trades.empty")}</Body>
+                ) : (
+                  trades.data.slice(0, 20).map((trade) => (
+                    <Row
+                      key={trade.id}
+                      alignItems="center"
+                      paddingVertical="$1.5"
+                      borderBottomWidth={1}
+                      borderColor="$borderColor"
+                    >
+                      <Stack flex={1.2}>
+                        <Body fontSize={12}>
+                          {formatDateTime(trade.at, locale)}
+                        </Body>
+                        <InlineText
+                          fontSize={11}
+                          fontWeight="700"
+                          color={trade.side === "buy" ? "$success" : "$danger"}
+                        >
+                          {trade.side === "buy"
+                            ? t("predict.buy")
+                            : t("predict.sell")}{" "}
+                          {outcomeLabel(trade.outcome)}
+                        </InlineText>
+                      </Stack>
+                      <InlineText
+                        flex={1}
+                        fontSize={13}
+                        fontWeight="700"
+                        textAlign="center"
+                      >
+                        {formatCents(
+                          trade.outcome === "yes"
+                            ? trade.priceCents
+                            : Math.round((100 - trade.priceCents) * 10) / 10,
+                        )}
+                      </InlineText>
+                      <InlineText flex={1} fontSize={13} textAlign="right">
+                        {trade.shares.toLocaleString(undefined, {
+                          maximumFractionDigits: 2,
+                        })}
+                      </InlineText>
+                    </Row>
+                  ))
+                )
+              ) : trades.isError ? (
+                <Body fontSize={12} color="$priceNegative">
+                  {trades.error instanceof Error
+                    ? trades.error.message
+                    : String(trades.error)}
+                </Body>
+              ) : (
+                <SkeletonBlock height={120} />
+              )}
+            </Stack>
+          ) : (
+            <HoldersView marketId={market.id} />
+          )}
+        </>
+      ) : (
+        <Stack gap="$3">
+          <SkeletonBlock height={28} width={260} />
+          <SkeletonBlock height={180} />
+          <SkeletonBlock height={80} />
+        </Stack>
+      )}
+    </CollapsingHeader>
   );
 }

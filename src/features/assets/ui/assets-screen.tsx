@@ -22,11 +22,12 @@ import {
   Body,
   Card,
   ChipRow,
+  CollapseAnchor,
+  CollapsingHeader,
   Content,
   InlineText,
   Label,
   Page,
-  PageScroll,
   PageState,
   PrimaryButton,
   Row,
@@ -147,253 +148,8 @@ export function AssetsScreen({
       : null;
   const hidden = (text: string) => (visible ? text : "••••");
 
-  return (
-    <Page>
-      <PageScroll
-        refresh={{
-          refreshing: overview.isRefetching,
-          onRefresh: () => overview.refetch(),
-          accessibilityLabel: t("action.refresh"),
-        }}
-      >
-        <Content paddingTop={insets.top + 16} gap="$4">
-          <Row alignItems="center" justifyContent="space-between">
-            <SectionTitle fontSize={20}>{t("assets.title")}</SectionTitle>
-            <Row gap="$3" alignItems="center">
-              <Stack
-                onPress={() => setVisible((v) => !v)}
-                accessibilityRole="button"
-                accessibilityLabel={
-                  visible ? t("home.hideBalance") : t("home.showBalance")
-                }
-                hitSlop={8}
-              >
-                <AppIcon
-                  name={visible ? "eye-outline" : "eye-off-outline"}
-                  size={20}
-                  colorToken="textMuted"
-                />
-              </Stack>
-              <Stack
-                onPress={onOpenRecords}
-                accessibilityRole="button"
-                accessibilityLabel={t("records.title")}
-                hitSlop={8}
-                testID="assets-records"
-              >
-                <AppIcon name="history" size={20} colorToken="textMuted" />
-              </Stack>
-            </Row>
-          </Row>
-
-          <Stack gap="$1">
-            <Label>{t("assets.totalValue")}</Label>
-            {data ? (
-              <>
-                <Row alignItems="center" gap="$2">
-                  <AmountText fontSize={34} lineHeight={40}>
-                    {visible ? formatUsd(data.totalUsd, locale) : "••••••"}
-                  </AmountText>
-                  {data.loading ? (
-                    <Spinner size="small" color="$textMuted" />
-                  ) : null}
-                </Row>
-                {data.partial && !data.loading ? (
-                  <Body fontSize={12} color="$warning" testID="assets-partial">
-                    {t("assets.totalPartial")}
-                  </Body>
-                ) : null}
-                <Row gap="$2" alignItems="center">
-                  <InlineText
-                    color={
-                      data.change24hUsd >= 0
-                        ? "$pricePositive"
-                        : "$priceNegative"
-                    }
-                    fontWeight="700"
-                    fontSize={13}
-                  >
-                    {visible
-                      ? `${t("assets.today")} ${formatUsd(data.change24hUsd, locale, { sign: true })} (${data.change24hPct >= 0 ? "+" : ""}${data.change24hPct.toFixed(2)}%)`
-                      : "••••"}
-                  </InlineText>
-                </Row>
-              </>
-            ) : (
-              <Stack gap="$2">
-                <SkeletonBlock height={40} width={200} />
-                <SkeletonBlock height={14} width={160} />
-              </Stack>
-            )}
-          </Stack>
-
-          <Row gap="$2">
-            <ActionTile
-              label={t("assets.receive")}
-              icon="qrcode"
-              primary
-              onPress={() => receive.current?.present()}
-              testID="assets-receive"
-            />
-            <ActionTile
-              label={t("assets.send")}
-              icon="arrow-top-right"
-              onPress={onOpenSend}
-              testID="assets-send"
-            />
-            {config.modules.predict ? (
-              <ActionTile
-                label={t("assets.transferAction")}
-                icon="swap-vertical"
-                onPress={() => transfer.current?.present()}
-                testID="assets-transfer"
-              />
-            ) : (
-              <ActionTile
-                label={t("assets.swap")}
-                icon="swap-horizontal"
-                onPress={onOpenSwap}
-                testID="assets-swap"
-              />
-            )}
-          </Row>
-
-          <Stack gap="$2">
-            <Label>{t("assets.accounts")}</Label>
-            <Card
-              padding="$3"
-              shadowOpacity={0}
-              onPress={() => onOpenAccount("wallet")}
-              accessibilityRole="button"
-              testID="assets-wallet"
-            >
-              <Row alignItems="center" gap="$3">
-                <AccountIcon icon="wallet-outline" />
-                <Stack flex={1}>
-                  <SectionTitle fontSize={15}>
-                    {t("assets.wallet")}
-                  </SectionTitle>
-                  <Body fontSize={12}>
-                    {address ? shortenAddress(address) : ""} ·{" "}
-                    {fill(t("assets.chains"), {
-                      n: String(data?.wallet.chains ?? 0),
-                    })}
-                  </Body>
-                </Stack>
-                <Stack alignItems="flex-end">
-                  <InlineText fontWeight="800">
-                    {data ? hidden(formatUsd(data.wallet.usd, locale)) : "—"}
-                  </InlineText>
-                </Stack>
-                <AppIcon
-                  name="chevron-right"
-                  size={20}
-                  colorToken="textMuted"
-                />
-              </Row>
-            </Card>
-            {config.modules.predict ? (
-              <Card
-                padding="$3"
-                shadowOpacity={0}
-                onPress={() => onOpenAccount("predict")}
-                accessibilityRole="button"
-                testID="assets-predict"
-              >
-                <Row alignItems="center" gap="$3">
-                  <AccountIcon icon="chart-timeline-variant" />
-                  <Stack flex={1}>
-                    <SectionTitle fontSize={15}>
-                      {t("assets.predictAccount")}
-                    </SectionTitle>
-                    <Body fontSize={12}>
-                      {predict
-                        ? `${t("assets.available")} ${formatMoney(predict.available, locale)} · ${t("assets.lockedInOrders")} ${formatMoney(predict.lockedInOrders, locale, { withSymbol: false })}`
-                        : data?.predict?.status === "not-enabled"
-                          ? t("assets.predictNotEnabled")
-                          : "—"}
-                    </Body>
-                  </Stack>
-                  <InlineText fontWeight="800">
-                    {predict ? hidden(formatUsd(predict.usd, locale)) : "—"}
-                  </InlineText>
-                  <AppIcon
-                    name="chevron-right"
-                    size={20}
-                    colorToken="textMuted"
-                  />
-                </Row>
-              </Card>
-            ) : null}
-          </Stack>
-
-          <Stack gap="$2">
-            <Row alignItems="center" justifyContent="space-between">
-              <Label>{t("assets.coins")}</Label>
-              <Row alignItems="center" gap="$2">
-                <Body fontSize={12}>{t("assets.hideSmall")}</Body>
-                <Switch
-                  value={hideSmall}
-                  onValueChange={setHideSmall}
-                  accessibilityLabel={t("assets.hideSmall")}
-                  testID="assets-hide-small"
-                />
-              </Row>
-            </Row>
-            {chains.length > 1 ? (
-              <ChipRow
-                value={chainFilter}
-                options={chips}
-                onChange={setPickedChain}
-                accessibilityLabel={t("assets.allChains")}
-                testID="chain-chip"
-              />
-            ) : null}
-            {data ? (
-              <>
-                <ChainUnavailableNotice
-                  failures={data.unavailable}
-                  onRetry={() => overview.refetch()}
-                />
-                {predictUsdw ? (
-                  <HoldingRow
-                    item={predictUsdw}
-                    account={t("assets.predictAccount")}
-                    note={
-                      predict
-                        ? `${t("assets.lockedInOrders")} ${formatMoney(predict.lockedInOrders, locale, { withSymbol: false })}`
-                        : undefined
-                    }
-                    locale={locale}
-                    visible={visible}
-                  />
-                ) : null}
-                {rows.map((item) => (
-                  <HoldingRow
-                    key={`${item.token.chain}:${item.token.address}`}
-                    item={item}
-                    account={t("assets.wallet")}
-                    note={CHAINS[item.token.chain].name}
-                    locale={locale}
-                    visible={visible}
-                  />
-                ))}
-                {rows.length === 0 &&
-                !predictUsdw &&
-                data.unavailable.length === 0 ? (
-                  <Body>{t("state.empty")}</Body>
-                ) : null}
-              </>
-            ) : (
-              <Stack gap="$2">
-                <SkeletonBlock height={56} />
-                <SkeletonBlock height={56} />
-                <SkeletonBlock height={56} />
-              </Stack>
-            )}
-          </Stack>
-        </Content>
-      </PageScroll>
+  const footer = (
+    <>
       {session.data ? (
         <ReceiveSheet
           ref={receive}
@@ -425,7 +181,261 @@ export function AssetsScreen({
           />
         </Sheet>
       ) : null}
-    </Page>
+    </>
+  );
+  return (
+    <CollapsingHeader
+      mode="floating"
+      refresh={{
+        refreshing: overview.isRefetching,
+        onRefresh: () => overview.refetch(),
+        accessibilityLabel: t("action.refresh"),
+      }}
+      contentProps={{ paddingTop: insets.top + 16, gap: "$4" }}
+      collapsed={
+        <Row
+          alignItems="center"
+          gap="$2"
+          flex={1}
+          testID="assets-compact-total"
+        >
+          <Label>{t("assets.title")}</Label>
+          <AmountText fontSize={16} lineHeight={20}>
+            {data
+              ? visible
+                ? formatUsd(data.totalUsd, locale)
+                : "••••••"
+              : ""}
+          </AmountText>
+        </Row>
+      }
+      footer={footer}
+    >
+      <Row alignItems="center" justifyContent="space-between">
+        <SectionTitle fontSize={20}>{t("assets.title")}</SectionTitle>
+        <Row gap="$3" alignItems="center">
+          <Stack
+            onPress={() => setVisible((v) => !v)}
+            accessibilityRole="button"
+            accessibilityLabel={
+              visible ? t("home.hideBalance") : t("home.showBalance")
+            }
+            hitSlop={8}
+          >
+            <AppIcon
+              name={visible ? "eye-outline" : "eye-off-outline"}
+              size={20}
+              colorToken="textMuted"
+            />
+          </Stack>
+          <Stack
+            onPress={onOpenRecords}
+            accessibilityRole="button"
+            accessibilityLabel={t("records.title")}
+            hitSlop={8}
+            testID="assets-records"
+          >
+            <AppIcon name="history" size={20} colorToken="textMuted" />
+          </Stack>
+        </Row>
+      </Row>
+
+      <Stack gap="$1">
+        <Label>{t("assets.totalValue")}</Label>
+        {data ? (
+          <>
+            <Row alignItems="center" gap="$2">
+              <AmountText fontSize={34} lineHeight={40}>
+                {visible ? formatUsd(data.totalUsd, locale) : "••••••"}
+              </AmountText>
+              {data.loading ? (
+                <Spinner size="small" color="$textMuted" />
+              ) : null}
+            </Row>
+            {data.partial && !data.loading ? (
+              <Body fontSize={12} color="$warning" testID="assets-partial">
+                {t("assets.totalPartial")}
+              </Body>
+            ) : null}
+            <Row gap="$2" alignItems="center">
+              <InlineText
+                color={
+                  data.change24hUsd >= 0 ? "$pricePositive" : "$priceNegative"
+                }
+                fontWeight="700"
+                fontSize={13}
+              >
+                {visible
+                  ? `${t("assets.today")} ${formatUsd(data.change24hUsd, locale, { sign: true })} (${data.change24hPct >= 0 ? "+" : ""}${data.change24hPct.toFixed(2)}%)`
+                  : "••••"}
+              </InlineText>
+            </Row>
+          </>
+        ) : (
+          <Stack gap="$2">
+            <SkeletonBlock height={40} width={200} />
+            <SkeletonBlock height={14} width={160} />
+          </Stack>
+        )}
+      </Stack>
+
+      <CollapseAnchor />
+      <Row gap="$2">
+        <ActionTile
+          label={t("assets.receive")}
+          icon="qrcode"
+          primary
+          onPress={() => receive.current?.present()}
+          testID="assets-receive"
+        />
+        <ActionTile
+          label={t("assets.send")}
+          icon="arrow-top-right"
+          onPress={onOpenSend}
+          testID="assets-send"
+        />
+        {config.modules.predict ? (
+          <ActionTile
+            label={t("assets.transferAction")}
+            icon="swap-vertical"
+            onPress={() => transfer.current?.present()}
+            testID="assets-transfer"
+          />
+        ) : (
+          <ActionTile
+            label={t("assets.swap")}
+            icon="swap-horizontal"
+            onPress={onOpenSwap}
+            testID="assets-swap"
+          />
+        )}
+      </Row>
+
+      <Stack gap="$2">
+        <Label>{t("assets.accounts")}</Label>
+        <Card
+          padding="$3"
+          shadowOpacity={0}
+          onPress={() => onOpenAccount("wallet")}
+          accessibilityRole="button"
+          testID="assets-wallet"
+        >
+          <Row alignItems="center" gap="$3">
+            <AccountIcon icon="wallet-outline" />
+            <Stack flex={1}>
+              <SectionTitle fontSize={15}>{t("assets.wallet")}</SectionTitle>
+              <Body fontSize={12}>
+                {address ? shortenAddress(address) : ""} ·{" "}
+                {fill(t("assets.chains"), {
+                  n: String(data?.wallet.chains ?? 0),
+                })}
+              </Body>
+            </Stack>
+            <Stack alignItems="flex-end">
+              <InlineText fontWeight="800">
+                {data ? hidden(formatUsd(data.wallet.usd, locale)) : "—"}
+              </InlineText>
+            </Stack>
+            <AppIcon name="chevron-right" size={20} colorToken="textMuted" />
+          </Row>
+        </Card>
+        {config.modules.predict ? (
+          <Card
+            padding="$3"
+            shadowOpacity={0}
+            onPress={() => onOpenAccount("predict")}
+            accessibilityRole="button"
+            testID="assets-predict"
+          >
+            <Row alignItems="center" gap="$3">
+              <AccountIcon icon="chart-timeline-variant" />
+              <Stack flex={1}>
+                <SectionTitle fontSize={15}>
+                  {t("assets.predictAccount")}
+                </SectionTitle>
+                <Body fontSize={12}>
+                  {predict
+                    ? `${t("assets.available")} ${formatMoney(predict.available, locale)} · ${t("assets.lockedInOrders")} ${formatMoney(predict.lockedInOrders, locale, { withSymbol: false })}`
+                    : data?.predict?.status === "not-enabled"
+                      ? t("assets.predictNotEnabled")
+                      : "—"}
+                </Body>
+              </Stack>
+              <InlineText fontWeight="800">
+                {predict ? hidden(formatUsd(predict.usd, locale)) : "—"}
+              </InlineText>
+              <AppIcon name="chevron-right" size={20} colorToken="textMuted" />
+            </Row>
+          </Card>
+        ) : null}
+      </Stack>
+
+      <Stack gap="$2">
+        <Row alignItems="center" justifyContent="space-between">
+          <Label>{t("assets.coins")}</Label>
+          <Row alignItems="center" gap="$2">
+            <Body fontSize={12}>{t("assets.hideSmall")}</Body>
+            <Switch
+              value={hideSmall}
+              onValueChange={setHideSmall}
+              accessibilityLabel={t("assets.hideSmall")}
+              testID="assets-hide-small"
+            />
+          </Row>
+        </Row>
+        {chains.length > 1 ? (
+          <ChipRow
+            value={chainFilter}
+            options={chips}
+            onChange={setPickedChain}
+            accessibilityLabel={t("assets.allChains")}
+            testID="chain-chip"
+          />
+        ) : null}
+        {data ? (
+          <>
+            <ChainUnavailableNotice
+              failures={data.unavailable}
+              onRetry={() => overview.refetch()}
+            />
+            {predictUsdw ? (
+              <HoldingRow
+                item={predictUsdw}
+                account={t("assets.predictAccount")}
+                note={
+                  predict
+                    ? `${t("assets.lockedInOrders")} ${formatMoney(predict.lockedInOrders, locale, { withSymbol: false })}`
+                    : undefined
+                }
+                locale={locale}
+                visible={visible}
+              />
+            ) : null}
+            {rows.map((item) => (
+              <HoldingRow
+                key={`${item.token.chain}:${item.token.address}`}
+                item={item}
+                account={t("assets.wallet")}
+                note={CHAINS[item.token.chain].name}
+                locale={locale}
+                visible={visible}
+              />
+            ))}
+            {rows.length === 0 &&
+            !predictUsdw &&
+            data.unavailable.length === 0 ? (
+              <Body>{t("state.empty")}</Body>
+            ) : null}
+          </>
+        ) : (
+          <Stack gap="$2">
+            <SkeletonBlock height={56} />
+            <SkeletonBlock height={56} />
+            <SkeletonBlock height={56} />
+          </Stack>
+        )}
+      </Stack>
+    </CollapsingHeader>
   );
 }
 

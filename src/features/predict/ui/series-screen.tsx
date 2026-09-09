@@ -1,19 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ScrollView } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
-import { formatCents } from "../../../core/i18n/format";
+import { formatCents, formatUsd } from "../../../core/i18n/format";
 import { pickTranslation } from "../../../core/i18n/localized-text";
 import {
   Body,
   Card,
-  Content,
+  CollapseAnchor,
+  CollapsingHeader,
+  Heading,
   InlineText,
   Page,
-  PageScroll,
   PageState,
   Row,
-  ScreenHeader,
   SecondaryButton,
   SectionTitle,
   SkeletonBlock,
@@ -38,6 +37,7 @@ import type {
 import { OrderBookView } from "./order-book";
 import { OrderSheet, type OrderSheetHandle } from "./order-sheet";
 import {
+  periodCountdown,
   periodPhase,
   pickCurrentPeriod,
   rolloverDecision,
@@ -79,7 +79,6 @@ export function SeriesScreen({
   onOpenEvent: (eventId: string, marketId: string) => void;
   onOpenTransfer: () => void;
 }) {
-  const insets = useSafeAreaInsets();
   const { config, t } = useFoundationRuntime();
   const locale = config.localization.selectedLocale;
   const session = useSession();
@@ -260,224 +259,258 @@ export function SeriesScreen({
       </Page>
     );
 
+  const title = series.data ? pickTranslation(series.data.title, locale) : "";
+  // 折叠后导航里放本期状态：窗口 · 倒计时 · 当前价（颜色 = 当前相对参考价的方向）
+  const statusLine = displayed
+    ? [
+        windowLabel(displayed, locale),
+        periodCountdown(displayed, now, t),
+        live.current === null ? null : formatUsd(live.current, locale),
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : "";
+  const statusColor =
+    live.current !== null && live.target !== null
+      ? live.current >= live.target
+        ? "$success"
+        : "$danger"
+      : "$textMuted";
   return (
-    <Page>
-      <Content paddingTop={insets.top + 8} paddingBottom={0}>
-        <ScreenHeader
-          title={series.data ? pickTranslation(series.data.title, locale) : ""}
-          onBack={onBack}
-          backLabel={t("action.back")}
-        />
-      </Content>
-      <PageScroll scrollRef={scroll}>
-        <Content gap="$3" paddingBottom={40}>
-          {series.data ? (
-            <Row alignItems="center" gap="$2">
-              <InlineText
-                fontSize={11}
-                fontWeight="800"
-                paddingHorizontal="$2"
-                paddingVertical="$0.5"
-                borderRadius={999}
-                backgroundColor="$surfaceVariant"
-              >
-                {series.data.recurrence}
-              </InlineText>
-              <Body fontSize={12}>{series.data.seriesType}</Body>
-            </Row>
-          ) : (
-            <SkeletonBlock height={20} width={160} />
-          )}
-
-          {rules ? (
-            <Row alignItems="flex-start" gap="$2" testID="series-rules">
-              <Body
-                fontSize={12}
-                flex={1}
-                numberOfLines={rulesOpen ? undefined : 1}
-              >
-                {t("predict.series.rulesTitle")}：{rules}
-              </Body>
-              <InlineText
-                fontSize={12}
-                fontWeight="700"
-                color="$primary"
-                onPress={() => setRulesOpen((open) => !open)}
-                accessibilityRole="button"
-                testID="series-rules-toggle"
-              >
-                {t(
-                  rulesOpen
-                    ? "predict.series.rulesHide"
-                    : "predict.series.rulesShow",
-                )}
-              </InlineText>
-            </Row>
-          ) : null}
-
-          {current.isError ? (
-            <QueryError onRetry={() => void current.refetch()} />
-          ) : current.data === undefined ? (
-            <SkeletonBlock height={44} />
-          ) : (
-            <SeriesPeriodRail
-              past={past}
-              upcoming={upcoming}
-              currentId={currentPeriod?.id ?? null}
-              selectedId={displayed?.id ?? null}
-              nowMs={now}
-              heldMarketIds={heldMarketIds}
-              onSelect={(period) => {
-                unpin();
-                setSelected(period);
-              }}
-              history={{
-                hasMore: history.hasNextPage,
-                loading: history.isFetchingNextPage,
-                loadMore: () => void history.fetchNextPage(),
-                error: history.isError,
-                retry: () => void history.refetch(),
-              }}
-            />
-          )}
-          {locateMissing ? (
-            <Body fontSize={12} color="$warning" testID="series-locate-missing">
-              {t("predict.series.periodNotFound")}
+    <CollapsingHeader
+      onBack={onBack}
+      backLabel={t("action.back")}
+      expanded={
+        <Heading fontSize={26} numberOfLines={1}>
+          {title}
+        </Heading>
+      }
+      collapsed={
+        displayed ? (
+          <Stack flex={1}>
+            <InlineText fontSize={15} fontWeight="700" numberOfLines={1}>
+              {title}
+            </InlineText>
+            <Body
+              fontSize={11}
+              numberOfLines={1}
+              color={statusColor}
+              testID="series-compact-status"
+            >
+              {statusLine}
             </Body>
-          ) : null}
-          {following &&
-          currentPeriod &&
-          periodPhase(currentPeriod, now) === "ended" ? (
-            <Body fontSize={12} color="$textMuted" testID="series-waiting-next">
-              {t("predict.series.waitingNext")}
-            </Body>
-          ) : null}
-
-          {current.data === undefined || current.isError ? null : displayed ? (
-            <SeriesPeriodCard
-              period={displayed}
-              phase={displayedPhase}
-              nowMs={now}
-              isCurrent={isCurrent}
-              live={live}
-              region={region}
-              onOrder={(target, outcome) => openOrder(target, outcome)}
-              onBackToCurrent={backToCurrent}
-              onOpenDetail={() =>
-                displayed.event &&
-                displayed.marketId &&
-                onOpenEvent(displayed.event.id, displayed.marketId)
-              }
-              showGoNext={
-                pinned !== null &&
-                currentPeriod !== null &&
-                currentPeriod.id !== displayed.id
-              }
-              onGoNext={backToCurrent}
-            />
-          ) : (
-            <Card padding="$3">
-              <Body>{t("predict.series.noPeriods")}</Body>
-            </Card>
-          )}
-
-          {displayed && address ? (
-            <SeriesPositionBar period={displayed} address={address} />
-          ) : null}
-
-          {series.data ? (
-            <Card padding="$3" gap="$2" testID="series-chart-card">
-              <SeriesChart
-                series={series.data}
-                period={displayed}
-                phase={displayedPhase}
-                live={live}
-              />
-            </Card>
-          ) : null}
-
-          {displayed?.marketId && displayedPhase !== "ended" ? (
-            <Card padding="$3" gap="$2" testID="series-book-card">
-              <Row
-                alignItems="center"
-                justifyContent="space-between"
-                gap="$2"
-                onPress={() => setBookOpen((open) => !open)}
-                accessibilityRole="button"
-                accessibilityState={{ expanded: bookOpen }}
-                testID="series-book-toggle"
-              >
-                <SectionTitle fontSize={14}>
-                  {t("predict.series.book")}
-                </SectionTitle>
-                <Body fontSize={12}>
-                  {book.data
-                    ? fill(t("predict.series.bookQuote"), {
-                        bid: formatCents(book.data.bids[0]?.priceCents ?? null),
-                        ask: formatCents(book.data.asks[0]?.priceCents ?? null),
-                      })
-                    : ""}{" "}
-                  {bookOpen ? "▴" : "▾"}
-                </Body>
-              </Row>
-              {bookOpen ? (
-                <OrderBookView
-                  book={book.data}
-                  outcome={bookOutcome}
-                  onOutcomeChange={setBookOutcome}
-                  onPickPrice={
-                    canOrder && market
-                      ? (priceCents, side) =>
-                          openOrder(market, bookOutcome, side, priceCents)
-                      : undefined
-                  }
-                />
-              ) : null}
-            </Card>
-          ) : null}
-
-          <Stack gap="$2">
-            <SectionTitle fontSize={14}>
-              {t("predict.series.past")}
-            </SectionTitle>
-            {history.isError && past.length === 0 ? (
-              <QueryError onRetry={() => void history.refetch()} />
-            ) : history.data === undefined ? (
-              <SkeletonBlock height={120} />
-            ) : past.length === 0 ? (
-              <Body>{t("predict.series.noPeriods")}</Body>
-            ) : (
-              <>
-                {past.map((item) => (
-                  <PeriodRow
-                    key={item.id}
-                    period={item}
-                    selected={item.id === displayed?.id}
-                    onPress={() => selectFromList(item)}
-                  />
-                ))}
-                {history.isError ? (
-                  <QueryError onRetry={() => void history.fetchNextPage()} />
-                ) : history.hasNextPage ? (
-                  <SecondaryButton
-                    disabled={history.isFetchingNextPage}
-                    onPress={() => void history.fetchNextPage()}
-                    testID="series-history-more"
-                  >
-                    {t("predict.series.loadEarlier")}
-                  </SecondaryButton>
-                ) : null}
-              </>
-            )}
           </Stack>
-        </Content>
-      </PageScroll>
-      <OrderSheet
-        ref={orderSheet}
-        event={displayed?.event}
-        onInsufficient={onOpenTransfer}
-      />
-    </Page>
+        ) : undefined
+      }
+      scrollRef={scroll}
+      contentProps={{ gap: "$3", paddingBottom: 40 }}
+      footer={
+        <OrderSheet
+          ref={orderSheet}
+          event={displayed?.event}
+          onInsufficient={onOpenTransfer}
+        />
+      }
+    >
+      {series.data ? (
+        <Row alignItems="center" gap="$2">
+          <InlineText
+            fontSize={11}
+            fontWeight="800"
+            paddingHorizontal="$2"
+            paddingVertical="$0.5"
+            borderRadius={999}
+            backgroundColor="$surfaceVariant"
+          >
+            {series.data.recurrence}
+          </InlineText>
+          <Body fontSize={12}>{series.data.seriesType}</Body>
+        </Row>
+      ) : (
+        <SkeletonBlock height={20} width={160} />
+      )}
+
+      {rules ? (
+        <Row alignItems="flex-start" gap="$2" testID="series-rules">
+          <Body
+            fontSize={12}
+            flex={1}
+            numberOfLines={rulesOpen ? undefined : 1}
+          >
+            {t("predict.series.rulesTitle")}：{rules}
+          </Body>
+          <InlineText
+            fontSize={12}
+            fontWeight="700"
+            color="$primary"
+            onPress={() => setRulesOpen((open) => !open)}
+            accessibilityRole="button"
+            testID="series-rules-toggle"
+          >
+            {t(
+              rulesOpen
+                ? "predict.series.rulesHide"
+                : "predict.series.rulesShow",
+            )}
+          </InlineText>
+        </Row>
+      ) : null}
+
+      {current.isError ? (
+        <QueryError onRetry={() => void current.refetch()} />
+      ) : current.data === undefined ? (
+        <SkeletonBlock height={44} />
+      ) : (
+        <SeriesPeriodRail
+          past={past}
+          upcoming={upcoming}
+          currentId={currentPeriod?.id ?? null}
+          selectedId={displayed?.id ?? null}
+          nowMs={now}
+          heldMarketIds={heldMarketIds}
+          onSelect={(period) => {
+            unpin();
+            setSelected(period);
+          }}
+          history={{
+            hasMore: history.hasNextPage,
+            loading: history.isFetchingNextPage,
+            loadMore: () => void history.fetchNextPage(),
+            error: history.isError,
+            retry: () => void history.refetch(),
+          }}
+        />
+      )}
+      {locateMissing ? (
+        <Body fontSize={12} color="$warning" testID="series-locate-missing">
+          {t("predict.series.periodNotFound")}
+        </Body>
+      ) : null}
+      {following &&
+      currentPeriod &&
+      periodPhase(currentPeriod, now) === "ended" ? (
+        <Body fontSize={12} color="$textMuted" testID="series-waiting-next">
+          {t("predict.series.waitingNext")}
+        </Body>
+      ) : null}
+
+      {current.data === undefined || current.isError ? null : displayed ? (
+        <SeriesPeriodCard
+          period={displayed}
+          phase={displayedPhase}
+          nowMs={now}
+          isCurrent={isCurrent}
+          live={live}
+          region={region}
+          onOrder={(target, outcome) => openOrder(target, outcome)}
+          onBackToCurrent={backToCurrent}
+          onOpenDetail={() =>
+            displayed.event &&
+            displayed.marketId &&
+            onOpenEvent(displayed.event.id, displayed.marketId)
+          }
+          showGoNext={
+            pinned !== null &&
+            currentPeriod !== null &&
+            currentPeriod.id !== displayed.id
+          }
+          onGoNext={backToCurrent}
+        />
+      ) : (
+        <Card padding="$3">
+          <Body>{t("predict.series.noPeriods")}</Body>
+        </Card>
+      )}
+
+      <CollapseAnchor />
+      {displayed && address ? (
+        <SeriesPositionBar period={displayed} address={address} />
+      ) : null}
+
+      {series.data ? (
+        <Card padding="$3" gap="$2" testID="series-chart-card">
+          <SeriesChart
+            series={series.data}
+            period={displayed}
+            phase={displayedPhase}
+            live={live}
+          />
+        </Card>
+      ) : null}
+
+      {displayed?.marketId && displayedPhase !== "ended" ? (
+        <Card padding="$3" gap="$2" testID="series-book-card">
+          <Row
+            alignItems="center"
+            justifyContent="space-between"
+            gap="$2"
+            onPress={() => setBookOpen((open) => !open)}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: bookOpen }}
+            testID="series-book-toggle"
+          >
+            <SectionTitle fontSize={14}>
+              {t("predict.series.book")}
+            </SectionTitle>
+            <Body fontSize={12}>
+              {book.data
+                ? fill(t("predict.series.bookQuote"), {
+                    bid: formatCents(book.data.bids[0]?.priceCents ?? null),
+                    ask: formatCents(book.data.asks[0]?.priceCents ?? null),
+                  })
+                : ""}{" "}
+              {bookOpen ? "▴" : "▾"}
+            </Body>
+          </Row>
+          {bookOpen ? (
+            <OrderBookView
+              book={book.data}
+              outcome={bookOutcome}
+              onOutcomeChange={setBookOutcome}
+              onPickPrice={
+                canOrder && market
+                  ? (priceCents, side) =>
+                      openOrder(market, bookOutcome, side, priceCents)
+                  : undefined
+              }
+            />
+          ) : null}
+        </Card>
+      ) : null}
+
+      <Stack gap="$2">
+        <SectionTitle fontSize={14}>{t("predict.series.past")}</SectionTitle>
+        {history.isError && past.length === 0 ? (
+          <QueryError onRetry={() => void history.refetch()} />
+        ) : history.data === undefined ? (
+          <SkeletonBlock height={120} />
+        ) : past.length === 0 ? (
+          <Body>{t("predict.series.noPeriods")}</Body>
+        ) : (
+          <>
+            {past.map((item) => (
+              <PeriodRow
+                key={item.id}
+                period={item}
+                selected={item.id === displayed?.id}
+                onPress={() => selectFromList(item)}
+              />
+            ))}
+            {history.isError ? (
+              <QueryError onRetry={() => void history.fetchNextPage()} />
+            ) : history.hasNextPage ? (
+              <SecondaryButton
+                disabled={history.isFetchingNextPage}
+                onPress={() => void history.fetchNextPage()}
+                testID="series-history-more"
+              >
+                {t("predict.series.loadEarlier")}
+              </SecondaryButton>
+            ) : null}
+          </>
+        )}
+      </Stack>
+    </CollapsingHeader>
   );
 }
 

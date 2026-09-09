@@ -6,4 +6,5 @@ export * from "./toast";
 export * from "./overlay";
 export * from "./use-async-action";
 export * from "./charts";
+export * from "./collapsing-header";
 export { Spinner, useTheme } from "tamagui";

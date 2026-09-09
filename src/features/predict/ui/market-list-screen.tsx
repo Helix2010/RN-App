@@ -4,7 +4,8 @@ import {
 } from "../hooks/use-predict-account";
 import { enablementComplete } from "../api/account-gateway";
 import { shouldPromptEnable } from "../model/enable-prompt";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import {
@@ -17,12 +18,11 @@ import { isZero } from "../../../core/money/money";
 import {
   AppIcon,
   Body,
-  Content,
+  CollapseAnchor,
+  CollapsingHeader,
   HorizontalScroll,
   IconButton,
   InlineText,
-  Page,
-  PageScroll,
   PrimaryButton,
   Row,
   SecondaryButton,
@@ -102,6 +102,7 @@ export function MarketListScreen({
   showPositionsEntry: boolean;
 }) {
   const insets = useSafeAreaInsets();
+  const listScroll = useRef<ScrollView>(null);
   const { config, t } = useFoundationRuntime();
   const locale = config.localization.selectedLocale;
   const theme = useTheme();
@@ -216,368 +217,384 @@ export function MarketListScreen({
     if (showSeries) void seriesList.refetch();
   };
 
+  // 分类 chip 行在内容里滚走后钉在顶部（同一份元素渲染两处），旁边放回到搜索框的放大镜
+  const tagChips = (
+    <HorizontalScroll>
+      {(tags.data ?? []).map((tag) => {
+        const selected = tag.id === tagId;
+        return (
+          <Stack
+            key={tag.id}
+            paddingHorizontal="$3"
+            paddingVertical="$1.5"
+            borderRadius={999}
+            backgroundColor={selected ? "$color" : "$surfaceVariant"}
+            onPress={() => setTagId(tag.id)}
+            accessibilityRole="radio"
+            accessibilityState={{ selected }}
+            pressStyle={{ opacity: 0.75 }}
+          >
+            <InlineText
+              fontSize={13}
+              fontWeight="700"
+              color={selected ? "$background" : "$color"}
+            >
+              {pickTranslation(tag.label, locale)}
+            </InlineText>
+          </Stack>
+        );
+      })}
+    </HorizontalScroll>
+  );
   return (
-    <Page>
-      <PageScroll
-        refresh={{
-          refreshing: events.isRefetching,
-          onRefresh: refreshAll,
-          accessibilityLabel: t("action.refresh"),
-        }}
-      >
-        <Content paddingTop={insets.top + 16} gap="$3">
-          <Row alignItems="center" justifyContent="space-between">
-            <SectionTitle fontSize={20}>{t("predict.title")}</SectionTitle>
-            <Row alignItems="center" gap="$2">
-              {address ? (
-                balance.notEnabled ? (
-                  <PrimaryButton
-                    height={32}
-                    paddingHorizontal="$3"
-                    fontSize={12}
-                    onPress={onOpenEnable}
-                    testID="predict-enable"
-                  >
-                    {t("predict.enableChip")}
-                  </PrimaryButton>
-                ) : balance.data && isZero(balance.data.available) ? (
-                  <PrimaryButton
-                    height={32}
-                    paddingHorizontal="$3"
-                    fontSize={12}
-                    onPress={onOpenTransfer}
-                    testID="predict-topup"
-                  >
-                    {t("predict.topUp")}
-                  </PrimaryButton>
-                ) : (
-                  <Row
-                    alignItems="center"
-                    gap="$1"
-                    paddingHorizontal="$2.5"
-                    paddingVertical="$1.5"
-                    borderRadius={999}
-                    backgroundColor="$surfaceVariant"
-                    onPress={onOpenTransfer}
-                    accessibilityRole="button"
-                    accessibilityLabel={t("assets.predictAccount")}
-                    testID="predict-balance"
-                  >
-                    <AppIcon
-                      name="wallet-outline"
-                      size={14}
-                      colorToken="textMuted"
-                    />
-                    <InlineText fontSize={12} fontWeight="700">
-                      {balance.data
-                        ? formatMoney(balance.data.available, locale)
-                        : "—"}
-                    </InlineText>
-                  </Row>
-                )
-              ) : null}
-              <IconButton
-                label={t("predict.leaderboard.title")}
-                icon="trophy-outline"
-                size={30}
-                onPress={onOpenLeaderboard}
-              />
-              {showPositionsEntry ? (
-                <IconButton
-                  label={t("predict.positions.title")}
-                  icon="chart-box-outline"
-                  size={30}
-                  onPress={onOpenPositions}
-                />
-              ) : null}
-            </Row>
-          </Row>
-
-          <RegionNotice state={region.state} onRetry={region.retry} />
-
-          <TextField
-            value={search}
-            onChangeText={setSearch}
-            placeholder={t("predict.search.placeholder")}
-            accessibilityLabel={t("predict.search.placeholder")}
-            autoCapitalize="none"
-            autoCorrect={false}
-            returnKeyType="search"
-            testID="predict-search"
+    <CollapsingHeader
+      mode="floating"
+      refresh={{
+        refreshing: events.isRefetching,
+        onRefresh: refreshAll,
+        accessibilityLabel: t("action.refresh"),
+      }}
+      scrollRef={listScroll}
+      contentProps={{ paddingTop: insets.top + 16, gap: "$3" }}
+      collapsed={
+        <>
+          <Stack flex={1}>{tagChips}</Stack>
+          <IconButton
+            label={t("predict.search.placeholder")}
+            icon="magnify"
+            size={32}
+            onPress={() =>
+              listScroll.current?.scrollTo({ y: 0, animated: true })
+            }
+            testID="predict-search-pinned"
           />
-
-          <HorizontalScroll>
-            {(tags.data ?? []).map((tag) => {
-              const selected = tag.id === tagId;
-              return (
-                <Stack
-                  key={tag.id}
-                  paddingHorizontal="$3"
-                  paddingVertical="$1.5"
-                  borderRadius={999}
-                  backgroundColor={selected ? "$color" : "$surfaceVariant"}
-                  onPress={() => setTagId(tag.id)}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected }}
-                  pressStyle={{ opacity: 0.75 }}
-                >
-                  <InlineText
-                    fontSize={13}
-                    fontWeight="700"
-                    color={selected ? "$background" : "$color"}
-                  >
-                    {pickTranslation(tag.label, locale)}
-                  </InlineText>
-                </Stack>
-              );
-            })}
-          </HorizontalScroll>
-
-          <HorizontalScroll>
-            {STATUS_OPTIONS.map((option) => (
-              <FilterChip
-                key={option}
-                label={t(`predict.filter.status.${option}`)}
-                selected={!favoritesOnly && status === option}
-                onPress={() => {
-                  setFavoritesOnly(false);
-                  setStatus(option);
-                }}
-                testID={`predict-status-${option}`}
-              />
-            ))}
-            <FilterChip
-              label={`★ ${t("predict.filter.favorites")}`}
-              selected={favoritesOnly}
-              onPress={() => setFavoritesOnly((value) => !value)}
-              testID="predict-favorites"
-            />
-          </HorizontalScroll>
-
-          <HorizontalScroll>
-            {SORT_OPTIONS.map((option) => (
-              <FilterChip
-                key={option}
-                label={t(`predict.sort.${option}`)}
-                selected={sort === option}
-                onPress={() => setSort(option)}
-                testID={`predict-sort-${option}`}
-              />
-            ))}
-          </HorizontalScroll>
-
-          {discovery && curated.isError ? (
-            <InlineError
-              message={t("predict.curation.error")}
-              retryLabel={t("action.retryNow")}
-              onRetry={() => void curated.refetch()}
-              testID="predict-curation-error"
-            />
-          ) : null}
-
-          {discovery && heroes.length > 0 ? (
-            <HorizontalScroll>
-              {heroes.map((event) => (
-                <Stack
-                  key={event.id}
-                  width={300}
-                  padding="$3"
-                  borderRadius="$4"
-                  gap="$2"
-                  style={{ backgroundColor: `${theme.primary.val}42` }}
-                  onPress={() => onOpenEvent(event)}
-                  accessibilityRole="button"
-                  testID={`predict-hero-${event.id}`}
-                >
-                  <EventImage
-                    uri={event.imageUrl}
-                    width={276}
-                    height={110}
-                    radius={12}
-                    testID={`hero-image-${event.id}`}
-                  />
-                  <Row alignItems="center" gap="$2">
-                    <AppIcon
-                      name="star-four-points"
-                      size={14}
-                      colorToken="primary"
-                    />
-                    <InlineText fontSize={11} fontWeight="800" color="$primary">
-                      {[
-                        t("predict.curation.hero"),
-                        pickTranslation(event.category, locale).toUpperCase(),
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </InlineText>
-                  </Row>
-                  <SectionTitle numberOfLines={2}>
-                    {pickTranslation(event.title, locale)}
-                  </SectionTitle>
-                  {event.markets.slice(0, 3).map((market) => (
-                    <Row key={market.id} alignItems="center" gap="$2">
-                      <Body flex={1} color="$color" numberOfLines={1}>
-                        {pickTranslation(market.outcomeLabel, locale)}
-                      </Body>
-                      <InlineText fontWeight="800" width={44} textAlign="right">
-                        {formatPercentCents(market.yesPriceCents)}
-                      </InlineText>
-                      <Stack width={132}>
-                        <YesNoButtons
-                          yes={market.yesPriceCents}
-                          compact
-                          disabled={!market.acceptingOrders || region.blocked}
-                          onPress={(outcome) => onOrder(market, outcome)}
-                        />
-                      </Stack>
-                    </Row>
-                  ))}
-                  <Body fontSize={11}>
-                    {fill(t("predict.outcomes"), { n: event.markets.length })} ·{" "}
-                    {fill(t("predict.volume"), {
-                      amount: formatUsd(event.volumeUsd, locale, {
-                        compact: true,
-                      }),
-                    })}
-                  </Body>
-                </Stack>
-              ))}
-            </HorizontalScroll>
-          ) : null}
-
-          {discovery && (hotPicks.length > 0 || breaking.length > 0) ? (
-            <Row gap="$2" alignItems="flex-start">
-              {hotPicks.length > 0 ? (
-                <RankList
-                  title={t("predict.curation.hotPicks")}
-                  items={hotPicks.map((event) => ({
-                    event,
-                    value: formatPercentCents(topYesCents(event)),
-                  }))}
-                  onOpen={onOpenEvent}
-                  testID="predict-hot-picks"
-                />
-              ) : null}
-              {breaking.length > 0 ? (
-                <RankList
-                  title={t("predict.curation.breaking")}
-                  items={breaking.map((event) => ({
-                    event,
-                    value: formatPercentCents(topYesCents(event)),
-                  }))}
-                  onOpen={onOpenEvent}
-                  testID="predict-breaking"
-                />
-              ) : null}
-            </Row>
-          ) : null}
-
-          {localRanks && (topProbability.length > 0 || topToday.length > 0) ? (
-            <Row gap="$2" alignItems="flex-start">
-              {topProbability.length > 0 ? (
-                <RankList
-                  title={t("predict.curation.topProbability")}
-                  items={topProbability.map(({ event, cents }) => ({
-                    event,
-                    value: formatPercentCents(cents),
-                  }))}
-                  onOpen={onOpenEvent}
-                  testID="predict-top-probability"
-                />
-              ) : null}
-              {topToday.length > 0 ? (
-                <RankList
-                  title={t("predict.curation.topToday")}
-                  items={topToday.map((event) => ({
-                    event,
-                    value: formatUsd(event.volume24hUsd, locale, {
-                      compact: true,
-                    }),
-                  }))}
-                  onOpen={onOpenEvent}
-                  testID="predict-top-today"
-                />
-              ) : null}
-            </Row>
-          ) : null}
-
-          {showSeries && seriesList.isError ? (
-            <InlineError
-              message={t("predict.series.error")}
-              retryLabel={t("action.retryNow")}
-              onRetry={() => void seriesList.refetch()}
-              testID="predict-series-error"
-            />
-          ) : null}
-
-          {showSeries && seriesList.data && seriesList.data.length > 0 ? (
-            <Stack gap="$2" testID="predict-series">
-              <SectionTitle fontSize={14}>
-                {t("predict.series.title")}
-              </SectionTitle>
-              {seriesList.data.map((series) => (
-                <SeriesCard
-                  key={series.id}
-                  series={series}
-                  onOpen={onOpenSeries}
-                  onOrder={onOrder}
-                  orderDisabled={region.blocked}
-                />
-              ))}
-            </Stack>
-          ) : null}
-
-          {favoritesOnly && !listError && favoriteFailed.length > 0 ? (
-            <InlineError
-              message={fill(t("predict.favorites.loadFailed"), {
-                n: favoriteFailed.length,
-              })}
-              retryLabel={t("action.retryNow")}
-              onRetry={retry}
-              testID="predict-favorites-error"
-            />
-          ) : null}
-
-          {favoritesOnly && favoriteIds.length === 0 ? (
-            <Body testID="predict-favorites-empty">
-              {t("predict.favorites.empty")}
-            </Body>
-          ) : !listLoading && !listError ? (
-            listItems.length === 0 ? (
-              // 周期市场卡已经是内容时不再提示"暂无数据"
-              showSeries && (seriesList.data?.length ?? 0) > 0 ? null : (
-                <Body>
-                  {search.trim() ? t("predict.search.empty") : t("state.empty")}
-                </Body>
-              )
+        </>
+      }
+    >
+      <Row alignItems="center" justifyContent="space-between">
+        <SectionTitle fontSize={20}>{t("predict.title")}</SectionTitle>
+        <Row alignItems="center" gap="$2">
+          {address ? (
+            balance.notEnabled ? (
+              <PrimaryButton
+                height={32}
+                paddingHorizontal="$3"
+                fontSize={12}
+                onPress={onOpenEnable}
+                testID="predict-enable"
+              >
+                {t("predict.enableChip")}
+              </PrimaryButton>
+            ) : balance.data && isZero(balance.data.available) ? (
+              <PrimaryButton
+                height={32}
+                paddingHorizontal="$3"
+                fontSize={12}
+                onPress={onOpenTransfer}
+                testID="predict-topup"
+              >
+                {t("predict.topUp")}
+              </PrimaryButton>
             ) : (
-              listItems.map((event) => (
-                <EventCard
-                  key={event.id}
-                  event={event}
-                  onOpen={onOpenEvent}
-                  onOrder={onOrder}
-                  orderDisabled={region.blocked}
+              <Row
+                alignItems="center"
+                gap="$1"
+                paddingHorizontal="$2.5"
+                paddingVertical="$1.5"
+                borderRadius={999}
+                backgroundColor="$surfaceVariant"
+                onPress={onOpenTransfer}
+                accessibilityRole="button"
+                accessibilityLabel={t("assets.predictAccount")}
+                testID="predict-balance"
+              >
+                <AppIcon
+                  name="wallet-outline"
+                  size={14}
+                  colorToken="textMuted"
                 />
-              ))
+                <InlineText fontSize={12} fontWeight="700">
+                  {balance.data
+                    ? formatMoney(balance.data.available, locale)
+                    : "—"}
+                </InlineText>
+              </Row>
             )
-          ) : listError ? (
-            <Row alignItems="center" justifyContent="space-between">
-              <Body color="$danger">{t("state.error")}</Body>
-              <SecondaryButton height={32} onPress={retry}>
-                {t("action.retryNow")}
-              </SecondaryButton>
-            </Row>
-          ) : (
-            <Stack gap="$2">
-              <SkeletonBlock height={150} borderRadius="$4" />
-              <SkeletonBlock height={150} borderRadius="$4" />
-              <SkeletonBlock height={150} borderRadius="$4" />
+          ) : null}
+          <IconButton
+            label={t("predict.leaderboard.title")}
+            icon="trophy-outline"
+            size={30}
+            onPress={onOpenLeaderboard}
+          />
+          {showPositionsEntry ? (
+            <IconButton
+              label={t("predict.positions.title")}
+              icon="chart-box-outline"
+              size={30}
+              onPress={onOpenPositions}
+            />
+          ) : null}
+        </Row>
+      </Row>
+
+      <RegionNotice state={region.state} onRetry={region.retry} />
+
+      <TextField
+        value={search}
+        onChangeText={setSearch}
+        placeholder={t("predict.search.placeholder")}
+        accessibilityLabel={t("predict.search.placeholder")}
+        autoCapitalize="none"
+        autoCorrect={false}
+        returnKeyType="search"
+        testID="predict-search"
+      />
+
+      {tagChips}
+      <CollapseAnchor />
+
+      <HorizontalScroll>
+        {STATUS_OPTIONS.map((option) => (
+          <FilterChip
+            key={option}
+            label={t(`predict.filter.status.${option}`)}
+            selected={!favoritesOnly && status === option}
+            onPress={() => {
+              setFavoritesOnly(false);
+              setStatus(option);
+            }}
+            testID={`predict-status-${option}`}
+          />
+        ))}
+        <FilterChip
+          label={`★ ${t("predict.filter.favorites")}`}
+          selected={favoritesOnly}
+          onPress={() => setFavoritesOnly((value) => !value)}
+          testID="predict-favorites"
+        />
+      </HorizontalScroll>
+
+      <HorizontalScroll>
+        {SORT_OPTIONS.map((option) => (
+          <FilterChip
+            key={option}
+            label={t(`predict.sort.${option}`)}
+            selected={sort === option}
+            onPress={() => setSort(option)}
+            testID={`predict-sort-${option}`}
+          />
+        ))}
+      </HorizontalScroll>
+
+      {discovery && curated.isError ? (
+        <InlineError
+          message={t("predict.curation.error")}
+          retryLabel={t("action.retryNow")}
+          onRetry={() => void curated.refetch()}
+          testID="predict-curation-error"
+        />
+      ) : null}
+
+      {discovery && heroes.length > 0 ? (
+        <HorizontalScroll>
+          {heroes.map((event) => (
+            <Stack
+              key={event.id}
+              width={300}
+              padding="$3"
+              borderRadius="$4"
+              gap="$2"
+              style={{ backgroundColor: `${theme.primary.val}42` }}
+              onPress={() => onOpenEvent(event)}
+              accessibilityRole="button"
+              testID={`predict-hero-${event.id}`}
+            >
+              <EventImage
+                uri={event.imageUrl}
+                width={276}
+                height={110}
+                radius={12}
+                testID={`hero-image-${event.id}`}
+              />
+              <Row alignItems="center" gap="$2">
+                <AppIcon
+                  name="star-four-points"
+                  size={14}
+                  colorToken="primary"
+                />
+                <InlineText fontSize={11} fontWeight="800" color="$primary">
+                  {[
+                    t("predict.curation.hero"),
+                    pickTranslation(event.category, locale).toUpperCase(),
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </InlineText>
+              </Row>
+              <SectionTitle numberOfLines={2}>
+                {pickTranslation(event.title, locale)}
+              </SectionTitle>
+              {event.markets.slice(0, 3).map((market) => (
+                <Row key={market.id} alignItems="center" gap="$2">
+                  <Body flex={1} color="$color" numberOfLines={1}>
+                    {pickTranslation(market.outcomeLabel, locale)}
+                  </Body>
+                  <InlineText fontWeight="800" width={44} textAlign="right">
+                    {formatPercentCents(market.yesPriceCents)}
+                  </InlineText>
+                  <Stack width={132}>
+                    <YesNoButtons
+                      yes={market.yesPriceCents}
+                      compact
+                      disabled={!market.acceptingOrders || region.blocked}
+                      onPress={(outcome) => onOrder(market, outcome)}
+                    />
+                  </Stack>
+                </Row>
+              ))}
+              <Body fontSize={11}>
+                {fill(t("predict.outcomes"), { n: event.markets.length })} ·{" "}
+                {fill(t("predict.volume"), {
+                  amount: formatUsd(event.volumeUsd, locale, {
+                    compact: true,
+                  }),
+                })}
+              </Body>
             </Stack>
-          )}
-        </Content>
-      </PageScroll>
-    </Page>
+          ))}
+        </HorizontalScroll>
+      ) : null}
+
+      {discovery && (hotPicks.length > 0 || breaking.length > 0) ? (
+        <Row gap="$2" alignItems="flex-start">
+          {hotPicks.length > 0 ? (
+            <RankList
+              title={t("predict.curation.hotPicks")}
+              items={hotPicks.map((event) => ({
+                event,
+                value: formatPercentCents(topYesCents(event)),
+              }))}
+              onOpen={onOpenEvent}
+              testID="predict-hot-picks"
+            />
+          ) : null}
+          {breaking.length > 0 ? (
+            <RankList
+              title={t("predict.curation.breaking")}
+              items={breaking.map((event) => ({
+                event,
+                value: formatPercentCents(topYesCents(event)),
+              }))}
+              onOpen={onOpenEvent}
+              testID="predict-breaking"
+            />
+          ) : null}
+        </Row>
+      ) : null}
+
+      {localRanks && (topProbability.length > 0 || topToday.length > 0) ? (
+        <Row gap="$2" alignItems="flex-start">
+          {topProbability.length > 0 ? (
+            <RankList
+              title={t("predict.curation.topProbability")}
+              items={topProbability.map(({ event, cents }) => ({
+                event,
+                value: formatPercentCents(cents),
+              }))}
+              onOpen={onOpenEvent}
+              testID="predict-top-probability"
+            />
+          ) : null}
+          {topToday.length > 0 ? (
+            <RankList
+              title={t("predict.curation.topToday")}
+              items={topToday.map((event) => ({
+                event,
+                value: formatUsd(event.volume24hUsd, locale, {
+                  compact: true,
+                }),
+              }))}
+              onOpen={onOpenEvent}
+              testID="predict-top-today"
+            />
+          ) : null}
+        </Row>
+      ) : null}
+
+      {showSeries && seriesList.isError ? (
+        <InlineError
+          message={t("predict.series.error")}
+          retryLabel={t("action.retryNow")}
+          onRetry={() => void seriesList.refetch()}
+          testID="predict-series-error"
+        />
+      ) : null}
+
+      {showSeries && seriesList.data && seriesList.data.length > 0 ? (
+        <Stack gap="$2" testID="predict-series">
+          <SectionTitle fontSize={14}>{t("predict.series.title")}</SectionTitle>
+          {seriesList.data.map((series) => (
+            <SeriesCard
+              key={series.id}
+              series={series}
+              onOpen={onOpenSeries}
+              onOrder={onOrder}
+              orderDisabled={region.blocked}
+            />
+          ))}
+        </Stack>
+      ) : null}
+
+      {favoritesOnly && !listError && favoriteFailed.length > 0 ? (
+        <InlineError
+          message={fill(t("predict.favorites.loadFailed"), {
+            n: favoriteFailed.length,
+          })}
+          retryLabel={t("action.retryNow")}
+          onRetry={retry}
+          testID="predict-favorites-error"
+        />
+      ) : null}
+
+      {favoritesOnly && favoriteIds.length === 0 ? (
+        <Body testID="predict-favorites-empty">
+          {t("predict.favorites.empty")}
+        </Body>
+      ) : !listLoading && !listError ? (
+        listItems.length === 0 ? (
+          // 周期市场卡已经是内容时不再提示"暂无数据"
+          showSeries && (seriesList.data?.length ?? 0) > 0 ? null : (
+            <Body>
+              {search.trim() ? t("predict.search.empty") : t("state.empty")}
+            </Body>
+          )
+        ) : (
+          listItems.map((event) => (
+            <EventCard
+              key={event.id}
+              event={event}
+              onOpen={onOpenEvent}
+              onOrder={onOrder}
+              orderDisabled={region.blocked}
+            />
+          ))
+        )
+      ) : listError ? (
+        <Row alignItems="center" justifyContent="space-between">
+          <Body color="$danger">{t("state.error")}</Body>
+          <SecondaryButton height={32} onPress={retry}>
+            {t("action.retryNow")}
+          </SecondaryButton>
+        </Row>
+      ) : (
+        <Stack gap="$2">
+          <SkeletonBlock height={150} borderRadius="$4" />
+          <SkeletonBlock height={150} borderRadius="$4" />
+          <SkeletonBlock height={150} borderRadius="$4" />
+        </Stack>
+      )}
+    </CollapsingHeader>
   );
 }
 

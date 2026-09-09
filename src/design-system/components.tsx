@@ -28,6 +28,8 @@ import { useFonts } from "expo-font";
 import Animated, {
   Extrapolation,
   interpolate,
+  runOnJS,
+  useAnimatedReaction,
   useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
@@ -275,19 +277,32 @@ export function HorizontalScroll({ children }: PropsWithChildren) {
   );
 }
 
+/**
+ * 吸附式横向卡片轮播。`fullWidth` 时卡片占满视口；配 `peek` 让下一张露出一截，
+ * 用户一眼就知道还能横滑；`showDots` 在下方给页点（当前页加长）。
+ */
 export function SnapCarousel({
   children,
   itemWidth = 236,
   gap = 12,
   fullWidth = false,
+  peek = 0,
+  showDots = false,
+  testID,
 }: PropsWithChildren<{
   itemWidth?: number;
   gap?: number;
   fullWidth?: boolean;
+  /** fullWidth 时下一张露出的宽度 */
+  peek?: number;
+  showDots?: boolean;
+  testID?: string;
 }>) {
   const [viewportWidth, setViewportWidth] = useState(0);
   const resolvedItemWidth =
-    fullWidth && viewportWidth > 0 ? viewportWidth : itemWidth;
+    fullWidth && viewportWidth > 0
+      ? Math.max(120, viewportWidth - peek)
+      : itemWidth;
   const scrollX = useSharedValue(0);
   const onScroll = useAnimatedScrollHandler({
     onScroll: (event) => {
@@ -295,38 +310,75 @@ export function SnapCarousel({
     },
   });
   const items = Children.toArray(children);
+  const [page, setPage] = useState(0);
+  const stride = resolvedItemWidth + gap;
+  useAnimatedReaction(
+    () => Math.round(scrollX.value / stride),
+    (next, previous) => {
+      // 首次回调（previous 为 null）就是第 0 页，state 初值已是 0，不用再设
+      if (previous !== null && next !== previous) runOnJS(setPage)(next);
+    },
+    [stride],
+  );
   return (
-    <Animated.ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      onScroll={onScroll}
-      onLayout={(event) => setViewportWidth(event.nativeEvent.layout.width)}
-      scrollEventThrottle={16}
-      snapToInterval={resolvedItemWidth + gap}
-      snapToAlignment="start"
-      decelerationRate="fast"
-      disableIntervalMomentum
-      contentContainerStyle={{
-        gap,
-        paddingRight: fullWidth
-          ? 0
-          : Math.max(0, viewportWidth - resolvedItemWidth),
-      }}
-      accessibilityRole="adjustable"
-      accessibilityHint="左右滑动浏览并自动吸附到卡片"
-    >
-      {items.map((child, index) => (
-        <SnapCarouselItem
-          key={(child as ReactElement).key ?? index}
-          index={index}
-          itemWidth={resolvedItemWidth}
-          gap={gap}
-          scrollX={scrollX}
+    <YStack gap={8}>
+      <Animated.ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        onScroll={onScroll}
+        onLayout={(event) => setViewportWidth(event.nativeEvent.layout.width)}
+        scrollEventThrottle={16}
+        snapToInterval={resolvedItemWidth + gap}
+        snapToAlignment="start"
+        decelerationRate="fast"
+        disableIntervalMomentum
+        contentContainerStyle={{
+          gap,
+          paddingRight: fullWidth
+            ? peek
+            : Math.max(0, viewportWidth - resolvedItemWidth),
+        }}
+        accessibilityRole="adjustable"
+        accessibilityHint="左右滑动浏览并自动吸附到卡片"
+        testID={testID}
+      >
+        {items.map((child, index) => (
+          <SnapCarouselItem
+            key={(child as ReactElement).key ?? index}
+            index={index}
+            itemWidth={resolvedItemWidth}
+            gap={gap}
+            scrollX={scrollX}
+          >
+            {child}
+          </SnapCarouselItem>
+        ))}
+      </Animated.ScrollView>
+      {showDots && items.length > 1 ? (
+        <XStack
+          justifyContent="center"
+          alignItems="center"
+          gap={6}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          testID="carousel-dots"
         >
-          {child}
-        </SnapCarouselItem>
-      ))}
-    </Animated.ScrollView>
+          {items.map((child, index) => {
+            const active = index === Math.min(page, items.length - 1);
+            return (
+              <YStack
+                key={(child as ReactElement).key ?? index}
+                width={active ? 16 : 6}
+                height={6}
+                borderRadius={3}
+                backgroundColor={active ? "$color" : "$borderColor"}
+                testID={active ? "carousel-dot-active" : undefined}
+              />
+            );
+          })}
+        </XStack>
+      ) : null}
+    </YStack>
   );
 }
 

@@ -5,11 +5,10 @@ import { CHAINS, type ChainId } from "../../../core/gateways/types";
 import { formatCompactNumber, shortenAddress } from "../../../core/i18n/format";
 import {
   Body,
-  Content,
+  CollapseAnchor,
+  CollapsingHeader,
   HorizontalScroll,
   InlineText,
-  Page,
-  PageScroll,
   PrimaryButton,
   Row,
   SectionTitle,
@@ -60,160 +59,164 @@ export function MarketScreen({
         )
       : (tokens.data?.items ?? []);
 
+  // 链筛选在内容里滚走后钉在顶部（同一份元素渲染两处）
+  const chainChips = (
+    <HorizontalScroll>
+      {[
+        { id: "all" as const, label: t("dex.allChains") },
+        ...(Object.keys(CHAINS) as ChainId[]).map((id) => ({
+          id,
+          label: CHAINS[id].name,
+        })),
+      ].map((item) => {
+        const selected = chain === item.id;
+        return (
+          <Row
+            key={item.id}
+            alignItems="center"
+            gap="$1.5"
+            paddingHorizontal="$3"
+            paddingVertical="$1.5"
+            borderRadius={999}
+            backgroundColor={selected ? "$color" : "$surfaceVariant"}
+            onPress={() => setChain(item.id)}
+            accessibilityRole="radio"
+            accessibilityState={{ selected }}
+          >
+            {item.id !== "all" ? <ChainDot chain={item.id} /> : null}
+            <InlineText
+              fontSize={13}
+              fontWeight="700"
+              color={selected ? "$background" : "$color"}
+            >
+              {item.label}
+            </InlineText>
+          </Row>
+        );
+      })}
+    </HorizontalScroll>
+  );
   return (
-    <Page>
-      <PageScroll
-        refresh={{
-          refreshing: tokens.isRefetching,
-          onRefresh: () => void tokens.refetch(),
-          accessibilityLabel: t("action.refresh"),
-        }}
-      >
-        <Content paddingTop={insets.top + 16} gap="$3">
-          <Row alignItems="center" justifyContent="space-between">
-            <SectionTitle fontSize={20}>
-              {config.modules.predict ? t("dex.title") : t("dex.marketTitle")}
-            </SectionTitle>
-            {address ? (
-              <Row
-                alignItems="center"
-                gap="$1.5"
-                paddingHorizontal="$2.5"
-                paddingVertical="$1.5"
-                borderRadius={999}
-                backgroundColor="$surfaceVariant"
-                onPress={onOpenHistory}
-                accessibilityRole="button"
-                accessibilityLabel={t("swap.history")}
-                testID="dex-wallet-chip"
-              >
-                <Stack
-                  width={8}
-                  height={8}
-                  borderRadius={4}
-                  backgroundColor="$success"
-                />
-                <InlineText fontSize={12} fontWeight="700">
-                  {shortenAddress(address)}
-                </InlineText>
-              </Row>
-            ) : (
-              <PrimaryButton
-                height={32}
-                paddingHorizontal="$3"
-                fontSize={12}
-                onPress={() => requestAuth({ type: "open_swap" })}
-                testID="dex-create-wallet"
-              >
-                {t("dex.createWallet")}
-              </PrimaryButton>
-            )}
+    <CollapsingHeader
+      mode="floating"
+      refresh={{
+        refreshing: tokens.isRefetching,
+        onRefresh: () => void tokens.refetch(),
+        accessibilityLabel: t("action.refresh"),
+      }}
+      contentProps={{ paddingTop: insets.top + 16, gap: "$3" }}
+      collapsed={<Stack flex={1}>{chainChips}</Stack>}
+    >
+      <Row alignItems="center" justifyContent="space-between">
+        <SectionTitle fontSize={20}>
+          {config.modules.predict ? t("dex.title") : t("dex.marketTitle")}
+        </SectionTitle>
+        {address ? (
+          <Row
+            alignItems="center"
+            gap="$1.5"
+            paddingHorizontal="$2.5"
+            paddingVertical="$1.5"
+            borderRadius={999}
+            backgroundColor="$surfaceVariant"
+            onPress={onOpenHistory}
+            accessibilityRole="button"
+            accessibilityLabel={t("swap.history")}
+            testID="dex-wallet-chip"
+          >
+            <Stack
+              width={8}
+              height={8}
+              borderRadius={4}
+              backgroundColor="$success"
+            />
+            <InlineText fontSize={12} fontWeight="700">
+              {shortenAddress(address)}
+            </InlineText>
           </Row>
+        ) : (
+          <PrimaryButton
+            height={32}
+            paddingHorizontal="$3"
+            fontSize={12}
+            onPress={() => requestAuth({ type: "open_swap" })}
+            testID="dex-create-wallet"
+          >
+            {t("dex.createWallet")}
+          </PrimaryButton>
+        )}
+      </Row>
 
-          <HorizontalScroll>
-            {[
-              { id: "all" as const, label: t("dex.allChains") },
-              ...(Object.keys(CHAINS) as ChainId[]).map((id) => ({
-                id,
-                label: CHAINS[id].name,
-              })),
-            ].map((item) => {
-              const selected = chain === item.id;
-              return (
-                <Row
-                  key={item.id}
-                  alignItems="center"
-                  gap="$1.5"
-                  paddingHorizontal="$3"
-                  paddingVertical="$1.5"
-                  borderRadius={999}
-                  backgroundColor={selected ? "$color" : "$surfaceVariant"}
-                  onPress={() => setChain(item.id)}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected }}
-                >
-                  {item.id !== "all" ? <ChainDot chain={item.id} /> : null}
-                  <InlineText
-                    fontSize={13}
-                    fontWeight="700"
-                    color={selected ? "$background" : "$color"}
-                  >
-                    {item.label}
-                  </InlineText>
-                </Row>
-              );
-            })}
-          </HorizontalScroll>
+      {chainChips}
+      <CollapseAnchor />
 
-          <Tabs
-            value={tab}
-            options={[
-              { value: "hot", label: t("dex.tab.hot") },
-              { value: "gainers", label: t("dex.tab.gainers") },
-              { value: "new", label: t("dex.tab.new") },
-              { value: "watchlist", label: t("dex.tab.watchlist") },
-            ]}
-            onChange={setTab}
-            accessibilityLabel={t("dex.marketTitle")}
+      <Tabs
+        value={tab}
+        options={[
+          { value: "hot", label: t("dex.tab.hot") },
+          { value: "gainers", label: t("dex.tab.gainers") },
+          { value: "new", label: t("dex.tab.new") },
+          { value: "watchlist", label: t("dex.tab.watchlist") },
+        ]}
+        onChange={setTab}
+        accessibilityLabel={t("dex.marketTitle")}
+      />
+      <Row alignItems="center" justifyContent="space-between">
+        <Body fontSize={12}>24h</Body>
+        <Row alignItems="center" gap="$2">
+          <Body fontSize={12}>{t("dex.filter.liquidity")}</Body>
+          <Switch
+            value={minLiquidity}
+            onValueChange={setMinLiquidity}
+            accessibilityLabel={t("dex.filter.liquidity")}
+            testID="dex-liquidity-filter"
           />
-          <Row alignItems="center" justifyContent="space-between">
-            <Body fontSize={12}>24h</Body>
-            <Row alignItems="center" gap="$2">
-              <Body fontSize={12}>{t("dex.filter.liquidity")}</Body>
-              <Switch
-                value={minLiquidity}
-                onValueChange={setMinLiquidity}
-                accessibilityLabel={t("dex.filter.liquidity")}
-                testID="dex-liquidity-filter"
-              />
-            </Row>
-          </Row>
-          <Row justifyContent="space-between">
-            <Body fontSize={11} flex={1}>
-              {t("dex.col.token")} · {t("dex.col.liquidity")}
-            </Body>
-            <Body fontSize={11} width={80} textAlign="center">
-              {t("dex.col.trend")}
-            </Body>
-            <Body fontSize={11} width={110} textAlign="right">
-              {t("dex.col.price")}
-            </Body>
-          </Row>
+        </Row>
+      </Row>
+      <Row justifyContent="space-between">
+        <Body fontSize={11} flex={1}>
+          {t("dex.col.token")} · {t("dex.col.liquidity")}
+        </Body>
+        <Body fontSize={11} width={80} textAlign="center">
+          {t("dex.col.trend")}
+        </Body>
+        <Body fontSize={11} width={110} textAlign="right">
+          {t("dex.col.price")}
+        </Body>
+      </Row>
 
-          {tokens.data ? (
-            rows.length === 0 ? (
-              <Body>{t("state.empty")}</Body>
-            ) : (
-              rows.map((item) => (
-                <TokenRow
-                  key={`${item.token.chain}:${item.token.address}`}
-                  item={item}
-                  locale={locale}
-                  newLabel={t("dex.new")}
-                  liquidityLabel={t("dex.liquidity")}
-                  onPress={() => onOpenToken(item)}
-                  onLongPress={() => {
-                    const key = `${item.token.chain}:${item.token.address}`;
-                    setWatchlist((prev) =>
-                      prev.includes(key)
-                        ? prev.filter((k) => k !== key)
-                        : [...prev, key],
-                    );
-                  }}
-                />
-              ))
-            )
-          ) : (
-            <Stack gap="$2">
-              <SkeletonBlock height={60} />
-              <SkeletonBlock height={60} />
-              <SkeletonBlock height={60} />
-              <SkeletonBlock height={60} />
-            </Stack>
-          )}
-        </Content>
-      </PageScroll>
-    </Page>
+      {tokens.data ? (
+        rows.length === 0 ? (
+          <Body>{t("state.empty")}</Body>
+        ) : (
+          rows.map((item) => (
+            <TokenRow
+              key={`${item.token.chain}:${item.token.address}`}
+              item={item}
+              locale={locale}
+              newLabel={t("dex.new")}
+              liquidityLabel={t("dex.liquidity")}
+              onPress={() => onOpenToken(item)}
+              onLongPress={() => {
+                const key = `${item.token.chain}:${item.token.address}`;
+                setWatchlist((prev) =>
+                  prev.includes(key)
+                    ? prev.filter((k) => k !== key)
+                    : [...prev, key],
+                );
+              }}
+            />
+          ))
+        )
+      ) : (
+        <Stack gap="$2">
+          <SkeletonBlock height={60} />
+          <SkeletonBlock height={60} />
+          <SkeletonBlock height={60} />
+          <SkeletonBlock height={60} />
+        </Stack>
+      )}
+    </CollapsingHeader>
   );
 }
 
