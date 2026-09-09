@@ -1,4 +1,9 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react-native";
+import {
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react-native";
 import { fromDecimal } from "../../../core/money/money";
 import {
   createTestGateways,
@@ -7,6 +12,7 @@ import {
 } from "../../../test/harness";
 import type { InMemoryPredictAccountGateway } from "../../../test/predict-account";
 import { useMockRuntime } from "../../../core/mock/mock-runtime";
+import { EVENTS } from "../fixtures/events";
 import { useFavoritesStore } from "../model/favorites-store";
 import { MarketListScreen } from "./market-list-screen";
 
@@ -114,6 +120,78 @@ describe("MarketListScreen", () => {
     // 只有平台给了图标的事件才渲染图标，其它卡不占位
     expect(screen.getByTestId("event-icon-ev-btc-120k")).toBeTruthy();
     expect(screen.queryByTestId("event-icon-ev-fomc-sep")).toBeNull();
+  });
+
+  it("renders one featured card without a carousel and a single rank block with tabs, deduped against the hero", async () => {
+    const gateways = createTestGateways();
+    const worldcup = EVENTS.find((event) => event.id === "ev-worldcup")!;
+    // 运营位：1 个 hero、2 个 highlight（其中一个与 hero 重复）、其余 normal
+    gateways.predict.listCuratedEvents = async () =>
+      EVENTS.map((event, index) => ({
+        event,
+        hero: event.id === worldcup.id ? 0 : null,
+        highlight:
+          event.id === worldcup.id || event.id === "ev-btc-120k" ? index : null,
+        normal:
+          event.id === worldcup.id || event.id === "ev-btc-120k" ? null : index,
+      }));
+    const { runtime } = await renderWithProviders(
+      <MarketListScreen {...props()} showPositionsEntry />,
+      { gateways },
+    );
+    expect(await screen.findByTestId("predict-hero-ev-worldcup")).toBeTruthy();
+    // 只有一个 hero：不套轮播、没有页点
+    expect(screen.queryByTestId("predict-featured-carousel")).toBeNull();
+    expect(
+      screen.queryByTestId("carousel-dots", { includeHiddenElements: true }),
+    ).toBeNull();
+    expect(screen.getByText(runtime.t("predict.curation.title"))).toBeTruthy();
+    // 榜单合成一个区块，tab 切换；hero 不进任何榜
+    expect(await screen.findByTestId("predict-rank-tabs")).toBeTruthy();
+    expect(screen.getByTestId("predict-rank-hotPicks")).toBeTruthy();
+    expect(screen.getByTestId("predict-rank-row-ev-btc-120k")).toBeTruthy();
+    expect(screen.queryByTestId("predict-rank-row-ev-worldcup")).toBeNull();
+    await fireEvent.press(screen.getByTestId("predict-rank-tab-breaking"));
+    const breaking = screen.getByTestId("predict-rank-breaking");
+    expect(screen.queryByTestId("predict-rank-hotPicks")).toBeNull();
+    // 一个事件只出现在一个榜里：热门精选里的 btc 不再进"突发"
+    expect(
+      within(breaking).queryByTestId("predict-rank-row-ev-btc-120k"),
+    ).toBeNull();
+    expect(
+      within(breaking).queryAllByTestId(/^predict-rank-row-/).length,
+    ).toBeLessThanOrEqual(5);
+  });
+
+  it("uses the snap carousel with dots when the platform curates several heroes", async () => {
+    const gateways = createTestGateways();
+    gateways.predict.listCuratedEvents = async () =>
+      EVENTS.slice(0, 2).map((event, index) => ({
+        event,
+        hero: index,
+        highlight: null,
+        normal: null,
+      }));
+    await renderWithProviders(
+      <MarketListScreen {...props()} showPositionsEntry />,
+      { gateways },
+    );
+    expect(await screen.findByTestId("predict-featured-carousel")).toBeTruthy();
+    // 页点对无障碍隐藏，查询时要带 includeHiddenElements
+    expect(
+      screen.getByTestId("carousel-dots", { includeHiddenElements: true }),
+    ).toBeTruthy();
+    expect(screen.getByTestId(`predict-hero-${EVENTS[0]!.id}`)).toBeTruthy();
+    // 两个 hero 不进本地榜
+    await waitFor(() =>
+      expect(screen.getByTestId("predict-rank-boards")).toBeTruthy(),
+    );
+    expect(
+      screen.queryByTestId(`predict-rank-row-${EVENTS[0]!.id}`),
+    ).toBeNull();
+    expect(
+      screen.queryByTestId(`predict-rank-row-${EVENTS[1]!.id}`),
+    ).toBeNull();
   });
 
   it("filters the loaded list locally by search text", async () => {

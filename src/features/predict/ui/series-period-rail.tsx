@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useRef } from "react";
 import { ScrollView } from "react-native";
 import { useFoundationRuntime } from "../../../app/runtime-context";
-import { formatDate } from "../../../core/i18n/format";
+import { formatDate, formatUsd } from "../../../core/i18n/format";
 import {
+  AppIcon,
   Body,
   InlineText,
   Row,
-  SecondaryButton,
   Sheet,
   type SheetHandle,
+  Spinner,
   Stack,
+  TextLink,
 } from "../../../design-system";
 import type { SeriesPeriod } from "../model/predict";
 import {
@@ -26,6 +28,8 @@ const RAIL_PAST = 3;
 const RAIL_UPCOMING = 4;
 const CHIP_WIDTH = 72;
 const CHIP_GAP = 8;
+/** "更早"面板打开时，已加载的历史少于这么多期就先补一页（面板拿不到滚动事件，用打开时机代替到底触发） */
+const SHEET_MIN_PAST = 20;
 
 export type PeriodHistoryControls = {
   hasMore: boolean;
@@ -36,7 +40,7 @@ export type PeriodHistoryControls = {
 };
 
 /**
- * 期轨道：更早 ▾ │ 历史 3 期（结果记号）│ 当期 │ 未来 3 期 │ 更多 ▾。
+ * 期轨道：‹ │ 历史 3 期（结果记号）│ 当期 │ 未来 3 期 │ ›（两端是圆形图标按钮，不再和期芯片同形）。
  * 我押过的期带角标；选中的期自动滚到可见位置。
  */
 export function SeriesPeriodRail({
@@ -97,8 +101,17 @@ export function SeriesPeriodRail({
         testID="series-rail"
       >
         <RailAction
-          label={t("predict.series.earlier")}
-          onPress={() => earlier.current?.present()}
+          icon="chevron-left"
+          label={t("predict.series.earlierIcon")}
+          onPress={() => {
+            if (
+              history.hasMore &&
+              !history.loading &&
+              past.length < SHEET_MIN_PAST
+            )
+              history.loadMore();
+            earlier.current?.present();
+          }}
           testID="series-rail-earlier"
         />
         {chips.map((period) => (
@@ -116,7 +129,8 @@ export function SeriesPeriodRail({
         ))}
         {restUpcoming.length > 0 ? (
           <RailAction
-            label={t("predict.series.more")}
+            icon="chevron-right"
+            label={t("predict.series.moreIcon")}
             onPress={() => more.current?.present()}
             testID="series-rail-more"
           />
@@ -140,22 +154,15 @@ export function SeriesPeriodRail({
               testIDPrefix="series-earlier"
             />
           ))}
-          {history.error ? (
-            <Row alignItems="center" justifyContent="space-between" gap="$2">
-              <Body color="$danger">{t("state.error")}</Body>
-              <SecondaryButton height={32} onPress={history.retry}>
-                {t("action.retryNow")}
-              </SecondaryButton>
-            </Row>
-          ) : history.hasMore ? (
-            <SecondaryButton
-              disabled={history.loading}
-              onPress={history.loadMore}
-              testID="series-load-earlier"
-            >
-              {t("predict.series.loadEarlier")}
-            </SecondaryButton>
-          ) : null}
+          <HistoryFooter
+            loading={history.loading}
+            error={history.error}
+            hasMore={history.hasMore}
+            count={past.length}
+            onLoadMore={history.loadMore}
+            onRetry={history.retry}
+            testID="series-earlier-footer"
+          />
         </Stack>
       </Sheet>
 
@@ -184,19 +191,22 @@ export function SeriesPeriodRail({
 }
 
 function RailAction({
+  icon,
   label,
   onPress,
   testID,
 }: {
+  icon: "chevron-left" | "chevron-right";
   label: string;
   onPress: () => void;
   testID: string;
 }) {
   return (
     <Stack
-      height={44}
-      paddingHorizontal="$3"
-      borderRadius="$3"
+      width={36}
+      height={36}
+      borderRadius={18}
+      alignItems="center"
       justifyContent="center"
       backgroundColor="$surfaceVariant"
       onPress={onPress}
@@ -205,10 +215,71 @@ function RailAction({
       pressStyle={{ opacity: 0.75 }}
       testID={testID}
     >
-      <InlineText fontSize={12} fontWeight="700">
-        {label} ▾
-      </InlineText>
+      <AppIcon name={icon} size={22} colorToken="color" />
     </Stack>
+  );
+}
+
+/**
+ * 历史分页的脚注：加载中 / 还有更早 / 已全部显示 / 失败重试。分页不再是页面级大按钮；
+ * 在拿得到滚动事件的地方由到底自动加载触发，拿不到的地方（面板）留一条文字链。
+ */
+export function HistoryFooter({
+  loading,
+  error,
+  hasMore,
+  count,
+  onLoadMore,
+  onRetry,
+  autoLoads = false,
+  testID,
+}: {
+  loading: boolean;
+  error: boolean;
+  hasMore: boolean;
+  count: number;
+  onLoadMore: () => void;
+  onRetry: () => void;
+  /** 由外部到底自动触发时，"还有更早"只提示上滑，不给链接 */
+  autoLoads?: boolean;
+  testID?: string;
+}) {
+  const { t } = useFoundationRuntime();
+  return (
+    <Row
+      alignItems="center"
+      justifyContent="center"
+      gap="$2"
+      minHeight={36}
+      testID={testID}
+    >
+      {loading ? (
+        <>
+          <Spinner size="small" color="$textMuted" />
+          <Body fontSize={12} color="$textMuted">
+            {t("predict.series.loadingEarlier")}
+          </Body>
+        </>
+      ) : error ? (
+        <TextLink onPress={onRetry} color="$danger" fontSize={12}>
+          {t("predict.series.loadFailed")}
+        </TextLink>
+      ) : hasMore ? (
+        autoLoads ? (
+          <Body fontSize={12} color="$textMuted">
+            {t("predict.series.scrollForEarlier")}
+          </Body>
+        ) : (
+          <TextLink onPress={onLoadMore} color="$textMuted" fontSize={12}>
+            {t("predict.series.loadEarlier")}
+          </TextLink>
+        )
+      ) : (
+        <Body fontSize={12} color="$textMuted">
+          {fill(t("predict.series.allShown"), { n: count })}
+        </Body>
+      )}
+    </Row>
   );
 }
 
@@ -312,6 +383,7 @@ export function PeriodRow({
   selected = false,
   phase,
   testIDPrefix = "series-period",
+  showDate = true,
 }: {
   period: SeriesPeriod;
   onPress: () => void;
@@ -320,6 +392,8 @@ export function PeriodRow({
   phase?: "live" | "upcoming" | "ended";
   /** 历史列表与两个面板各用一个前缀，测试与无障碍都能分清 */
   testIDPrefix?: string;
+  /** 列表按天分组时由组头显示日期，行内不再重复 */
+  showDate?: boolean;
 }) {
   const { config, t } = useFoundationRuntime();
   const locale = config.localization.selectedLocale;
@@ -327,6 +401,7 @@ export function PeriodRow({
   const label = ended
     ? periodResultLabel(period, t)
     : t(`predict.series.${phase}`);
+  const delta = ended ? settlementDelta(period) : null;
   return (
     <Row
       alignItems="center"
@@ -347,7 +422,7 @@ export function PeriodRow({
           {windowLabel(period, locale)}
         </InlineText>
         <Body fontSize={11}>
-          {formatDate(period.windowEnd, locale)} ·{" "}
+          {showDate ? `${formatDate(period.windowEnd, locale)} · ` : ""}
           {t("predict.series.priceToBeat")}{" "}
           {period.priceToBeat
             ? priceLabel(period.priceToBeat, locale)
@@ -357,18 +432,39 @@ export function PeriodRow({
             : ""}
         </Body>
       </Stack>
-      <InlineText
-        fontWeight="800"
-        color={
-          period.result === "up"
-            ? "$success"
-            : period.result === "down"
-              ? "$danger"
-              : "$textMuted"
-        }
-      >
-        {label}
-      </InlineText>
+      <Stack alignItems="flex-end" gap={2}>
+        <InlineText
+          fontWeight="800"
+          color={
+            period.result === "up"
+              ? "$success"
+              : period.result === "down"
+                ? "$danger"
+                : "$textMuted"
+          }
+        >
+          {label}
+        </InlineText>
+        {delta !== null ? (
+          <InlineText
+            fontSize={11}
+            fontWeight="700"
+            color={delta >= 0 ? "$success" : "$danger"}
+            testID={`${testIDPrefix}-delta-${period.id}`}
+          >
+            {(delta > 0 ? "+" : "") + formatUsd(delta, locale)}
+          </InlineText>
+        ) : null}
+      </Stack>
     </Row>
   );
+}
+
+/** 结算价 − 参考价；任一缺失或不是数字就不显示 */
+export function settlementDelta(period: SeriesPeriod): number | null {
+  const reference = Number(period.priceToBeat?.price);
+  const final = Number(period.finalPrice?.price);
+  if (!period.priceToBeat || !period.finalPrice) return null;
+  if (!Number.isFinite(reference) || !Number.isFinite(final)) return null;
+  return final - reference;
 }

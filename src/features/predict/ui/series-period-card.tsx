@@ -5,9 +5,11 @@ import {
   Card,
   DetailRow,
   InlineText,
+  LinkRow,
   Row,
   SecondaryButton,
   Stack,
+  TextLink,
 } from "../../../design-system";
 import type { useRegionGate } from "../hooks/use-predict";
 import type { Market, Outcome, SeriesPeriod } from "../model/predict";
@@ -38,7 +40,8 @@ export function isPeriodSettled(period: SeriesPeriod): boolean {
 /**
  * 所选期卡（设计 §4.3 的四种形态）：进行中 / 未开始 / 结算中 / 已结算。
  * 头部 = 状态徽章 + 窗口 + 倒计时；价格区 = 参考价、当前价（进行中）或结算价（已结束）；
- * 动作区 = 涨 / 跌 两个下单按钮（未结束期）+ 查看详情 / 回到当期。
+ * 动作区 = 涨 / 跌 两个下单按钮（未结束期）；按钮层级只有三档：主（涨 / 跌）、次（回到当期，一颗胶囊）、
+ * 三（"本期详情"链接行、"下一期已开始"横幅里的文字链）——设计 predict-discovery-polish §5.2。
  */
 export function SeriesPeriodCard({
   period,
@@ -97,6 +100,26 @@ export function SeriesPeriodCard({
 
   return (
     <Card padding="$3" gap="$2" testID="series-period-card">
+      {showGoNext ? (
+        // 停在有仓位的已结束期时的提示：横幅 + 文字链，不再是第三颗灰按钮；有横幅就不再显示"回到当期"
+        <Row
+          alignItems="center"
+          justifyContent="space-between"
+          gap="$2"
+          paddingVertical="$1.5"
+          paddingHorizontal="$2.5"
+          borderRadius="$3"
+          backgroundColor="$surfaceVariant"
+          testID="series-next-banner"
+        >
+          <Body fontSize={12} fontWeight="700" flex={1}>
+            {t("predict.series.nextStarted")}
+          </Body>
+          <TextLink onPress={onGoNext} chevron testID="series-go-next">
+            {t("predict.series.goNext")}
+          </TextLink>
+        </Row>
+      ) : null}
       <Row alignItems="center" justifyContent="space-between" gap="$2">
         <Row alignItems="center" gap="$2" flex={1}>
           <InlineText
@@ -111,7 +134,7 @@ export function SeriesPeriodCard({
             {windowLabel(period, locale)}
           </Body>
         </Row>
-        {!isCurrent ? (
+        {!isCurrent && !showGoNext ? (
           <SecondaryButton
             height={28}
             paddingHorizontal="$2.5"
@@ -260,30 +283,11 @@ export function SeriesPeriodCard({
         </Stack>
       ) : null}
 
-      <Row gap="$2" alignItems="center">
-        {period.event ? (
-          <SecondaryButton
-            height={32}
-            paddingHorizontal="$3"
-            fontSize={12}
-            onPress={onOpenDetail}
-            testID="series-open-detail"
-          >
-            {t("predict.series.viewDetail")}
-          </SecondaryButton>
-        ) : null}
-        {showGoNext ? (
-          <SecondaryButton
-            height={32}
-            paddingHorizontal="$3"
-            fontSize={12}
-            onPress={onGoNext}
-            testID="series-go-next"
-          >
-            {t("predict.series.nextStarted")}
-          </SecondaryButton>
-        ) : null}
-      </Row>
+      {period.event ? (
+        <LinkRow onPress={onOpenDetail} testID="series-open-detail">
+          {t("predict.series.detailRow")}
+        </LinkRow>
+      ) : null}
     </Card>
   );
 }

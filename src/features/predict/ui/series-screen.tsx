@@ -46,13 +46,22 @@ import {
 } from "./series-card";
 import { SeriesChart, useSeriesLivePrice } from "./series-chart";
 import { SeriesPeriodCard } from "./series-period-card";
-import { PeriodRow, SeriesPeriodRail } from "./series-period-rail";
+import {
+  HistoryFooter,
+  PeriodRow,
+  SeriesPeriodRail,
+} from "./series-period-rail";
 import { SeriesPositionBar } from "./series-position-bar";
 import { fill } from "./shared";
 
 /** 当期 + 未来 7 期（轨道 3 期 + "更多"面板） */
 const CURRENT_LIMIT = 8;
-const HISTORY_PAGE = 12;
+const HISTORY_PAGE = 20;
+/**
+ * 历史列表到底自动翻页最多自动翻到这么多页（20 × 3 = 60 期）；再往前留一条文字链。
+ * 折叠导航容器不暴露滚动事件，这里用"列尾哨兵布局完成"近似"滚到底"：哨兵一进树就会触发，
+ * 所以必须设上限，否则会把几百期一口气拉完。
+ */
 
 const byStart = (a: SeriesPeriod, b: SeriesPeriod) =>
   new Date(a.windowStart).getTime() - new Date(b.windowStart).getTime();
@@ -99,6 +108,12 @@ export function SeriesScreen({
     () => history.data?.pages.flatMap((page) => page.items) ?? [],
     [history.data],
   );
+  // 滚到列表底部自动翻下一页（CollapsingHeader 的 onEndReached）；出错后停下，由脚注的"重试"接手
+  const loadEarlierIfNeeded = () => {
+    if (!history.hasNextPage) return;
+    if (history.isFetchingNextPage || history.isError) return;
+    void history.fetchNextPage();
+  };
   const all = useMemo(() => [...past, ...upcoming], [past, upcoming]);
   const currentPeriod = useMemo(
     () => pickCurrentPeriod(upcoming, now),
@@ -280,6 +295,7 @@ export function SeriesScreen({
     <CollapsingHeader
       onBack={onBack}
       backLabel={t("action.back")}
+      onEndReached={loadEarlierIfNeeded}
       expanded={
         <Heading fontSize={26} numberOfLines={1}>
           {title}
@@ -488,30 +504,63 @@ export function SeriesScreen({
           <Body>{t("predict.series.noPeriods")}</Body>
         ) : (
           <>
-            {past.map((item) => (
-              <PeriodRow
-                key={item.id}
-                period={item}
-                selected={item.id === displayed?.id}
-                onPress={() => selectFromList(item)}
-              />
+            {groupByDay(past, locale).map((group) => (
+              <Stack key={group.day} gap="$0">
+                <Body
+                  fontSize={11}
+                  fontWeight="700"
+                  color="$textMuted"
+                  paddingTop="$1"
+                  testID={`series-history-day-${group.day}`}
+                >
+                  {group.label}
+                </Body>
+                {group.items.map((item) => (
+                  <PeriodRow
+                    key={item.id}
+                    period={item}
+                    selected={item.id === displayed?.id}
+                    showDate={false}
+                    onPress={() => selectFromList(item)}
+                  />
+                ))}
+              </Stack>
             ))}
-            {history.isError ? (
-              <QueryError onRetry={() => void history.fetchNextPage()} />
-            ) : history.hasNextPage ? (
-              <SecondaryButton
-                disabled={history.isFetchingNextPage}
-                onPress={() => void history.fetchNextPage()}
-                testID="series-history-more"
-              >
-                {t("predict.series.loadEarlier")}
-              </SecondaryButton>
-            ) : null}
+            <HistoryFooter
+              loading={history.isFetchingNextPage}
+              error={history.isError}
+              hasMore={history.hasNextPage}
+              count={past.length}
+              autoLoads
+              onLoadMore={() => void history.fetchNextPage()}
+              onRetry={() => void history.fetchNextPage()}
+              testID="series-history-footer"
+            />
           </>
         )}
       </Stack>
     </CollapsingHeader>
   );
+}
+
+/** 历史行按结束日分组：组头显示"9月9日 / Sep 9"，行内不再重复日期 */
+export function groupByDay(
+  periods: SeriesPeriod[],
+  locale: string,
+): { day: string; label: string; items: SeriesPeriod[] }[] {
+  const formatter = new Intl.DateTimeFormat(locale, {
+    month: locale === "zh-CN" ? "long" : "short",
+    day: "numeric",
+  });
+  const groups: { day: string; label: string; items: SeriesPeriod[] }[] = [];
+  for (const period of periods) {
+    const end = new Date(period.windowEnd);
+    const day = `${end.getFullYear()}-${end.getMonth() + 1}-${end.getDate()}`;
+    const last = groups[groups.length - 1];
+    if (last && last.day === day) last.items.push(period);
+    else groups.push({ day, label: formatter.format(end), items: [period] });
+  }
+  return groups;
 }
 
 function QueryError({ onRetry }: { onRetry: () => void }) {

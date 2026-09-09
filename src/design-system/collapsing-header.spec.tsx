@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react-native";
+import { fireEvent, screen } from "@testing-library/react-native";
 import { Text } from "react-native";
 import { renderWithProviders } from "../test/harness";
 import {
@@ -64,5 +64,63 @@ describe("CollapsingHeader", () => {
     expect(
       screen.getByText("chips", { includeHiddenElements: true }),
     ).toBeTruthy();
+    // 状态栏垫层始终挂着（透明度随滚动），不拦手势
+    expect(
+      screen.getByTestId("collapsing-status-strip").props.pointerEvents,
+    ).toBe("none");
+  });
+
+  it("keeps the default content spacing when a page only sets paddingTop", async () => {
+    await renderWithProviders(
+      <CollapsingHeader
+        mode="floating"
+        contentProps={{ paddingTop: 40 }}
+        testID="scroll"
+      >
+        <Text>a</Text>
+        <Text>b</Text>
+      </CollapsingHeader>,
+    );
+    const style = flatten(screen.getByTestId("collapsing-content").props.style);
+    // 显式 undefined 曾把 styled 默认的 gap / paddingBottom 抹掉，首页各区块就贴在一起了
+    expect(style.paddingTop).toBe(40);
+    expect(style.gap).toBeGreaterThan(0);
+    expect(style.paddingBottom).toBeGreaterThan(0);
+  });
+  it("reports end reached from drag end and momentum end when near the bottom", async () => {
+    const onEndReached = jest.fn();
+    await renderWithProviders(
+      <CollapsingHeader onEndReached={onEndReached} testID="scroll">
+        <Text>content</Text>
+      </CollapsingHeader>,
+    );
+    const nearBottom = {
+      nativeEvent: {
+        contentOffset: { y: 900 },
+        contentSize: { height: 1500, width: 0 },
+        layoutMeasurement: { height: 400, width: 0 },
+      },
+    };
+    const farAway = {
+      nativeEvent: {
+        contentOffset: { y: 0 },
+        contentSize: { height: 5000, width: 0 },
+        layoutMeasurement: { height: 400, width: 0 },
+      },
+    };
+    await fireEvent(screen.getByTestId("scroll"), "scrollEndDrag", farAway);
+    expect(onEndReached).not.toHaveBeenCalled();
+    await fireEvent(screen.getByTestId("scroll"), "scrollEndDrag", nearBottom);
+    await fireEvent(
+      screen.getByTestId("scroll"),
+      "momentumScrollEnd",
+      nearBottom,
+    );
+    expect(onEndReached).toHaveBeenCalledTimes(2);
   });
 });
+
+function flatten(style: unknown): Record<string, number> {
+  if (Array.isArray(style)) return Object.assign({}, ...style.map(flatten));
+  return (style ?? {}) as Record<string, number>;
+}

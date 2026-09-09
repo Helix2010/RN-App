@@ -8,11 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
-import {
-  formatMoney,
-  formatPercentCents,
-  formatUsd,
-} from "../../../core/i18n/format";
+import { formatMoney } from "../../../core/i18n/format";
 import { pickTranslation } from "../../../core/i18n/localized-text";
 import { isZero } from "../../../core/money/money";
 import {
@@ -30,7 +26,6 @@ import {
   SkeletonBlock,
   Stack,
   TextField,
-  useTheme,
 } from "../../../design-system";
 import { useSession } from "../../session/hooks/use-session";
 import {
@@ -43,11 +38,11 @@ import {
   useSeriesList,
 } from "../hooks/use-predict";
 import {
+  buildRankBoards,
   curationZone,
   matchesEventSearch,
   topByProbability,
   topByVolume24h,
-  topYesCents,
 } from "../model/event-search";
 import { useFavoritesStore } from "../model/favorites-store";
 import type {
@@ -57,16 +52,14 @@ import type {
   PredictEvent,
   Series,
 } from "../model/predict";
+import { FeaturedSection, RankBoards } from "./curation-sections";
 import { SeriesCard } from "./series-card";
-import {
-  EventCard,
-  EventImage,
-  RegionNotice,
-  YesNoButtons,
-  fill,
-} from "./shared";
+import { EventCard, RegionNotice, fill } from "./shared";
 
 type StatusFilter = NonNullable<EventQuery["status"]>;
+/** 榜单每榜最多几行 / 去重前每个来源取多少候选 */
+const RANK_ROWS = 5;
+const RANK_CANDIDATES = 10;
 const STATUS_OPTIONS: StatusFilter[] = ["trading", "closed", "all"];
 const SORT_OPTIONS: NonNullable<EventQuery["sort"]>[] = [
   "volume",
@@ -105,7 +98,6 @@ export function MarketListScreen({
   const listScroll = useRef<ScrollView>(null);
   const { config, t } = useFoundationRuntime();
   const locale = config.localization.selectedLocale;
-  const theme = useTheme();
   const session = useSession();
   const address = session.data?.address;
   const balance = usePredictAccountBalance(address);
@@ -157,12 +149,13 @@ export function MarketListScreen({
     () => curationZone(curated.data ?? [], "hero"),
     [curated.data],
   );
+  // 榜单候选取多一些（去重后每榜最多 5 行）
   const hotPicks = useMemo(
-    () => curationZone(curated.data ?? [], "highlight", 3),
+    () => curationZone(curated.data ?? [], "highlight", RANK_CANDIDATES),
     [curated.data],
   );
   const breaking = useMemo(
-    () => curationZone(curated.data ?? [], "normal", 3),
+    () => curationZone(curated.data ?? [], "normal", RANK_CANDIDATES),
     [curated.data],
   );
   const heroIds = useMemo(
@@ -184,12 +177,31 @@ export function MarketListScreen({
   // 本地榜单只在默认排序下有意义（按"最新"排的一页取前三没有"高概率"的含义）
   const localRanks = discovery && sort === "volume";
   const topProbability = useMemo(
-    () => (localRanks ? topByProbability(events.data?.items ?? []) : []),
+    () =>
+      localRanks
+        ? topByProbability(events.data?.items ?? [], RANK_CANDIDATES).map(
+            (item) => item.event,
+          )
+        : [],
     [localRanks, events.data],
   );
   const topToday = useMemo(
-    () => (localRanks ? topByVolume24h(events.data?.items ?? []) : []),
+    () =>
+      localRanks
+        ? topByVolume24h(events.data?.items ?? [], RANK_CANDIDATES)
+        : [],
     [localRanks, events.data],
+  );
+  // 榜单去重（精选里的不进榜；一个事件只进优先级最高的榜）
+  const rankBoards = useMemo(
+    () =>
+      discovery
+        ? buildRankBoards(
+            { heroIds, hotPicks, breaking, topProbability, topToday },
+            RANK_ROWS,
+          )
+        : [],
+    [discovery, heroIds, hotPicks, breaking, topProbability, topToday],
   );
   // 列表与精选卡片里展示的市场走实时行情（每个事件最多前 3 个结果）
   useMarketStream(
@@ -396,130 +408,24 @@ export function MarketListScreen({
         />
       ) : null}
 
-      {discovery && heroes.length > 0 ? (
-        <HorizontalScroll>
-          {heroes.map((event) => (
-            <Stack
-              key={event.id}
-              width={300}
-              padding="$3"
-              borderRadius="$4"
-              gap="$2"
-              style={{ backgroundColor: `${theme.primary.val}42` }}
-              onPress={() => onOpenEvent(event)}
-              accessibilityRole="button"
-              testID={`predict-hero-${event.id}`}
-            >
-              <EventImage
-                uri={event.imageUrl}
-                width={276}
-                height={110}
-                radius={12}
-                testID={`hero-image-${event.id}`}
-              />
-              <Row alignItems="center" gap="$2">
-                <AppIcon
-                  name="star-four-points"
-                  size={14}
-                  colorToken="primary"
-                />
-                <InlineText fontSize={11} fontWeight="800" color="$primary">
-                  {[
-                    t("predict.curation.hero"),
-                    pickTranslation(event.category, locale).toUpperCase(),
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </InlineText>
-              </Row>
-              <SectionTitle numberOfLines={2}>
-                {pickTranslation(event.title, locale)}
-              </SectionTitle>
-              {event.markets.slice(0, 3).map((market) => (
-                <Row key={market.id} alignItems="center" gap="$2">
-                  <Body flex={1} color="$color" numberOfLines={1}>
-                    {pickTranslation(market.outcomeLabel, locale)}
-                  </Body>
-                  <InlineText fontWeight="800" width={44} textAlign="right">
-                    {formatPercentCents(market.yesPriceCents)}
-                  </InlineText>
-                  <Stack width={132}>
-                    <YesNoButtons
-                      yes={market.yesPriceCents}
-                      compact
-                      disabled={!market.acceptingOrders || region.blocked}
-                      onPress={(outcome) => onOrder(market, outcome)}
-                    />
-                  </Stack>
-                </Row>
-              ))}
-              <Body fontSize={11}>
-                {fill(t("predict.outcomes"), { n: event.markets.length })} ·{" "}
-                {fill(t("predict.volume"), {
-                  amount: formatUsd(event.volumeUsd, locale, {
-                    compact: true,
-                  }),
-                })}
-              </Body>
-            </Stack>
-          ))}
-        </HorizontalScroll>
+      {discovery ? (
+        <FeaturedSection
+          events={heroes}
+          onOpen={onOpenEvent}
+          onOrder={onOrder}
+          orderDisabled={region.blocked}
+        />
       ) : null}
 
-      {discovery && (hotPicks.length > 0 || breaking.length > 0) ? (
-        <Row gap="$2" alignItems="flex-start">
-          {hotPicks.length > 0 ? (
-            <RankList
-              title={t("predict.curation.hotPicks")}
-              items={hotPicks.map((event) => ({
-                event,
-                value: formatPercentCents(topYesCents(event)),
-              }))}
-              onOpen={onOpenEvent}
-              testID="predict-hot-picks"
-            />
-          ) : null}
-          {breaking.length > 0 ? (
-            <RankList
-              title={t("predict.curation.breaking")}
-              items={breaking.map((event) => ({
-                event,
-                value: formatPercentCents(topYesCents(event)),
-              }))}
-              onOpen={onOpenEvent}
-              testID="predict-breaking"
-            />
-          ) : null}
-        </Row>
-      ) : null}
-
-      {localRanks && (topProbability.length > 0 || topToday.length > 0) ? (
-        <Row gap="$2" alignItems="flex-start">
-          {topProbability.length > 0 ? (
-            <RankList
-              title={t("predict.curation.topProbability")}
-              items={topProbability.map(({ event, cents }) => ({
-                event,
-                value: formatPercentCents(cents),
-              }))}
-              onOpen={onOpenEvent}
-              testID="predict-top-probability"
-            />
-          ) : null}
-          {topToday.length > 0 ? (
-            <RankList
-              title={t("predict.curation.topToday")}
-              items={topToday.map((event) => ({
-                event,
-                value: formatUsd(event.volume24hUsd, locale, {
-                  compact: true,
-                }),
-              }))}
-              onOpen={onOpenEvent}
-              testID="predict-top-today"
-            />
-          ) : null}
-        </Row>
+      {discovery ? (
+        <RankBoards
+          boards={rankBoards}
+          onOpen={onOpenEvent}
+          // "今日热门"有完整视图：按 24h 成交排序的列表；其它榜没有等价视图，不给入口
+          onViewAll={(key) => {
+            if (key === "topToday") setSort("volume24h");
+          }}
+        />
       ) : null}
 
       {showSeries && seriesList.isError ? (
@@ -631,53 +537,6 @@ function FilterChip({
         {label}
       </InlineText>
     </Row>
-  );
-}
-
-/** 榜单：网页版首页的"高概率 / 今日热门"三条，点行进详情 */
-function RankList({
-  title,
-  items,
-  onOpen,
-  testID,
-}: {
-  title: string;
-  items: { event: PredictEvent; value: string }[];
-  onOpen: (event: PredictEvent) => void;
-  testID?: string;
-}) {
-  const { config } = useFoundationRuntime();
-  const locale = config.localization.selectedLocale;
-  return (
-    <Stack
-      flex={1}
-      gap="$1.5"
-      padding="$2.5"
-      borderRadius="$4"
-      backgroundColor="$surfaceVariant"
-      testID={testID}
-    >
-      <SectionTitle fontSize={12}>{title}</SectionTitle>
-      {items.map(({ event, value }, index) => (
-        <Row
-          key={event.id}
-          alignItems="center"
-          gap="$1.5"
-          onPress={() => onOpen(event)}
-          accessibilityRole="button"
-        >
-          <Body fontSize={11} width={12}>
-            {index + 1}
-          </Body>
-          <Body flex={1} fontSize={11} color="$color" numberOfLines={1}>
-            {pickTranslation(event.title, locale)}
-          </Body>
-          <InlineText fontSize={11} fontWeight="800">
-            {value}
-          </InlineText>
-        </Row>
-      ))}
-    </Stack>
   );
 }
 

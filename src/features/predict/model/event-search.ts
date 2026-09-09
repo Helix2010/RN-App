@@ -81,3 +81,44 @@ export function curationZone(
     .slice(0, limit)
     .map((item) => item.event);
 }
+
+/** 榜单区块的四个 tab；顺序就是去重优先级 */
+export type RankKey = "hotPicks" | "breaking" | "topProbability" | "topToday";
+export const RANK_KEYS: RankKey[] = [
+  "hotPicks",
+  "breaking",
+  "topProbability",
+  "topToday",
+];
+
+export type RankBoard = { key: RankKey; events: PredictEvent[] };
+
+/**
+ * 榜单去重（设计 predict-discovery-polish §4）：进了精选轮播的事件不再进任何榜；
+ * 一个事件只出现在优先级最高的榜里（运营位 highlight > normal > 本地 高概率 > 今日热门）；
+ * 每榜最多 limit 行；空榜不返回。
+ */
+export function buildRankBoards(
+  input: {
+    heroIds: ReadonlySet<string>;
+    hotPicks: PredictEvent[];
+    breaking: PredictEvent[];
+    topProbability: PredictEvent[];
+    topToday: PredictEvent[];
+  },
+  limit = 5,
+): RankBoard[] {
+  const taken = new Set<string>(input.heroIds);
+  const boards: RankBoard[] = [];
+  for (const key of RANK_KEYS) {
+    const events: PredictEvent[] = [];
+    for (const event of input[key]) {
+      if (events.length >= limit) break;
+      if (taken.has(event.id)) continue;
+      taken.add(event.id);
+      events.push(event);
+    }
+    if (events.length > 0) boards.push({ key, events });
+  }
+  return boards;
+}

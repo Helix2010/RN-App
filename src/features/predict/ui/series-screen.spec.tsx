@@ -6,7 +6,7 @@ import {
   renderWithProviders,
   signIn,
 } from "../../../test/harness";
-import { SeriesScreen } from "./series-screen";
+import { groupByDay, SeriesScreen } from "./series-screen";
 
 // 价格图用手势 + reanimated，jest 的 reanimated mock 没有 useEvent：换成记录 props 的空组件
 const mockLineChart = jest.fn();
@@ -71,6 +71,35 @@ describe("SeriesScreen periods", () => {
 
     await fireEvent.press(screen.getByTestId("series-back-current"));
     expect(phaseText()).toBe(runtime.t("predict.series.live"));
+  });
+
+  it("links to the period detail from a link row, groups history by day with settlement deltas and ends with a footer", async () => {
+    const screenProps = props();
+    const { runtime } = await renderWithProviders(
+      <SeriesScreen {...screenProps} />,
+    );
+    await screen.findByTestId("series-rail");
+    // 三级动作：详情是链接行而不是灰按钮；轨道两端是带无障碍标签的图标按钮
+    await fireEvent.press(await screen.findByTestId("series-open-detail"));
+    expect(screenProps.onOpenEvent).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByTestId("series-rail-earlier").props.accessibilityLabel,
+    ).toBe(runtime.t("predict.series.earlierIcon"));
+    expect(
+      screen.getByTestId("series-rail-more").props.accessibilityLabel,
+    ).toBe(runtime.t("predict.series.moreIcon"));
+    // 历史：按天分组、行内不再重复日期、右侧有结算变动额、底部是脚注而不是大按钮
+    expect(
+      screen.getAllByTestId(/^series-history-day-/).length,
+    ).toBeGreaterThan(0);
+    const delta = screen.getByTestId(`series-period-delta-${periodId(-1)}`)
+      .props.children as string;
+    expect(delta).toMatch(/^[+-]\$\d/);
+    expect(screen.getByTestId("series-history-footer")).toBeTruthy();
+    expect(screen.queryByTestId("series-history-more")).toBeNull();
+    expect(
+      screen.queryByText(runtime.t("predict.series.viewDetail")),
+    ).toBeNull();
   });
 
   it("shows a settled window as a result panel without order buttons", async () => {
@@ -200,5 +229,30 @@ describe("SeriesScreen chart", () => {
     await renderWithProviders(<SeriesScreen {...props()} />, { gateways });
     expect(await screen.findByTestId("series-chart-unknown")).toBeTruthy();
     expect(screen.queryByTestId("series-live-price")).toBeNull();
+  });
+});
+
+describe("groupByDay", () => {
+  it("keeps order, groups consecutive rows by their end day and labels the day per locale", () => {
+    const period = (id: string, end: string) =>
+      ({ id, windowEnd: end }) as unknown as Parameters<
+        typeof groupByDay
+      >[0][number];
+    const groups = groupByDay(
+      [
+        period("a", "2026-09-09T06:10:00Z"),
+        period("b", "2026-09-09T06:05:00Z"),
+        period("c", "2026-09-08T23:55:00Z"),
+      ],
+      "en-US",
+    );
+    expect(groups.map((group) => group.items.map((item) => item.id))).toEqual([
+      ["a", "b"],
+      ["c"],
+    ]);
+    expect(groups[0]!.label).toMatch(/Sep/);
+    expect(
+      groupByDay([period("a", "2026-09-09T06:10:00Z")], "zh-CN")[0]!.label,
+    ).toMatch(/9月/);
   });
 });

@@ -108,7 +108,8 @@ export function FoundationHomeScreen({
         onRefresh: refresh,
         accessibilityLabel: t("action.refresh"),
       }}
-      contentProps={{ paddingTop: insets.top + 24 }}
+      // 区块之间 24：资产卡 / 快捷入口 / 热门预测 / 热门代币各成一段；顶部行到资产卡由行自己的 marginBottom 收紧到 16
+      contentProps={{ paddingTop: insets.top + 16, gap: "$5" }}
       collapsed={
         address ? (
           <Row
@@ -130,7 +131,7 @@ export function FoundationHomeScreen({
       }
       footer={<AccountSheet ref={accountSheet} />}
     >
-      <Row alignItems="center" gap="$2">
+      <Row alignItems="center" gap="$2" marginBottom={-8}>
         <IconButton
           label={t("profile.title")}
           icon="account-circle-outline"
@@ -289,7 +290,8 @@ export function FoundationHomeScreen({
       </Card>
       <CollapseAnchor />
 
-      <Row flexWrap="wrap" gap="$3" paddingVertical="$2">
+      {/* 一行五个等分，不换行；"帮助"并入"更多"，避免 4 + 2 换行留下半行空白 */}
+      <Row gap="$2" testID="home-quick-actions">
         <QuickAction
           label={t("home.quick.predict")}
           icon="chart-timeline-variant"
@@ -311,11 +313,6 @@ export function FoundationHomeScreen({
         <QuickAction
           label={t("home.quick.invite")}
           icon="gift-outline"
-          enabled
-        />
-        <QuickAction
-          label={t("home.quick.help")}
-          icon="help-circle-outline"
           enabled
         />
         <QuickAction label={t("home.quick.more")} icon="dots-grid" enabled />
@@ -341,7 +338,7 @@ export function FoundationHomeScreen({
                 itemWidth={236}
                 gap={12}
                 fullWidth
-                peek={44}
+                peek={24}
                 showDots
                 testID="home-predict-carousel"
               >
@@ -365,7 +362,7 @@ export function FoundationHomeScreen({
               retryLabel={t("action.retryNow")}
             />
           ) : (
-            <SnapCarousel itemWidth={236} gap={12} fullWidth peek={44}>
+            <SnapCarousel itemWidth={236} gap={12} fullWidth peek={24}>
               <SkeletonBlock width="100%" height={132} borderRadius="$4" />
               <SkeletonBlock width="100%" height={132} borderRadius="$4" />
             </SnapCarousel>
@@ -457,7 +454,7 @@ function QuickAction({
   if (!enabled) return null;
   return (
     <Stack
-      width="22%"
+      flex={1}
       alignItems="center"
       gap="$1"
       onPress={onPress}

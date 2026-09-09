@@ -695,3 +695,96 @@ export function PageScroll({
     </ScrollView>
   );
 }
+
+/**
+ * 三级动作之"文字链"：详情 / 查看全部 / 重试这类低频、不该占块的动作。
+ * 与 SecondaryButton 的分工：次级动作（回到当期、重试一次请求）用胶囊；导航与展开类用文字链。
+ */
+export function TextLink({
+  children,
+  onPress,
+  color = "$primary",
+  fontSize = 13,
+  chevron = false,
+  disabled = false,
+  testID,
+}: PropsWithChildren<{
+  onPress: () => void;
+  color?: "$primary" | "$textMuted" | "$danger" | "$color";
+  fontSize?: number;
+  /** 右侧跟一个 › */
+  chevron?: boolean;
+  disabled?: boolean;
+  testID?: string;
+}>) {
+  return (
+    <XStack
+      alignItems="center"
+      gap={2}
+      alignSelf="flex-start"
+      minHeight={32}
+      onPress={disabled ? undefined : onPress}
+      opacity={disabled ? 0.45 : 1}
+      pressStyle={{ opacity: 0.6 }}
+      accessibilityRole="link"
+      accessibilityState={{ disabled }}
+      testID={testID}
+    >
+      <InlineText fontSize={fontSize} fontWeight="700" color={color}>
+        {children}
+      </InlineText>
+      {chevron ? (
+        <AppIcon
+          name="chevron-right"
+          size={fontSize + 3}
+          colorToken={color === "$primary" ? "primary" : "textMuted"}
+        />
+      ) : null}
+    </XStack>
+  );
+}
+
+/**
+ * 三级动作之"链接行"：卡片或区块底部整行可点的导航行（左文案，右 ›），上方一条分隔线。
+ * 用来替代孤零零的小灰按钮（如期卡"查看详情"）。
+ */
+export function LinkRow({
+  children,
+  onPress,
+  trailing,
+  divider = true,
+  testID,
+}: PropsWithChildren<{
+  onPress: () => void;
+  /** 右侧文案（默认只有 ›） */
+  trailing?: string;
+  divider?: boolean;
+  testID?: string;
+}>) {
+  return (
+    <XStack
+      alignItems="center"
+      justifyContent="space-between"
+      gap="$2"
+      minHeight={44}
+      borderTopWidth={divider ? 1 : 0}
+      borderColor="$borderColor"
+      onPress={onPress}
+      pressStyle={{ opacity: 0.6 }}
+      accessibilityRole="button"
+      testID={testID}
+    >
+      <InlineText fontSize={13} fontWeight="700" color="$color" flex={1}>
+        {children}
+      </InlineText>
+      <XStack alignItems="center" gap={2}>
+        {trailing ? (
+          <InlineText fontSize={13} color="$textMuted">
+            {trailing}
+          </InlineText>
+        ) : null}
+        <AppIcon name="chevron-right" size={18} colorToken="textMuted" />
+      </XStack>
+    </XStack>
+  );
+}

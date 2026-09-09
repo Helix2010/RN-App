@@ -304,7 +304,7 @@ export function SeriesCard({
               )}
             </Body>
           ) : null}
-          {market ? (
+          {market && market.yesPriceCents !== null ? (
             <Row alignItems="center" gap="$2">
               <InlineText fontWeight="800" width={44}>
                 {formatPercentCents(market.yesPriceCents)}
@@ -318,10 +318,21 @@ export function SeriesCard({
                 />
               </Stack>
             </Row>
+          ) : market ? (
+            // 没有报价就不画两颗"—"按钮：一行灰字说明，整卡仍可点进系列页看走势
+            <Body
+              fontSize={12}
+              color="$textMuted"
+              testID="series-card-no-quote"
+            >
+              {t("predict.series.noQuoteCard")}
+            </Body>
           ) : null}
         </>
       ) : (
-        <Body fontSize={12}>{t("predict.series.noPeriods")}</Body>
+        <Body fontSize={12} color="$textMuted" testID="series-card-no-periods">
+          {t("predict.series.noPeriodsHint")}
+        </Body>
       )}
     </Card>
   );

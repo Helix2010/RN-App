@@ -1,5 +1,6 @@
 import { EVENTS } from "../fixtures/events";
 import {
+  buildRankBoards,
   curationZone,
   matchesEventSearch,
   topByProbability,
@@ -96,5 +97,52 @@ describe("curation zones", () => {
         markets: a!.markets.map((m) => ({ ...m, yesPriceCents: null })),
       }),
     ).toBeNull();
+  });
+});
+
+describe("rank boards", () => {
+  const [a, b, c, d, e] = EVENTS as [
+    (typeof EVENTS)[number],
+    (typeof EVENTS)[number],
+    (typeof EVENTS)[number],
+    (typeof EVENTS)[number],
+    (typeof EVENTS)[number],
+  ];
+
+  it("drops hero events, keeps each event in its highest-priority board and skips empty boards", () => {
+    const boards = buildRankBoards(
+      {
+        heroIds: new Set([a.id]),
+        hotPicks: [a, b, c],
+        breaking: [b, d],
+        topProbability: [c, d, e],
+        topToday: [d],
+      },
+      5,
+    );
+    expect(boards.map((board) => board.key)).toEqual([
+      "hotPicks",
+      "breaking",
+      "topProbability",
+    ]);
+    expect(boards[0]!.events.map((x) => x.id)).toEqual([b.id, c.id]);
+    expect(boards[1]!.events.map((x) => x.id)).toEqual([d.id]);
+    // 今日热门只有 d，已被"突发"占用 → 整榜消失
+    expect(boards[2]!.events.map((x) => x.id)).toEqual([e.id]);
+  });
+
+  it("caps every board at the limit", () => {
+    const boards = buildRankBoards(
+      {
+        heroIds: new Set(),
+        hotPicks: EVENTS,
+        breaking: [],
+        topProbability: [],
+        topToday: [],
+      },
+      2,
+    );
+    expect(boards).toHaveLength(1);
+    expect(boards[0]!.events).toHaveLength(2);
   });
 });

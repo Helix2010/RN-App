@@ -11,6 +11,8 @@ import {
   RefreshControl,
   ScrollView as RNScrollView,
   View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
@@ -68,11 +70,14 @@ type ScrollProps = {
   scrollEnabled?: boolean;
   /** 页面需要程序滚动（选中列表项后回顶等）时拿到滚动视图 */
   scrollRef?: RefObject<RNScrollView | null>;
+  /** 滚到接近底部（默认 320 px 内）时回调：列表页在这里翻下一页；在拖动结束与惯性停止时各判一次 */
+  onEndReached?: () => void;
+  endReachedThreshold?: number;
   /** 内容容器（`Content`）的内边距与间距 */
   contentProps?: {
     paddingTop?: number;
     paddingBottom?: number;
-    gap?: "$1" | "$2" | "$3" | "$4";
+    gap?: "$1" | "$2" | "$3" | "$4" | "$5";
   };
   testID?: string;
 };
@@ -99,6 +104,8 @@ export function CollapsingHeader({
   keyboardShouldPersistTaps = "handled",
   scrollEnabled = true,
   scrollRef,
+  onEndReached,
+  endReachedThreshold = 320,
   contentProps,
   testID,
 }: PropsWithChildren<
@@ -128,6 +135,14 @@ export function CollapsingHeader({
       scrollY.value = event.contentOffset.y;
     },
   });
+  // 触底判定走普通 JS 事件（拖动结束 / 惯性停止），不进 worklet：不用 runOnJS，也不碰共享值
+  const checkEndReached = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (!onEndReached) return;
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const remaining =
+      contentSize.height - (contentOffset.y + layoutMeasurement.height);
+    if (remaining <= endReachedThreshold) onEndReached();
+  };
   const barOffset = mode === "floating" ? insets.top + FLOATING_BAR_HEIGHT : 0;
   // nav 模式：标记滚到内容顶（= 导航底边）；floating 模式：滚到悬浮条底边。
   // 普通函数而不是 useCallback：共享值不能作为 hook 的依赖被"修改"（react-hooks/immutability）
@@ -136,25 +151,40 @@ export function CollapsingHeader({
   };
   const toTop = () => scrollView.current?.scrollTo({ y: 0, animated: true });
 
-  const expandedStyle = useAnimatedStyle(() => ({
-    opacity: 1 - headerProgress(scrollY.value, threshold.value),
-  }));
+  // 交叉过渡分两段：前半段展开层淡出并上移 6px，后半段折叠层从下方 6px 淡入归位，
+  // 任一时刻只有一层明显可见（两层各 50% 叠在一起会读成重影）
+  const expandedStyle = useAnimatedStyle(() => {
+    const p = headerProgress(scrollY.value, threshold.value);
+    const out = p >= 0.5 ? 1 : p * 2;
+    return {
+      opacity: 1 - out,
+      transform: [{ translateY: -6 * out }],
+    };
+  });
   const collapsedStyle = useAnimatedStyle(() => {
     const p = headerProgress(scrollY.value, threshold.value);
+    const q = p <= 0.5 ? 0 : (p - 0.5) * 2;
     return {
-      opacity: p,
-      transform: [{ translateY: (1 - p) * 8 }],
+      opacity: q,
+      transform: [{ translateY: (1 - q) * 6 }],
       pointerEvents: p > 0.5 ? "auto" : "none",
     };
   });
   const hairlineStyle = useAnimatedStyle(() => ({
     opacity: headerProgress(scrollY.value, threshold.value, 8),
   }));
+  // floating 模式：内容一开始滚动，状态栏下面就垫一层底色（前 24px 内淡入），
+  // 内容不会滚到时钟下面；悬浮条出现时自然接上
+  const statusBarStyle = useAnimatedStyle(() => ({
+    opacity: headerProgress(scrollY.value, 24, 24),
+  }));
 
   const scroll = (
     <Animated.ScrollView
       ref={scrollView}
       onScroll={onScroll}
+      onScrollEndDrag={onEndReached ? checkEndReached : undefined}
+      onMomentumScrollEnd={onEndReached ? checkEndReached : undefined}
       scrollEventThrottle={16}
       showsVerticalScrollIndicator={false}
       scrollEnabled={scrollEnabled}
@@ -173,9 +203,15 @@ export function CollapsingHeader({
     >
       <AnchorContext.Provider value={reportAnchor}>
         <Content
-          paddingTop={contentProps?.paddingTop}
-          paddingBottom={contentProps?.paddingBottom}
-          gap={contentProps?.gap}
+          // 只传给了值的属性：显式的 undefined 会盖掉 styled 里的默认间距，页面各区块就贴在一起了
+          {...(contentProps?.paddingTop !== undefined
+            ? { paddingTop: contentProps.paddingTop }
+            : {})}
+          {...(contentProps?.paddingBottom !== undefined
+            ? { paddingBottom: contentProps.paddingBottom }
+            : {})}
+          {...(contentProps?.gap ? { gap: contentProps.gap } : {})}
+          testID="collapsing-content"
         >
           {children}
         </Content>
@@ -188,6 +224,21 @@ export function CollapsingHeader({
       <Page>
         {scroll}
         {footer}
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            {
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              height: insets.top,
+              backgroundColor: theme.background.val,
+            },
+            statusBarStyle,
+          ]}
+          testID="collapsing-status-strip"
+        />
         {collapsed ? (
           <Animated.View
             style={[
