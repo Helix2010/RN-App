@@ -10,7 +10,8 @@ import { Body, Page, Spinner, Stack } from "../design-system";
  * - `pending`：还不知道本次该用哪版品牌（缓存还没读完），只画主题背景与一句状态文案；
  * - 配置里没有 logo / 背景图就不画，没有"内置几何标"这种替身——先画替身再换成
  *   租户 logo，用户看到的就是启动图加载了两次；
- * - 配置的图片加载失败只留痕，不换别的图。
+ * - 配置的图片加载失败只留痕，不换别的图；
+ * - 背景图与 logo 二选一：背景图可用时只画背景图，否则画 logo + 标题（见 backgroundVisible）。
  */
 export function LaunchScreen({
   pending = false,
@@ -37,6 +38,18 @@ export function LaunchScreen({
   const [backgroundFailedId, setBackgroundFailedId] = useState<string | null>(
     null,
   );
+  const [backgroundLoadedId, setBackgroundLoadedId] = useState<string | null>(
+    null,
+  );
+  // 背景图和 logo 二选一：背景图已在本地（缓存过）或刚加载完就只画背景图；
+  // 还没下完、或加载失败，就画 logo + 标题。两个叠着画曾经出现过 logo 盖在背景图上。
+  const backgroundUsable =
+    backgroundImage !== undefined &&
+    backgroundFailedId !== backgroundImage.assetId;
+  const backgroundVisible =
+    backgroundUsable &&
+    (Boolean(backgroundImage.localFileUrl) ||
+      backgroundLoadedId === backgroundImage.assetId);
 
   useEffect(() => {
     if (pending) return;
@@ -89,7 +102,7 @@ export function LaunchScreen({
       backgroundColor={backgroundColor as never}
       testID="launch-screen"
     >
-      {backgroundImage && backgroundFailedId !== backgroundImage.assetId ? (
+      {backgroundUsable ? (
         <Image
           source={{
             uri:
@@ -101,7 +114,10 @@ export function LaunchScreen({
             inset: 0,
             width: "100%",
             height: "100%",
+            opacity: backgroundVisible ? 1 : 0,
           }}
+          onLoad={() => setBackgroundLoadedId(backgroundImage.assetId)}
+          testID="launch-background"
           onError={() => {
             console.warn(
               `[launch] 启动页背景图加载失败：${backgroundImage.assetId}`,
@@ -116,7 +132,7 @@ export function LaunchScreen({
         testID="launch-content"
       >
         <Stack alignItems="center" gap="$4">
-          {logo && logoFailedId !== logo.assetId ? (
+          {!backgroundVisible && logo && logoFailedId !== logo.assetId ? (
             <Image
               source={{ uri: logo.localFileUrl ?? brandingAssetUrl(logo) }}
               resizeMode="contain"
@@ -130,9 +146,11 @@ export function LaunchScreen({
             />
           ) : null}
           <Stack alignItems="center" gap="$1">
-            <Body fontSize={18} color="$color" fontWeight="800">
-              {title}
-            </Body>
+            {!backgroundVisible ? (
+              <Body fontSize={18} color="$color" fontWeight="800">
+                {title}
+              </Body>
+            ) : null}
             <Body fontSize={13}>{message}</Body>
           </Stack>
         </Stack>

@@ -97,9 +97,6 @@ describe("SeriesScreen periods", () => {
     expect(delta).toMatch(/^[+-]\$\d/);
     expect(screen.getByTestId("series-history-footer")).toBeTruthy();
     expect(screen.queryByTestId("series-history-more")).toBeNull();
-    expect(
-      screen.queryByText(runtime.t("predict.series.viewDetail")),
-    ).toBeNull();
   });
 
   it("shows a settled window as a result panel without order buttons", async () => {

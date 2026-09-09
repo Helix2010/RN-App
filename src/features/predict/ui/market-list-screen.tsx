@@ -24,15 +24,17 @@ import {
   SecondaryButton,
   SectionTitle,
   SkeletonBlock,
+  Spinner,
   Stack,
   TextField,
+  TextLink,
 } from "../../../design-system";
 import { useSession } from "../../session/hooks/use-session";
 import {
   useCuratedEvents,
   useFavoriteEvents,
   useMarketStream,
-  usePredictEvents,
+  usePredictEventPages,
   usePredictTags,
   useRegionGate,
   useSeriesList,
@@ -121,10 +123,20 @@ export function MarketListScreen({
   const favoriteIds = useFavoritesStore((state) => state.ids);
   // 地区限制：列表页在预测页签内（模块开着才挂载），这里发起一次检查
   const region = useRegionGate();
-  const events = usePredictEvents(
+  const events = usePredictEventPages(
     { tagId, sort, status, limit: 20 },
     { enabled: !favoritesOnly },
   );
+  const eventItems = useMemo(
+    () => events.data?.pages.flatMap((page) => page.items) ?? [],
+    [events.data],
+  );
+  // 滚到列表底部翻下一页；收藏视图是逐个查询，没有分页
+  const loadMoreEvents = () => {
+    if (favoritesOnly || !events.hasNextPage) return;
+    if (events.isFetchingNextPage || events.isFetchNextPageError) return;
+    void events.fetchNextPage();
+  };
   // 收藏视图逐个取事件（收藏的 id 不一定在当前分页里）
   const favoriteQueries = useFavoriteEvents(favoritesOnly ? favoriteIds : []);
   // 策展（精选轮播 / 榜单）与周期市场只在默认标签 + 交易中视图展示；搜索时收起，让结果直接可见
@@ -167,30 +179,27 @@ export function MarketListScreen({
   const listItems = useMemo(() => {
     const source = favoritesOnly
       ? favoriteQueries.flatMap((query) => (query.data ? [query.data] : []))
-      : (events.data?.items ?? []);
+      : eventItems;
     return source.filter(
       (event) =>
         matchesEventSearch(event, search) &&
         !(discovery && heroIds.has(event.id)),
     );
-  }, [discovery, events.data, favoriteQueries, favoritesOnly, heroIds, search]);
+  }, [discovery, eventItems, favoriteQueries, favoritesOnly, heroIds, search]);
   // 本地榜单只在默认排序下有意义（按"最新"排的一页取前三没有"高概率"的含义）
   const localRanks = discovery && sort === "volume";
   const topProbability = useMemo(
     () =>
       localRanks
-        ? topByProbability(events.data?.items ?? [], RANK_CANDIDATES).map(
+        ? topByProbability(eventItems, RANK_CANDIDATES).map(
             (item) => item.event,
           )
         : [],
-    [localRanks, events.data],
+    [localRanks, eventItems],
   );
   const topToday = useMemo(
-    () =>
-      localRanks
-        ? topByVolume24h(events.data?.items ?? [], RANK_CANDIDATES)
-        : [],
-    [localRanks, events.data],
+    () => (localRanks ? topByVolume24h(eventItems, RANK_CANDIDATES) : []),
+    [localRanks, eventItems],
   );
   // 榜单去重（精选里的不进榜；一个事件只进优先级最高的榜）
   const rankBoards = useMemo(
@@ -261,6 +270,7 @@ export function MarketListScreen({
   return (
     <CollapsingHeader
       mode="floating"
+      onEndReached={loadMoreEvents}
       refresh={{
         refreshing: events.isRefetching,
         onRefresh: refreshAll,
@@ -476,15 +486,26 @@ export function MarketListScreen({
             </Body>
           )
         ) : (
-          listItems.map((event) => (
-            <EventCard
-              key={event.id}
-              event={event}
-              onOpen={onOpenEvent}
-              onOrder={onOrder}
-              orderDisabled={region.blocked}
-            />
-          ))
+          <>
+            {listItems.map((event) => (
+              <EventCard
+                key={event.id}
+                event={event}
+                onOpen={onOpenEvent}
+                onOrder={onOrder}
+                orderDisabled={region.blocked}
+              />
+            ))}
+            {!favoritesOnly ? (
+              <ListFooter
+                loading={events.isFetchingNextPage}
+                error={events.isFetchNextPageError}
+                hasMore={Boolean(events.hasNextPage)}
+                count={eventItems.length}
+                onRetry={() => void events.fetchNextPage()}
+              />
+            ) : null}
+          </>
         )
       ) : listError ? (
         <Row alignItems="center" justifyContent="space-between">
@@ -564,6 +585,54 @@ function InlineError({
       <SecondaryButton height={32} onPress={onRetry}>
         {retryLabel}
       </SecondaryButton>
+    </Row>
+  );
+}
+
+/** 列表分页脚注：到底自动翻页，这里只说状态；失败给一个文字链重试 */
+function ListFooter({
+  loading,
+  error,
+  hasMore,
+  count,
+  onRetry,
+}: {
+  loading: boolean;
+  error: boolean;
+  hasMore: boolean;
+  count: number;
+  onRetry: () => void;
+}) {
+  const { t } = useFoundationRuntime();
+  if (!loading && !error && !hasMore && count === 0) return null;
+  return (
+    <Row
+      alignItems="center"
+      justifyContent="center"
+      gap="$2"
+      minHeight={36}
+      testID="predict-list-footer"
+    >
+      {loading ? (
+        <>
+          <Spinner size="small" color="$textMuted" />
+          <Body fontSize={12} color="$textMuted">
+            {t("predict.list.loadingMore")}
+          </Body>
+        </>
+      ) : error ? (
+        <TextLink onPress={onRetry} color="$danger" fontSize={12}>
+          {t("predict.list.loadFailed")}
+        </TextLink>
+      ) : hasMore ? (
+        <Body fontSize={12} color="$textMuted">
+          {t("predict.list.scrollForMore")}
+        </Body>
+      ) : (
+        <Body fontSize={12} color="$textMuted">
+          {fill(t("predict.list.allShown"), { n: count })}
+        </Body>
+      )}
     </Row>
   );
 }

@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react-native";
+import { fireEvent, screen } from "@testing-library/react-native";
 import { StyleSheet } from "react-native";
 import { renderWithProviders } from "../test/harness";
 import { LaunchScreen } from "./launch-screen";
@@ -32,5 +32,50 @@ describe("LaunchScreen animation start", () => {
     );
 
     expect(contentStyle().transform[0]?.scale).toBe(1);
+  });
+
+  it("shows the logo until the background image has loaded, then only the background", async () => {
+    const asset = {
+      assetId: "bg1",
+      fileUrl: "https://cdn.test/bg.png",
+    } as never;
+    await renderWithProviders(
+      <LaunchScreen
+        message="m"
+        title="T"
+        animationType="none"
+        logo={
+          { assetId: "logo1", fileUrl: "https://cdn.test/logo.png" } as never
+        }
+        backgroundImage={asset}
+      />,
+    );
+    expect(screen.getByTestId("launch-logo")).toBeTruthy();
+    expect(screen.getByText("T")).toBeTruthy();
+    await fireEvent(screen.getByTestId("launch-background"), "load");
+    expect(screen.queryByTestId("launch-logo")).toBeNull();
+    expect(screen.queryByText("T")).toBeNull();
+  });
+
+  it("skips the logo entirely when the background image is already cached locally", async () => {
+    await renderWithProviders(
+      <LaunchScreen
+        message="m"
+        title="T"
+        animationType="none"
+        logo={
+          { assetId: "logo1", fileUrl: "https://cdn.test/logo.png" } as never
+        }
+        backgroundImage={
+          {
+            assetId: "bg1",
+            fileUrl: "https://cdn.test/bg.png",
+            localFileUrl: "file:///cache/bg.png",
+          } as never
+        }
+      />,
+    );
+    expect(screen.queryByTestId("launch-logo")).toBeNull();
+    expect(screen.getByTestId("launch-background")).toBeTruthy();
   });
 });

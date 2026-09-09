@@ -45,6 +45,26 @@ export function usePredictEvents(
   });
 }
 
+/**
+ * 列表页用：按平台 cursor 一页页往下翻（原来只拿第一页 20 条，用户看不到后面的事件）。
+ * 数据按 `pages` 累积，界面 flatMap 后再做本地搜索 / 去重。
+ */
+export function usePredictEventPages(
+  query: Omit<EventQuery, "cursor">,
+  options: { enabled?: boolean } = {},
+) {
+  const { predict } = useGateways();
+  return useInfiniteQuery({
+    queryKey: ["predict-event-pages", query],
+    queryFn: ({ pageParam }) =>
+      predict.listEvents({ ...query, cursor: pageParam ?? undefined }),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+    enabled: options.enabled ?? true,
+    staleTime: 10_000,
+  });
+}
+
 export function usePredictEvent(slugOrId: string | undefined) {
   const { predict } = useGateways();
   return useQuery({
