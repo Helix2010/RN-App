@@ -21,10 +21,11 @@ import Animated, {
 import { Button, XStack, YStack, useTheme } from "tamagui";
 import { AppIcon, Content, Page } from "./components";
 
-/** 折叠过渡的滚动距离：紧凑标题在阈值前 24px 内淡入上移 */
-export const COLLAPSE_DISTANCE = 24;
-/** 导航底部细线在阈值前 8px 内出现 */
-const HAIRLINE_DISTANCE = 8;
+/**
+ * 折叠过渡的滚动距离：紧凑标题在阈值前 24px 内淡入上移；导航底部细线在阈值前 8px 内出现。
+ * worklet 里只能用字面量，不能引用模块常量（Reanimated 不会把默认参数里的外层常量捕获进 UI 线程，
+ * rev 16 因此启动白屏），所以这两个数字直接写在 worklet 内。
+ */
 /** 悬浮条（页签页）的高度，不含状态栏 */
 export const FLOATING_BAR_HEIGHT = 48;
 const NAV_ROW_HEIGHT = 52;
@@ -36,7 +37,7 @@ const NAV_ROW_HEIGHT = 52;
 export function headerProgress(
   scrollY: number,
   threshold: number,
-  distance = COLLAPSE_DISTANCE,
+  distance = 24,
 ): number {
   "worklet";
   if (threshold < 0 || distance <= 0) return 0;
@@ -147,7 +148,7 @@ export function CollapsingHeader({
     };
   });
   const hairlineStyle = useAnimatedStyle(() => ({
-    opacity: headerProgress(scrollY.value, threshold.value, HAIRLINE_DISTANCE),
+    opacity: headerProgress(scrollY.value, threshold.value, 8),
   }));
 
   const scroll = (
