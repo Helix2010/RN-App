@@ -264,13 +264,13 @@ export function PageState({
   );
 }
 
-/** 不吸附的横向滚动（筛选 chip 行、代币行等）；需要吸附到卡片用 SnapCarousel。 */
+/** 不吸附的横向滚动（筛选 chip 行、代币行等）；需要吸附到卡片用 SnapCarousel。子项纵向居中，放进固定高度的容器（悬浮条）时不被拉伸。 */
 export function HorizontalScroll({ children }: PropsWithChildren) {
   return (
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
-      contentContainerStyle={{ gap: 12 }}
+      contentContainerStyle={{ gap: 12, alignItems: "center" }}
     >
       {children}
     </ScrollView>
