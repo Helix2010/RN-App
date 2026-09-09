@@ -66,15 +66,16 @@ export function UpdateModal() {
     Boolean(update.full.releaseId);
   const [open, setOpen] = useState(false);
   // 三种"这次要弹"的来源，各记一次，避免同一来源反复打开被用户关掉的弹层
-  const [promptedVersion, setPromptedVersion] = useState<string | null>(null);
+  const [coldStartHandled, setColdStartHandled] = useState(false);
   const [handledManualAt, setHandledManualAt] = useState<number | null>(null);
   const [readyPromptedFor, setReadyPromptedFor] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // 冷启动（进程内首次看到这个版本）弹一次
-  if (hasUpdate && promptedVersion !== update.latestVersion) {
-    setPromptedVersion(update.latestVersion);
-    setOpen(true);
+  // 冷启动弹一次：只看进程内首次渲染时的版本。会话中途（前台刷新）冒出来的推荐更新不自动弹，
+  // 关于 / 设置页有红点与入口；强制更新不受此限（visible 里单独判）
+  if (!coldStartHandled) {
+    setColdStartHandled(true);
+    if (hasUpdate) setOpen(true);
   }
   // 手动检查：每次都是新的请求，哪怕上次已经关掉
   if (

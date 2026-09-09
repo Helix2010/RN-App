@@ -1,5 +1,7 @@
 import {
   ApkDownloadManager,
+  apkFileName,
+  isAcceptableApkUrl,
   type ApkDownloadDeps,
   type ApkDownloadState,
   type ApkDownloadTask,
@@ -233,6 +235,23 @@ describe("ApkDownloadManager", () => {
     expect(h.files.has(h.fileUri)).toBe(false);
     expect(h.state().phase).toBe("idle");
     await h.manager.configure(null);
+    expect(h.state().phase).toBe("idle");
+  });
+
+  it("never trusts the release id as a path and only downloads over https", async () => {
+    expect(apkFileName("../../etc/passwd")).toBe(
+      "release-______etc_passwd.apk",
+    );
+    expect(apkFileName("rel_JHrSsfq0LQtaWX1o1NpZjg")).toBe(
+      "release-rel_JHrSsfq0LQtaWX1o1NpZjg.apk",
+    );
+    expect(isAcceptableApkUrl("https://api.test/x.apk")).toBe(true);
+    expect(isAcceptableApkUrl("http://api.test/x.apk")).toBe(false);
+    const h = makeDeps(1_000);
+    await h.manager.configure({ ...h.target, url: "http://api.test/x.apk" });
+    h.manager.start();
+    await flush();
+    expect(h.tasks).toHaveLength(0);
     expect(h.state().phase).toBe("idle");
   });
 });

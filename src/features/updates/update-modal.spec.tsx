@@ -18,6 +18,28 @@ const setDownload = (state: ApkDownloadState) =>
     useApkDownloadStore.setState({ state });
   });
 
+/** 嵌套一层运行时：按钮把配置从"没有更新"切成"推荐更新"（模拟会话中途前台刷新拿到新版本），再切成强制 */
+function LaterUpdateHost() {
+  const runtime = useFoundationRuntime();
+  const [decision, setDecision] =
+    useState<BootstrapConfig["update"]["decision"]>("none");
+  const config = withUpdate(decision)(runtime.config);
+  return (
+    <RuntimeContext.Provider value={{ ...runtime, config }}>
+      <Pressable
+        testID="host-recommended"
+        onPress={() => setDecision("recommended")}
+      >
+        <Text>recommended</Text>
+      </Pressable>
+      <Pressable testID="host-required" onPress={() => setDecision("required")}>
+        <Text>required</Text>
+      </Pressable>
+      <UpdateModal />
+    </RuntimeContext.Provider>
+  );
+}
+
 /** 嵌套一层运行时：按钮模拟"关于页点了检查更新"，每次给一个新的手动提示令牌 */
 function ManualCheckHost() {
   const runtime = useFoundationRuntime();
@@ -114,6 +136,18 @@ describe("UpdateModal (S-07)", () => {
     expect(screen.queryByTestId("update-modal-now")).toBeNull();
     await fireEvent.press(screen.getByTestId("host-check"));
     expect(await screen.findByTestId("update-modal-now")).toBeTruthy();
+  });
+
+  it("does not auto-prompt for an update that appears mid-session, but a required one always shows", async () => {
+    await renderWithProviders(<LaterUpdateHost />, {
+      config: withUpdate("none"),
+    });
+    expect(screen.queryByTestId("update-modal-now")).toBeNull();
+    await fireEvent.press(screen.getByTestId("host-recommended"));
+    expect(screen.queryByTestId("update-modal-now")).toBeNull();
+    await fireEvent.press(screen.getByTestId("host-required"));
+    expect(await screen.findByTestId("update-modal-now")).toBeTruthy();
+    expect(screen.queryByTestId("update-modal-later")).toBeNull();
   });
 
   it("drops the later button and explains the block for a required update", async () => {

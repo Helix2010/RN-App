@@ -78,8 +78,14 @@ export const useApkDownloadStore = create<Store>(() => ({
 const DEFAULT_STALL_MS = 20_000;
 const DEFAULT_RETRY_DELAYS_MS = [1_000, 3_000, 8_000];
 
+/** 文件名只用 releaseId 里的安全字符：服务端 id 是 `rel_` + 随机串，但客户端不把它当可信路径 */
 export function apkFileName(releaseId: string): string {
-  return `release-${releaseId}.apk`;
+  return `release-${releaseId.replace(/[^A-Za-z0-9_-]/g, "_")}.apk`;
+}
+
+/** 安装包只从 HTTPS 下载：bootstrap 本身走 HTTPS，但地址仍是服务端下发的字符串，这里再守一道 */
+export function isAcceptableApkUrl(url: string): boolean {
+  return /^https:\/\//i.test(url.trim());
 }
 
 /**
@@ -128,6 +134,10 @@ export class ApkDownloadManager {
       previous.url === target.url
     )
       return;
+    if (target && !isAcceptableApkUrl(target.url)) {
+      console.warn("[updates] refusing non-https apk url");
+      target = null;
+    }
     this.target = target;
     try {
       if (!target) {
@@ -243,6 +253,8 @@ export class ApkDownloadManager {
     if (!target) return;
     const fileUri = this.fileUriFor(target.releaseId);
     let written = 0;
+    // 上一次 reset / stall 留下的"正在中止"标记不能带进新一次传输
+    this.pausing = false;
     try {
       await this.deps.ensureDirectory(this.deps.directory);
       const info = await this.deps.fileInfo(fileUri);
