@@ -1,6 +1,6 @@
 # 预测市场首页：分类 · 二级筛选 · 全部 · 搜索 · 分页 —— 可行性验证与设计方案
 
-日期：2026-09-09 · 状态：§8 五项已确认并实施（见 §9），随 1.2.11 OTA rev 6 发布 · 范围：RN-App `market-list-screen.tsx`、预测网关、design-system；不涉及服务端与模块开关（仍在 `modules.predict` 下）
+日期：2026-09-09 · 状态：§8 五项已确认并实施（见 §9），随 1.2.11 OTA rev 6–8 发布 · 范围：RN-App `market-list-screen.tsx`、预测网关、design-system；不涉及服务端与模块开关（仍在 `modules.predict` 下）
 
 ## 1. 现状问题（App）
 
@@ -149,3 +149,5 @@
 **主题色**：所有选中态 / 强调边框 / 链接均取 `$primary`、`$color`、`$surfaceVariant`、`$borderColor` 等 token，租户主色改变时自动跟随；唯一色值字面量是精选图上的黑色渐变遮罩（与图片相关，不随主题变）。
 
 **保留的取舍**：收藏视图是逐个查询的集合，搜索在集合内本地过滤，不走服务端；列表计数只在翻完（没有下一页）时显示，不显示估数；"更多 ▾" 只在全集标签数多于轮播时出现。
+
+**发布与验证**：1.2.11 基线 OTA rev 6 `ota_e5QtT0J09lSJsJf565LKEw`（3261388）→ rev 7 `ota_5Lw0eOiBl3W-5qQ4i5r4HA`（52cacae：搜索计数不用平台 `totalResults`——它把标签、用户也算进去；输入防抖 300ms；空态卡换图标；只有周期市场时不画空列表标题）→ rev 8 `ota_L1CHA9UBaMeuqdIX9aztKQ`（6fd6121：底部弹层 `topInset` 不盖状态栏；数字分组合并为 0–9；取消搜索收起键盘）。均为 immediate。emulator-5570 逐项核对：默认全部 + 策展；Crypto 二级 5M/15M/1h/4h/每天 且过滤系列卡；视图下拉 → 已结束高亮 + 横幅 + 清除；搜索 "iran" 标签区 4 个 / 市场 0 个空态卡；更多 ▾ → 188 个分类分组面板 → 选 Aliens 插入行内 + 空分类卡两条出路。
