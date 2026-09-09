@@ -87,6 +87,8 @@ type RuntimeValue = {
   promptUpdate: () => void;
   otaResult: OtaCheckResult | null;
   applyPendingOta: () => Promise<void>;
+  /** 立即生效的 OTA 已就绪、正在重启：其它升级弹层（全量更新）此时不该叠在上面 */
+  otaRestartPending: boolean;
   notificationStatus: "idle" | "registered" | "denied" | "unavailable";
   enableUpdateNotifications: () => Promise<void>;
   notificationIntent: { type: string; eventId: string } | null;
@@ -518,11 +520,13 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
       promptUpdate,
       otaResult,
       applyPendingOta,
+      otaRestartPending: immediateOtaVisible,
       notificationStatus,
       enableUpdateNotifications,
       notificationIntent,
     }),
     [
+      immediateOtaVisible,
       config,
       applyPendingOta,
       localePreference,

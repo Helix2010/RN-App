@@ -7,6 +7,8 @@ import {
   type ApkDownloadTask,
 } from "./apk-download-manager";
 
+const managers: ApkDownloadManager[] = [];
+
 /** 假文件系统 + 可控的下载任务：测试自己决定每次 start() 是完成、报错还是挂着 */
 function makeDeps(size = 1_000) {
   const files = new Map<string, number>();
@@ -70,6 +72,7 @@ function makeDeps(size = 1_000) {
     now: () => now,
     stallMs: 100,
     retryDelaysMs: [10, 20, 30],
+    slowRetryMs: 40,
   };
   let state: ApkDownloadState = { phase: "idle" };
   const manager = new ApkDownloadManager(
@@ -80,6 +83,7 @@ function makeDeps(size = 1_000) {
     },
     () => state,
   );
+  managers.push(manager);
   const target = {
     releaseId: "rel_1",
     url: "https://api.test/v1/public/releases/rel_1/download",
@@ -109,6 +113,10 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("ApkDownloadManager", () => {
   beforeEach(() => jest.useRealTimers());
+  // 慢速轮询是无限的：每个用例结束都把定时器拆掉，否则 jest 退不出
+  afterEach(() => {
+    for (const manager of managers.splice(0)) manager.dispose();
+  });
 
   it("downloads from scratch, reports progress and speed, verifies size and becomes ready", async () => {
     const h = makeDeps(1_000);
@@ -138,7 +146,7 @@ describe("ApkDownloadManager", () => {
     expect(h.state().phase).toBe("installing");
   });
 
-  it("resumes from the bytes already on disk after a network error, with backoff, then gives up", async () => {
+  it("resumes from the bytes already on disk after a network error: fast backoff, then slow polling, never a dead end", async () => {
     const h = makeDeps(1_000);
     await h.manager.configure(h.target);
     h.manager.start();
@@ -151,6 +159,7 @@ describe("ApkDownloadManager", () => {
       phase: "paused",
       reason: "network",
       written: 300,
+      retriesLeft: 2,
     });
     // 第一次自动重试从 300 字节续
     await new Promise((resolve) => setTimeout(resolve, 15));
@@ -161,15 +170,61 @@ describe("ApkDownloadManager", () => {
     await new Promise((resolve) => setTimeout(resolve, 25));
     await flush();
     h.tasks[2]!.reject(new Error("socket closed"));
+    await flush();
+    expect(h.state()).toMatchObject({ phase: "paused", retriesLeft: 0 });
     await new Promise((resolve) => setTimeout(resolve, 35));
     await flush();
     h.tasks[3]!.reject(new Error("socket closed"));
     await flush();
-    // 三次退避用完：交给用户
-    expect(h.state()).toMatchObject({ phase: "failed", written: 300 });
+    // 快速退避用完：不是 failed，而是停在 paused 慢速轮询（前台每 slowRetryMs 一次）
+    expect(h.state()).toMatchObject({
+      phase: "paused",
+      reason: "network",
+      written: 300,
+      retriesLeft: 0,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 45));
+    await flush();
+    expect(h.tasks).toHaveLength(5);
+    expect(h.tasks[4]?.resumeFrom).toBe(300);
+    // 用户点"继续"：立刻再试，退避从头算
+    h.tasks[4]!.reject(new Error("socket closed"));
+    await flush();
     h.manager.start();
     await flush();
-    expect(h.tasks[4]?.resumeFrom).toBe(300);
+    expect(h.tasks[5]?.resumeFrom).toBe(300);
+    expect(h.states.filter((s) => s.phase === "failed")).toHaveLength(0);
+  });
+
+  it("only integrity problems are terminal: a second size mismatch fails and does not auto-retry on foreground", async () => {
+    const h = makeDeps(1_000);
+    await h.manager.configure(h.target);
+    h.manager.start();
+    await flush();
+    h.files.set(h.fileUri, 1_200);
+    h.tasks[0]!.resolve(h.fileUri);
+    await flush();
+    await flush();
+    // 第一次不符：删掉重下
+    expect(h.tasks).toHaveLength(2);
+    h.files.set(h.fileUri, 1_200);
+    h.tasks[1]!.resolve(h.fileUri);
+    await flush();
+    await flush();
+    expect(h.state()).toMatchObject({
+      phase: "failed",
+      error: "downloaded size does not match the release",
+    });
+    expect(h.files.has(h.fileUri)).toBe(false);
+    h.setForeground(false);
+    h.setForeground(true);
+    await flush();
+    expect(h.tasks).toHaveLength(2);
+    // 用户点"重试下载"才重来，并且再给一次重下机会
+    h.manager.start();
+    await flush();
+    expect(h.tasks).toHaveLength(3);
+    expect(h.tasks[2]?.resumeFrom).toBeNull();
   });
 
   it("pauses a stalled transfer and resumes it when the app returns to the foreground", async () => {

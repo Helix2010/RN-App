@@ -24,10 +24,11 @@ export type ApkDownloadState =
       written: number;
       total: number;
       reason: "network" | "stalled";
-      /** 还会自动重试几次；0 = 等用户 */
+      /** 快速退避还剩几次；0 = 已转为慢速轮询（前台每 slowRetryMs 试一次），用户也可随时点"继续" */
       retriesLeft: number;
     }
   | {
+      /** 只有非网络原因才是终态：文件校验不过、磁盘写不进等；网络问题永远停在 paused 自动重试 */
       phase: "failed";
       releaseId: string;
       written: number;
@@ -65,8 +66,10 @@ export type ApkDownloadDeps = {
   now(): number;
   /** 多久没有进度回调算停滞（默认 20 秒） */
   stallMs?: number;
-  /** 自动重试的退避间隔；用完进 failed（默认 1 / 3 / 8 秒） */
+  /** 快速自动重试的退避间隔（默认 1 / 3 / 8 秒） */
   retryDelaysMs?: number[];
+  /** 快速退避用完后，前台每隔多久再试一次（默认 30 秒）；后台不试，回前台立刻试 */
+  slowRetryMs?: number;
 };
 
 type Store = { state: ApkDownloadState };
@@ -77,6 +80,12 @@ export const useApkDownloadStore = create<Store>(() => ({
 
 const DEFAULT_STALL_MS = 20_000;
 const DEFAULT_RETRY_DELAYS_MS = [1_000, 3_000, 8_000];
+const DEFAULT_SLOW_RETRY_MS = 30_000;
+
+/** 管理器自己判定的、重试也没用的错误：与网络异常区分开，后者永远自动续传 */
+export class ApkIntegrityError extends Error {
+  readonly kind = "integrity";
+}
 
 /** 文件名只用 releaseId 里的安全字符：服务端 id 是 `rel_` + 随机串，但客户端不把它当可信路径 */
 export function apkFileName(releaseId: string): string {
@@ -166,6 +175,8 @@ export class ApkDownloadManager {
     }
     this.clearRetryTimer();
     this.attempts = 0;
+    // 用户主动重试：校验不过后再给一次"删掉重下"的机会
+    this.restartedAfterMismatch = false;
     this.launch();
   }
 
@@ -308,9 +319,11 @@ export class ApkDownloadManager {
         this.task = null;
       }
       if (this.pausing) return;
-      if (!result?.uri) throw new Error("download produced no file");
+      if (!result?.uri)
+        throw new ApkIntegrityError("download produced no file");
       const done = await this.deps.fileInfo(result.uri);
-      if (!done.exists) throw new Error("downloaded file is missing");
+      if (!done.exists)
+        throw new ApkIntegrityError("downloaded file is missing");
       if (target.size !== null && done.size !== target.size) {
         // 服务端没按 Range 回 206（续传追加成了整包），或传输被截断：丢掉重来一次
         await this.deps.deleteFile(result.uri);
@@ -320,7 +333,9 @@ export class ApkDownloadManager {
           this.launch();
           return;
         }
-        throw new Error("downloaded size does not match the release");
+        throw new ApkIntegrityError(
+          "downloaded size does not match the release",
+        );
       }
       this.restartedAfterMismatch = false;
       this.attempts = 0;
@@ -390,20 +405,23 @@ export class ApkDownloadManager {
     this.schedulePause(target, this.lastProgress?.written ?? 0, "stalled");
   }
 
+  /**
+   * 传输报错：网络类问题不设终点——快速退避几次后转慢速轮询，回前台立刻再试，
+   * 用户随时可点"继续"；只有校验不过这类重试也无济于事的错误才进 failed。
+   */
   private handleFailure(
     target: ApkReleaseTarget,
     written: number,
     error: unknown,
   ): void {
-    const delays = this.deps.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
-    if (this.attempts >= delays.length) {
-      const message = error instanceof Error ? error.message : String(error);
+    if (error instanceof ApkIntegrityError) {
+      this.clearRetryTimer();
       this.setState({
         phase: "failed",
         releaseId: target.releaseId,
         written,
         total: target.size ?? 0,
-        error: message,
+        error: error.message,
       });
       emitUpdateTelemetry({
         stage: "error",
@@ -422,27 +440,28 @@ export class ApkDownloadManager {
     reason: "network" | "stalled",
   ): void {
     const delays = this.deps.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
-    const delay = delays[this.attempts];
-    this.attempts += 1;
+    const fast = delays[this.attempts];
+    if (fast !== undefined) this.attempts += 1;
+    const retriesLeft = Math.max(0, delays.length - this.attempts);
     this.setState({
       phase: "paused",
       releaseId: target.releaseId,
       written,
       total: target.size ?? 0,
       reason,
-      retriesLeft: Math.max(0, delays.length - this.attempts + 1),
+      retriesLeft,
     });
-    if (delay === undefined) {
-      // 退避用完：停在 paused 等用户或回前台
-      this.setState({
-        phase: "failed",
-        releaseId: target.releaseId,
-        written,
-        total: target.size ?? 0,
+    if (fast === undefined && this.attempts === delays.length) {
+      // 快速退避刚用完：记一次遥测，之后的慢速轮询不再刷
+      this.attempts += 1;
+      emitUpdateTelemetry({
+        stage: "error",
+        updateId: target.releaseId,
+        channel: "apk",
         error: reason,
       });
-      return;
     }
+    const delay = fast ?? this.deps.slowRetryMs ?? DEFAULT_SLOW_RETRY_MS;
     this.clearRetryTimer();
     this.retryTimer = setTimeout(() => {
       this.retryTimer = null;
@@ -452,15 +471,9 @@ export class ApkDownloadManager {
     }, delay);
   }
 
+  /** 回前台：暂停中的传输立刻续，退避从头算（failed 是校验类终态，等用户点"重试"） */
   private onForeground(): void {
-    const state = this.getState();
-    if (state.phase !== "paused" && state.phase !== "failed") return;
-    if (
-      state.phase === "failed" &&
-      state.error !== "stalled" &&
-      state.error !== "network"
-    )
-      return;
+    if (this.getState().phase !== "paused") return;
     this.clearRetryTimer();
     this.attempts = 0;
     this.launch();

@@ -159,6 +159,14 @@ describe("UpdateModal (S-07)", () => {
     expect(screen.getByText(runtime.t("update.forceSubtitle"))).toBeTruthy();
   });
 
+  it("gives way while an immediate OTA restart is pending", async () => {
+    await renderWithProviders(<UpdateModal />, {
+      config: withUpdate("required"),
+      runtime: { otaRestartPending: true },
+    });
+    expect(screen.queryByTestId("update-modal")).toBeNull();
+  });
+
   it("stays hidden when the tenant has no update url", async () => {
     await renderWithProviders(<UpdateModal />, {
       config: withUpdate("recommended", {

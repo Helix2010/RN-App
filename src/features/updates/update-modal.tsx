@@ -41,7 +41,8 @@ function percentOf(state: ApkDownloadState): number {
 
 /**
  * S-07 升级弹层（设计 apk-update-flow-2026-09-09 §3.1）。
- * 何时弹：有新版本时每个进程冷启动一次；手动检查 / 下载就绪时再弹；前台切回不弹；"稍后"只对本次进程有效。
+ * 何时弹：有新版本时每个进程冷启动一次；手动检查 / 下载就绪时再弹；前台切回不弹；"稍后"只对本次进程有效；
+ * 立即生效的 OTA 正在重启时让位。
  * 强制更新：无"稍后"，遮罩与系统返回都不关闭。
  * 下载由 `ApkDownloadManager` 负责，这里只是它的视图：关掉弹层下载继续，主按钮随下载状态变。
  */
@@ -52,6 +53,7 @@ export function UpdateModal() {
     manualUpdatePrompt,
     dismissUpdatePrompt,
     checkForUpdates,
+    otaRestartPending,
   } = useFoundationRuntime();
   const download = useApkDownloadStore((state) => state.state);
   const update = config.update;
@@ -97,7 +99,8 @@ export function UpdateModal() {
   }
 
   const visible = hasUpdate && (forced || open);
-  if (!visible) return null;
+  // 立即生效的 OTA 正在重启：那个原生弹层会盖在上面，两个"更新"叠着只会让人困惑；重启后是新进程，冷启动会再提示
+  if (!visible || otaRestartPending) return null;
 
   const close = () => {
     setOpen(false);

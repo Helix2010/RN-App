@@ -86,6 +86,7 @@ function buildRuntime(options: HarnessOptions): RuntimeValue {
     promptUpdate: () => {},
     otaResult: null,
     applyPendingOta: async () => {},
+    otaRestartPending: false,
     notificationStatus: "registered",
     enableUpdateNotifications: async () => {},
     notificationIntent: null,

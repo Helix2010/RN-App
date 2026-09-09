@@ -66,7 +66,9 @@ type ApkDownloadState =
 
 - **断点续传**：`createDownloadResumable(url, fileUri, {}, onProgress, resumeData)`；每次暂停 / 失败把 `savable()` 连同 `releaseId / size / sha256` 持久化到 AsyncStorage（`foundation.apk-download.v1`）。冷启动时若持久化记录的 `releaseId` 仍是当前 `update.full.releaseId` 且本地部分文件存在 → 自动 `resumeAsync()` 续传（状态从 paused 变 downloading，弹层与关于页同步显示）；版本换了就删旧文件与记录。
 - **停滞判定**：20 秒无进度回调 → `pauseAsync()`，状态 paused(stalled)；回到前台或网络恢复（AppState active）自动续传。
-- **重试**：网络错误自动重试 3 次（1 / 3 / 8 秒退避），仍失败进 failed，等用户点"重试"。
+- **重试**：网络错误自动重试 3 次（1 / 3 / 8 秒退避）；退避用完**不进 failed**，停在 paused 慢速轮询（前台每 30 秒一次，后台不试，回前台立刻试），用户随时可点"继续下载"。
+  `failed` 只留给校验类终态（两次大小不符、文件丢失），这类错误回前台不自动重试，等用户点"重试下载"（重下会再给一次删包重来的机会）。
+  ——2026-09-09 模拟器实测修正：原设计"失败等用户"在锁屏场景下把用户丢在 failed 态，回前台也不续传。
 - **后台 / 锁屏**：OkHttp 在后台通常会继续；被系统限流或断连时靠停滞判定 + 回前台自动续传。真正的系统级后台下载（Android DownloadManager / WorkManager）需要原生模块，本轮不做（§7）。
 - **完成校验**：大小必须等于 `update.full.size`；再校验 SHA-256（用 expo-file-system 读文件分块哈希开销大，改为让系统安装器校验签名 + 大小核对，与现状一致；若后续要严格校验，加原生 hash）。
 - **就绪后**：文件保留，`ready` 状态下"安装"直接拉起系统安装器；安装完成 App 会被替换，无需清理；用户取消安装则仍是 ready。
@@ -139,3 +141,6 @@ App 侧走 OTA（1.2.10 基线 `rel_JHrSsfq0LQtaWX1o1NpZjg`）；服务端随 pu
   `update-modal.spec.tsx`（冷启动一次、稍后本进程有效、手动检查每次重开、强制、无地址、下载各状态与完成重弹）、检查行单测。
   全量 jest 107 套 740 例、lint、typecheck、format 通过。
 - 模拟器核对见变更记录。
+- 2026-09-09 补充：传输错误不再有终态（快速退避 → 慢速轮询）；`ApkIntegrityError` 区分校验类错误；
+  运行时暴露 `otaRestartPending`，立即生效的 OTA 正在重启时全量升级弹层让位（此前观察到两个弹层叠在一起）；
+  `pausedNetwork / pausedStalled` 文案改为说明会自动续传。单测 8 + 1 例。

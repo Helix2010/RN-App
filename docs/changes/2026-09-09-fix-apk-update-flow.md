@@ -14,7 +14,8 @@
 ## 预期行为
 
 - 有新版本时每次冷启动提示一次；前台切回不提示；手动检查随时可弹；"稍后再说"只对本次进程有效。
-- 下载由全局管理器负责：关弹层、切页、锁屏、切后台都不影响；断网 / 停滞自动暂停并按 1 / 3 / 8 秒退避续传，回前台立即续传；退避用完等用户点"继续下载"。
+- 下载由全局管理器负责：关弹层、切页、锁屏、切后台都不影响；断网 / 停滞自动暂停并按 1 / 3 / 8 秒退避续传，之后前台每 30 秒慢速重试，回前台立即续传；用户随时可点"继续下载"。只有校验类错误（两次大小不符、文件丢失）才是"下载失败 / 重试下载"。
+- 立即生效的 OTA 正在重启时，全量升级弹层不再叠在 OTA 重启弹层上。
 - 杀进程重开：冷启动从磁盘上的部分文件自动续传；已下完的包直接"安装"。
 - 弹层与关于页按钮 / 设置页检查行反映同一份状态：立即更新 / 下载中 x% / 继续下载 / 重试 / 安装。下载完成自动重新弹出"安装"。
 - 服务端下载接口支持 Range（206 / 416 / ETag / If-Range）。
@@ -27,7 +28,8 @@
 | RN-App 核心 | `apk-download-manager.ts`（依赖注入的状态机）、`apk-download.ts`（expo 接线）；删除 `apk-update-service.ts`、`update-prompt-store.ts` |
 | RN-App 运行时 | `manualUpdatePrompt` 令牌（每次检查都是新对象）、`promptUpdate()`、bootstrap 变化时配置下载管理器 |
 | RN-App 界面 | 弹层按状态渲染；关于页 `ApkUpdateButton`；设置页检查行带下载状态并可打开弹层 |
-| 文案 | `update.resume / retryDownload / pausedNetwork / pausedStalled / pausedRetrying / backgroundHint / readyToInstall / installerOpened / downloadingRow / speed`（seed 已同步 RN-Server） |
+| 文案 | `update.resume / retryDownload / pausedNetwork / pausedStalled / pausedRetrying / backgroundHint / readyToInstall / installerOpened / downloadingRow / speed`（seed 已同步 RN-Server；`pausedNetwork / pausedStalled` 二轮改为"会自动续传"措辞） |
+| 二轮（模拟器实测后） | `ApkIntegrityError` 区分校验类错误；传输错误退避用完转慢速轮询而不是 failed；运行时 `otaRestartPending`，弹层让位 |
 
 ## 开关
 
@@ -40,5 +42,23 @@
 
 ## 验证
 
-- 单测：见设计文档 §11。
-- 模拟器 / 真机：见下方记录。
+- 单测：见设计文档 §11（管理器 8 例、弹层 9 例、检查行）；lint / typecheck / format / i18n:check 通过。
+- 服务端：`curl -H "Range: bytes=0-99"` 对线上下载接口返回 206。
+
+### 模拟器（rn_smoke，1.2.10 + OTA rev 1 → 下载 1.2.11，宿主机限速约 0.5 MB/s）
+
+| 场景 | 结果 |
+| --- | --- |
+| 冷启动弹层、点"立即更新" | 进度条 + 百分比 + 速度 + "可关闭此窗口"提示 |
+| 关闭弹层后下载 | 继续；关于页按钮显示"下载中 x%"，再点打开弹层 |
+| 断网（wifi + 数据同时关） | 文件停止增长，恢复网络后从已下字节继续（没有从 0 开始） |
+| 锁屏 12 秒再解锁 | 一轮实现下：停滞→退避用完→"下载失败"，解锁后不自动续传（`failed` 不续传的缺陷）→ 二轮改为慢速轮询 + 回前台立刻续 |
+| 强杀进程再启动 | 冷启动自动从 27,200,828 字节续到完成 |
+| 下载完成 | 弹层自动重新弹出"安装包已就绪 / 安装"，文件大小与 release 一致（38,666,870） |
+| OTA 立即生效 + 全量更新同时存在 | 一轮观察到两个弹层叠着 → 二轮全量弹层让位 |
+
+### 发布
+
+- OTA（1.2.10 基线 `rel_JHrSsfq0LQtaWX1o1NpZjg`）：rev 1 `ota_fhy0iTvB80TouObj7nXvrQ`（一轮）；二轮见下方追加。
+- 全量 1.2.11 / build 25：`rel_xGci1cDn1HXUsVUyv7Yguw`（用于端到端验证下载→安装）。
+- 1.2.9 基线已被取代，服务端拒绝再给它发 OTA（`OTA_BASE_RELEASE_INVALID`）：1.2.9 用户只能走旧的整包升级流程拿到 1.2.10+。
