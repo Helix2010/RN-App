@@ -108,8 +108,8 @@ export function FoundationHomeScreen({
         onRefresh: refresh,
         accessibilityLabel: t("action.refresh"),
       }}
-      // 区块之间 24：资产卡 / 快捷入口 / 热门预测 / 热门代币各成一段；顶部行到资产卡由行自己的 marginBottom 收紧到 16
-      contentProps={{ paddingTop: insets.top + 16, gap: "$5" }}
+      // 区块之间用容器默认 18dp；顶部行到资产卡由行自己的 marginBottom 收紧到 16dp
+      contentProps={{ paddingTop: insets.top + 16 }}
       collapsed={
         address ? (
           <Row
@@ -131,7 +131,7 @@ export function FoundationHomeScreen({
       }
       footer={<AccountSheet ref={accountSheet} />}
     >
-      <Row alignItems="center" gap="$2" marginBottom={-8}>
+      <Row alignItems="center" gap="$2" marginBottom={-2}>
         <IconButton
           label={t("profile.title")}
           icon="account-circle-outline"
@@ -164,131 +164,139 @@ export function FoundationHomeScreen({
         ) : null}
       </Row>
 
-      <Card backgroundColor="$surface" accessibilityLabel={t("home.portfolio")}>
-        {address ? (
-          <>
-            <Row justifyContent="space-between" alignItems="center">
-              <Row alignItems="center" gap="$2">
-                <Label>{t("home.portfolio")}</Label>
-                <Stack
-                  onPress={() => setBalanceVisible((visible) => !visible)}
+      <CollapseAnchor>
+        <Card
+          backgroundColor="$surface"
+          accessibilityLabel={t("home.portfolio")}
+        >
+          {address ? (
+            <>
+              <Row justifyContent="space-between" alignItems="center">
+                <Row alignItems="center" gap="$2">
+                  <Label>{t("home.portfolio")}</Label>
+                  <Stack
+                    onPress={() => setBalanceVisible((visible) => !visible)}
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      balanceVisible
+                        ? t("home.hideBalance")
+                        : t("home.showBalance")
+                    }
+                  >
+                    <AppIcon
+                      name={balanceVisible ? "eye-outline" : "eye-off-outline"}
+                      size={18}
+                      colorToken="textMuted"
+                    />
+                  </Stack>
+                </Row>
+                <Row
+                  alignItems="center"
+                  gap="$1"
+                  onPress={() => accountSheet.current?.present()}
                   accessibilityRole="button"
-                  accessibilityLabel={
-                    balanceVisible
-                      ? t("home.hideBalance")
-                      : t("home.showBalance")
-                  }
+                  accessibilityLabel={t("account.title")}
+                  testID="home-account"
                 >
+                  <Body fontSize={12}>
+                    {session.data?.ens ?? shortenAddress(address)}
+                  </Body>
                   <AppIcon
-                    name={balanceVisible ? "eye-outline" : "eye-off-outline"}
-                    size={18}
+                    name="chevron-down"
+                    size={15}
                     colorToken="textMuted"
                   />
+                </Row>
+              </Row>
+              {overview.data ? (
+                <>
+                  <AmountText fontSize={30} lineHeight={36}>
+                    {balanceVisible
+                      ? formatUsd(overview.data.totalUsd, locale)
+                      : "••••••"}
+                  </AmountText>
+                  <Row alignItems="center" gap="$2">
+                    <InlineText color="$textMuted" fontSize={12}>
+                      {t("home.walletAccount")}{" "}
+                      {balanceVisible
+                        ? formatUsd(overview.data.wallet.usd, locale)
+                        : "••••"}
+                      {overview.data.predict?.status === "enabled"
+                        ? ` · ${t("home.predictAccount")} ${balanceVisible ? formatUsd(overview.data.predict.usd, locale) : "••••"}`
+                        : ""}
+                    </InlineText>
+                  </Row>
+                  <Row alignItems="center" gap="$2">
+                    <InlineText
+                      color={
+                        overview.data.change24hUsd >= 0
+                          ? "$pricePositive"
+                          : "$priceNegative"
+                      }
+                      fontWeight="800"
+                    >
+                      {balanceVisible
+                        ? `${formatUsd(overview.data.change24hUsd, locale, { sign: true })} (${overview.data.change24hPct >= 0 ? "+" : ""}${overview.data.change24hPct.toFixed(2)}%)`
+                        : "••••"}
+                    </InlineText>
+                  </Row>
+                </>
+              ) : (
+                <Stack gap="$2">
+                  <SkeletonBlock height={36} width={180} />
+                  <SkeletonBlock height={14} width={240} />
                 </Stack>
+              )}
+              <Row gap="$2" marginTop="$1">
+                <ActionTile
+                  label={t("home.deposit")}
+                  icon="qrcode"
+                  primary
+                  onPress={onOpenAssets}
+                  testID="home-deposit"
+                />
+                <ActionTile
+                  label={t("home.withdraw")}
+                  icon="arrow-top-right"
+                  onPress={onOpenAssets}
+                  testID="home-withdraw"
+                />
+                <ActionTile
+                  label={t("home.transfer")}
+                  icon="swap-vertical"
+                  onPress={onOpenAssets}
+                  testID="home-transfer"
+                />
               </Row>
-              <Row
-                alignItems="center"
-                gap="$1"
-                onPress={() => accountSheet.current?.present()}
-                accessibilityRole="button"
-                accessibilityLabel={t("account.title")}
-                testID="home-account"
-              >
-                <Body fontSize={12}>
-                  {session.data?.ens ?? shortenAddress(address)}
-                </Body>
-                <AppIcon name="chevron-down" size={15} colorToken="textMuted" />
+            </>
+          ) : (
+            <>
+              <Label>{t("login.welcome")}</Label>
+              <SectionTitle>{t("login.welcomeTitle")}</SectionTitle>
+              <Body>{t("login.welcomeHint")}</Body>
+              <Row gap="$2" marginTop="$1">
+                <PrimaryButton
+                  height={40}
+                  flex={1}
+                  disabled={session.isLoading}
+                  onPress={() => requestAuth()}
+                  testID="guest-connect"
+                >
+                  {t("home.connectWallet")}
+                </PrimaryButton>
+                <SecondaryButton
+                  height={40}
+                  flex={1}
+                  onPress={() => requestAuth()}
+                  testID="guest-create"
+                >
+                  {t("login.createWallet")}
+                </SecondaryButton>
               </Row>
-            </Row>
-            {overview.data ? (
-              <>
-                <AmountText fontSize={30} lineHeight={36}>
-                  {balanceVisible
-                    ? formatUsd(overview.data.totalUsd, locale)
-                    : "••••••"}
-                </AmountText>
-                <Row alignItems="center" gap="$2">
-                  <InlineText color="$textMuted" fontSize={12}>
-                    {t("home.walletAccount")}{" "}
-                    {balanceVisible
-                      ? formatUsd(overview.data.wallet.usd, locale)
-                      : "••••"}
-                    {overview.data.predict?.status === "enabled"
-                      ? ` · ${t("home.predictAccount")} ${balanceVisible ? formatUsd(overview.data.predict.usd, locale) : "••••"}`
-                      : ""}
-                  </InlineText>
-                </Row>
-                <Row alignItems="center" gap="$2">
-                  <InlineText
-                    color={
-                      overview.data.change24hUsd >= 0
-                        ? "$pricePositive"
-                        : "$priceNegative"
-                    }
-                    fontWeight="800"
-                  >
-                    {balanceVisible
-                      ? `${formatUsd(overview.data.change24hUsd, locale, { sign: true })} (${overview.data.change24hPct >= 0 ? "+" : ""}${overview.data.change24hPct.toFixed(2)}%)`
-                      : "••••"}
-                  </InlineText>
-                </Row>
-              </>
-            ) : (
-              <Stack gap="$2">
-                <SkeletonBlock height={36} width={180} />
-                <SkeletonBlock height={14} width={240} />
-              </Stack>
-            )}
-            <Row gap="$2" marginTop="$1">
-              <ActionTile
-                label={t("home.deposit")}
-                icon="qrcode"
-                primary
-                onPress={onOpenAssets}
-                testID="home-deposit"
-              />
-              <ActionTile
-                label={t("home.withdraw")}
-                icon="arrow-top-right"
-                onPress={onOpenAssets}
-                testID="home-withdraw"
-              />
-              <ActionTile
-                label={t("home.transfer")}
-                icon="swap-vertical"
-                onPress={onOpenAssets}
-                testID="home-transfer"
-              />
-            </Row>
-          </>
-        ) : (
-          <>
-            <Label>{t("login.welcome")}</Label>
-            <SectionTitle>{t("login.welcomeTitle")}</SectionTitle>
-            <Body>{t("login.welcomeHint")}</Body>
-            <Row gap="$2" marginTop="$1">
-              <PrimaryButton
-                height={40}
-                flex={1}
-                disabled={session.isLoading}
-                onPress={() => requestAuth()}
-                testID="guest-connect"
-              >
-                {t("home.connectWallet")}
-              </PrimaryButton>
-              <SecondaryButton
-                height={40}
-                flex={1}
-                onPress={() => requestAuth()}
-                testID="guest-create"
-              >
-                {t("login.createWallet")}
-              </SecondaryButton>
-            </Row>
-          </>
-        )}
-      </Card>
-      <CollapseAnchor />
+            </>
+          )}
+        </Card>
+      </CollapseAnchor>
 
       {/* 一行五个等分，不换行；"帮助"并入"更多"，避免 4 + 2 换行留下半行空白 */}
       <Row gap="$2" testID="home-quick-actions">
@@ -338,7 +346,7 @@ export function FoundationHomeScreen({
                 itemWidth={236}
                 gap={12}
                 fullWidth
-                peek={24}
+                peek={32}
                 showDots
                 testID="home-predict-carousel"
               >
@@ -362,7 +370,7 @@ export function FoundationHomeScreen({
               retryLabel={t("action.retryNow")}
             />
           ) : (
-            <SnapCarousel itemWidth={236} gap={12} fullWidth peek={24}>
+            <SnapCarousel itemWidth={236} gap={12} fullWidth peek={32}>
               <SkeletonBlock width="100%" height={132} borderRadius="$4" />
               <SkeletonBlock width="100%" height={132} borderRadius="$4" />
             </SnapCarousel>

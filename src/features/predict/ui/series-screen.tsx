@@ -548,10 +548,11 @@ export function groupByDay(
   periods: SeriesPeriod[],
   locale: string,
 ): { day: string; label: string; items: SeriesPeriod[] }[] {
-  const formatter = new Intl.DateTimeFormat(locale, {
-    month: locale === "zh-CN" ? "long" : "short",
-    day: "numeric",
-  });
+  // 中文不用 Intl（Hermes 上 zh 月份名回退成英文），直接拼"9 月 9 日"
+  const formatter =
+    locale === "zh-CN"
+      ? { format: (d: Date) => `${d.getMonth() + 1} 月 ${d.getDate()} 日` }
+      : new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
   const groups: { day: string; label: string; items: SeriesPeriod[] }[] = [];
   for (const period of periods) {
     const end = new Date(period.windowEnd);

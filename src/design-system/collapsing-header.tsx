@@ -53,13 +53,21 @@ const AnchorContext = createContext<((y: number) => void) | null>(null);
  * 折叠阈值标记：放在滚动内容里"身份区"的正下方（必须是内容容器的直接子元素，onLayout 的 y 才是相对内容顶部的）。
  * 它的位置滚过导航 / 悬浮条底边时，导航完成折叠。没放就永远不折叠。
  */
-export function CollapseAnchor() {
+export function CollapseAnchor({ children }: PropsWithChildren) {
   const report = useContext(AnchorContext);
+  // 包住 hero 内容时按它的底边报告：零高度的空锚点在有 gap 的容器里会多占一格间距
   return (
     <View
-      onLayout={(event) => report?.(event.nativeEvent.layout.y)}
+      onLayout={(event) =>
+        report?.(
+          event.nativeEvent.layout.y +
+            (children ? event.nativeEvent.layout.height : 0),
+        )
+      }
       testID="collapse-anchor"
-    />
+    >
+      {children}
+    </View>
   );
 }
 

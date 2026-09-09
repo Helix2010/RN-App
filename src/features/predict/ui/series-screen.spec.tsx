@@ -253,6 +253,6 @@ describe("groupByDay", () => {
     expect(groups[0]!.label).toMatch(/Sep/);
     expect(
       groupByDay([period("a", "2026-09-09T06:10:00Z")], "zh-CN")[0]!.label,
-    ).toMatch(/9月/);
+    ).toBe("9 月 9 日");
   });
 });

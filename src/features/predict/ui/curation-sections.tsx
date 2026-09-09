@@ -17,7 +17,7 @@ import type { Market, Outcome, PredictEvent } from "../model/predict";
 import { EventImage, FavoriteButton, YesNoButtons, fill } from "./shared";
 
 /** 精选轮播下一张露出的宽度：与首页"热门预测"一致 */
-const FEATURED_PEEK = 24;
+const FEATURED_PEEK = 32;
 /** 图片 16:9；量到宽度之前用这个高度占位，避免首帧跳动 */
 const FEATURED_IMAGE_FALLBACK_HEIGHT = 180;
 
@@ -142,7 +142,17 @@ function FeaturedCard({
       <SectionTitle numberOfLines={2}>
         {pickTranslation(event.title, locale)}
       </SectionTitle>
-      {first ? (
+      {first && first.yesPriceCents === null ? (
+        // 没有报价就不画两颗"—"按钮：那看起来像坏了
+        <Row alignItems="center" gap="$2">
+          <Body flex={1} color="$color" numberOfLines={1}>
+            {pickTranslation(first.outcomeLabel, locale)}
+          </Body>
+          <Body color="$textMuted" testID={`predict-hero-no-quote-${event.id}`}>
+            {t("predict.series.noQuote")}
+          </Body>
+        </Row>
+      ) : first ? (
         <Row alignItems="center" gap="$2">
           <Body flex={1} color="$color" numberOfLines={1}>
             {pickTranslation(first.outcomeLabel, locale)}

@@ -399,7 +399,8 @@ function SnapCarouselItem({
     const scale = interpolate(
       scrollX.value,
       [center - itemWidth - gap, center, center + itemWidth + gap],
-      [0.92, 1, 0.92],
+      // 非当前卡只缩 4%：缩得多会把 peek 露出的那一截吃掉，看不出还有下一张
+      [0.96, 1, 0.96],
       Extrapolation.CLAMP,
     );
     return { transform: [{ scale }] };
