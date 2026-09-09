@@ -90,8 +90,24 @@ export type EventQuery = {
   sort?: "volume" | "volume24h" | "liquidity" | "endingSoon" | "newest";
   /** 默认只列交易中的事件；closed = 已截止 / 已结算；all = 不过滤 */
   status?: "trading" | "closed" | "all";
+  /** 选中一级标签时把子标签（related-tags）下的事件一并算进来（gamma `related_tags=true`） */
+  includeRelated?: boolean;
   cursor?: string | null;
   limit?: number;
+};
+
+/** 全站搜索（gamma `/public-search`）：按页取，返回事件与匹配的标签 */
+export type SearchQuery = {
+  q: string;
+  status: "trading" | "closed" | "all";
+  page: number;
+};
+
+export type SearchPage = {
+  events: PredictEvent[];
+  tags: Tag[];
+  hasMore: boolean;
+  total: number;
 };
 
 /** 首页策展：平台运营在 /curation/events 里给事件排的位置 */

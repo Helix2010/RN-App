@@ -398,6 +398,26 @@ const RAW_EVENTS: Omit<
   },
 ];
 
+/** 不在轮播行里的标签（"更多分类"面板夹具） */
+export const EXTRA_TAGS: Tag[] = [
+  { id: "5m", slug: "5m", label: localized("5 分钟", "5M"), order: 100 },
+  { id: "15m", slug: "15m", label: localized("15 分钟", "15M"), order: 101 },
+  { id: "oil", slug: "oil", label: localized("原油", "Oil"), order: 102 },
+  {
+    id: "temperature",
+    slug: "temperature",
+    label: localized("温度", "Temperature"),
+    order: 103,
+  },
+  { id: "china", slug: "china", label: localized("中国", "China"), order: 104 },
+];
+
+/** 一级 → 二级（对应平台 `/tags/{id}/related-tags/tags`）；没列出的一级没有二级 */
+export const RELATED_TAGS: Record<string, string[]> = {
+  crypto: ["5m", "15m"],
+  weather: ["temperature"],
+};
+
 /** 初始持仓（相对 FIXTURE_NOW） */
 /** 夹具事件：标签对象、24h 成交、流动性与截止状态都从市场与标签表推出，不再手写 */
 export const EVENTS: PredictEvent[] = RAW_EVENTS.map((event) => ({

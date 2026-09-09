@@ -45,6 +45,47 @@ describe("MockPredictGateway", () => {
     expect(event.markets[0]?.yesPriceCents).toBeGreaterThan(0);
   });
 
+  it("serves the full tag list, related tags, related-inclusive filtering and paged search", async () => {
+    const gateway = new MockPredictGateway(memoryStorage());
+    const all = await gateway.listAllTags();
+    expect(all.length).toBeGreaterThan((await gateway.listTags()).length);
+    expect((await gateway.listRelatedTags("crypto")).map((t) => t.id)).toEqual([
+      "5m",
+      "15m",
+    ]);
+    expect(await gateway.listRelatedTags("hot")).toEqual([]);
+    const direct = await gateway.listEvents({ tagId: "crypto", status: "all" });
+    const related = await gateway.listEvents({
+      tagId: "crypto",
+      status: "all",
+      includeRelated: true,
+    });
+    expect(related.items.length).toBeGreaterThanOrEqual(direct.items.length);
+    const search = await gateway.searchEvents({
+      q: "btc",
+      status: "all",
+      page: 1,
+    });
+    expect(search.total).toBeGreaterThan(0);
+    expect(
+      search.events.every(
+        (e) =>
+          JSON.stringify(e.title).toLowerCase().includes("btc") ||
+          e.tags.some((t) => t.slug.includes("btc")),
+      ),
+    ).toBe(true);
+    expect(search.hasMore).toBe(false);
+    const byTag = await gateway.searchEvents({
+      q: "加密",
+      status: "all",
+      page: 1,
+    });
+    expect(byTag.tags.map((t) => t.id)).toContain("crypto");
+    expect(
+      (await gateway.searchEvents({ q: "zzzz", status: "all", page: 1 })).total,
+    ).toBe(0);
+  });
+
   it("filters by status, sorts by 24h volume and liquidity, and serves curation, holders and series", async () => {
     const gateway = new MockPredictGateway(memoryStorage());
     const trading = await gateway.listEvents({ sort: "volume", limit: 50 });

@@ -192,6 +192,8 @@ type GammaEventsQuery = {
   order?: "volume" | "volume24hr" | "end_date_iso" | "created_at";
   /** trading = active 且未 closed（默认）；closed = 已截止；all = 不按状态过滤 */
   status?: "trading" | "closed" | "all";
+  /** 选了一级标签时把子标签（related-tags）下的事件一并算进来 */
+  relatedTags?: boolean;
   limit: number;
   offset: number;
 };
@@ -235,10 +237,71 @@ export async function fetchEvents(
       order,
       ascending: order === "end_date_iso",
       tag_id: input.tagId,
+      related_tags: input.relatedTags ? true : undefined,
       exclude_tag_slug: "recurring",
     })}`,
     tenantDomain: service.domain,
     schema: z.array(gammaEventSchema),
+  });
+}
+
+/** 标签全集（"更多分类"面板）：按名称排序，一次取完（dev 上 188 个） */
+export async function fetchAllTags(
+  service: PredictServiceConfig,
+): Promise<GammaTag[]> {
+  const hosts = platformHosts(service);
+  return platformRequest({
+    url: `${hosts.gamma}/tags${query({ limit: 500, order: "label", ascending: true })}`,
+    tenantDomain: service.domain,
+    schema: z.array(gammaTagSchema),
+  });
+}
+
+/** 一级标签下的二级标签（网页版 `getRelatedTags`）；没有子标签就是空数组 */
+export async function fetchRelatedTags(
+  service: PredictServiceConfig,
+  tagId: string,
+): Promise<GammaTag[]> {
+  const hosts = platformHosts(service);
+  return platformRequest({
+    url: `${hosts.gamma}/tags/${encodeURIComponent(tagId)}/related-tags/tags`,
+    tenantDomain: service.domain,
+    schema: z.array(gammaTagSchema),
+  });
+}
+
+const gammaPublicSearchSchema = z.object({
+  events: z.array(gammaEventSchema).nullish(),
+  tags: z.array(gammaTagSchema).nullish(),
+  pagination: z
+    .object({
+      hasMore: z.boolean().nullish(),
+      totalResults: z.number().nullish(),
+    })
+    .nullish(),
+});
+export type GammaPublicSearch = z.infer<typeof gammaPublicSearchSchema>;
+
+/** 全站搜索（gamma `/public-search`，网页版全局搜索框用的同一个接口）；page 从 1 起 */
+export async function fetchPublicSearch(
+  service: PredictServiceConfig,
+  input: { q: string; status: "trading" | "closed" | "all"; page: number },
+): Promise<GammaPublicSearch> {
+  const hosts = platformHosts(service);
+  return platformRequest({
+    url: `${hosts.gamma}/public-search${query({
+      q: input.q,
+      limit_per_type: 20,
+      events_status:
+        input.status === "trading"
+          ? "active"
+          : input.status === "closed"
+            ? "closed"
+            : undefined,
+      page: input.page,
+    })}`,
+    tenantDomain: service.domain,
+    schema: gammaPublicSearchSchema,
   });
 }
 

@@ -54,7 +54,10 @@ import {
   type GammaSeries,
   type GammaSeriesPeriod,
   type GammaTag,
+  fetchAllTags,
   fetchCuratedEvents,
+  fetchPublicSearch,
+  fetchRelatedTags,
   fetchSeries,
   fetchSeriesList,
   fetchSeriesPeriods,
@@ -137,6 +140,8 @@ import type {
   DisputeKey,
   DisputeStep,
   DisputeTerms,
+  SearchQuery,
+  SearchPage,
 } from "../model/predict";
 import type { PredictGateway } from "./gateway";
 import type { HttpPredictAccountGateway } from "./http-predict-account-gateway";
@@ -715,12 +720,36 @@ export class HttpPredictGateway implements PredictGateway {
     return tags.map((tag, index) => this.mapTag(tag, index));
   }
 
+  async listAllTags(): Promise<Tag[]> {
+    const service = await this.service();
+    const tags = await fetchAllTags(service);
+    return tags.map((tag, index) => this.mapTag(tag, index));
+  }
+
+  async listRelatedTags(tagId: string): Promise<Tag[]> {
+    const service = await this.service();
+    const tags = await fetchRelatedTags(service, tagId);
+    return tags.map((tag, index) => this.mapTag(tag, index));
+  }
+
+  async searchEvents(query: SearchQuery): Promise<SearchPage> {
+    const service = await this.service();
+    const result = await fetchPublicSearch(service, query);
+    return {
+      events: (result.events ?? []).map((event) => this.mapEvent(event)),
+      tags: (result.tags ?? []).map((tag, index) => this.mapTag(tag, index)),
+      hasMore: result.pagination?.hasMore ?? false,
+      total: result.pagination?.totalResults ?? (result.events ?? []).length,
+    };
+  }
+
   async listEvents(query: EventQuery): Promise<Page<PredictEvent>> {
     const service = await this.service();
     const limit = query.limit ?? 20;
     const offset = query.cursor ? Number(query.cursor) : 0;
     const events = await fetchEvents(service, {
       tagId: query.tagId,
+      relatedTags: query.includeRelated,
       status: query.status,
       order:
         query.sort === "endingSoon"

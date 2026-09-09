@@ -194,38 +194,59 @@ describe("MarketListScreen", () => {
     ).toBeNull();
   });
 
-  it("filters the loaded list locally by search text", async () => {
+  it("searches the whole platform once two characters are typed and offers matching tags", async () => {
     await renderWithProviders(
       <MarketListScreen {...props()} showPositionsEntry />,
     );
     expect(await screen.findByTestId("event-ev-btc-120k")).toBeTruthy();
     await fireEvent.changeText(screen.getByTestId("predict-search"), "FOMC");
+    // 搜索态：筛选行收起、策展收起，结果来自服务端搜索
     await waitFor(() =>
       expect(screen.queryByTestId("event-ev-btc-120k")).toBeNull(),
     );
-    expect(screen.getByTestId("event-ev-fomc-sep")).toBeTruthy();
+    expect(await screen.findByTestId("event-ev-fomc-sep")).toBeTruthy();
+    expect(screen.queryByTestId("predict-tags")).toBeNull();
+    expect(screen.queryByTestId("predict-hero-ev-worldcup")).toBeNull();
+    await fireEvent.changeText(screen.getByTestId("predict-search"), "加密");
+    // 命中标签：点标签就切到该分类并退出搜索
+    await fireEvent.press(
+      await screen.findByTestId("predict-search-tag-crypto"),
+    );
+    expect(await screen.findByTestId("predict-tags")).toBeTruthy();
+    expect(screen.getByTestId("predict-search").props.value).toBe("");
     await fireEvent.changeText(
       screen.getByTestId("predict-search"),
       "zzz-nothing",
     );
-    expect(await screen.findByText("没有匹配的市场")).toBeTruthy();
+    expect(await screen.findByTestId("predict-search-empty")).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("predict-search-cancel"));
+    expect(await screen.findByTestId("event-ev-btc-120k")).toBeTruthy();
   });
 
-  it("switches to closed markets and hides the discovery sections there", async () => {
+  it("defaults to all markets, switches the view to closed and shows the active-filter banner", async () => {
     await renderWithProviders(
       <MarketListScreen {...props()} showPositionsEntry />,
     );
     expect(await screen.findByTestId("predict-hero-ev-worldcup")).toBeTruthy();
     expect(await screen.findByTestId("predict-series")).toBeTruthy();
-    await fireEvent.press(screen.getByTestId("predict-status-closed"));
-    // "热门"标签下没有已结束的市场：空态，且精选 / 周期市场区块收起
-    expect(await screen.findByText("暂无数据")).toBeTruthy();
+    // 默认"全部"：不同分类的事件同时在列表里
+    expect(screen.getByTestId("event-ev-btc-120k")).toBeTruthy();
+    expect(screen.getByTestId("event-ev-fomc-sep")).toBeTruthy();
+    expect(screen.queryByTestId("predict-filter-banner")).toBeNull();
+    await fireEvent.press(screen.getByTestId("predict-view"));
+    await fireEvent.press(screen.getByTestId("predict-view-option-closed"));
+    // 已结束：精选 / 周期市场收起，横幅说明当前筛选
+    expect(await screen.findByTestId("event-ev-mun-liv")).toBeTruthy();
     expect(screen.queryByTestId("event-ev-btc-120k")).toBeNull();
     expect(screen.queryByTestId("predict-hero-ev-worldcup")).toBeNull();
     expect(screen.queryByTestId("predict-series")).toBeNull();
-    await fireEvent.press(screen.getByText("体育"));
+    expect(screen.getByTestId("predict-filter-banner")).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("predict-tag-sports"));
     expect(await screen.findByTestId("event-ev-mun-liv")).toBeTruthy();
     expect(screen.queryByTestId("event-ev-worldcup")).toBeNull();
+    await fireEvent.press(screen.getByTestId("predict-filter-banner-clear"));
+    expect(await screen.findByTestId("event-ev-worldcup")).toBeTruthy();
+    expect(screen.queryByTestId("predict-filter-banner")).toBeNull();
   });
 
   it("shows favorites only after the star was toggled on a card", async () => {
@@ -235,7 +256,7 @@ describe("MarketListScreen", () => {
     expect(await screen.findByTestId("event-ev-btc-120k")).toBeTruthy();
     await fireEvent.press(screen.getByTestId("predict-favorites"));
     expect(await screen.findByTestId("predict-favorites-empty")).toBeTruthy();
-    await fireEvent.press(screen.getByTestId("predict-status-trading"));
+    await fireEvent.press(screen.getByTestId("predict-favorites"));
     expect(await screen.findByTestId("event-ev-btc-120k")).toBeTruthy();
     await fireEvent.press(screen.getByTestId("favorite-ev-btc-120k"));
     expect(useFavoritesStore.getState().ids).toEqual(["ev-btc-120k"]);
@@ -270,15 +291,56 @@ describe("MarketListScreen", () => {
       { gateways },
     );
     expect(await screen.findByTestId("predict-series")).toBeTruthy();
-    await fireEvent.press(screen.getByText("加密"));
+    await fireEvent.press(screen.getByTestId("predict-tag-crypto"));
     expect(await screen.findByTestId("series-btc-updown-5m")).toBeTruthy();
     expect(screen.queryByTestId("predict-hero-ev-worldcup")).toBeNull();
-    expect(screen.queryByText("暂无数据")).toBeNull();
-    // 其它标签不带周期市场
-    await fireEvent.press(screen.getByText("体育"));
+    expect(screen.queryByTestId("predict-empty")).toBeNull();
+    // crypto 的二级标签：按周期粒度过滤系列卡
+    expect(await screen.findByTestId("predict-subtag-15m")).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("predict-subtag-15m"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("series-btc-updown-5m")).toBeNull(),
+    );
+    // 15 分钟下既没有系列也没有事件：空分类卡
+    expect(await screen.findByTestId("predict-empty")).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("predict-subtag-5m"));
+    expect(await screen.findByTestId("series-btc-updown-5m")).toBeTruthy();
+    // 其它标签不带周期市场，也没有二级标签
+    await fireEvent.press(screen.getByTestId("predict-tag-sports"));
     await waitFor(() =>
       expect(screen.queryByTestId("predict-series")).toBeNull(),
     );
+    expect(screen.queryByTestId("predict-subtags")).toBeNull();
+  });
+
+  it("shows the empty-category card with a way back to all markets", async () => {
+    const gateways = createTestGateways();
+    gateways.predict.listEvents = async () => ({ items: [], nextCursor: null });
+    await renderWithProviders(
+      <MarketListScreen {...props()} showPositionsEntry />,
+      { gateways },
+    );
+    await fireEvent.press(await screen.findByTestId("predict-tag-politics"));
+    expect(await screen.findByTestId("predict-empty")).toBeTruthy();
+    expect(screen.getByText("政治 暂无交易中的市场")).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("predict-empty-all"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("predict-empty")).toBeNull(),
+    );
+  });
+
+  it("opens the full tag picker from 更多 and pins the picked tag into the row", async () => {
+    await renderWithProviders(
+      <MarketListScreen {...props()} showPositionsEntry />,
+    );
+    expect(await screen.findByTestId("predict-tag-more")).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("predict-tag-more"));
+    await fireEvent.press(
+      await screen.findByTestId("predict-tag-picker-item-oil"),
+    );
+    // 非轮播标签选中后插到"更多"左边
+    expect(await screen.findByTestId("predict-tag-oil")).toBeTruthy();
+    expect(screen.queryByTestId("predict-hero-ev-worldcup")).toBeNull();
   });
 
   it("lists recurring series and opens one", async () => {

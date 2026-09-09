@@ -20,6 +20,7 @@ import type {
   PredictEvent,
   PriceRange,
   DisputeStep,
+  SearchQuery,
 } from "../model/predict";
 
 export function usePredictTags() {
@@ -41,6 +42,47 @@ export function usePredictEvents(
     queryFn: () => predict.listEvents(query),
     // 预测模块关着时不能有任何请求打到平台：首页热门榜等共享入口按开关关掉查询
     enabled: options.enabled ?? true,
+    staleTime: 10_000,
+  });
+}
+
+/** 标签全集（"更多分类"面板）；一次取完，10 分钟内不重拉 */
+export function usePredictAllTags(options: { enabled?: boolean } = {}) {
+  const { predict } = useGateways();
+  return useQuery({
+    queryKey: ["predict-all-tags"],
+    queryFn: () => predict.listAllTags(),
+    enabled: options.enabled ?? true,
+    staleTime: 10 * 60_000,
+  });
+}
+
+/** 一级标签下的二级标签；没选一级时不请求 */
+export function useRelatedTags(tagId: string | null) {
+  const { predict } = useGateways();
+  return useQuery({
+    queryKey: ["predict-related-tags", tagId],
+    queryFn: () => predict.listRelatedTags(tagId as string),
+    enabled: Boolean(tagId),
+    staleTime: 10 * 60_000,
+  });
+}
+
+/** 全站搜索：满 2 个字符才发请求，按 page 往下翻 */
+export function useSearchEvents(
+  query: { q: string; status: SearchQuery["status"] },
+  options: { enabled?: boolean } = {},
+) {
+  const { predict } = useGateways();
+  const q = query.q.trim();
+  return useInfiniteQuery({
+    queryKey: ["predict-search", q, query.status],
+    queryFn: ({ pageParam }) =>
+      predict.searchEvents({ q, status: query.status, page: pageParam }),
+    initialPageParam: 1,
+    getNextPageParam: (last, pages) =>
+      last.hasMore ? pages.length + 1 : undefined,
+    enabled: (options.enabled ?? true) && q.length >= 2,
     staleTime: 10_000,
   });
 }

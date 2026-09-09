@@ -31,6 +31,8 @@ import type {
   DisputeInput,
   DisputeStep,
   DisputeTerms,
+  SearchQuery,
+  SearchPage,
 } from "../model/predict";
 
 /**
@@ -40,8 +42,15 @@ import type {
  * 所有读写都带 address（钱包地址 = 用户主体）；游客可调用无需 address 的方法。
  */
 export interface PredictGateway {
+  /** 一级分类：平台轮播标签 */
   listTags(): Promise<Tag[]>;
+  /** 标签全集（"更多分类"面板），按名称排序 */
+  listAllTags(): Promise<Tag[]>;
+  /** 一级标签下的二级标签（`/tags/{id}/related-tags/tags`）；没有就是空数组 */
+  listRelatedTags(tagId: string): Promise<Tag[]>;
   listEvents(query: EventQuery): Promise<Page<PredictEvent>>;
+  /** 全站搜索（`/public-search`），page 从 1 起 */
+  searchEvents(query: SearchQuery): Promise<SearchPage>;
   getEvent(slugOrId: string): Promise<PredictEvent>;
   getOrderBook(marketId: string): Promise<OrderBook>;
   getPriceHistory(marketId: string, range: PriceRange): Promise<PricePoint[]>;

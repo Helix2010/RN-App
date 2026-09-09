@@ -1,6 +1,9 @@
 import {
   displayPrice,
+  fetchAllTags,
   fetchEvents,
+  fetchPublicSearch,
+  fetchRelatedTags,
   gammaMarketSchema,
   translationOf,
 } from "./gamma";
@@ -102,5 +105,62 @@ describe("fetchEvents", () => {
     // 已结束视图：只带 closed=true，不再带 active
     expect(second.searchParams.get("closed")).toBe("true");
     expect(second.searchParams.get("active")).toBeNull();
+  });
+});
+
+describe("tags and search", () => {
+  it("fetches the full tag list, related tags and public search with the web client's parameters", async () => {
+    const urls: string[] = [];
+    setPlatformFetch(async (input) => {
+      urls.push(String(input));
+      const url = new URL(String(input));
+      const body =
+        url.pathname === "/public-search"
+          ? '{"events":[],"tags":[{"id":430,"slug":"crypto","label":"Crypto"}],"profiles":[],"pagination":{"hasMore":true,"totalResults":21}}'
+          : "[]";
+      return new Response(body, {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    await fetchAllTags(service);
+    await fetchRelatedTags(service, "430");
+    const search = await fetchPublicSearch(service, {
+      q: "trump 2026",
+      status: "trading",
+      page: 2,
+    });
+    await fetchPublicSearch(service, { q: "x", status: "all", page: 1 });
+    await fetchEvents(service, {
+      limit: 5,
+      offset: 0,
+      tagId: "430",
+      relatedTags: true,
+    });
+
+    const all = new URL(urls[0] ?? "");
+    expect(all.pathname).toBe("/tags");
+    expect(Object.fromEntries(all.searchParams)).toEqual({
+      limit: "500",
+      order: "label",
+      ascending: "true",
+    });
+    expect(new URL(urls[1] ?? "").pathname).toBe("/tags/430/related-tags/tags");
+    const ps = new URL(urls[2] ?? "");
+    expect(ps.pathname).toBe("/public-search");
+    expect(Object.fromEntries(ps.searchParams)).toEqual({
+      q: "trump 2026",
+      limit_per_type: "20",
+      events_status: "active",
+      page: "2",
+    });
+    expect(search.pagination?.hasMore).toBe(true);
+    expect(search.pagination?.totalResults).toBe(21);
+    expect(search.tags?.[0]?.id).toBe("430");
+    // all 视图不带 events_status
+    expect(new URL(urls[3] ?? "").searchParams.get("events_status")).toBeNull();
+    expect(new URL(urls[4] ?? "").searchParams.get("related_tags")).toBe(
+      "true",
+    );
   });
 });

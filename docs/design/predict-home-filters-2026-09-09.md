@@ -1,6 +1,6 @@
 # 预测市场首页：分类 · 二级筛选 · 全部 · 搜索 · 分页 —— 可行性验证与设计方案
 
-日期：2026-09-09 · 状态：可行性已在线验证（§2），设计待确认 §8 · 范围：RN-App `market-list-screen.tsx`、预测网关、design-system；不涉及服务端与模块开关（仍在 `modules.predict` 下）
+日期：2026-09-09 · 状态：§8 五项已确认并实施（见 §9），随 1.2.11 OTA rev 6 发布 · 范围：RN-App `market-list-screen.tsx`、预测网关、design-system；不涉及服务端与模块开关（仍在 `modules.predict` 下）
 
 ## 1. 现状问题（App）
 
@@ -132,3 +132,20 @@
 3. 搜索改服务端 `/public-search`（已验证可用，推荐）；搜索结果里是否要展示"标签"段（点标签直接切分类）。
 4. "更多分类"面板做不做（188 个标签中 175 个不在轮播里，推荐做）。
 5. Crypto 二级（5M / 15M / 1h / 4h / Daily）同时过滤周期系列卡（推荐）。
+
+## 9. 实施记录（2026-09-09）
+
+§8 五项按推荐落地：默认"全部"；视图 / 排序为两个 `FilterSelect` 下拉 + 收藏开关；搜索走 `/public-search`（≥2 字符，带"标签"区）；"更多分类"用 `PickerSheet`（A–Z / 0–9 / 中文分组、面板内搜索、轮播标签带"常用"角标）；crypto 二级标签同时过滤周期系列卡（`seriesMatchesTag`，daily≈1d≈24h）。
+
+| 层 | 文件 | 说明 |
+|---|---|---|
+| 状态模型 | `features/predict/model/filter-state.ts` | `Filters {tag,parentTag,view,sort,q,favorites}`、`selectPrimary/selectSecondary`、`isDiscovery`、`showSeriesFor`、`activeFilterSummary`；纯函数，单测覆盖 |
+| 网关 | `predict-platform/gamma.ts`、`api/gateway.ts`、`http-/mock-predict-gateway.ts` | 新增 `listAllTags`（`/tags?limit=500`）、`listRelatedTags`（`/tags/{id}/related-tags/tags`）、`searchEvents`（`/public-search`）；`EventQuery.includeRelated` → `related_tags=true` |
+| Hooks | `hooks/use-predict.ts` | `usePredictAllTags`、`useRelatedTags`、`useSearchEvents`（按页无限查询） |
+| design-system | `filters.tsx` | `FilterSelect`（非默认值时 1.5dp `$primary` 边框）、`FilterBanner`、`PickerSheet`；全部走主题 token，无色值字面量 |
+| 页面 | `ui/market-list-screen.tsx`、`ui/market-filters.tsx` | 一级行（全部 / 轮播 / 面板选中项 / 更多 ▾）、二级行、下拉 + 收藏、`CollapseAnchor` 后的"已筛选"横幅、搜索态（筛选行收起、标签区、取消）、空分类卡（去全部 / 看已结束）、页大小 40、到底翻页 |
+| 文案 | `fallback-config.ts` → seed 1106 键 | `predict.filter.*`、`predict.list.emptyInTag/emptyHint/gotoAll/gotoClosed/allMarkets/myFavorites`、`predict.search.tags/markets/hint/clear/unavailable/favorites` |
+
+**主题色**：所有选中态 / 强调边框 / 链接均取 `$primary`、`$color`、`$surfaceVariant`、`$borderColor` 等 token，租户主色改变时自动跟随；唯一色值字面量是精选图上的黑色渐变遮罩（与图片相关，不随主题变）。
+
+**保留的取舍**：收藏视图是逐个查询的集合，搜索在集合内本地过滤，不走服务端；列表计数只在翻完（没有下一页）时显示，不显示估数；"更多 ▾" 只在全集标签数多于轮播时出现。

@@ -5,7 +5,10 @@ import {
   type Page,
   type Unsubscribe,
 } from "../../../core/gateways/types";
-import { localized } from "../../../core/i18n/localized-text";
+import {
+  localized,
+  type LocalizedText,
+} from "../../../core/i18n/localized-text";
 import {
   isEmptyMode,
   mockNow,
@@ -28,7 +31,14 @@ import {
   zero,
   type Money,
 } from "../../../core/money/money";
-import { EVENTS, LEADERBOARD, SEED_POSITIONS, TAGS } from "../fixtures/events";
+import {
+  EVENTS,
+  EXTRA_TAGS,
+  LEADERBOARD,
+  RELATED_TAGS,
+  SEED_POSITIONS,
+  TAGS,
+} from "../fixtures/events";
 import { SERIES, seriesPeriods } from "../fixtures/series";
 import type {
   CryptoCandle,
@@ -65,6 +75,8 @@ import type {
   DisputeInput,
   DisputeStep,
   DisputeTerms,
+  SearchQuery,
+  SearchPage,
 } from "../model/predict";
 import {
   PredictDisputeError,
@@ -404,18 +416,77 @@ export class MockPredictGateway implements PredictGateway {
     return simulate(() => (isEmptyMode() ? [] : TAGS));
   }
 
+  async listAllTags(): Promise<Tag[]> {
+    return simulate(() => (isEmptyMode() ? [] : [...TAGS, ...EXTRA_TAGS]));
+  }
+
+  async listRelatedTags(tagId: string): Promise<Tag[]> {
+    return simulate(() => {
+      if (isEmptyMode()) return [];
+      const ids = RELATED_TAGS[tagId] ?? [];
+      return ids.flatMap((id) =>
+        [...TAGS, ...EXTRA_TAGS].filter((tag) => tag.id === id),
+      );
+    });
+  }
+
+  async searchEvents(query: SearchQuery): Promise<SearchPage> {
+    return simulate(async () => {
+      const state = await this.load();
+      if (isEmptyMode())
+        return { events: [], tags: [], hasMore: false, total: 0 };
+      const needle = query.q.trim().toLowerCase();
+      const textOf = (value: LocalizedText | string | undefined) =>
+        typeof value === "string"
+          ? value
+          : Object.values(value ?? {}).join(" ");
+      const matchesTag = (tag: Tag) =>
+        textOf(tag.label).toLowerCase().includes(needle) ||
+        tag.slug.toLowerCase().includes(needle);
+      const tags = needle ? [...TAGS, ...EXTRA_TAGS].filter(matchesTag) : [];
+      let events = needle
+        ? EVENTS.filter(
+            (event) =>
+              textOf(event.title).toLowerCase().includes(needle) ||
+              event.tags.some(matchesTag),
+          )
+        : [];
+      if (query.status !== "all")
+        events = events.filter((event) =>
+          query.status === "closed" ? event.closed : !event.closed,
+        );
+      const pageSize = 20;
+      const start = Math.max(0, query.page - 1) * pageSize;
+      const slice = events
+        .slice(start, start + pageSize)
+        .map((event) => this.withLivePrices(state, event));
+      return {
+        events: slice,
+        tags,
+        hasMore: start + pageSize < events.length,
+        total: events.length,
+      };
+    });
+  }
+
   async listEvents(query: EventQuery): Promise<Page<PredictEvent>> {
     return simulate(async () => {
       const state = await this.load();
       this.drift(state);
       if (isEmptyMode()) return { items: [], nextCursor: null };
       let items = EVENTS.slice();
-      if (query.tagId && query.tagId !== "hot")
+      if (query.tagId && query.tagId !== "hot") {
+        // includeRelated：一级标签把二级（related-tags）下的事件也算进来
+        const ids = new Set([
+          query.tagId,
+          ...(query.includeRelated ? (RELATED_TAGS[query.tagId] ?? []) : []),
+        ]);
         items = items.filter(
           (event) =>
-            event.tagIds.includes(query.tagId as string) ||
-            event.categoryTagId === query.tagId,
+            event.tagIds.some((id) => ids.has(id)) ||
+            ids.has(event.categoryTagId),
         );
+      }
       if (query.tagId === "hot")
         items = items.filter(
           (event) => event.tagIds.includes("hot") || event.featured,

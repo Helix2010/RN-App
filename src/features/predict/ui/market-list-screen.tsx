@@ -28,17 +28,36 @@ import {
   Stack,
   TextField,
   TextLink,
+  FilterBanner,
+  FilterSelect,
+  PickerSheet,
+  type SheetHandle,
 } from "../../../design-system";
 import { useSession } from "../../session/hooks/use-session";
 import {
   useCuratedEvents,
   useFavoriteEvents,
   useMarketStream,
+  usePredictAllTags,
   usePredictEventPages,
   usePredictTags,
   useRegionGate,
+  useRelatedTags,
+  useSearchEvents,
   useSeriesList,
 } from "../hooks/use-predict";
+import {
+  DEFAULT_FILTERS,
+  SORT_OPTIONS,
+  VIEW_OPTIONS,
+  activeFilterSummary,
+  isDiscovery,
+  selectPrimary,
+  selectSecondary,
+  seriesMatchesTag,
+  showSeriesFor,
+  type Filters,
+} from "../model/filter-state";
 import {
   buildRankBoards,
   curationZone,
@@ -47,33 +66,31 @@ import {
   topByVolume24h,
 } from "../model/event-search";
 import { useFavoritesStore } from "../model/favorites-store";
-import type {
-  EventQuery,
-  Market,
-  Outcome,
-  PredictEvent,
-  Series,
-} from "../model/predict";
+import type { Market, Outcome, PredictEvent, Series } from "../model/predict";
 import { FeaturedSection, RankBoards } from "./curation-sections";
+import {
+  EmptyTagCard,
+  SearchSectionTitle,
+  SubTagChip,
+  TagChip,
+} from "./market-filters";
 import { SeriesCard } from "./series-card";
 import { EventCard, RegionNotice, fill } from "./shared";
 
-type StatusFilter = NonNullable<EventQuery["status"]>;
 /** 榜单每榜最多几行 / 去重前每个来源取多少候选 */
 const RANK_ROWS = 5;
 const RANK_CANDIDATES = 10;
-const STATUS_OPTIONS: StatusFilter[] = ["trading", "closed", "all"];
-const SORT_OPTIONS: NonNullable<EventQuery["sort"]>[] = [
-  "volume",
-  "volume24h",
-  "liquidity",
-  "endingSoon",
-  "newest",
-];
+/** 事件列表每页条数（与网页版一致） */
+const PAGE_SIZE = 40;
+/** 搜索：至少几个字符才发请求 */
+const SEARCH_MIN_CHARS = 2;
+/** 搜索结果里最多列几个标签 */
+const SEARCH_TAG_LIMIT = 5;
 
 /**
- * P-01 市场列表：顶栏余额 chip、搜索、分类 chip、状态 / 收藏 / 排序、
- * 平台策展的精选轮播与榜单、周期市场、三种卡型。
+ * P-01 市场列表（设计 predict-home-filters-2026-09-09）：顶栏余额 chip、搜索（服务端全站）、
+ * 一级分类（"全部"默认 + 轮播标签 + 更多）、二级分类、视图 / 排序下拉 + 收藏开关、
+ * 平台策展的精选轮播与榜单、周期市场、事件列表（40 条一页，到底翻页）。
  * 整页只在预测模块开着时挂载（ModuleGate + 入口隐藏），这里不再重复判断。
  */
 export function MarketListScreen({
@@ -85,6 +102,7 @@ export function MarketListScreen({
   onOpenPositions,
   onOpenLeaderboard,
   showPositionsEntry,
+  initialFilters,
 }: {
   onOpenEvent: (event: PredictEvent, market?: Market) => void;
   onOpenSeries: (series: Series) => void;
@@ -95,6 +113,8 @@ export function MarketListScreen({
   onOpenPositions: () => void;
   onOpenLeaderboard: () => void;
   showPositionsEntry: boolean;
+  /** 深链进入时的初始筛选（首页"查看全部"、榜单、系列卡都用这一组参数） */
+  initialFilters?: Partial<Filters>;
 }) {
   const insets = useSafeAreaInsets();
   const listScroll = useRef<ScrollView>(null);
@@ -112,50 +132,115 @@ export function MarketListScreen({
     if (shouldPromptEnable(address)) onOpenEnable();
   }, [address, enablement.data, onOpenEnable]);
   const tags = usePredictTags();
-  const [pickedTag, setTagId] = useState<string | null>(null);
-  // 默认选平台给的第一个标签（网页版的"热门"）；标签没到之前不带 tag 过滤
-  const defaultTag = tags.data?.[0]?.id;
-  const tagId = pickedTag ?? defaultTag;
-  const [sort, setSort] = useState<NonNullable<EventQuery["sort"]>>("volume");
-  const [status, setStatus] = useState<StatusFilter>("trading");
-  const [search, setSearch] = useState("");
-  const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const allTags = usePredictAllTags();
+  const [filters, setFilters] = useState<Filters>(() => ({
+    ...DEFAULT_FILTERS,
+    ...initialFilters,
+  }));
+  // 搜索态：点进搜索框后筛选行收起；有 ≥2 字符时走服务端搜索
+  const [searching, setSearching] = useState(false);
   const favoriteIds = useFavoritesStore((state) => state.ids);
+  const carouselTags = useMemo(() => tags.data ?? [], [tags.data]);
+  // 一级标签对象：先在轮播里找，再到全集里找（从"更多"面板选的）
+  const primaryTag = useMemo(
+    () =>
+      filters.parentTag === null
+        ? undefined
+        : (carouselTags.find((tag) => tag.id === filters.parentTag) ??
+          allTags.data?.find((tag) => tag.id === filters.parentTag)),
+    [allTags.data, carouselTags, filters.parentTag],
+  );
+  const related = useRelatedTags(filters.parentTag);
+  const secondaryTags = related.data ?? [];
+  const selectedSecondary =
+    filters.tag !== null && filters.tag !== filters.parentTag
+      ? secondaryTags.find((tag) => tag.id === filters.tag)
+      : undefined;
   // 地区限制：列表页在预测页签内（模块开着才挂载），这里发起一次检查
   const region = useRegionGate();
+  const searchActive = searching && filters.q.trim().length >= SEARCH_MIN_CHARS;
+  const favoritesOnly = filters.favorites;
   const events = usePredictEventPages(
-    { tagId, sort, status, limit: 20 },
-    { enabled: !favoritesOnly },
+    {
+      tagId: filters.tag ?? undefined,
+      // 只选一级时把子标签下的事件并进来（网页版 related_tags）
+      includeRelated: filters.tag !== null && filters.tag === filters.parentTag,
+      sort: filters.sort,
+      status: filters.view,
+      limit: PAGE_SIZE,
+    },
+    { enabled: !favoritesOnly && !searchActive },
   );
   const eventItems = useMemo(
     () => events.data?.pages.flatMap((page) => page.items) ?? [],
     [events.data],
   );
+  const search = useSearchEvents(
+    { q: filters.q, status: filters.view },
+    { enabled: searchActive && !favoritesOnly },
+  );
+  const searchItems = useMemo(
+    () => search.data?.pages.flatMap((page) => page.events) ?? [],
+    [search.data],
+  );
+  const searchTags = (search.data?.pages[0]?.tags ?? []).slice(
+    0,
+    SEARCH_TAG_LIMIT,
+  );
+  const searchTotal = search.data?.pages[0]?.total ?? searchItems.length;
   // 滚到列表底部翻下一页；收藏视图是逐个查询，没有分页
   const loadMoreEvents = () => {
-    if (favoritesOnly || !events.hasNextPage) return;
-    if (events.isFetchingNextPage || events.isFetchNextPageError) return;
-    void events.fetchNextPage();
+    const source = searchActive ? search : events;
+    if (favoritesOnly || !source.hasNextPage) return;
+    if (source.isFetchingNextPage || source.isFetchNextPageError) return;
+    void source.fetchNextPage();
   };
   // 收藏视图逐个取事件（收藏的 id 不一定在当前分页里）
   const favoriteQueries = useFavoriteEvents(favoritesOnly ? favoriteIds : []);
-  // 策展（精选轮播 / 榜单）与周期市场只在默认标签 + 交易中视图展示；搜索时收起，让结果直接可见
-  const discovery =
-    tagId === defaultTag &&
-    status === "trading" &&
-    !favoritesOnly &&
-    search.trim() === "";
+  // 策展（精选轮播 / 榜单）只在全站 · 交易中 · 未搜索 · 非收藏时展示
+  const discovery = isDiscovery(filters) && !searching;
   const curated = useCuratedEvents({ enabled: discovery });
-  // 周期市场（BTC 涨跌等）：列表按网页版排除了周期单期事件，系列卡在默认标签和 crypto 标签下显示
-  // （网页版 `loadRecurringSeries`：type 为 all / crypto 且没有搜索词）。dev 上 crypto 标签只有周期事件，
-  // 不这样做 crypto 页就是空的。
-  const selectedTagSlug = tags.data?.find((tag) => tag.id === tagId)?.slug;
-  const showSeries =
-    status === "trading" &&
-    !favoritesOnly &&
-    search.trim() === "" &&
-    (tagId === defaultTag || selectedTagSlug === "crypto");
+  // 周期市场（BTC 涨跌等）：全部视图与 crypto 一级（含二级）下显示；二级按周期粒度过滤系列卡
+  const showSeries = showSeriesFor(filters, primaryTag) && !searching;
   const seriesList = useSeriesList({ enabled: showSeries });
+  const visibleSeries = useMemo(() => {
+    // 不展示周期市场的视图下按空处理，缓存里的系列不能影响"该分类为空"的判断
+    const all = showSeries ? (seriesList.data ?? []) : [];
+    return selectedSecondary
+      ? all.filter((series) => seriesMatchesTag(series, selectedSecondary.slug))
+      : all;
+  }, [selectedSecondary, seriesList.data, showSeries]);
+  const scrollToTop = () =>
+    listScroll.current?.scrollTo({ y: 0, animated: true });
+  const pickPrimary = (tagId: string | null) => {
+    setFilters((current) => selectPrimary(current, tagId));
+    setSearching(false);
+    scrollToTop();
+  };
+  const pickSecondary = (childId: string | null) => {
+    setFilters((current) => selectSecondary(current, childId));
+    scrollToTop();
+  };
+  const toggleFavorites = () =>
+    setFilters((current) => ({ ...current, favorites: !current.favorites }));
+  const exitSearch = () => {
+    setSearching(false);
+    setFilters((current) => ({ ...current, q: "" }));
+  };
+  const viewLabel = (view: Filters["view"]) =>
+    t(`predict.filter.status.${view}`);
+  const sortLabel = (sort: Filters["sort"]) => t(`predict.sort.${sort}`);
+  const filterSummary = activeFilterSummary(filters, {
+    view: viewLabel,
+    sort: sortLabel,
+  });
+  const tagPicker = useRef<SheetHandle>(null);
+  // 从"更多"面板选的、不在轮播里的标签，以选中态插到"更多"左边
+  const extraPrimary =
+    primaryTag && !carouselTags.some((tag) => tag.id === primaryTag.id)
+      ? primaryTag
+      : undefined;
+  const showMoreTags = (allTags.data?.length ?? 0) > carouselTags.length;
   // 策展三区：hero 轮播、highlight"热门精选"、normal"突发"，都按运营位次排
   const heroes = useMemo(
     () => curationZone(curated.data ?? [], "hero"),
@@ -177,17 +262,28 @@ export function MarketListScreen({
   // 当前视图的事件：收藏视图来自逐个查询（单个失败不拖累其余），其余来自分页；再套本地搜索，
   // 已在精选轮播里的不再重复出现在列表
   const listItems = useMemo(() => {
+    if (searchActive && !favoritesOnly) return searchItems;
     const source = favoritesOnly
       ? favoriteQueries.flatMap((query) => (query.data ? [query.data] : []))
       : eventItems;
     return source.filter(
       (event) =>
-        matchesEventSearch(event, search) &&
+        // 收藏是逐个查询的集合，搜索在集合内本地过滤；分页列表的搜索走服务端
+        (!favoritesOnly || matchesEventSearch(event, filters.q)) &&
         !(discovery && heroIds.has(event.id)),
     );
-  }, [discovery, eventItems, favoriteQueries, favoritesOnly, heroIds, search]);
+  }, [
+    discovery,
+    eventItems,
+    favoriteQueries,
+    favoritesOnly,
+    filters.q,
+    heroIds,
+    searchActive,
+    searchItems,
+  ]);
   // 本地榜单只在默认排序下有意义（按"最新"排的一页取前三没有"高概率"的含义）
-  const localRanks = discovery && sort === "volume";
+  const localRanks = discovery && filters.sort === "volume";
   const topProbability = useMemo(
     () =>
       localRanks
@@ -222,51 +318,100 @@ export function MarketListScreen({
   const listLoading = favoritesOnly
     ? favoriteQueries.length > 0 &&
       favoriteQueries.every((query) => query.isPending)
-    : events.data === undefined && !events.isError;
+    : searchActive
+      ? search.data === undefined && !search.isError
+      : events.data === undefined && !events.isError;
   // 收藏视图里单个失败只提示那几个，其余照常显示；分页视图失败就是整页失败
   const listError = favoritesOnly
     ? favoriteQueries.length > 0 &&
       favoriteQueries.every((query) => query.isError)
-    : events.isError;
+    : searchActive
+      ? search.isError
+      : events.isError;
   const retry = () => {
     if (favoritesOnly) favoriteFailed.forEach((query) => void query.refetch());
+    else if (searchActive) void search.refetch();
     else void events.refetch();
   };
   const refreshAll = () => {
     retry();
     if (discovery) void curated.refetch();
     if (showSeries) void seriesList.refetch();
+    if (filters.parentTag) void related.refetch();
   };
+  const pagination = searchActive ? search : events;
 
-  // 分类 chip 行在内容里滚走后钉在顶部（同一份元素渲染两处），旁边放回到搜索框的放大镜
+  // 一级分类行：固定"全部" + 轮播标签 + （面板选中的额外标签）+ "更多 ▾"；滚走后钉在顶部（同一份元素渲染两处）
   const tagChips = (
-    <HorizontalScroll>
-      {(tags.data ?? []).map((tag) => {
-        const selected = tag.id === tagId;
-        return (
-          <Stack
+    <Stack testID="predict-tags">
+      <HorizontalScroll>
+        <TagChip
+          label={t("predict.filter.all")}
+          selected={filters.tag === null}
+          disabled={favoritesOnly}
+          onPress={() => pickPrimary(null)}
+          testID="predict-tag-all"
+        />
+        {carouselTags.map((tag) => (
+          <TagChip
             key={tag.id}
-            paddingHorizontal="$3"
-            paddingVertical="$1.5"
-            borderRadius={999}
-            backgroundColor={selected ? "$color" : "$surfaceVariant"}
-            onPress={() => setTagId(tag.id)}
-            accessibilityRole="radio"
-            accessibilityState={{ selected }}
-            pressStyle={{ opacity: 0.75 }}
-          >
-            <InlineText
-              fontSize={13}
-              fontWeight="700"
-              color={selected ? "$background" : "$color"}
-            >
-              {pickTranslation(tag.label, locale)}
-            </InlineText>
-          </Stack>
-        );
-      })}
-    </HorizontalScroll>
+            label={pickTranslation(tag.label, locale)}
+            selected={tag.id === filters.parentTag}
+            disabled={favoritesOnly}
+            onPress={() => pickPrimary(tag.id)}
+            testID={`predict-tag-${tag.id}`}
+          />
+        ))}
+        {extraPrimary ? (
+          <TagChip
+            label={pickTranslation(extraPrimary.label, locale)}
+            selected
+            disabled={favoritesOnly}
+            onPress={() => pickPrimary(extraPrimary.id)}
+            testID={`predict-tag-${extraPrimary.id}`}
+          />
+        ) : null}
+        {showMoreTags ? (
+          <TagChip
+            label={`${t("predict.filter.more")} ▾`}
+            selected={false}
+            muted
+            disabled={favoritesOnly}
+            onPress={() => tagPicker.current?.present()}
+            testID="predict-tag-more"
+          />
+        ) : null}
+      </HorizontalScroll>
+    </Stack>
   );
+  const primaryLabel = primaryTag
+    ? pickTranslation(primaryTag.label, locale)
+    : t("predict.filter.all");
+  const listTitle = favoritesOnly
+    ? t("predict.list.myFavorites")
+    : searchActive
+      ? t("predict.search.markets")
+      : selectedSecondary
+        ? pickTranslation(selectedSecondary.label, locale)
+        : filters.tag === null
+          ? t("predict.list.allMarkets")
+          : primaryLabel;
+  // 数量只在全部翻完（没有下一页）时显示，不显示"20+"这种估数
+  const listCount = favoritesOnly
+    ? favoriteIds.length
+    : searchActive
+      ? searchTotal
+      : pagination.hasNextPage
+        ? null
+        : eventItems.length;
+  const emptyInTag =
+    !favoritesOnly &&
+    !searchActive &&
+    filters.tag !== null &&
+    !listLoading &&
+    !listError &&
+    listItems.length === 0 &&
+    visibleSeries.length === 0;
   return (
     <CollapsingHeader
       mode="floating"
@@ -279,18 +424,18 @@ export function MarketListScreen({
       scrollRef={listScroll}
       contentProps={{ paddingTop: insets.top + 16, gap: "$3" }}
       collapsed={
-        <>
-          <Stack flex={1}>{tagChips}</Stack>
-          <IconButton
-            label={t("predict.search.placeholder")}
-            icon="magnify"
-            size={32}
-            onPress={() =>
-              listScroll.current?.scrollTo({ y: 0, animated: true })
-            }
-            testID="predict-search-pinned"
-          />
-        </>
+        searching ? undefined : (
+          <>
+            <Stack flex={1}>{tagChips}</Stack>
+            <IconButton
+              label={t("predict.search.placeholder")}
+              icon="magnify"
+              size={32}
+              onPress={scrollToTop}
+              testID="predict-search-pinned"
+            />
+          </>
+        )
       }
     >
       <Row alignItems="center" justifyContent="space-between">
@@ -362,52 +507,143 @@ export function MarketListScreen({
 
       <RegionNotice state={region.state} onRetry={region.retry} />
 
-      <TextField
-        value={search}
-        onChangeText={setSearch}
-        placeholder={t("predict.search.placeholder")}
-        accessibilityLabel={t("predict.search.placeholder")}
-        autoCapitalize="none"
-        autoCorrect={false}
-        returnKeyType="search"
-        testID="predict-search"
-      />
-
-      {tagChips}
-      <CollapseAnchor />
-
-      <HorizontalScroll>
-        {STATUS_OPTIONS.map((option) => (
-          <FilterChip
-            key={option}
-            label={t(`predict.filter.status.${option}`)}
-            selected={!favoritesOnly && status === option}
-            onPress={() => {
-              setFavoritesOnly(false);
-              setStatus(option);
+      <Row alignItems="center" gap="$2">
+        <Stack flex={1}>
+          <TextField
+            value={filters.q}
+            onChangeText={(value) => {
+              setFilters((current) => ({ ...current, q: value }));
+              // 一敲字就是在搜索：不要求先点进输入框
+              if (!favoritesOnly) setSearching(true);
             }}
-            testID={`predict-status-${option}`}
+            onFocus={() => {
+              if (!favoritesOnly) setSearching(true);
+            }}
+            placeholder={t(
+              favoritesOnly
+                ? "predict.search.favorites"
+                : "predict.search.placeholder",
+            )}
+            accessibilityLabel={t("predict.search.placeholder")}
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="search"
+            testID="predict-search"
           />
-        ))}
-        <FilterChip
-          label={`★ ${t("predict.filter.favorites")}`}
-          selected={favoritesOnly}
-          onPress={() => setFavoritesOnly((value) => !value)}
-          testID="predict-favorites"
-        />
-      </HorizontalScroll>
+        </Stack>
+        {searching ? (
+          <TextLink
+            onPress={exitSearch}
+            color="$color"
+            testID="predict-search-cancel"
+          >
+            {t("common.cancel")}
+          </TextLink>
+        ) : null}
+      </Row>
 
-      <HorizontalScroll>
-        {SORT_OPTIONS.map((option) => (
-          <FilterChip
-            key={option}
-            label={t(`predict.sort.${option}`)}
-            selected={sort === option}
-            onPress={() => setSort(option)}
-            testID={`predict-sort-${option}`}
-          />
-        ))}
-      </HorizontalScroll>
+      {searching ? null : (
+        <>
+          {tagChips}
+          {secondaryTags.length > 0 ? (
+            <Stack testID="predict-subtags">
+              <HorizontalScroll>
+                <SubTagChip
+                  label={fill(t("predict.filter.allIn"), { tag: primaryLabel })}
+                  selected={filters.tag === filters.parentTag}
+                  disabled={favoritesOnly}
+                  onPress={() => pickSecondary(null)}
+                  testID="predict-subtag-all"
+                />
+                {secondaryTags.map((tag) => (
+                  <SubTagChip
+                    key={tag.id}
+                    label={pickTranslation(tag.label, locale)}
+                    selected={tag.id === filters.tag}
+                    disabled={favoritesOnly}
+                    onPress={() => pickSecondary(tag.id)}
+                    testID={`predict-subtag-${tag.id}`}
+                  />
+                ))}
+              </HorizontalScroll>
+            </Stack>
+          ) : null}
+          <Row alignItems="center" gap="$2">
+            <FilterSelect
+              label={t("predict.filter.view")}
+              value={filters.view}
+              defaultValue={DEFAULT_FILTERS.view}
+              options={VIEW_OPTIONS.map((view) => ({
+                value: view,
+                label: viewLabel(view),
+              }))}
+              onChange={(view) =>
+                setFilters((current) => ({ ...current, view }))
+              }
+              closeLabel={t("common.close")}
+              testID="predict-view"
+            />
+            <FilterSelect
+              label={t("predict.filter.sort")}
+              value={filters.sort}
+              defaultValue={DEFAULT_FILTERS.sort}
+              options={SORT_OPTIONS.map((sort) => ({
+                value: sort,
+                label: sortLabel(sort),
+              }))}
+              onChange={(sort) =>
+                setFilters((current) => ({ ...current, sort }))
+              }
+              closeLabel={t("common.close")}
+              testID="predict-sort"
+            />
+            <Stack flex={1} />
+            <TagChip
+              label={
+                favoritesOnly
+                  ? `★ ${fill(t("predict.filter.favoritesCount"), { n: favoriteIds.length })}`
+                  : `★ ${t("predict.filter.favorites")}`
+              }
+              selected={favoritesOnly}
+              onPress={toggleFavorites}
+              testID="predict-favorites"
+            />
+          </Row>
+          <CollapseAnchor />
+          {filterSummary ? (
+            <FilterBanner
+              label={t("predict.filter.active")}
+              summary={filterSummary}
+              clearLabel={t("predict.filter.clear")}
+              onClear={() =>
+                setFilters((current) => ({
+                  ...current,
+                  view: DEFAULT_FILTERS.view,
+                  sort: DEFAULT_FILTERS.sort,
+                }))
+              }
+              testID="predict-filter-banner"
+            />
+          ) : null}
+        </>
+      )}
+
+      {searchActive && !favoritesOnly && searchTags.length > 0 ? (
+        <Stack gap="$2" testID="predict-search-tags">
+          <SearchSectionTitle title={t("predict.search.tags")} />
+          <HorizontalScroll>
+            {searchTags.map((tag) => (
+              <TagChip
+                key={tag.id}
+                label={pickTranslation(tag.label, locale)}
+                selected={false}
+                onPress={() => pickPrimary(tag.id)}
+                testID={`predict-search-tag-${tag.id}`}
+              />
+            ))}
+          </HorizontalScroll>
+        </Stack>
+      ) : null}
 
       {discovery && curated.isError ? (
         <InlineError
@@ -433,7 +669,8 @@ export function MarketListScreen({
           onOpen={onOpenEvent}
           // "今日热门"有完整视图：按 24h 成交排序的列表；其它榜没有等价视图，不给入口
           onViewAll={(key) => {
-            if (key === "topToday") setSort("volume24h");
+            if (key === "topToday")
+              setFilters((current) => ({ ...current, sort: "volume24h" }));
           }}
         />
       ) : null}
@@ -447,10 +684,10 @@ export function MarketListScreen({
         />
       ) : null}
 
-      {showSeries && seriesList.data && seriesList.data.length > 0 ? (
+      {showSeries && visibleSeries.length > 0 ? (
         <Stack gap="$2" testID="predict-series">
           <SectionTitle fontSize={14}>{t("predict.series.title")}</SectionTitle>
-          {seriesList.data.map((series) => (
+          {visibleSeries.map((series) => (
             <SeriesCard
               key={series.id}
               series={series}
@@ -473,16 +710,63 @@ export function MarketListScreen({
         />
       ) : null}
 
+      {!(favoritesOnly && favoriteIds.length === 0) && !emptyInTag ? (
+        <Row justifyContent="space-between" alignItems="baseline">
+          <SectionTitle fontSize={14}>{listTitle}</SectionTitle>
+          {listCount !== null ? (
+            <InlineText fontSize={12} color="$textMuted">
+              {fill(t("predict.filter.tagCount"), { n: listCount })}
+            </InlineText>
+          ) : null}
+        </Row>
+      ) : null}
+
       {favoritesOnly && favoriteIds.length === 0 ? (
         <Body testID="predict-favorites-empty">
           {t("predict.favorites.empty")}
         </Body>
+      ) : emptyInTag ? (
+        <EmptyTagCard
+          title={fill(t("predict.list.emptyInTag"), {
+            tag: selectedSecondary
+              ? pickTranslation(selectedSecondary.label, locale)
+              : primaryLabel,
+          })}
+          hint={t("predict.list.emptyHint")}
+          actions={[
+            {
+              label: t("predict.list.gotoAll"),
+              onPress: () => pickPrimary(null),
+              testID: "predict-empty-all",
+            },
+            {
+              label: t("predict.list.gotoClosed"),
+              onPress: () =>
+                setFilters((current) => ({ ...current, view: "closed" })),
+              testID: "predict-empty-closed",
+            },
+          ]}
+          testID="predict-empty"
+        />
       ) : !listLoading && !listError ? (
         listItems.length === 0 ? (
           // 周期市场卡已经是内容时不再提示"暂无数据"
-          showSeries && (seriesList.data?.length ?? 0) > 0 ? null : (
+          showSeries && visibleSeries.length > 0 ? null : searchActive ? (
+            <EmptyTagCard
+              title={t("predict.search.empty")}
+              hint={t("predict.search.hint")}
+              actions={[
+                {
+                  label: t("predict.search.clear"),
+                  onPress: exitSearch,
+                  testID: "predict-search-clear",
+                },
+              ]}
+              testID="predict-search-empty"
+            />
+          ) : (
             <Body>
-              {search.trim() ? t("predict.search.empty") : t("state.empty")}
+              {filters.q.trim() ? t("predict.search.empty") : t("state.empty")}
             </Body>
           )
         ) : (
@@ -498,22 +782,34 @@ export function MarketListScreen({
             ))}
             {!favoritesOnly ? (
               <ListFooter
-                loading={events.isFetchingNextPage}
-                error={events.isFetchNextPageError}
-                hasMore={Boolean(events.hasNextPage)}
-                count={eventItems.length}
-                onRetry={() => void events.fetchNextPage()}
+                loading={pagination.isFetchingNextPage}
+                error={pagination.isFetchNextPageError}
+                hasMore={Boolean(pagination.hasNextPage)}
+                count={listItems.length}
+                onRetry={() => void pagination.fetchNextPage()}
               />
             ) : null}
           </>
         )
       ) : listError ? (
-        <Row alignItems="center" justifyContent="space-between">
-          <Body color="$danger">{t("state.error")}</Body>
-          <SecondaryButton height={32} onPress={retry}>
-            {t("action.retryNow")}
-          </SecondaryButton>
-        </Row>
+        searchActive ? (
+          <Row justifyContent="center">
+            <TextLink
+              onPress={retry}
+              color="$danger"
+              testID="predict-search-error"
+            >
+              {t("predict.search.unavailable")}
+            </TextLink>
+          </Row>
+        ) : (
+          <Row alignItems="center" justifyContent="space-between">
+            <Body color="$danger">{t("state.error")}</Body>
+            <SecondaryButton height={32} onPress={retry}>
+              {t("action.retryNow")}
+            </SecondaryButton>
+          </Row>
+        )
       ) : (
         <Stack gap="$2">
           <SkeletonBlock height={150} borderRadius="$4" />
@@ -521,43 +817,29 @@ export function MarketListScreen({
           <SkeletonBlock height={150} borderRadius="$4" />
         </Stack>
       )}
-    </CollapsingHeader>
-  );
-}
 
-function FilterChip({
-  label,
-  selected,
-  onPress,
-  testID,
-}: {
-  label: string;
-  selected: boolean;
-  onPress: () => void;
-  testID?: string;
-}) {
-  return (
-    <Row
-      alignItems="center"
-      gap="$1"
-      paddingHorizontal="$2.5"
-      paddingVertical="$1"
-      borderRadius={999}
-      borderWidth={1}
-      borderColor={selected ? "$primary" : "$borderColor"}
-      onPress={onPress}
-      accessibilityRole="radio"
-      accessibilityState={{ selected }}
-      testID={testID}
-    >
-      <InlineText
-        fontSize={12}
-        fontWeight="600"
-        color={selected ? "$primary" : "$textMuted"}
-      >
-        {label}
-      </InlineText>
-    </Row>
+      <PickerSheet
+        ref={tagPicker}
+        title={t("predict.filter.allTags")}
+        count={
+          allTags.data
+            ? fill(t("predict.filter.tagCount"), { n: allTags.data.length })
+            : undefined
+        }
+        searchPlaceholder={t("predict.filter.searchTags")}
+        items={(allTags.data ?? []).map((tag) => ({
+          id: tag.id,
+          label: pickTranslation(tag.label, locale),
+          badge: carouselTags.some((item) => item.id === tag.id),
+        }))}
+        selectedId={filters.parentTag}
+        badgeLabel={t("predict.filter.common")}
+        onSelect={(id) => pickPrimary(id)}
+        emptyLabel={t("predict.search.empty")}
+        closeLabel={t("common.close")}
+        testID="predict-tag-picker"
+      />
+    </CollapsingHeader>
   );
 }
 

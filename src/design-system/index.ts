@@ -7,4 +7,5 @@ export * from "./overlay";
 export * from "./use-async-action";
 export * from "./charts";
 export * from "./collapsing-header";
+export * from "./filters";
 export { Spinner, useTheme } from "tamagui";
