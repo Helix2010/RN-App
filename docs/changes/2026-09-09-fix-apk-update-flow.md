@@ -73,3 +73,9 @@
 - 线上验证：OTA `ota_C5etKQQGvZEJNgVbZs8kgw` 切到 next_launch 后 manifest 与 ETag 随之变化，再切回；`completed` 的 1.2.10 全量拒绝修改（409）；审计正常。
 - 顺带确认：OTA 的"取代"按 (platform, channel, runtimeVersion) 算，1.2.10 基线上的 rev 1 仍是 1.2.10 runtime 的活跃 OTA、仍在下发（验证时误切过一次，已恢复为 immediate）；被取代的只是"不能再新建"。
 - App 不改：强制判定与 OTA 策略都以 bootstrap 为准，客户端下一次拉配置（冷启动 / 前台刷新）生效。
+
+## 追加（2026-09-09）：手动检查的弱网加固 + OTA rev 2
+
+- 真机反馈：OTA 重启后点"检查版本"显示"暂时无法获取远程配置"，几分钟后自愈。服务端与网关无故障记录；两台模拟器按同版本 / 同 OTA / 中文 / 已登录 / "重启后同进程内立刻检查"均复现不出，定为手机侧网络抖动（刚重启的 App 并发拉 bootstrap、品牌资源、语言包、行情、心跳，8 秒超时易误报）。
+- RN-App 13816f5：手动检查失败先静默重试一次（1.5 秒后）；bootstrap 请求超时 8 → 15 秒（`apiClient` 新增 `timeoutMs`）；错误文案改为 `update.checkFailed`"网络不稳定，检查失败，点击重试"（行仍可点即重试）。RN-Server 3dbab72 同步 seed。
+- OTA rev 2（1.2.11 基线，immediate）：`ota_hlDfwU5sgOfsjGKUwzSICA`，updateId `cfb77a00-…`。模拟器：前台刷新收到 → 确认并重启 → 设置页检查"已是最新版本"。
