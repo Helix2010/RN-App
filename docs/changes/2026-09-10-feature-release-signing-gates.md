@@ -90,3 +90,11 @@
 - `scripts/build-android-release.mjs` 新增 `RN_ENV_ROOT`（仅 Jest 子进程生效）：脚本测试把 `.env` 查找根指到临时目录，断言不再受开发者本机 `.env.local` 里的 `ANDROID_RELEASE_KEYSTORE_PATH` 影响（此前登记路径后「缺少签名材料」用例会因缺失列表变化而失败）。
 - GitHub `android-release` 环境的 4 个 secrets 已由保管人配置；密钥库与口令仍只在保管人机器，不入库。
 - 首次 CI 运行（run 34452866081）`android-release-gate` 在构建前失败：步骤把 `ANDROID_HOME` 写成 `${{ env.ANDROID_HOME }}`，而表达式里的 `env` 上下文只包含工作流自己声明的变量，结果把 runner 预装 SDK 的 `ANDROID_HOME` 覆盖成空串。修正为直接继承 runner 环境，并在构建前断言 `ANDROID_HOME` 目录存在。
+
+## 执行记录（2026-09-10）：CI 门禁首跑通过、pin 登记、待发布上传
+
+- CI：`app-quality` run 34453311154 全绿，`verify` 3m12s，`android-release-gate` 21m08s（runner 冷启动构建 + 独立复核）。
+- 服务端 pin：`GET /v1/admin/release-identity/android` 返回 `com.anyfun.foundation` / `1a5d9fb4…e694`（由管理员在 RN-Admin 登记）。
+- 重新构建：main `befcbd1`、干净工作区，`artifacts/anyfun-1.3.0-build26-release.apk` 38,717,630 字节，SHA-256 `37a711c31a614795b84104b34cea49c57a2e57e5dbc8c183beb190f0def04db7`；门禁 + `android:verify` + apksigner/aapt 三路一致。首次构建的产物（`30a6725b…56ec`，expo 57.0.20）作废。
+- 上传：在 web4 用管理密钥走 `POST /v1/admin/release-artifacts/uploads` → `PUT` → `POST /v1/admin/releases`，服务端复检通过并落库为 `rel_4W0ZTVaCWwY2aZXIKLxu4Q`，status `verified`（待发布），`objectEtag` 已记录，`mandatory=false`。**未发布**：公开 `latest` 仍指向 1.2.11 (25)，待发布记录的公开下载返回 404。
+- 待办：第 8 步迁移 OTA 引导页开发并先发出，再点「发布」；web4 服务进程未设置 `APP_ENV=production`（服务端默认 development），仅生产才生效的 `RELEASE_SIGNER_UNPINNED`、存储/下载 https 强制两条目前未启用，需运维确认后在 web4 `.env` 设置并重启。
