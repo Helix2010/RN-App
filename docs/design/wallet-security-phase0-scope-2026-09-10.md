@@ -115,7 +115,32 @@ A3 小计约 **2.6 人日**。
 
 评审轮次：范围 A 实现后经两轮内部独立评审（RN-App、RN-Server 各一）与一轮 codex 评审（仅 RN-Server 完成；RN-App 的 codex 评审三次因模型过载未产出）。评审发现均已修正，详见 `docs/changes/2026-09-10-*.md` 的"追加"节与 RN-Server `docs/OPERATIONS_AND_RELEASE.md` §5；主要修正：服务端对象 ETag 比对此前误用 Content-Type（已改 `Stat()` 结构体）、回填基线前校验 sha256/大小、空 ETag 与非法元数据 fail closed、生产存储端点 https-only、客户端内置字典拆分解除对网络模块的依赖、认证检查移入 vault 写队列、系统弹窗 key 静态扫描。
 
-范围 A 已实现，RN-App `pnpm check` 全绿，RN-Server `go vet` / `go test ./...` 通过；两仓库均未提交。与本表的偏差与补充如下，均为有意为之：
+**已实现的是范围 A 的一个子集**：A1-1～A1-6、A1-10、A2-1～A2-6、A2-8、A3-1～A3-4。RN-App `pnpm check` 全绿，RN-Server `go vet` / `go test ./...` 通过。
+
+**范围 A 中未实现的项**（2026-09-10 复核确认，本节此前笼统写成"范围 A 已实现"，是错误登记）：
+
+| 未做项 | 关联 | 代码证据 |
+| --- | --- | --- |
+| A1-7 | N9 AAD | `keystore-vault.ts` 无 `aad`/`additionalData` |
+| A1-8 | 0c-2 进后台即锁 | `app-lock-gate.tsx:128-129` 只 `noteBackgrounded()` |
+| A1-9 | N11 大额验证 | `transfer-form.tsx:112,281`、`order-sheet.tsx:353`、`predict-enable-screen.tsx:167`、`swap-screen.tsx:219` 仍裸调 `requireVerification()` |
+| A1-11 | N15 输入框防护 | `wallet-import-screen.tsx` 无 `autoComplete`/`importantForAutofill`/`textContentType`/`spellCheck` |
+| A1-12 | N23 剪贴板定时器 | `backup-screen.tsx:132` 裸 `setTimeout` |
+| A1-13 | N24 截屏保护范围 | 仅导入页与备份页 |
+| A1-14 | N25 备份验证随机化 | `backup-screen.tsx` 固定 seed |
+| A1-15 | N36 助记词路由参数 | `navigation/types.ts` 仍是 `WalletBackup: { phrase?: string }` |
+| A1-16 | N22 unlimited approve | `swap-screen.tsx:204-215` 主按钮直接 approve |
+| A1-17 | N13 Universal Link | `wallet-deep-links.ts` 仍是自定义 scheme |
+| A1-18 | N14 WC storage 加密 | `walletconnect-client.ts` 未注入 `storage` |
+| A1-19 | N26 SIWE 断言 | 未解析校验 |
+| A1-20 | N26/N37 WC 事件 | 全仓无 `client.on(` |
+| A1-21 | N30 EIP-712 载荷 | 未用 `TypedDataEncoder.getPayload` |
+| A1-22 | N21 keychainService | `vault/ports.ts` 无该字段 |
+| A2-7 | 12.2 ESLint 敏感变量 | `eslint.config.mjs` 无对应规则 |
+| A3-5 | N13 assetlinks/AASA | RN-Server 无该路由 |
+| A3-6 | N27 ADR-0002 措辞 | 未改 |
+
+与本表已实现项的偏差与补充如下，均为有意为之：
 
 | 项 | 实际实现 | 与表中描述的差异 |
 | --- | --- | --- |
