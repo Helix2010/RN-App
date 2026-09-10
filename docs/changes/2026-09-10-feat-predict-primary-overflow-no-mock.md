@@ -1,6 +1,6 @@
 # 预测市场一级"更多"改为轮播溢出；预测市场移除 Mock 依赖（2026-09-10）
 
-- 类型：feat + refactor · 模块：predict（仍受 `modules.predict` 开关约束）· 发布：待 OTA（纯 JS）
+- 类型：feat + refactor · 模块：predict（仍受 `modules.predict` 开关约束）· 提交：cd0e77f · 发布：1.2.11 基线 OTA rev 11 `ota_iFLj3wXFITO8Jom6Crwv1A`（updateId `ab28688e-17da-4ff0-8cfb-d10f4dd723ff`，immediate，2026-09-10）
 - 设计：`docs/design/predict-home-filters-2026-09-09.md` §10（修订记录）
 
 ## 需求
@@ -33,7 +33,13 @@
 
 - `pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm i18n:check` 全绿（112 套件 / 782 用例）。
 - 新增用例：9 个轮播标签全部内联且无"更多"；14 个时前 8 内联、`culture` 起进面板、选中 `oil` 后插到行尾；`splitPrimaryTags` 边界；`getTag` 成功 / 未知 id；预测 Mock 边界静态检查。
-- 模拟器 / 真机核对待 OTA 发布后补记到设计文档 §10.4。
+- 发布前：用同一提交构建 release APK 装到模拟器 rwa_test2 核对——一级行 `All / Politics / Crypto / Football …` 横滑到 Cybersecurity 止（8 个），"More ▾" 首屏可见且钉住；面板"All categories · 13"按运营顺序平铺、无搜索框；选 Machine Learning 后以选中态钉在 More 左侧并出现其二级（Blockchain / Data Encryption …）与空分类卡；切 Crypto 二级 5M/15M/1h/4h/Daily 与周期市场秒级倒计时正常；滚动后悬浮条同样钉住 More。首轮核对发现"选中项插到行尾会被横滑遮住"，改为钉住后重建复核。
+- 独立 code review（无阻断项）采纳：`useNow` 改用 `useSyncExternalStore`（面板打开首帧即取新时间）；`closesText` 改由调用方传 `now`；`usePredictTag` 等轮播加载完再判断；Mock 边界检查支持多行 import；ESLint pattern 用 `**`；面板计数加载中不显示 0。
+- 发布后：见下方"发布记录"。
+
+## 发布记录
+
+- OTA rev 11 `ota_iFLj3wXFITO8Jom6Crwv1A`（1.2.11 基线 `rel_xGci1cDn1HXUsVUyv7Yguw`，immediate，源码 cd0e77f）：上传 PUT 200 → SAVE 201（verified）→ PUBLISH 201（active）；线上 manifest 已返回该 updateId 与 sourceCommitSha。
 
 ## 非目标
 

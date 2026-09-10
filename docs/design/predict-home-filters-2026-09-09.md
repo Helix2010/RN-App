@@ -182,4 +182,6 @@
 
 ### 10.4 验证
 
-`pnpm format:check`、`pnpm lint`、`pnpm typecheck`、`pnpm test`（112 套件 / 782 用例）、`pnpm i18n:check`（1105 键；删除未再使用的 `predict.filter.common`）全绿。真机 / 模拟器核对待发布 OTA 后补记。
+`pnpm format:check`、`pnpm lint`、`pnpm typecheck`、`pnpm test`（112 套件 / 782 用例）、`pnpm i18n:check`（1105 键；删除未再使用的 `predict.filter.common`）全绿。
+
+发布前用同一提交（cd0e77f）构建 release APK 装到模拟器 rwa_test2 逐项核对：一级行横滑到 Cybersecurity 止（8 个）、"More ▾" 钉住首屏可见；面板 13 项按运营顺序平铺、无搜索框；选 Machine Learning 后钉在 More 左侧并出现其二级与空分类卡；Crypto 二级 5M/15M/1h/4h/Daily、周期市场秒级倒计时、悬浮条钉住均正常。首轮发现"选中项插到行尾会被横滑遮住"，改为钉住（10.2 表）后重建复核通过。发布：OTA rev 11 `ota_iFLj3wXFITO8Jom6Crwv1A`（immediate），详见 `docs/changes/2026-09-10-feat-predict-primary-overflow-no-mock.md`。
