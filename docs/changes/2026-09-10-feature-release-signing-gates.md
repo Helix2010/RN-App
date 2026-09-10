@@ -97,4 +97,5 @@
 - 服务端 pin：`GET /v1/admin/release-identity/android` 返回 `com.anyfun.foundation` / `1a5d9fb4…e694`（由管理员在 RN-Admin 登记）。
 - 重新构建：main `befcbd1`、干净工作区，`artifacts/anyfun-1.3.0-build26-release.apk` 38,717,630 字节，SHA-256 `37a711c31a614795b84104b34cea49c57a2e57e5dbc8c183beb190f0def04db7`；门禁 + `android:verify` + apksigner/aapt 三路一致。首次构建的产物（`30a6725b…56ec`，expo 57.0.20）作废。
 - 上传：在 web4 用管理密钥走 `POST /v1/admin/release-artifacts/uploads` → `PUT` → `POST /v1/admin/releases`，服务端复检通过并落库为 `rel_4W0ZTVaCWwY2aZXIKLxu4Q`，status `verified`（待发布），`objectEtag` 已记录，`mandatory=false`。**未发布**：公开 `latest` 仍指向 1.2.11 (25)，待发布记录的公开下载返回 404。
-- 待办：第 8 步迁移 OTA 引导页开发并先发出，再点「发布」；web4 服务进程未设置 `APP_ENV=production`（服务端默认 development），仅生产才生效的 `RELEASE_SIGNER_UNPINNED`、存储/下载 https 强制两条目前未启用，需运维确认后在 web4 `.env` 设置并重启。
+- 待办：第 8 步迁移 OTA 引导页开发并先发出，再点「发布」。
+- 更正：此前记录称 web4 未设置 `APP_ENV=production`，有误。服务由 Docker Compose 运行，`deploy/web4/compose.yaml` 已为 server / indexer 容器固定 `APP_ENV: production`，容器内实际值为 `production`；仅生产生效的 `RELEASE_SIGNER_UNPINNED`、存储 https、下载链接 https 三条门禁均已启用（本次上传即经过 production=true 的身份校验与 https 存储端点检查）。
