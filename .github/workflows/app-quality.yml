@@ -61,12 +61,15 @@ jobs:
           printf '%s' "$ANDROID_RELEASE_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
           echo "ANDROID_RELEASE_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
       - name: Build the release APK through the tenant gate
+        # ANDROID_HOME 直接继承 runner 进程环境（ubuntu-latest 预装 SDK）；
+        # 不能写 ${{ env.ANDROID_HOME }}：表达式里的 env 上下文只含工作流自己声明的变量，会把它覆盖成空串
         env:
-          ANDROID_HOME: ${{ env.ANDROID_HOME }}
           ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
           ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
           ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
-        run: pnpm android:release "$TENANT" --no-push
+        run: |
+          test -d "$ANDROID_HOME" || { echo "ANDROID_HOME is not an installed SDK on this runner: '$ANDROID_HOME'"; exit 1; }
+          pnpm android:release "$TENANT" --no-push
       - name: Re-verify the artifact independently of the build script
         run: pnpm android:verify artifacts/*.apk "$TENANT"
       - name: Remove the keystore from the runner

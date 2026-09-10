@@ -89,3 +89,4 @@
 - `expo` 由 `~57.0.20` 升到 `~57.0.21`：main 上的 `app-quality` 此前连续失败在 `scripts/check-expo-doctor.mjs`（SDK 要求 57.0.21），而新增的 `android-release-gate` 依赖 `verify` 通过，不修则门禁永远不跑。本地 expo-doctor 21/21 通过。
 - `scripts/build-android-release.mjs` 新增 `RN_ENV_ROOT`（仅 Jest 子进程生效）：脚本测试把 `.env` 查找根指到临时目录，断言不再受开发者本机 `.env.local` 里的 `ANDROID_RELEASE_KEYSTORE_PATH` 影响（此前登记路径后「缺少签名材料」用例会因缺失列表变化而失败）。
 - GitHub `android-release` 环境的 4 个 secrets 已由保管人配置；密钥库与口令仍只在保管人机器，不入库。
+- 首次 CI 运行（run 34452866081）`android-release-gate` 在构建前失败：步骤把 `ANDROID_HOME` 写成 `${{ env.ANDROID_HOME }}`，而表达式里的 `env` 上下文只包含工作流自己声明的变量，结果把 runner 预装 SDK 的 `ANDROID_HOME` 覆盖成空串。修正为直接继承 runner 环境，并在构建前断言 `ANDROID_HOME` 目录存在。
