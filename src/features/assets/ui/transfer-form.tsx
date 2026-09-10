@@ -14,6 +14,7 @@ import {
   isZero,
   money,
   scaleBps,
+  toApproxNumber,
   toDecimalString,
   type Money,
 } from "../../../core/money/money";
@@ -109,7 +110,13 @@ export function PendingWithdrawals({
   const now = useCountdownNow(items.map((item) => item.claimableAt));
 
   const claimOne = async (item: PendingWithdrawal) => {
-    if (!(await requireVerification())) return;
+    // 领取的是稳定币（USDC / USDW），面额即美元规模：大额时不论策略都要验证（N11）
+    if (
+      !(await requireVerification({
+        usdValue: toApproxNumber(item.assetAmount),
+      }))
+    )
+      return;
     claim.mutate(item.requestId, {
       onSuccess: (tx) => onClaimed?.(tx, item),
       onError: (error) =>
@@ -278,7 +285,9 @@ export function TransferForm({
 
   const submit = async () => {
     if (!amount) return;
-    if (!(await requireVerification())) return;
+    // 划转的是稳定币，面额即美元规模（N11）
+    if (!(await requireVerification({ usdValue: toApproxNumber(amount) })))
+      return;
     if (direction === "deposit") {
       setTxTitle(
         fill(t("transfer.depositTitle"), {

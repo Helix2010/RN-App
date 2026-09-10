@@ -4,6 +4,8 @@ import {
   renderWithProviders,
   signIn,
 } from "../../../test/harness";
+import type { TokenRef } from "../../../core/gateways/types";
+import { TOKENS } from "../../wallet/fixtures/wallet";
 import { SwapScreen } from "./swap-screen";
 
 function props() {
@@ -47,6 +49,35 @@ describe("SwapScreen", () => {
       expect(screen.getAllByText(runtime.t(key)).length).toBeGreaterThan(0);
     }
     expect(screen.getByTestId("swap-submit")).toBeTruthy();
+  });
+
+  it("keeps the unlimited approval behind the confirmation sheet and a verification", async () => {
+    const gateways = createTestGateways();
+    await signIn(gateways);
+    const approve = jest.spyOn(gateways.dex, "approve");
+    const { runtime } = await renderWithProviders(
+      <SwapScreen
+        {...props()}
+        initialChain="eth"
+        initialSell={TOKENS.UNI as TokenRef}
+        initialBuy={TOKENS.ETH as TokenRef}
+      />,
+      { gateways },
+    );
+    await fireEvent.changeText(await screen.findByTestId("swap-amount"), "1");
+    // 首页主按钮只负责打开确认层：不能在用户看到 spender 和额度之前就发出授权
+    await waitFor(() =>
+      expect(screen.getByTestId("swap-approve")).toBeTruthy(),
+    );
+    await fireEvent.press(screen.getByTestId("swap-submit"));
+    expect(approve).not.toHaveBeenCalled();
+    // 确认层要说清这是无限额授权，并列出被授权的合约地址
+    expect(
+      screen.getAllByText(runtime.t("swap.spender")).length,
+    ).toBeGreaterThan(0);
+    await fireEvent.press(screen.getByTestId("swap-approve"));
+    await waitFor(() => expect(approve).toHaveBeenCalled());
+    expect(approve.mock.calls[0]?.[3]).toBe(true);
   });
 
   it("offers a transfer instead of a swap when the balance is short", async () => {

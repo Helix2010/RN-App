@@ -698,6 +698,10 @@ const zhCN = {
   "swap.approve": "授权 {symbol}",
   "swap.approving": "授权中…",
   "swap.approved": "已授权 {symbol}",
+  "swap.approveUnlimited":
+    "将授权路由合约无限额支配你的 {symbol}，授权后无需再次确认即可转走。只在你信任该合约时继续。",
+  "swap.spender": "被授权合约",
+  "swap.approve.verifyReason": "验证身份以授权代币支配权",
   "swap.insufficient": "余额不足，去划转",
   "swap.confirmTitle": "确认兑换",
   "swap.confirm": "确认兑换",
@@ -1913,6 +1917,10 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "swap.approve": "Approve {symbol}",
   "swap.approving": "Approving…",
   "swap.approved": "{symbol} approved",
+  "swap.approveUnlimited":
+    "This grants the router contract an unlimited allowance over your {symbol}; it can move them afterwards without asking again. Continue only if you trust this contract.",
+  "swap.spender": "Approved contract",
+  "swap.approve.verifyReason": "Verify your identity to approve token spending",
   "swap.insufficient": "Insufficient balance · transfer",
   "swap.confirmTitle": "Confirm swap",
   "swap.confirm": "Confirm swap",

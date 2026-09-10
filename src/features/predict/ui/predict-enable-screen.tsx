@@ -164,7 +164,8 @@ export function PredictEnableScreen({
     agreements.data === undefined || (pending.length > 0 && !agreed);
 
   const run = async () => {
-    if (!(await requireVerification())) return;
+    // 启用会建链上账户并签授权，敞口不封顶：规模未知按 null 处理，一律验证（N11）
+    if (!(await requireVerification({ usdValue: null }))) return;
     enable.mutate(undefined, {
       onSuccess: () => {
         if (pending.length > 0) accept.mutate(pending);

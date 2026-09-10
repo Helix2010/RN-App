@@ -1,3 +1,8 @@
+import {
+  TypedDataEncoder,
+  type TypedDataDomain,
+  type TypedDataField,
+} from "ethers";
 import type { ChainId } from "../../../core/gateways/types";
 import type {
   EvmTransactionRequest,
@@ -50,6 +55,20 @@ export type SignClientLike = {
   }) => Promise<void>;
   session: {
     getAll: () => ConnectedSession[];
+  };
+  /**
+   * 会话事件。钱包侧断开 / 换账户只通过事件告知，不订阅就会一直把已失效的
+   * 会话当成有效的（安全评审 N37）。声明成可选，窄接口的假实现可以不带它。
+   */
+  on?: (event: string, handler: (payload: SessionEventPayload) => void) => void;
+};
+
+/** `session_delete` / `session_update` / `session_event` 的公共载荷形状。 */
+export type SessionEventPayload = {
+  topic: string;
+  params?: {
+    namespaces?: Record<string, SessionNamespace>;
+    event?: { name?: string };
   };
 };
 
@@ -121,6 +140,11 @@ type Connection = {
   address: string;
   chains: ChainId[];
   connector: WalletConnectorId;
+  /**
+   * 钱包侧已经断开这条会话。签名器可能还握着这个对象，所以撤销要写在对象上，
+   * 光从 map 里删不够（安全评审 N37）。
+   */
+  revoked?: boolean;
 };
 
 export function parseAccounts(
@@ -165,7 +189,62 @@ export class WalletConnectConnector implements ExternalWalletConnector {
   /** 二维码刚弹出来就被关掉时，连接还没走到等待批准那一步，用标记补上 */
   private cancelRequested = false;
 
+  /** 事件只订阅一次；客户端换了（projectId 变更）会重新走这里 */
+  private boundClient: SignClientLike | null = null;
+
   constructor(private readonly deps: WalletConnectDeps) {}
+
+  /**
+   * 取客户端，并确保会话事件已订阅。钱包侧断开后本地必须立刻失效，否则界面
+   * 还显示"已连接"，下一次签名要等到超时才报错（安全评审 N37）。
+   */
+  private async client(): Promise<SignClientLike> {
+    const client = await this.deps.client();
+    if (this.boundClient !== client && client.on) {
+      this.boundClient = client;
+      client.on("session_delete", (payload) => this.revoke(payload.topic));
+      client.on("session_update", (payload) =>
+        this.syncNamespaces(payload.topic, payload.params?.namespaces),
+      );
+      client.on("session_event", (payload) => {
+        // 换账户等于这条连接不再代表原来的账户；链切换不影响绑定，忽略
+        if (payload.params?.event?.name === "accountsChanged")
+          this.revoke(payload.topic);
+      });
+    }
+    return client;
+  }
+
+  /** 作废某条会话：从 map 移除，并在对象上打标记让已发出的签名器也失效。 */
+  private revoke(topic: string): void {
+    for (const [key, connection] of this.connections)
+      if (connection.topic === topic) {
+        connection.revoked = true;
+        this.connections.delete(key);
+      }
+  }
+
+  /** 钱包更新了命名空间：账户没变就跟着更新链，变了就按断开处理。 */
+  private syncNamespaces(
+    topic: string,
+    namespaces?: Record<string, SessionNamespace>,
+  ): void {
+    if (!namespaces) return;
+    const existing = [...this.connections.values()].find(
+      (item) => item.topic === topic,
+    );
+    if (!existing) return;
+    const parsed = parseAccounts(namespaces, this.deps.networks());
+    if (
+      !parsed ||
+      parsed.chains.length === 0 ||
+      parsed.address.toLowerCase() !== existing.address.toLowerCase()
+    ) {
+      this.revoke(topic);
+      return;
+    }
+    existing.chains = parsed.chains;
+  }
 
   async listConnectors(): Promise<WalletConnector[]> {
     // configured：租户配了 projectId 才能连（没配就置灰）
@@ -241,7 +320,7 @@ export class WalletConnectConnector implements ExternalWalletConnector {
     if (this.deps.available && !this.deps.available())
       throw new WalletConnectUnavailableError();
     this.cancelRequested = false;
-    const client = await this.deps.client();
+    const client = await this.client();
     const networks = this.deps.networks();
     const { uri, approval } = await client.connect({
       // 用 optionalNamespaces：requiredNamespaces 里的方法是"钱包必须支持"，
@@ -271,7 +350,7 @@ export class WalletConnectConnector implements ExternalWalletConnector {
     if (!parsed) throw new WalletConnectRejectedError("no account was shared");
     if (parsed.chains.length === 0) {
       // 不留一个"已连接但零条链"的账户：断开会话，按它自己的错误类报出去
-      const client = await this.deps.client();
+      const client = await this.client();
       await client.disconnect({
         topic: session.topic,
         reason: { code: 6000, message: "no enabled chain" },
@@ -301,7 +380,7 @@ export class WalletConnectConnector implements ExternalWalletConnector {
     const connection = this.connections.get(address.toLowerCase());
     if (!connection) return;
     this.connections.delete(address.toLowerCase());
-    const client = await this.deps.client();
+    const client = await this.client();
     await client.disconnect({
       topic: connection.topic,
       reason: { code: 6000, message: "user disconnected" },
@@ -317,7 +396,7 @@ export class WalletConnectConnector implements ExternalWalletConnector {
 
   /** 冷启动后恢复已有会话，避免用户每次都要重新扫码。 */
   async restore(): Promise<{ address: string; chains: ChainId[] }[]> {
-    const client = await this.deps.client();
+    const client = await this.client();
     const restored: { address: string; chains: ChainId[] }[] = [];
     const networks = this.deps.networks();
     for (const session of client.session.getAll()) {
@@ -362,6 +441,11 @@ class WalletConnectSigner implements WalletSigner {
     params: unknown[],
     chainId?: number,
   ): Promise<T> {
+    // 钱包侧已断开这条会话：立刻拒签，不要发出去等超时（安全评审 N37）
+    if (this.connection.revoked)
+      throw new WalletConnectRejectedError(
+        "wallet session was disconnected by the wallet",
+      );
     const client = await this.deps.client();
     // Android 上请求发出后必须把用户切到钱包 App，否则他看不到确认页
     await this.deps.openWallet?.(this.connection.connector);
@@ -412,7 +496,16 @@ class WalletConnectSigner implements WalletSigner {
     _context: SignRequestContext,
   ): Promise<string> {
     void _context;
-    const payload = JSON.stringify({ domain, types, message: value });
+    // eth_signTypedData_v4 要求完整的 EIP-712 载荷：缺 primaryType 或 EIP712Domain
+    // 时，钱包只能自己猜主类型，不同钱包猜法不同，签出来的摘要可能不是我们要的
+    // 那一个（安全评审 N30）。用 ethers 按同一套规则生成，与内置签名器一致。
+    const payload = JSON.stringify(
+      TypedDataEncoder.getPayload(
+        domain as TypedDataDomain,
+        types as Record<string, TypedDataField[]>,
+        value,
+      ),
+    );
     return this.send<string>("eth_signTypedData_v4", [
       this.connection.address,
       payload,
@@ -429,11 +522,20 @@ class WalletConnectSigner implements WalletSigner {
     // 这里也不传 nonce / 手续费——钱包自己算的比我们准，猜错反而会让它拒签。
     void _broadcast;
     assertSubmittable(transaction);
+    // from 只能是本连接批准的那个账户。调用方传了别的地址就是上层出了错，
+    // 静默改成当前账户会把钱从非预期的账户里划走（安全评审 N26/N37）。
+    if (
+      transaction.from !== undefined &&
+      transaction.from.toLowerCase() !== this.connection.address.toLowerCase()
+    )
+      throw new WalletConnectRejectedError(
+        `transaction.from ${transaction.from} is not the connected account ${this.connection.address}`,
+      );
     return this.send<string>(
       "eth_sendTransaction",
       [
         {
-          from: transaction.from ?? this.connection.address,
+          from: this.connection.address,
           to: transaction.to,
           value: transaction.value ? toHex(transaction.value) : undefined,
           data: transaction.data,

@@ -4,6 +4,7 @@ import {
   WalletConnectUnavailableError,
   parseAccounts,
   type ConnectedSession,
+  type SessionEventPayload,
   type SignClientLike,
   type WalletConnectDeps,
 } from "./walletconnect-connector";
@@ -38,6 +39,10 @@ function setup(options?: {
   requestTimeoutMs?: number;
 }) {
   const request = options?.request ?? jest.fn(async () => "0xsigned");
+  const handlers: Record<
+    string,
+    ((payload: SessionEventPayload) => void)[] | undefined
+  > = {};
   const client: SignClientLike = {
     connect: jest.fn(async () => ({
       uri: options?.uri ?? "wc:topic@2?relay-protocol=irn&symKey=abc",
@@ -46,6 +51,13 @@ function setup(options?: {
     request: request as unknown as SignClientLike["request"],
     disconnect: jest.fn(async () => {}),
     session: { getAll: () => options?.existing ?? [] },
+    on: (event, handler) => {
+      (handlers[event] ??= []).push(handler);
+    },
+  };
+  /** 钱包侧事件：测试里手动触发，模拟钱包断开 / 换账户 */
+  const emit = (event: string, payload: SessionEventPayload) => {
+    for (const handler of handlers[event] ?? []) handler(payload);
   };
   const present = jest.fn(async () => {});
   const openWallet = jest.fn(async () => {});
@@ -65,6 +77,7 @@ function setup(options?: {
     present,
     openWallet,
     request,
+    emit,
   };
 }
 
@@ -169,20 +182,86 @@ describe("WalletConnectConnector", () => {
     expect(request.mock.calls[0][0].request.params[0]).toBe("0xc3a9");
   });
 
-  it("sends typed data as eth_signTypedData_v4 with the address first", async () => {
+  it("sends a complete EIP-712 payload with primaryType and EIP712Domain", async () => {
     const { connector, request } = setup();
     await connector.connect("metamask");
     await connector
       .signer(ADDRESS)
-      .signTypedData({ name: "F" }, { Order: [] }, { id: 1 }, { reason: "r" });
+      .signTypedData(
+        { name: "F", version: "1", chainId: 56 },
+        { Order: [{ name: "id", type: "uint256" }] },
+        { id: 1 },
+        { reason: "r" },
+      );
     const call = request.mock.calls[0][0].request;
     expect(call.method).toBe("eth_signTypedData_v4");
     expect(call.params[0]).toBe(ADDRESS);
-    expect(JSON.parse(call.params[1] as string)).toEqual({
-      domain: { name: "F" },
-      types: { Order: [] },
-      message: { id: 1 },
+    const payload = JSON.parse(call.params[1] as string);
+    // 缺 primaryType / EIP712Domain 时钱包只能自己猜主类型（安全评审 N30）
+    expect(payload.primaryType).toBe("Order");
+    expect(payload.types.EIP712Domain).toEqual([
+      { name: "name", type: "string" },
+      { name: "version", type: "string" },
+      { name: "chainId", type: "uint256" },
+    ]);
+    expect(payload.types.Order).toEqual([{ name: "id", type: "uint256" }]);
+    expect(payload.domain).toMatchObject({ name: "F", version: "1" });
+    expect(payload.message).toEqual({ id: "1" });
+  });
+
+  it("refuses a transaction whose from is not the connected account", async () => {
+    const { connector, request } = setup();
+    await connector.connect("metamask");
+    await expect(
+      connector.signer(ADDRESS).submitTransaction(
+        {
+          chainId: 56,
+          to: "0x000000000000000000000000000000000000dEaD",
+          value: 1n,
+          from: "0x1111111111111111111111111111111111111111",
+        },
+        { reason: "r" },
+        async () => "0xhash",
+      ),
+    ).rejects.toBeInstanceOf(WalletConnectRejectedError);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("stops signing once the wallet deletes the session", async () => {
+    const { connector, emit, request } = setup();
+    await connector.connect("metamask");
+    const signer = connector.signer(ADDRESS);
+    emit("session_delete", { topic: "topic-1" });
+    // 已经拿到手的签名器也要失效，不能只从连接表里删（安全评审 N37）
+    await expect(
+      signer.signMessage("hi", { reason: "r" }),
+    ).rejects.toBeInstanceOf(WalletConnectRejectedError);
+    expect(request).not.toHaveBeenCalled();
+    expect(() => connector.signer(ADDRESS)).toThrow(WalletConnectRejectedError);
+  });
+
+  it("drops the connection when the wallet switches to another account", async () => {
+    const { connector, emit } = setup();
+    await connector.connect("metamask");
+    emit("session_event", {
+      topic: "topic-1",
+      params: { event: { name: "accountsChanged" } },
     });
+    expect(() => connector.signer(ADDRESS)).toThrow(WalletConnectRejectedError);
+  });
+
+  it("follows a namespace update that only changes the enabled chains", async () => {
+    const { connector, emit, request } = setup();
+    await connector.connect("metamask");
+    emit("session_update", {
+      topic: "topic-1",
+      params: {
+        namespaces: { eip155: { accounts: [`eip155:1:${ADDRESS}`] } },
+      },
+    });
+    await connector.signer(ADDRESS).signMessage("hi", { reason: "r" });
+    // 只剩 eth：默认链跟着变，连接本身保留
+    expect(request.mock.calls[0][0].chainId).toBe("eip155:1");
   });
 
   it("uses the transaction's own chain and hex-encodes amounts", async () => {

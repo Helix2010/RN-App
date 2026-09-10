@@ -201,22 +201,33 @@ export function SwapScreen({
       return;
     }
     if (!quote.data) return;
-    if (needsApproval) {
-      approve.mutate(
-        { token: sell, spender: quote.data.spender, unlimited: true },
-        {
-          onSuccess: () =>
-            toast(fill(t("swap.approved"), { symbol: sell.symbol }), "success"),
-          onError: () => toast(t("state.error"), "error"),
-        },
-      );
-      return;
-    }
+    // 授权也走确认层：无限额授权把这个代币的支配权交给路由合约，
+    // 必须先让用户看清 spender 与额度，并过一次身份验证（安全评审 N22）
     confirmSheet.current?.present();
   };
 
+  const runApprove = async (current: Quote) => {
+    // 无限额授权的敞口不封顶，规模未知按 null 处理，一律验证
+    if (
+      !(await requireVerification({
+        usdValue: null,
+        reason: "swap.approve.verifyReason",
+      }))
+    )
+      return;
+    approve.mutate(
+      { token: sell, spender: current.spender, unlimited: true },
+      {
+        onSuccess: () =>
+          toast(fill(t("swap.approved"), { symbol: sell.symbol }), "success"),
+        onError: () => toast(t("state.error"), "error"),
+      },
+    );
+  };
+
   const submit = async (current: Quote) => {
-    if (!(await requireVerification())) return;
+    // 报价自带卖出侧美元估值，直接作为本次操作的规模（N11）
+    if (!(await requireVerification({ usdValue: current.amountInUsd }))) return;
     swap.mutate(current.id, {
       onSuccess: (result) => {
         confirmSheet.current?.dismiss();
@@ -677,7 +688,43 @@ export function SwapScreen({
                 {fill(t("swap.quoteValid"), { seconds: secondsLeft })}
               </Body>
             </Row>
-            {secondsLeft <= 1 ? (
+            {needsApproval ? (
+              <Stack gap="$2">
+                <Row
+                  alignItems="flex-start"
+                  gap="$2"
+                  padding="$2.5"
+                  borderRadius="$3"
+                  style={{ backgroundColor: `${theme.warning.val}22` }}
+                >
+                  <AppIcon
+                    name="alert-outline"
+                    size={16}
+                    colorToken="warning"
+                  />
+                  <Body flex={1} fontSize={12} color="$warning">
+                    {fill(t("swap.approveUnlimited"), {
+                      symbol: sell.symbol,
+                    })}
+                  </Body>
+                </Row>
+                <DetailRow
+                  label={t("swap.spender")}
+                  value={quote.data.spender}
+                />
+                <PrimaryButton
+                  disabled={approve.isPending}
+                  onPress={() => {
+                    if (quote.data) void runApprove(quote.data);
+                  }}
+                  testID="swap-approve"
+                >
+                  {approve.isPending
+                    ? t("swap.approving")
+                    : fill(t("swap.approve"), { symbol: sell.symbol })}
+                </PrimaryButton>
+              </Stack>
+            ) : secondsLeft <= 1 ? (
               <SecondaryButton
                 onPress={() => void quote.refetch()}
                 testID="swap-requote"

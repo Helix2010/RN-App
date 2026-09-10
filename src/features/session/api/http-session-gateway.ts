@@ -11,6 +11,11 @@ import { AppError } from "../../../core/network/app-error";
 import type { Session } from "../model/session";
 import type { SessionGateway, SignInChallenge, SignInRequest } from "./gateway";
 
+/** 地址比较只看大小写无关的十六进制：服务端可能回 EIP-55，也可能回全小写。 */
+function sameAddress(left: string, right: string): boolean {
+  return left.toLowerCase() === right.toLowerCase();
+}
+
 const SESSION_KEY = "foundation.session.v1";
 const TOKEN_KEY = "foundation.session-token.v1";
 
@@ -109,6 +114,14 @@ export class HttpSessionGateway implements SessionGateway {
         { headers: installation },
       );
     }
+    // 签的是哪个账户，会话就必须是哪个账户。服务端返回别的地址时不能照单全收：
+    // 后续所有余额、下单、签名都会打到这个地址上（安全评审 N26）。
+    if (!sameAddress(response.address, request.address))
+      throw new AppError(
+        "incompatible_response",
+        `sign-in returned ${response.address}, expected ${request.address}`,
+        false,
+      );
     const session: Session = {
       address: response.address,
       connector: request.connector,
@@ -157,9 +170,16 @@ export class HttpSessionGateway implements SessionGateway {
         sessionSchema,
         { headers: { Authorization: `Wallet ${token}` } },
       );
+      // 令牌对应的账户与本地记录不一致：这不是"地址变了"，而是这份令牌根本
+      // 不属于本地这个会话。改写本地地址会让界面把别人的账户当成自己的，
+      // 一律按会话失效处理（安全评审 N26）。
+      if (!sameAddress(remote.address, cached.address)) {
+        await this.clear();
+        notifySessionStateChanged();
+        return null;
+      }
       const session: Session = {
         ...cached,
-        address: remote.address,
         expiresAt: remote.expiresAt,
       };
       await this.storage.setItem(SESSION_KEY, JSON.stringify(session));

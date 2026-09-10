@@ -13,6 +13,7 @@ import {
   compare,
   fromDecimal,
   isZero,
+  toApproxNumber,
   toDecimalString,
 } from "../../../core/money/money";
 import {
@@ -350,7 +351,14 @@ export const OrderSheet = forwardRef<
 
   const submit = async () => {
     if (!request || !market) return;
-    if (!(await requireVerification())) return;
+    // 下单规模用预览的成交额（买入是花费、卖出是所得，都是 USDW 面额）；
+    // 预览还没回来就是规模未知，按 null 一律验证（N11）
+    if (
+      !(await requireVerification({
+        usdValue: preview.data ? toApproxNumber(preview.data.cost) : null,
+      }))
+    )
+      return;
     place.mutate(request, {
       onSuccess: (result) => {
         // 市价单一份都没吃到（平台已撤）：留在面板上让用户改价 / 改量，不能说"已提交"

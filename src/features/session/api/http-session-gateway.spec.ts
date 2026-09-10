@@ -218,6 +218,42 @@ describe("HttpSessionGateway", () => {
     await expect(gateway.get()).resolves.toBeNull();
   });
 
+  it("refuses a sign-in that comes back bound to a different address", async () => {
+    const gateway = setup();
+    post.mockResolvedValueOnce(
+      verifyResponse({ address: "0x1111111111111111111111111111111111111111" }),
+    );
+    await expect(gateway.verify(request, challenge, "0xsig")).rejects.toThrow(
+      /expected/,
+    );
+    await expect(gateway.get()).resolves.toBeNull();
+  });
+
+  it("accepts a sign-in echoed back in a different letter case", async () => {
+    const gateway = setup();
+    post.mockResolvedValueOnce(
+      verifyResponse({ address: request.address.toLowerCase() }),
+    );
+    await expect(
+      gateway.verify(request, challenge, "0xsig"),
+    ).resolves.toMatchObject({ address: request.address.toLowerCase() });
+  });
+
+  it("drops the session when refresh reports a different account", async () => {
+    const gateway = setup();
+    post.mockResolvedValueOnce(verifyResponse());
+    await gateway.verify(request, challenge, "0xsig");
+    get.mockResolvedValueOnce({
+      address: "0x2222222222222222222222222222222222222222",
+      connector: "embedded",
+      chains: ["bsc"],
+      signedInAt: "2026-09-01T00:01:00.000Z",
+      expiresAt: "2099-01-01T00:00:00.000Z",
+    });
+    await expect(gateway.refresh()).resolves.toBeNull();
+    await expect(gateway.get()).resolves.toBeNull();
+  });
+
   it("keeps the session when refresh fails for network reasons", async () => {
     const gateway = setup();
     post.mockResolvedValueOnce(verifyResponse());
