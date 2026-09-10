@@ -278,8 +278,19 @@ export function HorizontalScroll({ children }: PropsWithChildren) {
 }
 
 /**
+ * 上一次量到的轮播视口宽度。`fullWidth` 的卡片宽度要等 `onLayout` 才知道，首帧只能按
+ * `itemWidth` 画，卡片先窄一下再撑满——数据到达、切页签、骨架换成内容每次都跳一下。
+ * App 里的轮播都在同一条内容列里、宽度相同，所以把量到的值留下来当下一次挂载的初值。
+ * `onLayout` 仍是唯一权威：量到就覆盖，转屏或分屏改变宽度时自然修正。
+ */
+let lastCarouselViewportWidth = 0;
+
+/**
  * 吸附式横向卡片轮播。`fullWidth` 时卡片占满视口；配 `peek` 让下一张露出一截，
  * 用户一眼就知道还能横滑；`showDots` 在下方给页点（当前页加长）。
+ *
+ * 骨架态与内容态要用同一个 `SnapCarousel`（同位置、同 testID），量到的宽度才会跨过
+ * "数据到了"这一刻，卡片换上来时宽高已经定好，不再跳版。
  */
 export function SnapCarousel({
   children,
@@ -298,11 +309,15 @@ export function SnapCarousel({
   showDots?: boolean;
   testID?: string;
 }>) {
-  const [viewportWidth, setViewportWidth] = useState(0);
+  const [viewportWidth, setViewportWidth] = useState(lastCarouselViewportWidth);
   const resolvedItemWidth =
     fullWidth && viewportWidth > 0
       ? Math.max(120, viewportWidth - peek)
       : itemWidth;
+  const measure = (width: number) => {
+    lastCarouselViewportWidth = width;
+    setViewportWidth(width);
+  };
   const scrollX = useSharedValue(0);
   const onScroll = useAnimatedScrollHandler({
     onScroll: (event) => {
@@ -326,7 +341,7 @@ export function SnapCarousel({
         horizontal
         showsHorizontalScrollIndicator={false}
         onScroll={onScroll}
-        onLayout={(event) => setViewportWidth(event.nativeEvent.layout.width)}
+        onLayout={(event) => measure(event.nativeEvent.layout.width)}
         scrollEventThrottle={16}
         snapToInterval={resolvedItemWidth + gap}
         snapToAlignment="start"

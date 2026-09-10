@@ -700,6 +700,7 @@ export function MarketListScreen({
       {discovery ? (
         <FeaturedSection
           events={heroes}
+          loading={curated.data === undefined && !curated.isError}
           onOpen={onOpenEvent}
           onOrder={onOrder}
           orderDisabled={region.blocked}
@@ -856,8 +857,8 @@ export function MarketListScreen({
           </Row>
         )
       ) : (
-        <Stack gap="$2">
-          <SkeletonBlock height={150} borderRadius="$4" />
+        // 首屏灰块总面积有限：精选轮播已经占了上半屏，列表这里两块就够表达"还在加载"
+        <Stack gap="$2" testID="predict-list-skeleton">
           <SkeletonBlock height={150} borderRadius="$4" />
           <SkeletonBlock height={150} borderRadius="$4" />
         </Stack>

@@ -49,6 +49,9 @@ import { useSession } from "../session/hooks/use-session";
 import { requestAuth } from "../session/model/auth-sheet-store";
 import { AccountSheet } from "../session/ui/account-sheet";
 
+/** 热门预测骨架卡高度：贴近 `PredictionHomeCard` 的实际高度，数据到了尽量不改高度 */
+const HOME_PREDICT_CARD_HEIGHT = 132;
+
 export function FoundationHomeScreen({
   onOpenAssets,
   onOpenProfile,
@@ -338,41 +341,45 @@ export function FoundationHomeScreen({
               {t("home.viewAll")} ›
             </InlineText>
           </Row>
-          {events.data ? (
-            events.data.items.length === 0 ? (
-              <Body>{t("state.empty")}</Body>
-            ) : (
-              <SnapCarousel
-                itemWidth={236}
-                gap={12}
-                fullWidth
-                peek={32}
-                showDots
-                testID="home-predict-carousel"
-              >
-                {events.data.items.map((event) => (
-                  <PredictionHomeCard
-                    key={event.id}
-                    event={event}
-                    locale={locale}
-                    volumeLabel={t("home.volume")}
-                    closesLabel={t("home.closesIn")}
-                    outcomesLabel={t("home.outcomes")}
-                    onPress={onOpenPredict}
-                  />
-                ))}
-              </SnapCarousel>
-            )
-          ) : events.isError ? (
+          {events.isError ? (
             <InlineErrorRow
               message={t("state.error")}
               onRetry={() => void events.refetch()}
               retryLabel={t("action.retryNow")}
             />
+          ) : events.data && events.data.items.length === 0 ? (
+            <Body>{t("state.empty")}</Body>
           ) : (
-            <SnapCarousel itemWidth={236} gap={12} fullWidth peek={32}>
-              <SkeletonBlock width="100%" height={132} borderRadius="$4" />
-              <SkeletonBlock width="100%" height={132} borderRadius="$4" />
+            // 骨架与卡片共用这一个轮播：视口宽度在骨架阶段就量好，数据到了不再重新测宽跳版
+            <SnapCarousel
+              itemWidth={236}
+              gap={12}
+              fullWidth
+              peek={32}
+              showDots
+              testID="home-predict-carousel"
+            >
+              {events.data
+                ? events.data.items.map((event) => (
+                    <PredictionHomeCard
+                      key={event.id}
+                      event={event}
+                      locale={locale}
+                      volumeLabel={t("home.volume")}
+                      closesLabel={t("home.closesIn")}
+                      outcomesLabel={t("home.outcomes")}
+                      onPress={onOpenPredict}
+                    />
+                  ))
+                : [0, 1].map((index) => (
+                    <SkeletonBlock
+                      key={`skeleton-${index}`}
+                      width="100%"
+                      height={HOME_PREDICT_CARD_HEIGHT}
+                      borderRadius="$4"
+                      testID="home-predict-skeleton"
+                    />
+                  ))}
             </SnapCarousel>
           )}
         </Stack>

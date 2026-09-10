@@ -8,6 +8,7 @@ import {
   InlineText,
   Row,
   SectionTitle,
+  SkeletonBlock,
   SnapCarousel,
   Stack,
 } from "../../../design-system";
@@ -18,39 +19,59 @@ import { EventImage, FavoriteButton, YesNoButtons, fill } from "./shared";
 
 /** 精选轮播下一张露出的宽度：与首页"热门预测"一致 */
 const FEATURED_PEEK = 32;
-/** 图片 16:9；量到宽度之前用这个高度占位，避免首帧跳动 */
-const FEATURED_IMAGE_FALLBACK_HEIGHT = 180;
+/** 海报图比例：宽 / 高 */
+const FEATURED_IMAGE_RATIO = 16 / 9;
+/** 标题固定两行（`SectionTitle` 行高 22）：轮播里卡片等高，骨架换成内容也不改高度 */
+const FEATURED_TITLE_HEIGHT = 44;
+/** 报价行高度 = 紧凑 Yes/No 按钮高度 */
+const FEATURED_QUOTE_HEIGHT = 34;
+/** 成交量行高度 = `Body` 行高 */
+const FEATURED_META_HEIGHT = 22;
+/** Yes/No 按钮块宽度：与 `FeaturedCard`、`EventCard` 一致 */
+const FEATURED_ACTION_WIDTH = 132;
+/** 加载中占位的卡片张数：与首页"热门预测"一致，够表达"这里可以横滑" */
+const FEATURED_SKELETON_CARDS = 2;
 
 /**
  * 精选（设计 predict-discovery-polish §3）：运营 hero 位的海报卡。
  * 只有一张时不用轮播；≥2 张走 SnapCarousel（吸附 + peek + 页点），和首页同一套手感。
+ *
+ * `loading` 时画同形骨架，而且骨架与卡片挂在同一个 SnapCarousel 上：轮播在骨架阶段就把
+ * 视口宽度量好，数据到了直接换内容，不再出现"卡片凭空插进来把列表推下去"的一闪。
  */
 export function FeaturedSection({
   events,
+  loading,
   onOpen,
   onOrder,
   orderDisabled,
 }: {
   events: PredictEvent[];
+  /** 策展还没回来（失败由调用方的错误行表达，不走骨架） */
+  loading: boolean;
   onOpen: (event: PredictEvent) => void;
   onOrder: (market: Market, outcome: Outcome) => void;
   orderDisabled: boolean;
 }) {
   const { t } = useFoundationRuntime();
-  if (events.length === 0) return null;
-  const cards = events.map((event) => (
-    <FeaturedCard
-      key={event.id}
-      event={event}
-      onOpen={onOpen}
-      onOrder={onOrder}
-      orderDisabled={orderDisabled}
-    />
-  ));
+  if (!loading && events.length === 0) return null;
+  const cards = loading
+    ? Array.from({ length: FEATURED_SKELETON_CARDS }, (_, index) => (
+        <FeaturedCardSkeleton key={`skeleton-${index}`} />
+      ))
+    : events.map((event) => (
+        <FeaturedCard
+          key={event.id}
+          event={event}
+          onOpen={onOpen}
+          onOrder={onOrder}
+          orderDisabled={orderDisabled}
+        />
+      ));
   return (
     <Stack gap="$2" testID="predict-featured">
       <SectionTitle fontSize={14}>{t("predict.curation.title")}</SectionTitle>
-      {events.length === 1 ? (
+      {!loading && events.length === 1 ? (
         cards
       ) : (
         <SnapCarousel
@@ -62,6 +83,50 @@ export function FeaturedSection({
           {cards}
         </SnapCarousel>
       )}
+    </Stack>
+  );
+}
+
+/** 精选卡骨架：与 `FeaturedCard` 同一套外框、同一批固定高度，数据到了不改高度 */
+function FeaturedCardSkeleton() {
+  return (
+    <Stack
+      padding="$3"
+      gap="$2"
+      borderRadius="$4"
+      borderWidth={1}
+      borderColor="$borderColor"
+      backgroundColor="$surface"
+      testID="predict-hero-skeleton"
+    >
+      <SkeletonBlock
+        width="100%"
+        aspectRatio={FEATURED_IMAGE_RATIO}
+        borderRadius={12}
+      />
+      <Stack height={FEATURED_TITLE_HEIGHT} justifyContent="center" gap="$1.5">
+        <SkeletonBlock height={16} width="88%" />
+        <SkeletonBlock height={16} width="52%" />
+      </Stack>
+      <Row height={FEATURED_QUOTE_HEIGHT} alignItems="center" gap="$2">
+        <SkeletonBlock flex={1} height={16} />
+        <SkeletonBlock width={44} height={16} />
+        <Row width={FEATURED_ACTION_WIDTH} gap="$2">
+          <SkeletonBlock
+            flex={1}
+            height={FEATURED_QUOTE_HEIGHT}
+            borderRadius="$3"
+          />
+          <SkeletonBlock
+            flex={1}
+            height={FEATURED_QUOTE_HEIGHT}
+            borderRadius="$3"
+          />
+        </Row>
+      </Row>
+      <Stack height={FEATURED_META_HEIGHT} justifyContent="center">
+        <SkeletonBlock height={12} width="64%" />
+      </Stack>
     </Stack>
   );
 }
@@ -79,10 +144,6 @@ function FeaturedCard({
 }) {
   const { config, t } = useFoundationRuntime();
   const locale = config.localization.selectedLocale;
-  // 卡片宽度由轮播决定，图片高度按 16:9 跟着算（onLayout 回调里 setState，不在 effect 里）
-  const [width, setWidth] = useState(0);
-  const imageHeight =
-    width > 0 ? Math.round((width * 9) / 16) : FEATURED_IMAGE_FALLBACK_HEIGHT;
   const first = event.markets[0];
   const badge = [
     t("predict.curation.hero"),
@@ -98,7 +159,6 @@ function FeaturedCard({
       borderWidth={1}
       borderColor="$borderColor"
       backgroundColor="$surface"
-      onLayout={(layout) => setWidth(layout.nativeEvent.layout.width - 24)}
       onPress={() => onOpen(event)}
       accessibilityRole="button"
       testID={`predict-hero-${event.id}`}
@@ -107,14 +167,14 @@ function FeaturedCard({
         {event.imageUrl ? (
           <EventImage
             uri={event.imageUrl}
-            width={width > 0 ? width : undefined}
-            height={imageHeight}
+            aspectRatio={FEATURED_IMAGE_RATIO}
             radius={12}
             testID={`hero-image-${event.id}`}
           />
         ) : (
           <Stack
-            height={imageHeight}
+            width="100%"
+            aspectRatio={FEATURED_IMAGE_RATIO}
             borderRadius={12}
             backgroundColor="$surfaceVariant"
           />
@@ -139,12 +199,13 @@ function FeaturedCard({
           <FavoriteButton eventId={event.id} size={30} />
         </Stack>
       </Stack>
-      <SectionTitle numberOfLines={2}>
+      {/* 固定两行：轮播里卡片等高，标题长短不再改整卡高度，骨架也能对齐 */}
+      <SectionTitle numberOfLines={2} minHeight={FEATURED_TITLE_HEIGHT}>
         {pickTranslation(event.title, locale)}
       </SectionTitle>
       {first && first.yesPriceCents === null ? (
         // 没有报价就不画两颗"—"按钮：那看起来像坏了
-        <Row alignItems="center" gap="$2">
+        <Row minHeight={FEATURED_QUOTE_HEIGHT} alignItems="center" gap="$2">
           <Body flex={1} color="$color" numberOfLines={1}>
             {pickTranslation(first.outcomeLabel, locale)}
           </Body>
@@ -153,14 +214,14 @@ function FeaturedCard({
           </Body>
         </Row>
       ) : first ? (
-        <Row alignItems="center" gap="$2">
+        <Row minHeight={FEATURED_QUOTE_HEIGHT} alignItems="center" gap="$2">
           <Body flex={1} color="$color" numberOfLines={1}>
             {pickTranslation(first.outcomeLabel, locale)}
           </Body>
           <InlineText fontWeight="800" width={44} textAlign="right">
             {formatPercentCents(first.yesPriceCents)}
           </InlineText>
-          <Stack width={132}>
+          <Stack width={FEATURED_ACTION_WIDTH}>
             <YesNoButtons
               yes={first.yesPriceCents}
               compact

@@ -21,6 +21,7 @@ import {
   Row,
   SecondaryButton,
   SectionTitle,
+  SkeletonBlock,
   Stack,
 } from "../../../design-system";
 import { useFavoritesStore, useIsFavorite } from "../model/favorites-store";
@@ -155,37 +156,53 @@ export function YesNoButtons({
 /**
  * 事件 / 市场图片：平台给了 URL 才渲染，没给或加载失败都不占位。
  * 隐藏坏图是界面层处理，不替换成别的图，也不影响其它字段。
+ *
+ * 尺寸两种写法：`size` 是正方形图标；`aspectRatio` 占满容器宽度、按比例定高——高度由
+ * 布局算出，不用 JS 先量宽再改高，卡片第一帧就是最终尺寸。下载完成前铺一块同尺寸骨架
+ * （与 `BrandMark` 同一套做法）：占位，但不冒充内容。
  */
 export function EventImage({
   uri,
   size,
-  width,
-  height,
+  aspectRatio,
   radius = 8,
   testID,
 }: {
   uri: string | null;
   size?: number;
-  width?: number;
-  height?: number;
+  /** 宽 / 高（海报位 16 / 9）：给了就占满容器宽度，高度由布局按比例算 */
+  aspectRatio?: number;
   radius?: number;
   testID?: string;
 }) {
+  const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   if (!uri || failed) return null;
   return (
-    <Image
-      source={{ uri }}
-      onError={() => setFailed(true)}
-      accessibilityIgnoresInvertColors
-      style={{
-        width: width ?? size,
-        height: height ?? size,
-        borderRadius: radius,
-        backgroundColor: "transparent",
-      }}
-      testID={testID}
-    />
+    <Stack
+      width={aspectRatio === undefined ? size : "100%"}
+      height={aspectRatio === undefined ? size : undefined}
+      aspectRatio={aspectRatio}
+    >
+      {loaded ? null : (
+        <Stack position="absolute" inset={0}>
+          <SkeletonBlock flex={1} borderRadius={radius} />
+        </Stack>
+      )}
+      <Image
+        source={{ uri }}
+        onLoad={() => setLoaded(true)}
+        onError={() => setFailed(true)}
+        accessibilityIgnoresInvertColors
+        style={{
+          width: "100%",
+          height: "100%",
+          borderRadius: radius,
+          backgroundColor: "transparent",
+        }}
+        testID={testID}
+      />
+    </Stack>
   );
 }
 

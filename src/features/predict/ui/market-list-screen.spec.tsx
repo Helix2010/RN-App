@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   screen,
   waitFor,
@@ -14,6 +15,7 @@ import type { InMemoryPredictAccountGateway } from "../../../test/predict-accoun
 import { useMockRuntime } from "../../../core/mock/mock-runtime";
 import { EVENTS, EXTRA_TAGS } from "../fixtures/events";
 import { useFavoritesStore } from "../model/favorites-store";
+import type { CuratedEvent } from "../model/predict";
 import { MarketListScreen } from "./market-list-screen";
 
 function props() {
@@ -176,12 +178,15 @@ describe("MarketListScreen", () => {
       <MarketListScreen {...props()} showPositionsEntry />,
       { gateways },
     );
-    expect(await screen.findByTestId("predict-featured-carousel")).toBeTruthy();
+    // 骨架阶段轮播就在了，等真卡片上来再断言页点
+    expect(
+      await screen.findByTestId(`predict-hero-${EVENTS[0]!.id}`),
+    ).toBeTruthy();
+    expect(screen.getByTestId("predict-featured-carousel")).toBeTruthy();
     // 页点对无障碍隐藏，查询时要带 includeHiddenElements
     expect(
       screen.getByTestId("carousel-dots", { includeHiddenElements: true }),
     ).toBeTruthy();
-    expect(screen.getByTestId(`predict-hero-${EVENTS[0]!.id}`)).toBeTruthy();
     // 两个 hero 不进本地榜
     await waitFor(() =>
       expect(screen.getByTestId("predict-rank-boards")).toBeTruthy(),
@@ -192,6 +197,55 @@ describe("MarketListScreen", () => {
     expect(
       screen.queryByTestId(`predict-rank-row-${EVENTS[1]!.id}`),
     ).toBeNull();
+  });
+
+  it("holds the featured slot with a same-shaped skeleton until curation lands", async () => {
+    const gateways = createTestGateways();
+    let release: (events: CuratedEvent[]) => void = () => {};
+    gateways.predict.listCuratedEvents = () =>
+      new Promise<CuratedEvent[]>((resolve) => {
+        release = resolve;
+      });
+    await renderWithProviders(
+      <MarketListScreen {...props()} showPositionsEntry />,
+      { gateways },
+    );
+    // 策展还没回来：精选位先画同形骨架，不是空着等数据插进来把下面的列表推走
+    expect(await screen.findByTestId("predict-featured")).toBeTruthy();
+    expect(screen.getAllByTestId("predict-hero-skeleton")).toHaveLength(2);
+    expect(screen.getByTestId("predict-featured-carousel")).toBeTruthy();
+    expect(screen.queryByTestId(`predict-hero-${EVENTS[0]!.id}`)).toBeNull();
+
+    await act(async () => {
+      release(
+        EVENTS.slice(0, 2).map((event, index) => ({
+          event,
+          hero: index,
+          highlight: null,
+          normal: null,
+        })),
+      );
+    });
+    expect(
+      await screen.findByTestId(`predict-hero-${EVENTS[0]!.id}`),
+    ).toBeTruthy();
+    expect(screen.queryByTestId("predict-hero-skeleton")).toBeNull();
+    // 骨架和卡片用的是同一个轮播，换内容时它还在
+    expect(screen.getByTestId("predict-featured-carousel")).toBeTruthy();
+  });
+
+  it("drops the featured slot entirely when the platform curates no hero", async () => {
+    const gateways = createTestGateways();
+    gateways.predict.listCuratedEvents = async () => [];
+    await renderWithProviders(
+      <MarketListScreen {...props()} showPositionsEntry />,
+      { gateways },
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("event-ev-btc-120k")).toBeTruthy(),
+    );
+    expect(screen.queryByTestId("predict-featured")).toBeNull();
+    expect(screen.queryByTestId("predict-hero-skeleton")).toBeNull();
   });
 
   it("searches the whole platform once two characters are typed and offers matching tags", async () => {

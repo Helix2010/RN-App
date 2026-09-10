@@ -1,9 +1,11 @@
-import { screen, waitFor } from "@testing-library/react-native";
+import { act, screen, waitFor } from "@testing-library/react-native";
 import {
   createTestGateways,
   renderWithProviders,
   signIn,
 } from "../../test/harness";
+import type { Page } from "../../core/gateways/types";
+import type { PredictEvent } from "../predict/model/predict";
 import { FoundationHomeScreen } from "./foundation-home-screen";
 
 function props() {
@@ -40,6 +42,32 @@ describe("FoundationHomeScreen", () => {
     );
     expect(screen.queryByTestId("guest-connect")).toBeNull();
     expect(screen.getByLabelText(runtime.t("home.notifications"))).toBeTruthy();
+  });
+
+  it("holds the hot-predictions carousel with skeleton cards until the events land", async () => {
+    const gateways = createTestGateways();
+    const listEvents = gateways.predict.listEvents.bind(gateways.predict);
+    let release: () => void = () => {};
+    gateways.predict.listEvents = (query) =>
+      new Promise<Page<PredictEvent>>((resolve) => {
+        release = () => resolve(listEvents(query));
+      });
+    await renderWithProviders(<FoundationHomeScreen {...props()} />, {
+      gateways,
+    });
+    // 骨架卡和真卡挂在同一个轮播上：轮播在骨架阶段就把宽度量好，数据到了不重新测宽
+    expect(await screen.findByTestId("home-predict-carousel")).toBeTruthy();
+    expect(
+      screen.getAllByTestId("home-predict-skeleton").length,
+    ).toBeGreaterThan(0);
+
+    await act(async () => {
+      release();
+    });
+    await waitFor(() =>
+      expect(screen.queryByTestId("home-predict-skeleton")).toBeNull(),
+    );
+    expect(screen.getByTestId("home-predict-carousel")).toBeTruthy();
   });
 
   it("renders only the enabled module sections", async () => {
