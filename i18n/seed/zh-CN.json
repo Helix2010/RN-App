@@ -348,7 +348,6 @@
     "predict.filter.allIn": "全部 {tag}",
     "predict.filter.allTags": "全部分类",
     "predict.filter.clear": "清除",
-    "predict.filter.common": "常用",
     "predict.filter.favorites": "收藏",
     "predict.filter.favoritesCount": "收藏 · {n}",
     "predict.filter.more": "更多",

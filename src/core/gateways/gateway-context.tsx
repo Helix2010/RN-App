@@ -40,8 +40,6 @@ export type Gateways = {
   /** 预测账户：真实平台，没有 Mock 实现 */
   predictAccount: PredictAccountGateway;
   dex: DexGateway;
-  /** 业务数据来源；密钥与签名始终是真的 */
-  mode: "mock" | "live";
   /** 丢弃内存中的钱包解锁态；应用上锁 / 进后台时调用 */
   lockKeys: () => void;
 };
@@ -50,8 +48,8 @@ const GatewayContext = createContext<Gateways | null>(null);
 
 /**
  * 组装网关。**钱包密钥与签名是真的**（KeystoreVault + EmbeddedSigner）；
- * 余额 / 转账 / 预测 / 兑换等业务数据一期仍是 Mock，由 `chainData` 注入，
- * 接真实链与后端时只替换这里。Http 会话实现（P2）同样在此按 bootstrap.services 选择。
+ * 会话、预测行情与账户、链上转出都接真实服务；只有 DEX 仍是 Mock（尚未接入），
+ * 演示账本余额由 `chainData` 注入。接真实 DEX 时只替换这里。
  */
 function createGateways(storage: KeyValueStorage): Gateways {
   const vault = new KeystoreVault({
@@ -119,7 +117,6 @@ function createGateways(storage: KeyValueStorage): Gateways {
     predict,
     predictAccount,
     dex,
-    mode: "mock",
     lockKeys: () => vault.lock(),
   };
 }

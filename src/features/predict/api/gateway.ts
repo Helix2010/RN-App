@@ -44,8 +44,8 @@ import type {
 export interface PredictGateway {
   /** 一级分类：平台轮播标签 */
   listTags(): Promise<Tag[]>;
-  /** 标签全集（"更多分类"面板），按名称排序 */
-  listAllTags(): Promise<Tag[]>;
+  /** 单个标签（`/tags/{id}`）：只用于解析深链带进来、不在轮播里的一级标签 */
+  getTag(tagId: string): Promise<Tag>;
   /** 一级标签下的二级标签（`/tags/{id}/related-tags/tags`）；没有就是空数组 */
   listRelatedTags(tagId: string): Promise<Tag[]>;
   listEvents(query: EventQuery): Promise<Page<PredictEvent>>;

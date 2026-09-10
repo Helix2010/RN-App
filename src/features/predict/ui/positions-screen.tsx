@@ -1,5 +1,6 @@
 import { usePredictAccountBalance } from "../hooks/use-predict-account";
 import { useRef, useState } from "react";
+import { useNow } from "../../../core/time/use-now";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import {
@@ -510,6 +511,7 @@ function PositionRow({
   onSettlement: (marketId: string, eventId: string) => void;
   onClaim: () => void;
 }) {
+  const now = useNow();
   const { t } = useFoundationRuntime();
   // 周期市场：标题后带上那一期的窗口，一期只活几分钟，光看问题分不清是哪期
   const window = isSeriesPosition(position)
@@ -546,7 +548,7 @@ function PositionRow({
           ) : (
             <Body fontSize={11}>
               {position.endsAt
-                ? closesText(position.endsAt, locale, t)
+                ? closesText(position.endsAt, now, locale, t)
                 : NO_QUOTE}
             </Body>
           )}

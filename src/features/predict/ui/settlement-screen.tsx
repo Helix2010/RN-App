@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef } from "react";
+import { useNow } from "../../../core/time/use-now";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import {
@@ -8,7 +9,6 @@ import {
   formatUsd,
 } from "../../../core/i18n/format";
 import { pickTranslation } from "../../../core/i18n/localized-text";
-import { mockNow } from "../../../core/mock/mock-runtime";
 import {
   AppIcon,
   Body,
@@ -119,18 +119,12 @@ export function SettlementScreen({
   const adjudication = useAdjudication(marketId);
   const positions = usePositions(address, true);
   const disputeSheet = useRef<SheetHandle>(null);
-  const [now, setNow] = useState(mockNow());
+  const now = useNow(true);
   const adj = adjudication.data;
   // 平台把取消也放在阶段里（cancellation_pending / canceled）：取消后流程步骤没有意义，只提示已取消
   const canceled = Boolean(adj?.phase && /cancel/i.test(adj.phase));
   const market = event.data?.markets.find((item) => item.id === marketId);
   const mine = positions.data?.find((item) => item.marketId === marketId);
-
-  // 倒计时每秒刷新
-  useEffect(() => {
-    const timer = setInterval(() => setNow(mockNow()), 1_000);
-    return () => clearInterval(timer);
-  }, []);
 
   const steps = adj
     ? [

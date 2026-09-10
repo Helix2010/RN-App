@@ -183,7 +183,8 @@ function groupOrder(key: string): number {
 }
 
 /**
- * 分组单选面板（"全部分类"）：顶部本地搜索，按首字分组，选中即关闭。
+ * 单选面板（"全部分类"）：选中即关闭。默认顶部本地搜索、按首字分组；
+ * 列表短（十几项）且顺序有意义（运营排序）时用 `searchable={false} grouped={false}` 关掉这两层。
  * 搜索词在每次 present 时清空（在暴露出去的 present 里做，不用 effect 盯可见性）。
  */
 export const PickerSheet = forwardRef<
@@ -193,9 +194,14 @@ export const PickerSheet = forwardRef<
     /** 已格式化的数量文案（如 "188 个"），没有就不显示副标题 */
     count?: string;
     searchPlaceholder: string;
+    /** 顶部本地搜索框；短列表关掉 */
+    searchable?: boolean;
+    /** 按首字分组（0–9 / A–Z / 中文）；要保留调用方给的顺序时关掉 */
+    grouped?: boolean;
     items: PickerItem[];
     selectedId: string | null;
-    badgeLabel: string;
+    /** `badge` 项的小标文案；没有 badge 项可不传 */
+    badgeLabel?: string;
     onSelect: (id: string) => void;
     emptyLabel: string;
     closeLabel: string;
@@ -206,6 +212,8 @@ export const PickerSheet = forwardRef<
     title,
     count,
     searchPlaceholder,
+    searchable = true,
+    grouped = true,
     items,
     selectedId,
     badgeLabel,
@@ -230,6 +238,8 @@ export const PickerSheet = forwardRef<
     const visible = needle
       ? items.filter((item) => item.label.toLowerCase().includes(needle))
       : items;
+    if (!grouped)
+      return visible.length > 0 ? [{ key: "", items: visible }] : [];
     const byKey = new Map<string, PickerItem[]>();
     for (const item of visible) {
       const key = pickerGroupKey(item.label);
@@ -243,7 +253,7 @@ export const PickerSheet = forwardRef<
           groupOrder(a) - groupOrder(b) || a.localeCompare(b, undefined),
       )
       .map(([key, entries]) => ({ key, items: entries }));
-  }, [items, query]);
+  }, [grouped, items, query]);
   return (
     <Sheet
       ref={sheet}
@@ -254,15 +264,17 @@ export const PickerSheet = forwardRef<
       testID={testID}
     >
       <Stack gap="$2">
-        <TextField
-          value={query}
-          onChangeText={setQuery}
-          placeholder={searchPlaceholder}
-          accessibilityLabel={searchPlaceholder}
-          autoCapitalize="none"
-          autoCorrect={false}
-          testID={testID ? `${testID}-search` : undefined}
-        />
+        {searchable ? (
+          <TextField
+            value={query}
+            onChangeText={setQuery}
+            placeholder={searchPlaceholder}
+            accessibilityLabel={searchPlaceholder}
+            autoCapitalize="none"
+            autoCorrect={false}
+            testID={testID ? `${testID}-search` : undefined}
+          />
+        ) : null}
         {groups.length === 0 ? (
           <Body
             fontSize={12}
@@ -276,16 +288,18 @@ export const PickerSheet = forwardRef<
         ) : (
           groups.map((group) => (
             <Stack key={group.key}>
-              <InlineText
-                fontSize={10}
-                fontWeight="700"
-                letterSpacing={1}
-                color="$textMuted"
-                paddingVertical="$1"
-                testID={testID ? `${testID}-group-${group.key}` : undefined}
-              >
-                {group.key}
-              </InlineText>
+              {group.key ? (
+                <InlineText
+                  fontSize={10}
+                  fontWeight="700"
+                  letterSpacing={1}
+                  color="$textMuted"
+                  paddingVertical="$1"
+                  testID={testID ? `${testID}-group-${group.key}` : undefined}
+                >
+                  {group.key}
+                </InlineText>
+              ) : null}
               {group.items.map((item) => {
                 const selected = item.id === selectedId;
                 return (
@@ -316,7 +330,7 @@ export const PickerSheet = forwardRef<
                       >
                         {item.label}
                       </InlineText>
-                      {item.badge ? (
+                      {item.badge && badgeLabel ? (
                         <InlineText
                           fontSize={9}
                           fontWeight="700"

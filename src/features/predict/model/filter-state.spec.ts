@@ -6,6 +6,7 @@ import {
   selectSecondary,
   seriesMatchesTag,
   showSeriesFor,
+  splitPrimaryTags,
 } from "./filter-state";
 import type { Series, Tag } from "./predict";
 
@@ -97,5 +98,20 @@ describe("filter-state", () => {
         labels,
       ),
     ).toBe("v:closed · s:newest");
+  });
+});
+
+describe("splitPrimaryTags", () => {
+  const ids = (n: number) => Array.from({ length: n }, (_, i) => `t${i}`);
+
+  it("keeps everything inline up to limit + 1 so 更多 never holds a single tag", () => {
+    expect(splitPrimaryTags(ids(8))).toEqual({ inline: ids(8), overflow: [] });
+    expect(splitPrimaryTags(ids(9))).toEqual({ inline: ids(9), overflow: [] });
+  });
+
+  it("overflows past the limit and keeps the carousel order", () => {
+    const { inline, overflow } = splitPrimaryTags(ids(13));
+    expect(inline).toEqual(ids(8));
+    expect(overflow).toEqual(["t8", "t9", "t10", "t11", "t12"]);
   });
 });

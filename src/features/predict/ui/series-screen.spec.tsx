@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react-native";
 import { fromDecimal } from "../../../core/money/money";
-import { mockNow, useMockRuntime } from "../../../core/mock/mock-runtime";
+import { travelTestClock } from "../../../test/clock";
 import {
   createTestGateways,
   renderWithProviders,
@@ -29,21 +29,16 @@ function props(extra: { periodMarketId?: string } = {}) {
 }
 
 const WINDOW_MS = 5 * 60_000;
-/** 夹具的分期 id / 市场 id 由窗口起点决定（features/predict/fixtures/series.ts）；时钟是 Mock 世界的 mockNow */
+/** 夹具的分期 id / 市场 id 由窗口起点决定（features/predict/fixtures/series.ts）；时钟是测试锚定的 Date.now() */
 const periodId = (offset: number) =>
-  `series-btc-5m-${(Math.floor(mockNow() / WINDOW_MS) + offset) * WINDOW_MS}`;
+  `series-btc-5m-${(Math.floor(Date.now() / WINDOW_MS) + offset) * WINDOW_MS}`;
 const phaseText = () =>
   screen.getByTestId("series-period-phase").props.children as string;
 const orderDisabled = (id: string) =>
   screen.getByTestId(id).props.accessibilityState?.disabled as boolean;
 
 describe("SeriesScreen periods", () => {
-  // 单个用例会快进 Mock 时钟；用完把偏移量还原成 setup 里定的
-  let baseOffset = 0;
-  beforeEach(() => {
-    baseOffset = useMockRuntime.getState().clockOffsetMs;
-  });
-  afterEach(() => useMockRuntime.getState().set({ clockOffsetMs: baseOffset }));
+  // 单个用例会快进测试时钟（travelTestClock）；setup 在每个用例前重新锚定
 
   it("quotes the order book on the 涨 / 跌 buttons, same as the order sheet, and shows the book expanded", async () => {
     const gateways = createTestGateways();
@@ -185,9 +180,7 @@ describe("SeriesScreen periods", () => {
     await screen.unmount();
 
     // 快进 20 分钟：那期结束、提案、零争议期 → 结算；夹具 Yes 52¢ ≥ 50 → 涨方赢
-    useMockRuntime
-      .getState()
-      .set({ clockOffsetMs: baseOffset + 4 * WINDOW_MS });
+    travelTestClock(4 * WINDOW_MS);
     await renderWithProviders(
       <SeriesScreen {...props({ periodMarketId: marketId })} />,
       { gateways },

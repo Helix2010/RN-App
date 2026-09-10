@@ -38,7 +38,7 @@ import {
   useCuratedEvents,
   useFavoriteEvents,
   useMarketStream,
-  usePredictAllTags,
+  usePredictTag,
   usePredictEventPages,
   usePredictTags,
   useRegionGate,
@@ -56,6 +56,7 @@ import {
   selectSecondary,
   seriesMatchesTag,
   showSeriesFor,
+  splitPrimaryTags,
   type Filters,
 } from "../model/filter-state";
 import {
@@ -66,7 +67,13 @@ import {
   topByVolume24h,
 } from "../model/event-search";
 import { useFavoritesStore } from "../model/favorites-store";
-import type { Market, Outcome, PredictEvent, Series } from "../model/predict";
+import type {
+  Market,
+  Outcome,
+  PredictEvent,
+  Series,
+  Tag,
+} from "../model/predict";
 import { FeaturedSection, RankBoards } from "./curation-sections";
 import {
   EmptyTagCard,
@@ -88,6 +95,10 @@ const SEARCH_MIN_CHARS = 2;
 const SEARCH_TAG_LIMIT = 5;
 /** 搜索输入防抖 */
 const SEARCH_DEBOUNCE_MS = 300;
+/** "更多"面板超过这么多项才值得一个搜索框；十几个运营排好序的标签直接列 */
+const PICKER_SEARCH_MIN = 20;
+/** 钉在"更多"左侧的选中标签最宽多少：再长就省略号，别把横滑区挤没 */
+const PINNED_TAG_MAX_WIDTH = 168;
 
 /**
  * P-01 市场列表（设计 predict-home-filters-2026-09-09）：顶栏余额 chip、搜索（服务端全站）、
@@ -134,7 +145,6 @@ export function MarketListScreen({
     if (shouldPromptEnable(address)) onOpenEnable();
   }, [address, enablement.data, onOpenEnable]);
   const tags = usePredictTags();
-  const allTags = usePredictAllTags();
   const [filters, setFilters] = useState<Filters>(() => ({
     ...DEFAULT_FILTERS,
     ...initialFilters,
@@ -143,14 +153,30 @@ export function MarketListScreen({
   const [searching, setSearching] = useState(false);
   const favoriteIds = useFavoritesStore((state) => state.ids);
   const carouselTags = useMemo(() => tags.data ?? [], [tags.data]);
-  // 一级标签对象：先在轮播里找，再到全集里找（从"更多"面板选的）
+  // 一级行只内联前几个轮播标签，其余进"更多 ▾"；顺序仍是平台 carousel_sort
+  const { inline: inlineTags, overflow: overflowTags } = useMemo(
+    () => splitPrimaryTags(carouselTags),
+    [carouselTags],
+  );
+  // 从"更多"面板或搜索结果选中的一级：对象随选择一起记下，不用再查
+  const [pickedTag, setPickedTag] = useState<Tag | null>(null);
+  const inCarousel = carouselTags.some((tag) => tag.id === filters.parentTag);
+  // 深链带进来、既不在轮播也没经手选的一级：按 id 单独解析它的名字
+  const resolvedTag = usePredictTag(filters.parentTag, {
+    // 轮播还没回来时先别查：多数 parentTag 就在轮播里
+    enabled:
+      tags.isSuccess && !inCarousel && pickedTag?.id !== filters.parentTag,
+  });
   const primaryTag = useMemo(
     () =>
       filters.parentTag === null
         ? undefined
         : (carouselTags.find((tag) => tag.id === filters.parentTag) ??
-          allTags.data?.find((tag) => tag.id === filters.parentTag)),
-    [allTags.data, carouselTags, filters.parentTag],
+          (pickedTag?.id === filters.parentTag ? pickedTag : undefined) ??
+          (resolvedTag.data?.id === filters.parentTag
+            ? resolvedTag.data
+            : undefined)),
+    [carouselTags, filters.parentTag, pickedTag, resolvedTag.data],
   );
   const related = useRelatedTags(filters.parentTag);
   const secondaryTags = related.data ?? [];
@@ -216,8 +242,9 @@ export function MarketListScreen({
   }, [selectedSecondary, seriesList.data, showSeries]);
   const scrollToTop = () =>
     listScroll.current?.scrollTo({ y: 0, animated: true });
-  const pickPrimary = (tagId: string | null) => {
-    setFilters((current) => selectPrimary(current, tagId));
+  const pickPrimary = (tag: Tag | null) => {
+    setPickedTag(tag);
+    setFilters((current) => selectPrimary(current, tag?.id ?? null));
     setSearching(false);
     scrollToTop();
   };
@@ -240,12 +267,12 @@ export function MarketListScreen({
     sort: sortLabel,
   });
   const tagPicker = useRef<SheetHandle>(null);
-  // 从"更多"面板选的、不在轮播里的标签，以选中态插到"更多"左边
+  // 不在行内的一级（"更多"里选的、搜索选的、深链带来的）以选中态钉在"更多"左侧、不随行滑动，保证"我选的"始终可见
   const extraPrimary =
-    primaryTag && !carouselTags.some((tag) => tag.id === primaryTag.id)
+    primaryTag && !inlineTags.some((tag) => tag.id === primaryTag.id)
       ? primaryTag
       : undefined;
-  const showMoreTags = (allTags.data?.length ?? 0) > carouselTags.length;
+  const showMoreTags = overflowTags.length > 0;
   // 策展三区：hero 轮播、highlight"热门精选"、normal"突发"，都按运营位次排
   const heroes = useMemo(
     () => curationZone(curated.data ?? [], "hero"),
@@ -346,48 +373,52 @@ export function MarketListScreen({
   };
   const pagination = searchActive ? search : events;
 
-  // 一级分类行：固定"全部" + 轮播标签 + （面板选中的额外标签）+ "更多 ▾"；滚走后钉在顶部（同一份元素渲染两处）
+  // 一级分类行：固定"全部" + 行内轮播标签横滑；不在行内的选中项与"更多 ▾"钉在行右侧、不随内容滑动。
+  // 滚走后整行钉在顶部（同一份元素渲染两处）
   const tagChips = (
-    <Stack testID="predict-tags">
-      <HorizontalScroll>
+    <Row alignItems="center" gap="$2" testID="predict-tags">
+      <Stack flex={1}>
+        <HorizontalScroll>
+          <TagChip
+            label={t("predict.filter.all")}
+            selected={filters.tag === null}
+            disabled={favoritesOnly}
+            onPress={() => pickPrimary(null)}
+            testID="predict-tag-all"
+          />
+          {inlineTags.map((tag) => (
+            <TagChip
+              key={tag.id}
+              label={pickTranslation(tag.label, locale)}
+              selected={tag.id === filters.parentTag}
+              disabled={favoritesOnly}
+              onPress={() => pickPrimary(tag)}
+              testID={`predict-tag-${tag.id}`}
+            />
+          ))}
+        </HorizontalScroll>
+      </Stack>
+      {extraPrimary ? (
         <TagChip
-          label={t("predict.filter.all")}
-          selected={filters.tag === null}
+          label={pickTranslation(extraPrimary.label, locale)}
+          selected
           disabled={favoritesOnly}
-          onPress={() => pickPrimary(null)}
-          testID="predict-tag-all"
+          maxWidth={PINNED_TAG_MAX_WIDTH}
+          onPress={() => pickPrimary(extraPrimary)}
+          testID={`predict-tag-${extraPrimary.id}`}
         />
-        {carouselTags.map((tag) => (
-          <TagChip
-            key={tag.id}
-            label={pickTranslation(tag.label, locale)}
-            selected={tag.id === filters.parentTag}
-            disabled={favoritesOnly}
-            onPress={() => pickPrimary(tag.id)}
-            testID={`predict-tag-${tag.id}`}
-          />
-        ))}
-        {extraPrimary ? (
-          <TagChip
-            label={pickTranslation(extraPrimary.label, locale)}
-            selected
-            disabled={favoritesOnly}
-            onPress={() => pickPrimary(extraPrimary.id)}
-            testID={`predict-tag-${extraPrimary.id}`}
-          />
-        ) : null}
-        {showMoreTags ? (
-          <TagChip
-            label={`${t("predict.filter.more")} ▾`}
-            selected={false}
-            muted
-            disabled={favoritesOnly}
-            onPress={() => tagPicker.current?.present()}
-            testID="predict-tag-more"
-          />
-        ) : null}
-      </HorizontalScroll>
-    </Stack>
+      ) : null}
+      {showMoreTags ? (
+        <TagChip
+          label={`${t("predict.filter.more")} ▾`}
+          selected={false}
+          muted
+          disabled={favoritesOnly}
+          onPress={() => tagPicker.current?.present()}
+          testID="predict-tag-more"
+        />
+      ) : null}
+    </Row>
   );
   const primaryLabel = primaryTag
     ? pickTranslation(primaryTag.label, locale)
@@ -649,7 +680,7 @@ export function MarketListScreen({
                 key={tag.id}
                 label={pickTranslation(tag.label, locale)}
                 selected={false}
-                onPress={() => pickPrimary(tag.id)}
+                onPress={() => pickPrimary(tag)}
                 testID={`predict-search-tag-${tag.id}`}
               />
             ))}
@@ -836,19 +867,22 @@ export function MarketListScreen({
         ref={tagPicker}
         title={t("predict.filter.allTags")}
         count={
-          allTags.data
-            ? fill(t("predict.filter.tagCount"), { n: allTags.data.length })
+          carouselTags.length > 0
+            ? fill(t("predict.filter.tagCount"), { n: carouselTags.length })
             : undefined
         }
         searchPlaceholder={t("predict.filter.searchTags")}
-        items={(allTags.data ?? []).map((tag) => ({
+        // 十几个运营排好序的轮播标签：不分组、保持顺序；只有多到一屏放不下才给搜索框
+        searchable={carouselTags.length > PICKER_SEARCH_MIN}
+        grouped={false}
+        items={carouselTags.map((tag) => ({
           id: tag.id,
           label: pickTranslation(tag.label, locale),
-          badge: carouselTags.some((item) => item.id === tag.id),
         }))}
         selectedId={filters.parentTag}
-        badgeLabel={t("predict.filter.common")}
-        onSelect={(id) => pickPrimary(id)}
+        onSelect={(id) =>
+          pickPrimary(carouselTags.find((tag) => tag.id === id) ?? null)
+        }
         emptyLabel={t("predict.search.empty")}
         closeLabel={t("common.close")}
         testID="predict-tag-picker"

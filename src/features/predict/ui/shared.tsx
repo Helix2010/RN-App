@@ -1,4 +1,5 @@
 import { Image } from "react-native";
+import { useNow } from "../../../core/time/use-now";
 import { useState } from "react";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import {
@@ -11,7 +12,6 @@ import {
   fill,
 } from "../../../core/i18n/format";
 import { pickTranslation } from "../../../core/i18n/localized-text";
-import { mockNow } from "../../../core/mock/mock-runtime";
 import {
   Badge,
   Body,
@@ -71,13 +71,13 @@ export function outcomeLabel(outcome: Outcome): string {
   return outcome === "yes" ? "Yes" : "No";
 }
 
-/** 截止文案：未截止 → "1 天 4 小时后截止"，已截止 → "已于 … 截止" */
+/** 截止文案：未截止 → "1 天 4 小时后截止"，已截止 → "已于 … 截止"。`now` 由调用方经 useNow 取，渲染期不直接读时钟 */
 export function closesText(
   endsAt: string,
+  now: number,
   locale: string,
   t: (key: string) => string,
 ): string {
-  const now = mockNow();
   const until = formatTimeUntil(endsAt, now, locale);
   if (!until)
     return fill(t("predict.closedAt"), { time: formatDate(endsAt, locale) });
@@ -296,9 +296,10 @@ export function EventCard({
 }) {
   const { config, t } = useFoundationRuntime();
   const locale = config.localization.selectedLocale;
+  const now = useNow();
   const primary = event.markets[0];
   const category = pickTranslation(event.category, locale).toUpperCase();
-  const meta = closesText(event.endsAt, locale, t);
+  const meta = closesText(event.endsAt, now, locale, t);
   return (
     <Card
       padding="$3"
@@ -313,10 +314,7 @@ export function EventCard({
           {category} ·{" "}
           {event.kind === "sports" && event.sports
             ? fill(t("predict.kickoff"), {
-                time: formatCountdown(event.sports.startsAt, mockNow()).slice(
-                  0,
-                  5,
-                ),
+                time: formatCountdown(event.sports.startsAt, now).slice(0, 5),
               })
             : meta}
         </Body>

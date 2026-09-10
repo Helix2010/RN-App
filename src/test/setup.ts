@@ -5,7 +5,7 @@ import { resetEnablePrompts } from "../features/predict/model/enable-prompt";
 import { resetDeliveredWalletConfig } from "../core/wallet/config/wallet-runtime-config";
 import { resetDeliveredServices } from "../core/predict-platform/config";
 import { useMockRuntime } from "../core/mock/mock-runtime";
-import { FIXTURE_NOW } from "../features/predict/fixtures/events";
+import { anchorTestClock, restoreTestClock } from "./clock";
 
 // AsyncStorage 在 Jest 下没有原生模块，使用官方内存实现。
 jest.mock("@react-native-async-storage/async-storage", () =>
@@ -43,13 +43,13 @@ jest.mock("expo-clipboard", () => ({
   getStringAsync: jest.fn(async () => ""),
 }));
 
-// Mock 世界的"现在"锚定到夹具日期：夹具里的市场截止时间是绝对日期，
+// 测试时钟锚定到夹具日期：夹具里的市场截止时间是绝对日期，
 // 真实时间一过 2026-08-31 就会把 ev-btc-120k 之类的事件过滤掉，
-// 让所有渲染 Mock 数据的测试随日历漂移失败。单个用例仍可自行覆盖 clockOffsetMs。
+// 让所有渲染夹具数据的测试随日历漂移失败。生产代码只用 Date.now()，所以锚的是 Date.now()；
+// Mock 网关的 clockOffsetMs 归零，与界面共用同一个"现在"。单个用例要快进用 travelTestClock。
 beforeEach(() => {
-  useMockRuntime
-    .getState()
-    .set({ clockOffsetMs: new Date(FIXTURE_NOW).getTime() - Date.now() });
+  anchorTestClock();
+  useMockRuntime.getState().set({ clockOffsetMs: 0 });
   // "最近验证过"是模块级状态：上个用例通过的验证不能让这个用例跳过弹窗
   forgetVerification();
 });
@@ -58,6 +58,7 @@ export {};
 
 // 租户钱包配置是模块级状态：每个用例都从"还没下发"开始
 afterEach(() => {
+  restoreTestClock();
   resetDeliveredWalletConfig();
   resetDeliveredServices();
   resetEnablePrompts();

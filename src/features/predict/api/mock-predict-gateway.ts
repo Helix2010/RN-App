@@ -416,8 +416,12 @@ export class MockPredictGateway implements PredictGateway {
     return simulate(() => (isEmptyMode() ? [] : TAGS));
   }
 
-  async listAllTags(): Promise<Tag[]> {
-    return simulate(() => (isEmptyMode() ? [] : [...TAGS, ...EXTRA_TAGS]));
+  async getTag(tagId: string): Promise<Tag> {
+    return simulate(() => {
+      const tag = [...TAGS, ...EXTRA_TAGS].find((item) => item.id === tagId);
+      if (!tag) throw new Error(`unknown tag ${tagId}`);
+      return tag;
+    });
   }
 
   async listRelatedTags(tagId: string): Promise<Tag[]> {

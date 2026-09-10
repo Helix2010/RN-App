@@ -245,15 +245,16 @@ export async function fetchEvents(
   });
 }
 
-/** 标签全集（"更多分类"面板）：按名称排序，一次取完（dev 上 188 个） */
-export async function fetchAllTags(
+/** 单个标签（`GET /tags/{id}`）：解析深链带进来、但不在轮播里的一级标签名 */
+export async function fetchTag(
   service: PredictServiceConfig,
-): Promise<GammaTag[]> {
+  tagId: string,
+): Promise<GammaTag> {
   const hosts = platformHosts(service);
   return platformRequest({
-    url: `${hosts.gamma}/tags${query({ limit: 500, order: "label", ascending: true })}`,
+    url: `${hosts.gamma}/tags/${encodeURIComponent(tagId)}`,
     tenantDomain: service.domain,
-    schema: z.array(gammaTagSchema),
+    schema: gammaTagSchema,
   });
 }
 

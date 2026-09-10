@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useNow } from "../../../core/time/use-now";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import {
@@ -86,6 +87,7 @@ export function EventDetailScreen({
   onOpenSettlement: (marketId: string, eventId: string) => void;
   onOpenTransfer: (amount?: string) => void;
 }) {
+  const now = useNow();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const { config, t } = useFoundationRuntime();
@@ -320,7 +322,7 @@ export function EventDetailScreen({
               </SectionTitle>
             </Row>
             <Body fontSize={12}>
-              {closesText(event.data.endsAt, locale, t)} ·{" "}
+              {closesText(event.data.endsAt, now, locale, t)} ·{" "}
               {fill(t("predict.volume"), {
                 amount: formatUsd(event.data.volumeUsd, locale, {
                   compact: true,

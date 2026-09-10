@@ -50,7 +50,6 @@ export function createTestGateways(overrides?: Partial<Gateways>): Gateways {
     predict,
     predictAccount,
     dex: new MockDexGateway(storage, wallet),
-    mode: "mock",
     lockKeys: () => {},
     ...overrides,
   };

@@ -54,7 +54,7 @@ import {
   type GammaSeries,
   type GammaSeriesPeriod,
   type GammaTag,
-  fetchAllTags,
+  fetchTag,
   fetchCuratedEvents,
   fetchPublicSearch,
   fetchRelatedTags,
@@ -183,7 +183,7 @@ function bookTimestamp(raw: string | number | null | undefined): string {
       : Date.parse(String(raw));
     if (Number.isFinite(ms) && ms > 0) return new Date(ms).toISOString();
   }
-  return new Date().toISOString();
+  return new Date(Date.now()).toISOString();
 }
 
 /**
@@ -720,10 +720,9 @@ export class HttpPredictGateway implements PredictGateway {
     return tags.map((tag, index) => this.mapTag(tag, index));
   }
 
-  async listAllTags(): Promise<Tag[]> {
+  async getTag(tagId: string): Promise<Tag> {
     const service = await this.service();
-    const tags = await fetchAllTags(service);
-    return tags.map((tag, index) => this.mapTag(tag, index));
+    return this.mapTag(await fetchTag(service, tagId), 0);
   }
 
   async listRelatedTags(tagId: string): Promise<Tag[]> {

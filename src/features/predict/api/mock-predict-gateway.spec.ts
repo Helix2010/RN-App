@@ -12,7 +12,8 @@ import { FIXTURE_NOW } from "../fixtures/events";
 import { MockPredictGateway } from "./mock-predict-gateway";
 
 const ADDRESS = "0x3f4a8c21b7d94e0a1f6c5d2e8b9a7c3d4e5f9a2c";
-const BASE_OFFSET = new Date(FIXTURE_NOW).getTime() - Date.now();
+// 相对当前（假）时钟的偏移：jest.useFakeTimers 会换掉 Date，所以每个用例里重新算
+let BASE_OFFSET = 0;
 
 describe("MockPredictGateway", () => {
   beforeEach(() => {
@@ -20,6 +21,7 @@ describe("MockPredictGateway", () => {
     resetMockRandom();
     useMockRuntime.getState().reset();
     // Mock 时钟锚定到夹具时间，避免真实时间流逝改变市场状态
+    BASE_OFFSET = new Date(FIXTURE_NOW).getTime() - Date.now();
     useMockRuntime.getState().set({ clockOffsetMs: BASE_OFFSET });
   });
 
@@ -45,10 +47,10 @@ describe("MockPredictGateway", () => {
     expect(event.markets[0]?.yesPriceCents).toBeGreaterThan(0);
   });
 
-  it("serves the full tag list, related tags, related-inclusive filtering and paged search", async () => {
+  it("serves single tags, related tags, related-inclusive filtering and paged search", async () => {
     const gateway = new MockPredictGateway(memoryStorage());
-    const all = await gateway.listAllTags();
-    expect(all.length).toBeGreaterThan((await gateway.listTags()).length);
+    expect((await gateway.getTag("oil")).slug).toBe("oil");
+    await expect(gateway.getTag("nope")).rejects.toThrow(/unknown tag/);
     expect((await gateway.listRelatedTags("crypto")).map((t) => t.id)).toEqual([
       "5m",
       "15m",

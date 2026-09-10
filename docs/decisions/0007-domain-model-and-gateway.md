@@ -26,3 +26,9 @@
 - 新增依赖：无。
 - 体积：纯 TS，忽略不计。
 - 退出策略：删除 `Mock*Gateway` 与 `mock-runtime`，`createGateways` 只保留 Http 分支；页面与 hooks 不变。
+
+## 状态更新（2026-09-10）
+
+- 预测市场已按退出策略切到只有 Http 实现的生产装配：`createGateways` 只装配 `HttpPredictGateway` / `HttpPredictAccountGateway`；`MockPredictGateway` 与 `features/predict/fixtures` 仅供测试基座。预测生产代码不得引用 Mock 网关、夹具或 `core/mock`（含 `mockNow()`），由 `features/predict/mock-boundary.spec.ts` 与 ESLint `no-restricted-imports` 守住；渲染期取时间统一走 `core/time`（`now()` / `useNow()`）。
+- DEX 尚未接入，仍是 `MockDexGateway`；钱包演示账本余额仍由 `MockWalletGateway` 注入。`Gateways.mode` 字段已删除（预测与 DEX 状态不同，单一标记无意义）。
+- 见 `docs/design/predict-home-filters-2026-09-09.md` §10 与 `docs/changes/2026-09-10-feat-predict-primary-overflow-no-mock.md`。

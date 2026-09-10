@@ -96,3 +96,18 @@ export function activeFilterSummary(
     parts.push(labels.sort(filters.sort));
   return parts.length > 0 ? parts.join(" · ") : null;
 }
+
+/** 一级行内联的轮播标签上限：8 个 ≈ 375 宽两屏，"更多 ▾" 在一次横滑内可见（设计 §4.1 修订） */
+export const PRIMARY_INLINE_LIMIT = 8;
+
+/**
+ * 一级轮播标签拆成"行内"与"更多"两段，保持平台 carousel_sort 顺序。
+ * 溢出只有 1 个时不值得一个面板：不超过 limit + 1 就全部内联，"更多"不出现。
+ */
+export function splitPrimaryTags<T>(
+  tags: T[],
+  limit = PRIMARY_INLINE_LIMIT,
+): { inline: T[]; overflow: T[] } {
+  if (tags.length <= limit + 1) return { inline: tags, overflow: [] };
+  return { inline: tags.slice(0, limit), overflow: tags.slice(limit) };
+}

@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useNow } from "../../core/time/use-now";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../app/runtime-context";
 import { pickTranslation } from "../../core/i18n/localized-text";
@@ -11,7 +12,6 @@ import {
   formatUsd,
   shortenAddress,
 } from "../../core/i18n/format";
-import { mockNow } from "../../core/mock/mock-runtime";
 import {
   ActionTile,
   AmountText,
@@ -501,6 +501,7 @@ function PredictionHomeCard({
   outcomesLabel: string;
   onPress: () => void;
 }) {
+  const now = useNow();
   const primary = event.markets[0];
   const yes = primary?.yesPriceCents ?? null;
   const no = yes === null ? null : 100 - yes;
@@ -532,7 +533,7 @@ function PredictionHomeCard({
         </SectionTitle>
       </Row>
       <Body fontSize={12}>
-        {closesLabel} {formatTimeUntil(event.endsAt, mockNow(), locale)}
+        {closesLabel} {formatTimeUntil(event.endsAt, now, locale)}
       </Body>
       {multi ? (
         <Stack gap="$1">

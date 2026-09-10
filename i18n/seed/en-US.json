@@ -348,7 +348,6 @@
     "predict.filter.allIn": "All {tag}",
     "predict.filter.allTags": "All categories",
     "predict.filter.clear": "Clear",
-    "predict.filter.common": "Popular",
     "predict.filter.favorites": "Favorites",
     "predict.filter.favoritesCount": "Favorites · {n}",
     "predict.filter.more": "More",

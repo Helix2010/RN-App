@@ -12,7 +12,7 @@ import {
 } from "../../../test/harness";
 import type { InMemoryPredictAccountGateway } from "../../../test/predict-account";
 import { useMockRuntime } from "../../../core/mock/mock-runtime";
-import { EVENTS } from "../fixtures/events";
+import { EVENTS, EXTRA_TAGS } from "../fixtures/events";
 import { useFavoritesStore } from "../model/favorites-store";
 import { MarketListScreen } from "./market-list-screen";
 
@@ -329,16 +329,31 @@ describe("MarketListScreen", () => {
     );
   });
 
-  it("opens the full tag picker from 更多 and pins the picked tag into the row", async () => {
+  it("keeps every carousel tag inline and hides 更多 when the overflow would hold a single tag", async () => {
+    // 夹具 9 个轮播标签 = 上限 8 + 1：全部内联，不为一个标签开面板
     await renderWithProviders(
       <MarketListScreen {...props()} showPositionsEntry />,
     );
-    expect(await screen.findByTestId("predict-tag-more")).toBeTruthy();
+    expect(await screen.findByTestId("predict-tag-culture")).toBeTruthy();
+    expect(screen.queryByTestId("predict-tag-more")).toBeNull();
+  });
+
+  it("moves carousel tags past the inline limit into 更多 and pins the picked one into the row", async () => {
+    const gateways = createTestGateways();
+    const carousel = await gateways.predict.listTags();
+    gateways.predict.listTags = async () => [...carousel, ...EXTRA_TAGS];
+    await renderWithProviders(
+      <MarketListScreen {...props()} showPositionsEntry />,
+      { gateways },
+    );
+    // 前 8 个内联（… tech），第 9 个起（culture、oil …）进"更多"
+    expect(await screen.findByTestId("predict-tag-tech")).toBeTruthy();
+    expect(screen.queryByTestId("predict-tag-culture")).toBeNull();
     await fireEvent.press(screen.getByTestId("predict-tag-more"));
     await fireEvent.press(
       await screen.findByTestId("predict-tag-picker-item-oil"),
     );
-    // 非轮播标签选中后插到"更多"左边
+    // 溢出标签选中后以选中态插到行尾；策展位随之收起
     expect(await screen.findByTestId("predict-tag-oil")).toBeTruthy();
     expect(screen.queryByTestId("predict-hero-ev-worldcup")).toBeNull();
   });

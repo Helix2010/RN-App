@@ -1,6 +1,6 @@
 import {
   displayPrice,
-  fetchAllTags,
+  fetchTag,
   fetchEvents,
   fetchPublicSearch,
   fetchRelatedTags,
@@ -109,7 +109,7 @@ describe("fetchEvents", () => {
 });
 
 describe("tags and search", () => {
-  it("fetches the full tag list, related tags and public search with the web client's parameters", async () => {
+  it("fetches a single tag, related tags and public search with the web client's parameters", async () => {
     const urls: string[] = [];
     setPlatformFetch(async (input) => {
       urls.push(String(input));
@@ -117,13 +117,15 @@ describe("tags and search", () => {
       const body =
         url.pathname === "/public-search"
           ? '{"events":[],"tags":[{"id":430,"slug":"crypto","label":"Crypto"}],"profiles":[],"pagination":{"hasMore":true,"totalResults":21}}'
-          : "[]";
+          : url.pathname === "/tags/430"
+            ? '{"id":430,"slug":"crypto","label":"Crypto"}'
+            : "[]";
       return new Response(body, {
         status: 200,
         headers: { "content-type": "application/json" },
       });
     });
-    await fetchAllTags(service);
+    expect((await fetchTag(service, "430")).slug).toBe("crypto");
     await fetchRelatedTags(service, "430");
     const search = await fetchPublicSearch(service, {
       q: "trump 2026",
@@ -138,13 +140,9 @@ describe("tags and search", () => {
       relatedTags: true,
     });
 
-    const all = new URL(urls[0] ?? "");
-    expect(all.pathname).toBe("/tags");
-    expect(Object.fromEntries(all.searchParams)).toEqual({
-      limit: "500",
-      order: "label",
-      ascending: "true",
-    });
+    const single = new URL(urls[0] ?? "");
+    expect(single.pathname).toBe("/tags/430");
+    expect(single.search).toBe("");
     expect(new URL(urls[1] ?? "").pathname).toBe("/tags/430/related-tags/tags");
     const ps = new URL(urls[2] ?? "");
     expect(ps.pathname).toBe("/public-search");

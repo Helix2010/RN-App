@@ -1,10 +1,5 @@
-import {
-  forwardRef,
-  useEffect,
-  useImperativeHandle,
-  useRef,
-  useState,
-} from "react";
+import { forwardRef, useImperativeHandle, useRef, useState } from "react";
+import { useNow } from "../../../core/time/use-now";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import {
   fill,
@@ -12,7 +7,6 @@ import {
   formatMoney,
   formatTokenAmount,
 } from "../../../core/i18n/format";
-import { mockNow } from "../../../core/mock/mock-runtime";
 import { compare, toApproxNumber, sub } from "../../../core/money/money";
 import {
   AppIcon,
@@ -91,12 +85,8 @@ export const DisputeSheet = forwardRef<
     DisputeStep | "approve-usdc" | "wrap" | null
   >(null);
   const [failure, setFailure] = useState<string | null>(null);
-  const [now, setNow] = useState(mockNow());
-  useEffect(() => {
-    if (!open) return;
-    const timer = setInterval(() => setNow(mockNow()), 1_000);
-    return () => clearInterval(timer);
-  }, [open]);
+  // 争议期倒计时：面板打开时每秒刷新
+  const now = useNow(open);
   const terms = useDisputeTerms(address, marketId, open);
   const submit = useSubmitDispute(address);
   const wrap = useWrapForDispute(address);

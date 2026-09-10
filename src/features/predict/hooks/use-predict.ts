@@ -46,13 +46,16 @@ export function usePredictEvents(
   });
 }
 
-/** 标签全集（"更多分类"面板）；一次取完，10 分钟内不重拉 */
-export function usePredictAllTags(options: { enabled?: boolean } = {}) {
+/** 单个标签：只在一级标签不在轮播里（深链带进来）时解析它的名字；没有 id 不请求 */
+export function usePredictTag(
+  tagId: string | null,
+  options: { enabled?: boolean } = {},
+) {
   const { predict } = useGateways();
   return useQuery({
-    queryKey: ["predict-all-tags"],
-    queryFn: () => predict.listAllTags(),
-    enabled: options.enabled ?? true,
+    queryKey: ["predict-tag", tagId],
+    queryFn: () => predict.getTag(tagId as string),
+    enabled: tagId !== null && (options.enabled ?? true),
     staleTime: 10 * 60_000,
   });
 }

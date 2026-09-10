@@ -16,6 +16,7 @@ export function TagChip({
   selected,
   muted = false,
   disabled = false,
+  maxWidth,
   onPress,
   testID,
 }: {
@@ -24,6 +25,8 @@ export function TagChip({
   /** "更多 ▾"这类动作 chip：字用弱色 */
   muted?: boolean;
   disabled?: boolean;
+  /** 钉在行外的 chip 要限宽，超长标签省略号截断 */
+  maxWidth?: number;
   onPress: () => void;
   testID?: string;
 }) {
@@ -32,6 +35,7 @@ export function TagChip({
       paddingHorizontal="$3"
       paddingVertical="$1.5"
       borderRadius={999}
+      {...(maxWidth === undefined ? {} : { maxWidth })}
       backgroundColor={selected ? "$color" : "$surfaceVariant"}
       opacity={disabled ? 0.4 : 1}
       onPress={disabled ? undefined : onPress}
@@ -44,6 +48,7 @@ export function TagChip({
         fontSize={13}
         fontWeight="700"
         color={selected ? "$background" : muted ? "$textMuted" : "$color"}
+        {...(maxWidth === undefined ? {} : { numberOfLines: 1 })}
       >
         {label}
       </InlineText>

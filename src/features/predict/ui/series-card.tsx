@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
 import { useFoundationRuntime } from "../../../app/runtime-context";
+import { useNow } from "../../../core/time/use-now";
 import {
   formatCountdown,
   formatPercentCents,
@@ -7,7 +7,6 @@ import {
   NO_QUOTE,
 } from "../../../core/i18n/format";
 import { pickTranslation } from "../../../core/i18n/localized-text";
-import { mockNow } from "../../../core/mock/mock-runtime";
 import {
   Body,
   Card,
@@ -186,32 +185,11 @@ export function priceLabel(
   return Number.isFinite(value) ? formatUsd(value, locale) : price.price;
 }
 
-// 所有倒计时共用一个秒表：多少张卡都只有一个 setInterval，最后一个订阅者走了就停
-const tickListeners = new Set<() => void>();
-let tickTimer: ReturnType<typeof setInterval> | null = null;
-export function subscribeTick(listener: () => void): () => void {
-  tickListeners.add(listener);
-  if (tickTimer === null)
-    tickTimer = setInterval(() => {
-      for (const notify of tickListeners) notify();
-    }, 1_000);
-  return () => {
-    tickListeners.delete(listener);
-    if (tickListeners.size === 0 && tickTimer !== null) {
-      clearInterval(tickTimer);
-      tickTimer = null;
-    }
-  };
-}
+export { subscribeTick } from "../../../core/time/use-now";
 
 /** 每秒刷新的"现在"，倒计时用；秒级刷新只在订阅的卡片内部，不牵动列表。enabled=false 时不订阅（下单面板没有期上下文时） */
 export function useTicking(enabled = true): number {
-  const [now, setNow] = useState(mockNow());
-  useEffect(() => {
-    if (!enabled) return;
-    return subscribeTick(() => setNow(mockNow()));
-  }, [enabled]);
-  return now;
+  return useNow(enabled);
 }
 
 /**
