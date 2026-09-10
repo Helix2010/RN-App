@@ -143,7 +143,7 @@ describe("WalletConnectConnector", () => {
     expect(present).toHaveBeenCalledWith(
       expect.objectContaining({
         connector: "metamask",
-        deepLinks: ["metamask://wc?uri="],
+        deepLinks: ["https://metamask.app.link/wc?uri=", "metamask://wc?uri="],
       }),
     );
   });

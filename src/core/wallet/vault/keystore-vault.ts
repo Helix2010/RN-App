@@ -67,9 +67,35 @@ type StoredEntry = VaultEntry & {
   salt: string;
   nonce: string;
   ciphertext: string;
+  /**
+   * 这条密文是否带 AAD（附加认证数据）。1 表示 `version|address|kind|path`
+   * 参与了 GCM 认证：改元数据会让解密直接失败（安全评审 N9）。
+   * 缺这个字段的是升级前写下的老条目，解密时不带 AAD，读出来后就地升级。
+   */
+  aad?: 1;
 };
 
 type VaultFile = { version: 1; entries: StoredEntry[]; wkCheck?: string };
+
+/**
+ * GCM 的附加认证数据：把条目元数据绑进密文的认证标签。
+ *
+ * 密文、salt、nonce 和这些元数据都躺在普通存储里。没有 AAD 时，能改存储的人
+ * 可以把某条的 `kind` 从 `private-key` 改成 `mnemonic`、或者改掉 `path`，
+ * 解密照样成功，只是应用会按错误的语义使用这份材料。带上 AAD 后，任何一处
+ * 元数据被改，`decrypt` 直接抛错（安全评审 N9）。
+ *
+ * 地址另有 `assertOwner` 重算校验兜底，这里把它一并纳入认证范围。
+ */
+function entryAad(entry: {
+  address: string;
+  kind: VaultEntryKind;
+  path: string | null;
+}): Uint8Array {
+  return new TextEncoder().encode(
+    `v1|${entry.address.toLowerCase()}|${entry.kind}|${entry.path ?? ""}`,
+  );
+}
 
 export class WalletAuthRequiredError extends Error {
   constructor(readonly outcome: "cancelled" | "failed") {
@@ -244,6 +270,7 @@ export class KeystoreVault {
       const secret = this.decrypt(entry, wrapKey, file);
       this.assertOwner(entry, secret);
       await this.backfillWkCheck(wrapKey);
+      if (entry.aad !== 1) await this.upgradeEntryAad(entry.address, secret);
       return secret;
     } finally {
       if (wrapKey !== this.cachedWrapKey) wipe(wrapKey);
@@ -266,6 +293,7 @@ export class KeystoreVault {
     const secret = this.decrypt(entry, wrapKey, file);
     const derived = this.assertOwner(entry, secret);
     await this.backfillWkCheck(wrapKey);
+    if (entry.aad !== 1) await this.upgradeEntryAad(entry.address, secret);
     return consume(derived.privateKey);
   }
 
@@ -362,18 +390,22 @@ export class KeystoreVault {
       if (file.entries.length === 0) file.wkCheck = wkCheckOf(wrapKey);
       const entryKey = deriveEntryKey(wrapKey, salt);
       try {
-        const ciphertext = gcm(entryKey, nonce).encrypt(
-          new TextEncoder().encode(secret),
-        );
-        const entry: StoredEntry = {
+        const metadata = {
           address: account.address,
           kind,
           path: account.path,
+        };
+        const ciphertext = gcm(entryKey, nonce, entryAad(metadata)).encrypt(
+          new TextEncoder().encode(secret),
+        );
+        const entry: StoredEntry = {
+          ...metadata,
           createdAt: new Date(this.now()).toISOString(),
           backedUpAt: null,
           salt: toBase64(salt),
           nonce: toBase64(nonce),
           ciphertext: toBase64(ciphertext),
+          aad: 1,
         };
         file.entries.push(entry);
         await this.write(file);
@@ -395,6 +427,46 @@ export class KeystoreVault {
    * - 老文件没有 `wkCheck`：解不开最可能是密钥库里的 WK 不是当初那把（修复前 N8 的
    *   静默换钥），报 `KeyMissing(mismatch)`，让登录进入恢复流程而不是卡在"签名失败"。
    */
+  /**
+   * 把一条老条目重新加密成带 AAD 的形式。只在已经成功解出明文之后调用，
+   * 走写队列，失败不影响本次操作（升级是顺手做的，不是用户要的结果）。
+   */
+  private async upgradeEntryAad(
+    address: string,
+    secret: string,
+  ): Promise<void> {
+    try {
+      await this.serialized(async () => {
+        const file = await this.read();
+        const entry = file.entries.find((item) =>
+          sameAddress(item.address, address),
+        );
+        if (!entry || entry.aad === 1) return;
+        const wrapKey = await this.loadWrapKey(file);
+        const salt = randomBytes(16);
+        const nonce = randomBytes(12);
+        const entryKey = deriveEntryKey(wrapKey, salt);
+        try {
+          entry.ciphertext = toBase64(
+            gcm(entryKey, nonce, entryAad(entry)).encrypt(
+              new TextEncoder().encode(secret),
+            ),
+          );
+          entry.salt = toBase64(salt);
+          entry.nonce = toBase64(nonce);
+          entry.aad = 1;
+          await this.write(file);
+        } finally {
+          wipe(entryKey);
+          if (wrapKey !== this.cachedWrapKey) wipe(wrapKey);
+        }
+      });
+    } catch {
+      // 升级失败就继续用老格式：这条路径上用户要的是签名 / 查看助记词，
+      // 不能因为顺手做的加固而让它失败
+    }
+  }
+
   private decrypt(
     entry: StoredEntry,
     wrapKey: Uint8Array,
@@ -402,7 +474,9 @@ export class KeystoreVault {
   ): string {
     const entryKey = deriveEntryKey(wrapKey, fromBase64(entry.salt));
     try {
-      const plaintext = gcm(entryKey, fromBase64(entry.nonce)).decrypt(
+      // 老条目（无 `aad` 标记）当初就没带 AAD，得按原样解，否则升级即锁死用户
+      const aad = entry.aad === 1 ? entryAad(entry) : undefined;
+      const plaintext = gcm(entryKey, fromBase64(entry.nonce), aad).decrypt(
         fromBase64(entry.ciphertext),
       );
       const secret = new TextDecoder().decode(plaintext);

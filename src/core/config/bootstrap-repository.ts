@@ -97,6 +97,34 @@ function languagePackageKey(locale: SupportedLocale): string {
   return `foundation.language.v2.${encodeURIComponent(appRuntime.apiBaseUrl)}.${appRuntime.applicationId}.${locale}`;
 }
 
+/**
+ * 本机认定的语言包租户。
+ *
+ * 语言包自带 `tenantId`，但客户端没有可以对照的权威租户号——bootstrap 不下发它。
+ * 所以第一次成功应用时把它钉住，之后只接受同一个租户的包：域名指错、网关路由
+ * 串了、或者有人把另一个租户的包塞进来时，界面文案会整体被替换（含金额单位、
+ * 风险提示、按钮语义），这类替换必须挡住而不是照单全收（安全评审 N27）。
+ */
+function languageTenantKey(locale: SupportedLocale): string {
+  return `${languagePackageKey(locale)}.tenant`;
+}
+
+async function assertLanguageTenant(
+  locale: SupportedLocale,
+  tenantId: string,
+): Promise<void> {
+  const key = languageTenantKey(locale);
+  const pinned = await AsyncStorage.getItem(key);
+  if (pinned === null) {
+    await AsyncStorage.setItem(key, tenantId);
+    return;
+  }
+  if (pinned !== tenantId)
+    throw new Error(
+      `language resource tenant mismatch: expected ${pinned}, got ${tenantId}`,
+    );
+}
+
 async function applyRemoteLanguagePackage(
   config: BootstrapConfig,
   signal?: AbortSignal,
@@ -108,10 +136,14 @@ async function applyRemoteLanguagePackage(
   if (cached) {
     try {
       const parsed = languagePackageSchema.safeParse(JSON.parse(cached));
+      const pinnedTenant = await AsyncStorage.getItem(
+        languageTenantKey(config.localization.selectedLocale),
+      );
       if (
         parsed.success &&
         parsed.data.languageCode === config.localization.selectedLocale &&
-        parsed.data.version === resource.version
+        parsed.data.version === resource.version &&
+        (pinnedTenant === null || parsed.data.tenantId === pinnedTenant)
       ) {
         return {
           ...config,
@@ -149,6 +181,10 @@ async function applyRemoteLanguagePackage(
       packageValue.version !== resource.version
     )
       throw new Error("language resource identity mismatch");
+    await assertLanguageTenant(
+      config.localization.selectedLocale,
+      packageValue.tenantId,
+    );
     await AsyncStorage.setItem(cacheKeyValue, result.text);
     return {
       ...config,

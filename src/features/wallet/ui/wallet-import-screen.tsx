@@ -169,6 +169,15 @@ export function WalletImportScreen({
               multiline={mode === "mnemonic"}
               autoCapitalize="none"
               autoCorrect={false}
+              // 助记词 / 私钥不能进系统自动填充库、拼写词典和键盘学习记录，
+              // 那些都是应用外的持久存储（安全评审 N15）
+              autoComplete="off"
+              importantForAutofill="no"
+              textContentType="none"
+              spellCheck={false}
+              keyboardType={
+                mode === "mnemonic" ? "visible-password" : "default"
+              }
               secureTextEntry={mode === "private-key"}
               error={error || invalidHint || undefined}
               accessibilityLabel={

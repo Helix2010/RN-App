@@ -14,7 +14,11 @@ describe("wallet deep links", () => {
       "okx://main/wc?requestId=",
       "okxwallet://main/wc?uri=",
     ]);
-    expect(pairingLinks("metamask")).toEqual(["metamask://wc?uri="]);
+    // MetaMask / Trust 先走各自域名的通用链接，自定义 scheme 兜底（安全评审 N13）
+    expect(pairingLinks("metamask")).toEqual([
+      "https://metamask.app.link/wc?uri=",
+      "metamask://wc?uri=",
+    ]);
     expect(launchLinks("okx")).toEqual([
       "okex://main",
       "okx://main",
@@ -53,8 +57,9 @@ describe("openWalletOrFallback", () => {
       fallback,
     );
 
+    // 先试通用链接：抢注不了，装了 MetaMask 的机器由系统直接交给它
     expect(openURL).toHaveBeenCalledWith(
-      `metamask://wc?uri=${encodeURIComponent("wc:abc@2")}`,
+      `https://metamask.app.link/wc?uri=${encodeURIComponent("wc:abc@2")}`,
     );
     expect(canOpenURL).not.toHaveBeenCalled();
     expect(fallback).not.toHaveBeenCalled();

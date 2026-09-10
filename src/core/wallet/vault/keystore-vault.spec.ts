@@ -1,3 +1,6 @@
+import { gcm } from "@noble/ciphers/aes.js";
+import { hkdf } from "@noble/hashes/hkdf.js";
+import { sha256 } from "@noble/hashes/sha2.js";
 import { memoryStorage, type KeyValueStorage } from "../../gateways/types";
 import { deriveAccount } from "../keygen/mnemonic";
 import {
@@ -55,7 +58,45 @@ function setup(options?: { outcome?: AuthOutcome; unlockTtlMs?: number }) {
   };
 }
 
-type RawEntry = Record<string, string | null>;
+type RawEntry = Record<string, string | number | null>;
+
+/**
+ * 造一条"升级前"的条目：用同一把 WK 派生条目密钥，但加密时不带 AAD，
+ * 也不写 `aad` 标记 —— 和加固之前写下的文件一模一样。
+ */
+async function makeLegacyEntry(
+  storage: KeyValueStorage,
+  secureStore: { get: (key: string) => Promise<string | null> },
+  phrase: string,
+): Promise<RawFile> {
+  const file = await rawFile(storage);
+  const entry = file.entries[0] as RawEntry;
+  const wrapKey = fromBase64Test(
+    (await secureStore.get("foundation.wallet.wrap-key.v1")) as string,
+  );
+  const salt = fromBase64Test(entry.salt as string);
+  const entryKey = hkdf(
+    sha256,
+    wrapKey,
+    salt,
+    new TextEncoder().encode("foundation.wallet.entry.v1"),
+    32,
+  );
+  const nonce = fromBase64Test(entry.nonce as string);
+  entry.ciphertext = toBase64Test(
+    gcm(entryKey, nonce).encrypt(new TextEncoder().encode(phrase)),
+  );
+  delete entry.aad;
+  return file;
+}
+
+function fromBase64Test(value: string): Uint8Array {
+  return Uint8Array.from(Buffer.from(value, "base64"));
+}
+
+function toBase64Test(value: Uint8Array): string {
+  return Buffer.from(value).toString("base64");
+}
 type RawFile = { version: number; entries: RawEntry[]; wkCheck?: string };
 
 async function rawFile(storage: KeyValueStorage): Promise<RawFile> {
@@ -370,7 +411,7 @@ describe("KeystoreVault", () => {
     expect(authenticate).not.toHaveBeenCalled();
   });
 
-  it("rejects key material that does not belong to the entry's address", async () => {
+  it("refuses a swapped ciphertext: the metadata is part of what GCM authenticates", async () => {
     const { vault, storage } = setup();
     await vault.importMnemonic(PHRASE);
     await vault.importMnemonic(OTHER_PHRASE, 0, "import");
@@ -382,11 +423,46 @@ describe("KeystoreVault", () => {
     }
     await storage.setItem(VAULT_KEY, JSON.stringify(file));
 
+    // 带 AAD 的条目在解密这一步就失败，轮不到地址重算（安全评审 N9）
     await expect(
       vault.withPrivateKey(ADDRESS, "sign", () => undefined),
-    ).rejects.toThrow("does not belong to this account");
+    ).rejects.toThrow("could not be decrypted");
     await expect(vault.revealMnemonic(ADDRESS, "reveal")).rejects.toThrow(
-      "does not belong to this account",
+      "could not be decrypted",
+    );
+  });
+
+  it("refuses a tampered kind or path on an authenticated entry", async () => {
+    const { vault, storage } = setup();
+    await vault.importMnemonic(PHRASE);
+    const file = await rawFile(storage);
+    const [entry] = file.entries as [RawEntry];
+    expect(entry.aad).toBe(1);
+    // 把助记词条目伪装成私钥条目：改了元数据就解不开
+    entry.kind = "private-key";
+    await storage.setItem(VAULT_KEY, JSON.stringify(file));
+    await expect(
+      vault.withPrivateKey(ADDRESS, "sign", () => undefined),
+    ).rejects.toThrow("could not be decrypted");
+  });
+
+  it("still reads pre-upgrade entries and re-authenticates them in place", async () => {
+    const { vault, storage, secureStore } = setup();
+    await vault.importMnemonic(PHRASE);
+    // 造一条升级前的条目：老格式没有 aad 标记，密文也没带 AAD
+    const legacy = await makeLegacyEntry(storage, secureStore, PHRASE);
+    await storage.setItem(VAULT_KEY, JSON.stringify(legacy));
+
+    const revealed = await vault.revealMnemonic(ADDRESS, "reveal");
+    expect(revealed).toBe(PHRASE);
+    // 读过一次之后就地升级成带 AAD 的密文，下次篡改元数据就会被挡住
+    const upgraded = await rawFile(storage);
+    expect((upgraded.entries[0] as RawEntry).aad).toBe(1);
+    const tampered = await rawFile(storage);
+    (tampered.entries[0] as RawEntry).path = "m/44'/60'/0'/0/7";
+    await storage.setItem(VAULT_KEY, JSON.stringify(tampered));
+    await expect(vault.revealMnemonic(ADDRESS, "reveal")).rejects.toThrow(
+      "could not be decrypted",
     );
   });
 

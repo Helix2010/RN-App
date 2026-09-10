@@ -31,6 +31,7 @@ import { WalletAuthRequiredError } from "../../../core/wallet/vault/keystore-vau
 import type { WalletRecoveryReason } from "../../wallet/api/gateway";
 import type { WalletConnector } from "../../wallet/model/wallet";
 import { tenantDomain, useWalletLogin } from "../hooks/use-session";
+import { useScreenProtect } from "../../../core/security/screen-protect";
 import { useAuthSheet } from "../model/auth-sheet-store";
 import type { AuthIntent, WalletConnectorId } from "../model/session";
 import type { RootStackParamList } from "../../../navigation/types";
@@ -484,6 +485,8 @@ function SignConfirm({
 }) {
   const { config } = useFoundationRuntime();
   const locale = config.localization.selectedLocale;
+  // 待签消息与账户都在这一屏上
+  useScreenProtect("wallet-sign-confirm");
   const state = login.state;
   const account = "account" in state ? state.account : undefined;
   const connector = "connector" in state ? state.connector : undefined;

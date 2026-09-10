@@ -1,5 +1,5 @@
 import * as ScreenCapture from "expo-screen-capture";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 /**
  * 敏感界面的防截屏 / 防录屏。
@@ -16,26 +16,54 @@ export const PROTECTED_FLOWS = [
   "wallet-seed-phrase",
   /** 助记词 / 私钥导入 */
   "wallet-key-import",
+  /** WalletConnect 配对二维码：扫走它就等于把配对权交给别人 */
+  "wallet-pairing-qr",
+  /** 登录签名确认：展示待签消息与账户 */
+  "wallet-sign-confirm",
 ] as const;
 
 type ProtectedFlow = (typeof PROTECTED_FLOWS)[number];
+
+/**
+ * 保护是否真的生效。
+ * - `pending` 还在向系统申请；
+ * - `on` 已生效；
+ * - `unavailable` 这台设备做不到（模拟器、部分定制系统）。
+ *
+ * 之所以要把 `unavailable` 交出去而不是内部吞掉：用户以为这一页截不了图，
+ * 实际上截得了，这个差别必须让他知道（安全评审 N24）。
+ */
+export type ScreenProtectStatus = "pending" | "on" | "unavailable";
 
 /**
  * 进入页面时加保护，离开时释放。
  *
  * 用 tag 而不是无参调用：`expo-screen-capture` 的 tag 机制保证两个受保护页面
  * 叠在一起时，先离开的那个不会把还在前台的那个的保护也一起撤掉。
+ *
+ * @param active 传 false 表示这一刻不需要保护（常驻挂载、按状态显示的 sheet）
  */
-export function useScreenProtect(flow: ProtectedFlow): void {
+export function useScreenProtect(
+  flow: ProtectedFlow,
+  active = true,
+): ScreenProtectStatus {
+  const [status, setStatus] = useState<ScreenProtectStatus>("pending");
   useEffect(() => {
-    let released = false;
-    void ScreenCapture.preventScreenCaptureAsync(flow).catch(() => {
-      // 某些设备 / 模拟器不支持；不能因此让用户看不到助记词
-    });
+    if (!active) return;
+    let cancelled = false;
+    void ScreenCapture.preventScreenCaptureAsync(flow)
+      .then(() => {
+        if (!cancelled) setStatus("on");
+      })
+      .catch(() => {
+        // 某些设备 / 模拟器不支持；不能因此让用户看不到助记词，但要如实标记
+        if (!cancelled) setStatus("unavailable");
+      });
     return () => {
-      if (released) return;
-      released = true;
+      cancelled = true;
       void ScreenCapture.allowScreenCaptureAsync(flow).catch(() => {});
     };
-  }, [flow]);
+  }, [flow, active]);
+  // 不保护的时候不报告状态：调用方据此不显示"保护未生效"的提示
+  return active ? status : "pending";
 }

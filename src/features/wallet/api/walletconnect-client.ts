@@ -1,5 +1,9 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import { Linking } from "react-native";
+import type { KeyValueStorage } from "../../../core/gateways/types";
+import { expoSecureStoreIn } from "../../../core/wallet/vault/expo-ports";
+import { createEncryptedWcStorage } from "./encrypted-wc-storage";
 import {
   isWalletConnectConfigured,
   onWalletConfigChange,
@@ -20,6 +24,15 @@ import {
  */
 
 let clientPromise: Promise<SignClientLike> | null = null;
+
+/** WalletConnect 存储密钥独占的钥匙串服务，和钱包私钥分开。 */
+const WC_KEYCHAIN_SERVICE = "foundation.walletconnect";
+
+const asyncStorageAdapter: KeyValueStorage = {
+  getItem: (key) => AsyncStorage.getItem(key),
+  setItem: (key, value) => AsyncStorage.setItem(key, value),
+  removeItem: (key) => AsyncStorage.removeItem(key),
+};
 
 // projectId 变了就丢弃已建的客户端，下次连接用新的
 onWalletConfigChange(() => {
@@ -42,13 +55,37 @@ function appIdentity(): { url: string; native: string } {
   return { url: new URL(extra.apiBaseUrl).origin, native: `${scheme}://` };
 }
 
+/**
+ * SDK 升级前写下的明文条目。默认存储把会话（含 symKey）直接写这些键，
+ * 换成加密存储后它们不会再被读到，但明文还留在盘上，得删掉（安全评审 N14）。
+ */
+const LEGACY_WC_KEYS = [
+  "wc@2:core:0.3//keychain",
+  "wc@2:core:0.3//messages",
+  "wc@2:core:0.3//subscription",
+  "wc@2:core:0.3//history",
+  "wc@2:core:0.3//expirer",
+  "wc@2:core:0.3//pairing",
+  "wc@2:client:0.3//proposal",
+  "wc@2:client:0.3//session",
+  "wc@2:client:0.3//request",
+];
+
 async function createClient(appName: string): Promise<SignClientLike> {
   const projectId = walletConnectProjectId();
   if (!projectId) throw new WalletConnectUnavailableError();
   const identity = appIdentity();
+  // 会话对称密钥不进普通存储：加密后落盘，密钥放系统密钥库（安全评审 N14）。
+  // 换存储等于旧会话读不到，用户需要重连一次——这是一次性成本。
+  const storage = createEncryptedWcStorage({
+    secure: expoSecureStoreIn(WC_KEYCHAIN_SERVICE),
+    storage: asyncStorageAdapter,
+  });
+  await storage.purgeLegacy(LEGACY_WC_KEYS);
   // 动态 import：Metro 会把它切成单独的模块，未配置时不进启动路径
   const { SignClient } = await import("@walletconnect/sign-client");
   const client = await SignClient.init({
+    storage,
     projectId,
     metadata: {
       name: appName,

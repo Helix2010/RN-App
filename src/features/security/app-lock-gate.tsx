@@ -127,6 +127,10 @@ export function AppLockGate() {
       const store = useAppLock.getState();
       if (next === "background" || next === "inactive") {
         if (!store.locked) store.noteBackgrounded();
+        // 进后台立刻把密钥锁上（阶段 0c-2）：解封窗口是"用户在场"的凭据，
+        // 人一离开就不再成立。界面锁不锁仍按自动锁定时长决定，这里只管密钥——
+        // 短暂切走再回来时用户不用重新解锁界面，但内存里的密钥已经清掉了。
+        lockKeys();
         return;
       }
       if (next !== "active") return;

@@ -15,6 +15,34 @@ type WalletNativeLink = {
   pairing: string;
 };
 
+/**
+ * 通用链接（Android App Links / iOS Universal Links）。
+ *
+ * 自定义 scheme 谁都能在自己的 manifest 里声明，装了恶意应用的机器上，
+ * `metamask://wc?uri=` 可能被它接走，配对 URI 就落到别人手里（安全评审 N13）。
+ * 通用链接绑定在钱包厂商自己的域名上，域名的 `assetlinks.json` / AASA 决定
+ * 谁能接管，抢注不了。系统在没装钱包时会退回浏览器打开该域名的引导页，
+ * 也比"点了没反应"好。
+ *
+ * 先试通用链接，再退回自定义 scheme：部分旧版本钱包只注册了 scheme。
+ */
+const WALLET_UNIVERSAL_LINKS: Partial<
+  Record<WalletConnectorId, WalletNativeLink[]>
+> = {
+  metamask: [
+    {
+      launch: "https://metamask.app.link/",
+      pairing: "https://metamask.app.link/wc?uri=",
+    },
+  ],
+  trust: [
+    {
+      launch: "https://link.trustwallet.com/",
+      pairing: "https://link.trustwallet.com/wc?uri=",
+    },
+  ],
+};
+
 const WALLET_NATIVE_LINKS: Partial<
   Record<WalletConnectorId, WalletNativeLink[]>
 > = {
@@ -29,14 +57,21 @@ const WALLET_NATIVE_LINKS: Partial<
   trust: [{ launch: "trust://", pairing: "trust://wc?uri=" }],
 };
 
-/** 唤起钱包并带上配对 URI。 */
+function linksFor(connector: WalletConnectorId): WalletNativeLink[] {
+  return [
+    ...(WALLET_UNIVERSAL_LINKS[connector] ?? []),
+    ...(WALLET_NATIVE_LINKS[connector] ?? []),
+  ];
+}
+
+/** 唤起钱包并带上配对 URI。通用链接优先，自定义 scheme 兜底。 */
 export function pairingLinks(connector: WalletConnectorId): string[] {
-  return (WALLET_NATIVE_LINKS[connector] ?? []).map((link) => link.pairing);
+  return linksFor(connector).map((link) => link.pairing);
 }
 
 /** 只把用户切到钱包（签名请求已经通过 relay 发过去了）。 */
 export function launchLinks(connector: WalletConnectorId): string[] {
-  return (WALLET_NATIVE_LINKS[connector] ?? []).map((link) => link.launch);
+  return linksFor(connector).map((link) => link.launch);
 }
 
 /**
@@ -46,5 +81,7 @@ export function launchLinks(connector: WalletConnectorId): string[] {
  * 钱包 App 的用户误标成"未安装"。
  */
 export function probeLinks(connector: WalletConnectorId): string[] {
+  // 探测只用自定义 scheme：`canOpenURL("https://…")` 在装了浏览器的机器上
+  // 恒为 true，拿它判断"钱包装了没"会把所有人都标成已安装。
   return (WALLET_NATIVE_LINKS[connector] ?? []).map((link) => link.launch);
 }

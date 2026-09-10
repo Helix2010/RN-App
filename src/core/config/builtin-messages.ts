@@ -944,6 +944,9 @@ const zhCN = {
   "backup.verifyHint": "按提示选出对应位置的单词",
   "backup.wordAt": "第 {n} 个单词",
   "backup.wrong": "选错了，请重新核对",
+  "backup.rereadAfterMisses": "连续选错三次，请回到上一步重新核对助记词",
+  "backup.screenProtectUnavailable":
+    "这台设备无法阻止截屏录屏，请确认周围没有人也没有录屏应用在运行",
   "backup.markFailed": "备份状态没保存成功，请重试",
   "backup.done": "备份完成",
   "backup.doneHint": "助记词已确认。你可以在安全中心随时再次查看。",
@@ -2179,6 +2182,10 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "backup.verifyHint": "Pick the word for each position",
   "backup.wordAt": "Word #{n}",
   "backup.wrong": "Wrong word, please check again",
+  "backup.rereadAfterMisses":
+    "Three wrong answers in a row — go back and read your recovery phrase again",
+  "backup.screenProtectUnavailable":
+    "This device cannot block screenshots or recording — make sure nobody is watching and no recorder is running",
   "backup.markFailed": "Could not save the backup state. Try again.",
   "backup.done": "Backup complete",
   "backup.doneHint":

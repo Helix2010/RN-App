@@ -124,6 +124,88 @@ describe("loadBootstrap", () => {
     expect(snapshot.config.localization.messagesVersion).toBe("2");
   });
 
+  it("refuses a language package that belongs to another tenant", async () => {
+    const Crypto = jest.requireMock("expo-crypto") as {
+      digestStringAsync: jest.Mock;
+    };
+    const config = createFallbackConfig("zh-CN");
+    const text = JSON.stringify({
+      schemaVersion: 1,
+      tenantId: "999999999",
+      languageCode: "zh-CN",
+      version: "2",
+      generatedAt: "2026-08-26T00:00:00.000Z",
+      messages: { "app.name": "别家的名称" },
+    });
+    config.localization.resource = {
+      version: "2",
+      objectKey: "localization/test.json",
+      fileUrl: "/v1/mobile/languages/zh-CN/document?v=2",
+      sha256: "abc",
+      size: new Blob([text]).size,
+      publishedAt: "2026-08-26T00:00:00.000Z",
+    };
+    getBootstrap.mockResolvedValue(config);
+    getLanguage.mockResolvedValue({
+      text,
+      headers: new Headers({ "x-content-sha256": "abc" }),
+    });
+    Crypto.digestStringAsync.mockResolvedValue("abc");
+    // 本机此前认定的租户是 100000001
+    storage.getItem.mockImplementation(async (key: string) =>
+      key.endsWith(".tenant") ? "100000001" : null,
+    );
+
+    const snapshot = await loadBootstrap("zh-CN");
+
+    // 整套文案被换掉会连金额单位和风险提示一起换掉，宁可退回内置文案（安全评审 N27）
+    expect(snapshot.config.localization.messages["app.name"]).not.toBe(
+      "别家的名称",
+    );
+    expect(
+      storage.setItem.mock.calls.some(([key]) =>
+        String(key).includes("foundation.language.v2"),
+      ),
+    ).toBe(false);
+  });
+
+  it("pins the tenant of the first language package it accepts", async () => {
+    const Crypto = jest.requireMock("expo-crypto") as {
+      digestStringAsync: jest.Mock;
+    };
+    const config = createFallbackConfig("zh-CN");
+    const text = JSON.stringify({
+      schemaVersion: 1,
+      tenantId: "100000001",
+      languageCode: "zh-CN",
+      version: "2",
+      generatedAt: "2026-08-26T00:00:00.000Z",
+      messages: { "app.name": "远程名称" },
+    });
+    config.localization.resource = {
+      version: "2",
+      objectKey: "localization/test.json",
+      fileUrl: "/v1/mobile/languages/zh-CN/document?v=2",
+      sha256: "abc",
+      size: new Blob([text]).size,
+      publishedAt: "2026-08-26T00:00:00.000Z",
+    };
+    getBootstrap.mockResolvedValue(config);
+    getLanguage.mockResolvedValue({
+      text,
+      headers: new Headers({ "x-content-sha256": "abc" }),
+    });
+    Crypto.digestStringAsync.mockResolvedValue("abc");
+    storage.getItem.mockResolvedValue(null);
+
+    await loadBootstrap("zh-CN");
+
+    expect(storage.setItem).toHaveBeenCalledWith(
+      expect.stringContaining(".tenant"),
+      "100000001",
+    );
+  });
+
   it("keeps the server-reported newer APK update in the fresh snapshot", async () => {
     const config = createFallbackConfig("zh-CN");
     config.app.version = "1.1.2";

@@ -29,6 +29,20 @@ export default defineConfig([
             "CallExpression[callee.name='fetch']:not([callee.object.name='apiClient'])",
           message: "HTTP must go through src/core/network.",
         },
+        // 密钥材料不能进日志：console 在 release 包里照样输出到 logcat，
+        // 崩溃上报和埋点 SDK 也会带走它（安全评审 12.2）
+        {
+          selector:
+            "CallExpression[callee.object.name='console'] Identifier[name=/^(phrase|mnemonic|privateKey|secret|seedPhrase|wrapKey|entryKey)$/]",
+          message:
+            "Never log key material (phrase / mnemonic / privateKey / secret / wrapKey).",
+        },
+        {
+          selector:
+            "CallExpression[callee.object.name='console'] MemberExpression[property.name=/^(phrase|mnemonic|privateKey|params)$/]",
+          message:
+            "Never log route params or key material; log an identifier instead.",
+        },
       ],
     },
   },

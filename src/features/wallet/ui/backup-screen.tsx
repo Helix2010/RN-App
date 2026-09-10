@@ -1,9 +1,8 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { fill } from "../../../core/i18n/format";
 import { useQueryClient } from "@tanstack/react-query";
-import { LangEn } from "ethers";
 import * as Clipboard from "expo-clipboard";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import { copyToClipboard } from "../../../core/ui/copy-to-clipboard";
@@ -29,45 +28,24 @@ import {
 } from "../../../design-system";
 import type { RootStackParamList } from "../../../navigation/types";
 import { useSession } from "../../session/hooks/use-session";
+import { MAX_QUIZ_ATTEMPTS, buildQuiz } from "../model/backup-quiz";
+import { takePendingPhrase } from "../model/pending-reveal";
 import { useWalletAccounts } from "../hooks/use-wallet";
 
 const WORD_COUNT = 12;
-const wordlist = LangEn.wordlist();
-
-/** 干扰词来自真实 BIP-39 词表，且不与助记词本身重复。 */
-function decoysFor(word: string, seed: number, count: number): string[] {
-  const picks: string[] = [];
-  let state = (seed + 1) * 7919;
-  while (picks.length < count) {
-    state = (state * 1103515245 + 12345) & 0x7fffffff;
-    const candidate = wordlist.getWord(state % 2048);
-    if (candidate !== word && !picks.includes(candidate)) picks.push(candidate);
-  }
-  return picks;
-}
-
-function shuffle<T>(items: T[], seed: number): T[] {
-  const list = [...items];
-  let state = seed;
-  for (let index = list.length - 1; index > 0; index -= 1) {
-    state = (state * 9301 + 49297) % 233280;
-    const swap = Math.floor((state / 233280) * (index + 1));
-    [list[index], list[swap]] = [list[swap] as T, list[index] as T];
-  }
-  return list;
-}
+/** 剪贴板里的助记词最多留这么久 */
+const CLIPBOARD_TTL_MS = 60_000;
 
 /** L-04 备份助记词：抄写 → 验证（乱序选词 3 个）→ 完成；三段进度；可"稍后备份"。 */
 export function BackupScreen({
   navigation,
-  route,
 }: NativeStackScreenProps<RootStackParamList, "WalletBackup">) {
   const insets = useSafeAreaInsets();
   const { t } = useFoundationRuntime();
   const theme = useTheme();
   const { wallet } = useGateways();
   // 助记词页必须挡住截图 / 录屏
-  useScreenProtect("wallet-seed-phrase");
+  const screenProtect = useScreenProtect("wallet-seed-phrase");
   const queryClient = useQueryClient();
   const session = useSession();
   const accounts = useWalletAccounts();
@@ -79,10 +57,12 @@ export function BackupScreen({
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [wrong, setWrong] = useState(false);
-  // 刚创建的钱包把助记词直接带过来，避免紧接着再弹一次身份验证；
-  // 从设置页进来则必须现场解封（会弹系统验证）。
-  const freshPhrase = route.params?.phrase;
-  const [phrase, setPhrase] = useState<string | null>(freshPhrase ?? null);
+  const [attempts, setAttempts] = useState(0);
+  // 刚创建的钱包把助记词经模块级一次性通道交过来（不进导航参数，安全评审 N36），
+  // 避免紧接着再弹一次身份验证；从设置页进来则必须现场解封（会弹系统验证）。
+  const [phrase, setPhrase] = useState<string | null>(() =>
+    takePendingPhrase(),
+  );
   const [revealError, setRevealError] = useState(false);
   const address = embedded?.address;
   useEffect(() => {
@@ -101,35 +81,41 @@ export function BackupScreen({
     };
   }, [address, phrase, t, wallet]);
   const words = useMemo(() => (phrase ? phrase.split(" ") : []), [phrase]);
-  const targets = useMemo(
-    () =>
-      shuffle([...Array(WORD_COUNT).keys()], 7)
-        .slice(0, 3)
-        .sort((a, b) => a - b),
+  // 每次进入都重新随机：位置和干扰词固定时，旁观者看一次就知道下次考哪几个
+  const quiz = useMemo(
+    () => buildQuiz(words, { targetCount: 3, decoyCount: 3 }),
+    [words],
+  );
+  const targets = quiz.targets;
+  const options = quiz.choices;
+
+  const clipboardTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (clipboardTimer.current !== null) clearTimeout(clipboardTimer.current);
+    },
     [],
   );
-  const options = useMemo(
-    () =>
-      Object.fromEntries(
-        targets.map((index, position) => {
-          const word = words[index] ?? "";
-          return [
-            index,
-            shuffle([word, ...decoysFor(word, index, 3)], position + 11),
-          ];
-        }),
-      ) as Record<number, string[]>,
-    [targets, words],
-  );
-
   const copy = async () => {
     if (!phrase) return;
     await copyToClipboard(phrase, {
       success: t("backup.copied"),
       failure: t("common.copyFailed"),
     });
-    // 助记词不能一直躺在剪贴板里
-    setTimeout(() => void Clipboard.setStringAsync("").catch(() => {}), 60_000);
+    // 助记词不能一直躺在剪贴板里。清理前先确认里面还是它：用户这一分钟里
+    // 复制了别的东西的话，清掉的就是用户自己的内容（安全评审 N23）。
+    if (clipboardTimer.current !== null) clearTimeout(clipboardTimer.current);
+    clipboardTimer.current = setTimeout(() => {
+      clipboardTimer.current = null;
+      void Clipboard.getStringAsync()
+        .then((current) => {
+          if (current === phrase) return Clipboard.setStringAsync("");
+          return undefined;
+        })
+        .catch(() => {
+          // 读不到剪贴板（权限 / 平台限制）时不猜内容，宁可不清也不误删
+        });
+    }, CLIPBOARD_TTL_MS);
   };
   const { run: verify, pending: marking } = useAsyncAction(
     async () => {
@@ -138,7 +124,17 @@ export function BackupScreen({
         targets.every((index) => answers[index] === words[index]);
       if (!ok) {
         setWrong(true);
+        const used = attempts + 1;
+        setAttempts(used);
         toast(t("backup.wrong"), "error");
+        // 连续错满就退回抄写页重看，不让用户在四选一里穷举（安全评审 N25）
+        if (used >= MAX_QUIZ_ATTEMPTS) {
+          setAttempts(0);
+          setAnswers({});
+          setWrong(false);
+          setStep(1);
+          toast(t("backup.rereadAfterMisses"), "error");
+        }
         return false;
       }
       // 答对了但这一步失败过去是静默的：用户停在原页面，不知道备份没记上
@@ -195,6 +191,25 @@ export function BackupScreen({
                 <SectionTitle fontSize={18}>{t("backup.heading")}</SectionTitle>
                 <Body>{t("backup.hint")}</Body>
               </Stack>
+              {screenProtect === "unavailable" ? (
+                <Row
+                  alignItems="flex-start"
+                  gap="$2"
+                  padding="$3"
+                  borderRadius="$4"
+                  style={{ backgroundColor: `${theme.warning.val}22` }}
+                  testID="backup-screen-protect-warning"
+                >
+                  <AppIcon
+                    name="alert-outline"
+                    size={18}
+                    colorToken="warning"
+                  />
+                  <Body flex={1} fontSize={12} color="$warning">
+                    {t("backup.screenProtectUnavailable")}
+                  </Body>
+                </Row>
+              ) : null}
               <Row flexWrap="wrap" gap="$2">
                 {words.map((word, index) => (
                   <Row

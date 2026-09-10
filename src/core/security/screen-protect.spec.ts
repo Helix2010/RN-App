@@ -44,6 +44,8 @@ describe("useScreenProtect", () => {
     expect(PROTECTED_FLOWS).toEqual([
       "wallet-seed-phrase",
       "wallet-key-import",
+      "wallet-pairing-qr",
+      "wallet-sign-confirm",
     ]);
   });
 });

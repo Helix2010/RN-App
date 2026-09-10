@@ -7,6 +7,7 @@ import { useGateways } from "../../../core/gateways/gateway-context";
 import { AppError } from "../../../core/network/app-error";
 import type { SignInChallenge } from "../api/gateway";
 import type { Session, WalletConnectorId } from "../model/session";
+import { assertSiweMessage } from "../model/siwe";
 import type { WalletAccount } from "../../wallet/model/wallet";
 import {
   WalletNotProvisionedError,
@@ -202,6 +203,13 @@ export function useWalletLogin(domain: string, signReason?: string) {
     if (!account || !challenge) return null;
     setState({ step: "signing", account, challenge, connector });
     try {
+      // 签之前自己核一遍这条消息：域名、账户、nonce 必须是我们预期的那三个，
+      // 否则这次签名可能被拿去别处换登录凭证（安全评审 N26）
+      assertSiweMessage(challenge.message, {
+        domain,
+        address: account.address,
+        nonce: challenge.nonce,
+      });
       const signature = await wallet.signMessage(
         account.address,
         challenge.message,

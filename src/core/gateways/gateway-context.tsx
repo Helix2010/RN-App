@@ -28,7 +28,11 @@ import {
 import { MockWalletGateway } from "../../features/wallet/api/mock-wallet-gateway";
 import { OnchainTransfers } from "../../features/wallet/api/onchain-transfers";
 import { KeystoreVault } from "../wallet/vault/keystore-vault";
-import { expoAuthenticate, expoSecureStore } from "../wallet/vault/expo-ports";
+import {
+  expoAuthenticate,
+  expoPredictSecureStore,
+  expoSecureStore,
+} from "../wallet/vault/expo-ports";
 import { appRuntime } from "../network/api-client";
 import { setSessionStateProbe } from "../device/session-state-probe";
 import type { KeyValueStorage } from "./types";
@@ -101,7 +105,8 @@ function createGateways(storage: KeyValueStorage): Gateways {
   const predictAccount = new HttpPredictAccountGateway({
     wallet,
     onchain,
-    credentials: new PredictCredentialStore(expoSecureStore),
+    // 凭证走独立的钥匙串服务，不和钱包私钥同一命名空间（安全评审 N21）
+    credentials: new PredictCredentialStore(expoPredictSecureStore),
     storage,
   });
   // 行情 / 持仓 / 订单同样直连平台；还没接的能力如实抛错，没有演示数据

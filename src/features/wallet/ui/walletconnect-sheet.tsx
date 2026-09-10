@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import QRCode from "react-native-qrcode-svg";
+import { useScreenProtect } from "../../../core/security/screen-protect";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import { copyToClipboard } from "../../../core/ui/copy-to-clipboard";
 import {
@@ -29,6 +30,8 @@ export function WalletConnectSheet() {
   const dismiss = useWalletConnectPairing((state) => state.dismiss);
   const sheet = useRef<SheetHandle>(null);
   const wasOpen = useRef(false);
+  // 二维码被拍走等于把配对权交出去；这个 sheet 常驻挂载，所以按 uri 开关保护
+  useScreenProtect("wallet-pairing-qr", Boolean(uri));
 
   // 只在 open 真正翻转时 present / dismiss（gorhom 的延迟 onDismiss 会打到下一次 present 上）
   useEffect(() => {

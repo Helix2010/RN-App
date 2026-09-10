@@ -20,6 +20,7 @@ import {
 } from "../../../design-system";
 import type { RootStackParamList } from "../../../navigation/types";
 import { recoveryReasonOf } from "../api/gateway";
+import { stashPendingPhrase } from "../model/pending-reveal";
 
 /**
  * 自托管钱包的入口：创建新钱包 或 导入已有钱包。
@@ -43,7 +44,9 @@ export function WalletSetupScreen({
         reason: "wallet.create.authReason",
       });
       void queryClient.invalidateQueries({ queryKey: ["wallet-accounts"] });
-      navigation.replace("WalletBackup", { phrase: mnemonic });
+      // 助记词经模块级一次性通道交给备份页，不写进导航参数（安全评审 N36）
+      stashPendingPhrase(mnemonic);
+      navigation.replace("WalletBackup");
     } catch (error) {
       // 存储坏了时 vault 会拒绝写入：说清要先恢复，而不是"创建失败请重试"
       toast(
