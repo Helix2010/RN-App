@@ -8,7 +8,11 @@ import { CHAINS, NATIVE_TOKEN_ADDRESS } from "../../../core/gateways/types";
 import { money, toApproxNumber, type Money } from "../../../core/money/money";
 import { EmbeddedSigner } from "../../../core/wallet/signer/embedded-signer";
 import type { WalletSigner } from "../../../core/wallet/signer/types";
-import type { KeystoreVault } from "../../../core/wallet/vault/keystore-vault";
+import {
+  WalletVaultCorruptedError,
+  WalletVaultKeyMissingError,
+  type KeystoreVault,
+} from "../../../core/wallet/vault/keystore-vault";
 import {
   trustedTokens,
   verifyAgainstAllowlist,
@@ -39,7 +43,9 @@ import type { WalletIndexPort, WalletIndexResult } from "./http-wallet-index";
 import {
   WalletNotProvisionedError,
   WalletProvisioningUnsupportedError,
+  WalletRegistryCorruptedError,
   type WalletGateway,
+  type WalletStorageRecovery,
 } from "./gateway";
 
 /**
@@ -87,7 +93,13 @@ function priced(amount: Money, symbol: string): number | null {
   return price === null ? null : toApproxNumber(amount) * price;
 }
 
+/**
+ * 账户注册表：`{ version: 1, current, meta }`，只有标签 / 连接器 / 当前账户这类元数据，
+ * 没有密钥材料。读不出来时抛 `WalletRegistryCorruptedError`，不当空表覆盖；恢复流程
+ * 把原文归档到 `REGISTRY_CORRUPT_BACKUP_PREFIX + ISO 时间` 后再清空。
+ */
 const REGISTRY_KEY = "foundation.wallet.accounts.v1";
+export const REGISTRY_CORRUPT_BACKUP_PREFIX = `${REGISTRY_KEY}.corrupt.`;
 
 /**
  * 账户在界面上"支持的链"。
@@ -102,7 +114,8 @@ function accountChains(
   if (!meta || meta.connector === "embedded") return enabledChains();
   return (meta.chains ?? []).filter(isChainEnabled);
 }
-const DEFAULT_SIGN_REASON = "Confirm with your wallet";
+/** 系统认证弹窗文案的内置字典 key（安全评审 N12）；由认证端口翻译，不在这里拼文案 */
+const DEFAULT_SIGN_REASON = "wallet.sign.reason";
 
 /** 链上数据来源。一期是 Mock 账本；接真链后换成 RPC / 索引器实现。 */
 type WalletChainData = Pick<
@@ -228,6 +241,8 @@ export class EmbeddedWalletGateway implements WalletGateway {
     if (connector === "embedded") {
       const entries = await this.deps.vault.list();
       if (entries.length === 0) throw new WalletNotProvisionedError();
+      // 有账户但密钥库里的 WK 丢了 / 对不上：现在就报，不要等到签名那一步才发现
+      await this.deps.vault.verifyWrapKey();
       const registry = await this.readRegistry();
       const preferred =
         entries.find((entry) => sameAddress(registry.current, entry.address)) ??
@@ -292,20 +307,75 @@ export class EmbeddedWalletGateway implements WalletGateway {
 
   // ---- 开通与导入 ----
 
-  async createWallet(): Promise<{ account: WalletAccount; mnemonic: string }> {
-    const { entry, mnemonic } = await this.deps.vault.createWallet();
+  // 注册表在 vault 写入**之前**读一次：注册表坏了就在这里失败，不会留下一条已经写进
+  // vault、却从未向用户展示过助记词的孤儿条目（评审 2.4）。
+  async createWallet(options?: {
+    reason?: string;
+  }): Promise<{ account: WalletAccount; mnemonic: string }> {
+    await this.readRegistry();
+    const { entry, mnemonic } = await this.deps.vault.createWallet(
+      options?.reason,
+    );
     const account = await this.select(entry.address, "embedded");
     return { account, mnemonic };
   }
 
-  async importMnemonic(phrase: string, index = 0): Promise<WalletAccount> {
-    const entry = await this.deps.vault.importMnemonic(phrase, index);
+  async importMnemonic(
+    phrase: string,
+    index = 0,
+    options?: { reason?: string },
+  ): Promise<WalletAccount> {
+    await this.readRegistry();
+    const entry = await this.deps.vault.importMnemonic(
+      phrase,
+      index,
+      options?.reason,
+    );
     return this.select(entry.address, "embedded");
   }
 
-  async importPrivateKey(privateKey: string): Promise<WalletAccount> {
-    const entry = await this.deps.vault.importPrivateKey(privateKey);
+  async importPrivateKey(
+    privateKey: string,
+    options?: { reason?: string },
+  ): Promise<WalletAccount> {
+    await this.readRegistry();
+    const entry = await this.deps.vault.importPrivateKey(
+      privateKey,
+      options?.reason,
+    );
     return this.select(entry.address, "embedded");
+  }
+
+  async recoverStorage(reason: string): Promise<WalletStorageRecovery> {
+    let registryArchived = false;
+    const rawRegistry = await this.deps.storage.getItem(REGISTRY_KEY);
+    if (rawRegistry !== null && parseRegistry(rawRegistry) === null) {
+      await this.deps.storage.setItem(
+        `${REGISTRY_CORRUPT_BACKUP_PREFIX}${new Date().toISOString()}`,
+        rawRegistry,
+      );
+      await this.deps.storage.removeItem(REGISTRY_KEY);
+      registryArchived = true;
+    }
+    let vaultBroken = false;
+    try {
+      await this.deps.vault.verifyWrapKey();
+      // 老文件没有 wkCheck，verifyWrapKey 看不出 WK 被换过：真的解一条（会弹一次认证）。
+      // 解得开就补写 wkCheck，之后不再需要这一步。
+      await this.deps.vault.verifyLegacyWrapKey(reason);
+    } catch (error) {
+      if (
+        !(error instanceof WalletVaultCorruptedError) &&
+        !(error instanceof WalletVaultKeyMissingError)
+      )
+        throw error;
+      vaultBroken = true;
+    }
+    // 健康的 vault 一律不动：恢复面板只有在存储确实坏了时才会出现，但这里再守一次
+    const vaultArchived = vaultBroken
+      ? (await this.deps.vault.archiveAndReset(reason)) !== null
+      : false;
+    return { vaultArchived, registryArchived };
   }
 
   async revealMnemonic(address: string, reason: string): Promise<string> {
@@ -625,20 +695,35 @@ export class EmbeddedWalletGateway implements WalletGateway {
 
   private async readRegistry(): Promise<Registry> {
     const raw = await this.deps.storage.getItem(REGISTRY_KEY);
-    if (!raw) return { version: 1, current: null, meta: {} };
-    try {
-      const parsed = JSON.parse(raw) as Registry;
-      if (parsed?.version !== 1 || typeof parsed.meta !== "object")
-        return { version: 1, current: null, meta: {} };
-      return { ...parsed, meta: parsed.meta ?? {} };
-    } catch {
-      return { version: 1, current: null, meta: {} };
-    }
+    if (raw === null) return { version: 1, current: null, meta: {} };
+    const parsed = parseRegistry(raw);
+    if (parsed === null) throw new WalletRegistryCorruptedError();
+    return parsed;
   }
 
   private async writeRegistry(registry: Registry): Promise<void> {
     await this.deps.storage.setItem(REGISTRY_KEY, JSON.stringify(registry));
   }
+}
+
+function parseRegistry(raw: string): Registry | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed === null) return null;
+  const registry = parsed as Partial<Registry>;
+  if (registry.version !== 1) return null;
+  if (typeof registry.meta !== "object" || registry.meta === null) return null;
+  if (registry.current !== null && typeof registry.current !== "string")
+    return null;
+  return {
+    version: 1,
+    current: registry.current ?? null,
+    meta: registry.meta,
+  };
 }
 
 function transferKey(item: WalletTransfer): string {

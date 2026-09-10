@@ -5,6 +5,11 @@ import {
   presentWalletConnectUri,
   useWalletConnectPairing,
 } from "../../wallet/model/walletconnect-store";
+import {
+  WalletVaultCorruptedError,
+  WalletVaultKeyMissingError,
+} from "../../../core/wallet/vault/keystore-vault";
+import { WalletRegistryCorruptedError } from "../../wallet/api/gateway";
 import { useWalletLogin } from "./use-session";
 
 function Probe() {
@@ -59,4 +64,54 @@ describe("useWalletLogin and the pairing sheet", () => {
     );
     expect(useWalletConnectPairing.getState().uri).toBeNull();
   });
+});
+
+describe("useWalletLogin storage recovery", () => {
+  function RecoveryProbe() {
+    const login = useWalletLogin("app.example");
+    return (
+      <>
+        <Text onPress={() => void login.connect("embedded")}>connect</Text>
+        <Text testID="step">{login.state.step}</Text>
+        <Text testID="reason">
+          {login.state.step === "needs-recovery" ? login.state.reason : ""}
+        </Text>
+      </>
+    );
+  }
+
+  it.each([
+    ["a corrupted vault", () => new WalletVaultCorruptedError(), "corrupted"],
+    [
+      "a corrupted registry",
+      () => new WalletRegistryCorruptedError(),
+      "corrupted",
+    ],
+    [
+      "a missing wrap key",
+      () => new WalletVaultKeyMissingError("missing"),
+      "key-missing",
+    ],
+    [
+      "a replaced wrap key",
+      () => new WalletVaultKeyMissingError("mismatch"),
+      "key-missing",
+    ],
+  ] as const)(
+    "enters needs-recovery instead of needs-wallet on %s",
+    async (_label, makeError, reason) => {
+      const gateways = createTestGateways();
+      gateways.wallet.connect = jest.fn(async () => {
+        throw makeError();
+      });
+      await renderWithProviders(<RecoveryProbe />, { gateways });
+
+      void fireEvent.press(screen.getByText("connect"));
+
+      await waitFor(() =>
+        expect(screen.getByTestId("step")).toHaveTextContent("needs-recovery"),
+      );
+      expect(screen.getByTestId("reason")).toHaveTextContent(reason);
+    },
+  );
 });

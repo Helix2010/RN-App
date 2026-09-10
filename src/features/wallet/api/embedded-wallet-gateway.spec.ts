@@ -3,12 +3,16 @@ import { ChainNotEnabledError } from "../../../core/wallet/config/wallet-runtime
 import { verifyMessage } from "ethers";
 import { memoryStorage } from "../../../core/gateways/types";
 import { deriveAccount } from "../../../core/wallet/keygen/mnemonic";
-import { KeystoreVault } from "../../../core/wallet/vault/keystore-vault";
+import {
+  KeystoreVault,
+  WalletVaultKeyMissingError,
+} from "../../../core/wallet/vault/keystore-vault";
 import { memorySecureStore } from "../../../core/wallet/vault/ports";
 import { MockWalletGateway } from "./mock-wallet-gateway";
 import {
   WalletNotProvisionedError,
   WalletProvisioningUnsupportedError,
+  WalletRegistryCorruptedError,
 } from "./gateway";
 import {
   EmbeddedWalletGateway,
@@ -237,7 +241,11 @@ describe("EmbeddedWalletGateway", () => {
   it("switches between several wallets and remembers the choice", async () => {
     const { gateway } = setup();
     const first = await gateway.importMnemonic(PHRASE, 0);
-    const second = await gateway.importMnemonic(PHRASE, 1);
+    // vault 已有账户：再加一个要带验证文案（网关直传给 vault）
+    await expect(gateway.importMnemonic(PHRASE, 1)).rejects.toThrow(
+      "requires authentication",
+    );
+    const second = await gateway.importMnemonic(PHRASE, 1, { reason: "add" });
     expect(second.current).toBe(true);
 
     const switched = await gateway.switchAccount(first.address);
@@ -1037,5 +1045,149 @@ describe("EmbeddedWalletGateway per-chain isolation", () => {
     expect(result.items.map((item) => item.token.chain)).toEqual(["bsc"]);
     expect(result.unavailable).toEqual([{ chain: "eth", reason: "catalogue" }]);
     warn.mockRestore();
+  });
+});
+
+describe("EmbeddedWalletGateway storage recovery", () => {
+  const REGISTRY = "foundation.wallet.accounts.v1";
+  const VAULT = "foundation.wallet.vault.v1";
+  const WK = "foundation.wallet.wrap-key.v1";
+
+  function build(options?: { registry?: string; authenticate?: jest.Mock }) {
+    const storage = memoryStorage();
+    const vaultStorage = memoryStorage();
+    const secureStore = memorySecureStore();
+    const authenticate =
+      options?.authenticate ?? jest.fn(async () => "success" as const);
+    const vault = new KeystoreVault({
+      storage: vaultStorage,
+      secureStore,
+      authenticate,
+    });
+    const gateway = new EmbeddedWalletGateway({
+      vault,
+      chainData: new MockWalletGateway(memoryStorage()),
+      storage,
+    });
+    return {
+      gateway,
+      vault,
+      storage,
+      vaultStorage,
+      secureStore,
+      authenticate,
+      registry: options?.registry,
+    };
+  }
+
+  it("refuses to read a corrupted registry and leaves it untouched", async () => {
+    const { gateway, vault, storage } = build();
+    await vault.importMnemonic(PHRASE);
+    await storage.setItem(REGISTRY, "{broken");
+
+    await expect(gateway.listAccounts()).rejects.toBeInstanceOf(
+      WalletRegistryCorruptedError,
+    );
+    await expect(gateway.connect("embedded")).rejects.toBeInstanceOf(
+      WalletRegistryCorruptedError,
+    );
+    await expect(gateway.rename(ADDRESS, "x")).rejects.toBeInstanceOf(
+      WalletRegistryCorruptedError,
+    );
+    await expect(
+      gateway.importMnemonic(PHRASE, 1, { reason: "add" }),
+    ).rejects.toBeInstanceOf(WalletRegistryCorruptedError);
+    expect(await storage.getItem(REGISTRY)).toBe("{broken");
+    // 版本不认识同样是损坏，不是空表
+    await storage.setItem(REGISTRY, JSON.stringify({ version: 9, meta: {} }));
+    await expect(gateway.listAccounts()).rejects.toBeInstanceOf(
+      WalletRegistryCorruptedError,
+    );
+  });
+
+  it("refuses to connect when the wrap key no longer opens the vault", async () => {
+    const { gateway, vault, secureStore } = build();
+    await gateway.importMnemonic(PHRASE);
+    await secureStore.remove(WK);
+    await expect(gateway.connect("embedded")).rejects.toBeInstanceOf(
+      WalletVaultKeyMissingError,
+    );
+    // 条目还在，界面能说清"有钱包但解不开"
+    expect(await vault.list()).toHaveLength(1);
+  });
+
+  it("recoverStorage archives only the broken parts", async () => {
+    const { gateway, vault, storage, vaultStorage, secureStore, authenticate } =
+      build();
+    await gateway.importMnemonic(PHRASE);
+    await storage.setItem(REGISTRY, "{broken");
+
+    // 只有注册表坏了：归档注册表，vault 一个字节不动，也不弹验证
+    const first = await gateway.recoverStorage("recover");
+    expect(first).toEqual({ vaultArchived: false, registryArchived: true });
+    expect(await storage.getItem(REGISTRY)).toBeNull();
+    expect(await vault.list()).toHaveLength(1);
+    expect(authenticate).not.toHaveBeenCalled();
+    expect(await gateway.listAccounts()).toHaveLength(1);
+
+    // WK 丢了：归档 vault 文件（先过验证），之后能重新导入
+    await secureStore.remove(WK);
+    const second = await gateway.recoverStorage("recover");
+    expect(second).toEqual({ vaultArchived: true, registryArchived: false });
+    expect(authenticate).toHaveBeenCalledWith("recover");
+    expect(await vaultStorage.getItem(VAULT)).toBeNull();
+    const account = await gateway.importMnemonic(PHRASE);
+    expect(account.address).toBe(ADDRESS);
+  });
+
+  it("fails on a corrupted registry before writing anything into the vault", async () => {
+    const { gateway, vault, storage } = build();
+    await storage.setItem(REGISTRY, "{broken");
+    await expect(gateway.createWallet()).rejects.toBeInstanceOf(
+      WalletRegistryCorruptedError,
+    );
+    await expect(gateway.importMnemonic(PHRASE)).rejects.toBeInstanceOf(
+      WalletRegistryCorruptedError,
+    );
+    await expect(
+      gateway.importPrivateKey(deriveAccount(PHRASE, 3).privateKey),
+    ).rejects.toBeInstanceOf(WalletRegistryCorruptedError);
+    // vault 里没有留下一条从未向用户展示过助记词的孤儿条目
+    expect(await vault.list()).toHaveLength(0);
+    expect(await storage.getItem(REGISTRY)).toBe("{broken");
+  });
+
+  it("recoverStorage archives a legacy vault whose wrap key was silently replaced", async () => {
+    const { gateway, vault, vaultStorage, secureStore, authenticate } = build();
+    await gateway.importMnemonic(PHRASE);
+    // 修复前 N8 的存量：文件没有 wkCheck，密钥库里的 WK 已是另一把
+    const legacy = JSON.parse((await vaultStorage.getItem(VAULT)) ?? "null");
+    delete legacy.wkCheck;
+    await vaultStorage.setItem(VAULT, JSON.stringify(legacy));
+    await secureStore.set(WK, globalThis.btoa("z".repeat(32)));
+
+    // 登录流程里签名会失败并被归类为 key-missing（进恢复面板）
+    await expect(
+      gateway.signMessage(ADDRESS, "hello", { reason: "sign" }),
+    ).rejects.toBeInstanceOf(WalletVaultKeyMissingError);
+    // 恢复：verifyWrapKey 看不出问题，探测解一条后判定 vault 坏了并归档
+    const result = await gateway.recoverStorage("recover");
+    expect(result).toEqual({ vaultArchived: true, registryArchived: false });
+    expect(authenticate).toHaveBeenCalledWith("recover");
+    expect(await vaultStorage.getItem(VAULT)).toBeNull();
+    expect(await vault.list()).toHaveLength(0);
+    const account = await gateway.importMnemonic(PHRASE);
+    expect(account.address).toBe(ADDRESS);
+  });
+
+  it("recoverStorage is a no-op on healthy storage", async () => {
+    const { gateway, vault, authenticate } = build();
+    await gateway.importMnemonic(PHRASE);
+    expect(await gateway.recoverStorage("recover")).toEqual({
+      vaultArchived: false,
+      registryArchived: false,
+    });
+    expect(authenticate).not.toHaveBeenCalled();
+    expect(await vault.list()).toHaveLength(1);
   });
 });

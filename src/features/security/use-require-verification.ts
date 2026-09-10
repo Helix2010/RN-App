@@ -15,7 +15,7 @@ export type VerificationRequest = {
    * null 表示这个币没有参考价、规模未知：无从判断是不是大额，一律验证。
    */
   usdValue?: number | null;
-  /** 系统弹窗上的说明文案，默认用通用文案 */
+  /** 系统弹窗说明的内置字典 key（不是文案，见 core/security/prompt-text），默认通用文案 */
   reason?: string;
 };
 
@@ -47,7 +47,7 @@ export function useRequireVerification(): (
           return true;
       }
       const outcome = await authenticate(
-        request?.reason ?? t("security.verify.reason"),
+        request?.reason ?? "security.verify.reason",
       );
       if (outcome === "success" || outcome === "unavailable") {
         // 双重验证：系统验证过了还要让签名那一步再验，先把金库的解锁窗口关掉

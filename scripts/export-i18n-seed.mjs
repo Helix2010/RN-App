@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 从 src/core/config/fallback-config.ts 的内嵌字典导出 i18n seed JSON：
+ * 从 src/core/config/builtin-messages.ts 的内嵌字典导出 i18n seed JSON：
  *   i18n/seed/zh-CN.json、i18n/seed/en-US.json
  * 供 RN-Server 初始化 language_document（服务端字典 > 内嵌字典 的五级回退保持不变）。
  * 用法：node scripts/export-i18n-seed.mjs [--check]
@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const source = readFileSync(
-  resolve(root, "src/core/config/fallback-config.ts"),
+  resolve(root, "src/core/config/builtin-messages.ts"),
   "utf8",
 );
 

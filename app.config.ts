@@ -24,6 +24,14 @@ type TenantBuildConfig = {
   };
 };
 
+// 无租户开发构建的应用身份：与 scripts/check-build-profiles.mjs 共用同一份声明（安全评审 N20）
+const developmentIdentity = JSON.parse(
+  readFileSync(
+    resolve(process.cwd(), "tenants", "development-identity.json"),
+    "utf8",
+  ),
+) as { androidPackage: string; iosBundleId: string };
+
 const tenantSlug = process.env.EXPO_PUBLIC_TENANT;
 const tenantFile = tenantSlug
   ? resolve(process.cwd(), "tenants", tenantSlug, "tenant.json")
@@ -131,13 +139,16 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   icon: tenantAsset(iconAssets.icon, "./assets/icon.png"),
   ios: {
     supportsTablet: true,
-    bundleIdentifier: tenant?.iosBundleId ?? "com.anyfun.foundation",
+    // 无租户的开发构建身份：不得与任何生产租户相同（安全评审 N20；check-build-profiles 校验）
+    bundleIdentifier: tenant?.iosBundleId ?? developmentIdentity.iosBundleId,
     buildNumber: iosBuildNumber,
   },
   android: {
-    package: tenant?.androidPackage ?? "com.anyfun.foundation",
+    package: tenant?.androidPackage ?? developmentIdentity.androidPackage,
     versionCode: androidVersionCode,
     allowBackup: false,
+    // Expo 模板 Manifest 自带悬浮窗权限；钱包应用不需要它，且会被安全扫描器标记（安全评审 N16）
+    blockedPermissions: ["android.permission.SYSTEM_ALERT_WINDOW"],
     // Keep Android system back dispatch on the legacy bridge so the app-level
     // navigation state can consume root back gestures instead of backgrounding
     // the activity. Native builds must be regenerated after this change.
@@ -179,6 +190,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ],
     // 外部钱包的 package visibility 声明：开发包也要，否则本地调不通深链
     "./plugins/with-wallet-deep-links.js",
+    // Gradle wrapper 分发包校验和（安全评审 N28）
+    "./plugins/with-gradle-distribution-checksum.js",
     // 原生启动图改成纯色：模板默认那张占位图（网格 + 同心圆）不属于任何租户
     [
       "./plugins/with-plain-splash.js",
@@ -186,7 +199,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ],
     ...(distributionChannel === "development"
       ? []
-      : ["./plugins/with-production-android-optimizations.js"]),
+      : [
+          "./plugins/with-production-android-optimizations.js",
+          // release 签名只来自环境变量注入的生产密钥，缺失即 prebuild 失败（安全评审 N1）
+          "./plugins/with-release-signing.js",
+        ]),
   ],
   // OTA records are explicitly bound to an APK version. Server and client
   // additionally verify buildNumber so two native builds cannot share an OTA.

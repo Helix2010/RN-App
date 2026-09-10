@@ -8,7 +8,11 @@ import { AppError } from "../../../core/network/app-error";
 import type { SignInChallenge } from "../api/gateway";
 import type { Session, WalletConnectorId } from "../model/session";
 import type { WalletAccount } from "../../wallet/model/wallet";
-import { WalletNotProvisionedError } from "../../wallet/api/gateway";
+import {
+  WalletNotProvisionedError,
+  recoveryReasonOf,
+  type WalletRecoveryReason,
+} from "../../wallet/api/gateway";
 
 const sessionQueryKey = ["session"] as const;
 
@@ -96,6 +100,8 @@ export type LoginStep =
   | { step: "pick" }
   /** 本机还没有自托管钱包，UI 应引导去创建 / 导入 */
   | { step: "needs-wallet" }
+  /** 本机有钱包数据但读不出来 / 解不开：只能走恢复，不能在它上面创建或导入 */
+  | { step: "needs-recovery"; reason: WalletRecoveryReason }
   | { step: "connecting"; connector: WalletConnectorId }
   | {
       step: "confirm";
@@ -175,6 +181,11 @@ export function useWalletLogin(domain: string, signReason?: string) {
           setState({ step: "needs-wallet" });
           return;
         }
+        const recovery = recoveryReasonOf(error);
+        if (recovery) {
+          setState({ step: "needs-recovery", reason: recovery });
+          return;
+        }
         // 超时 / 拒绝时也要收起：超时提示的 toast 会被还开着的二维码压住
         useWalletConnectPairing.getState().dismiss();
         // 和 sign 一样区分原因：连接阶段最常见的就是"用户没在钱包里点批准"，
@@ -208,6 +219,11 @@ export function useWalletLogin(domain: string, signReason?: string) {
       setState({ step: "pick" });
       return next;
     } catch (error) {
+      const recovery = recoveryReasonOf(error);
+      if (recovery) {
+        setState({ step: "needs-recovery", reason: recovery });
+        return null;
+      }
       setState({
         step: "error",
         reason: reasonOf(error),

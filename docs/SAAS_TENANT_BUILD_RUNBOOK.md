@@ -86,7 +86,56 @@ expo prebuild
 artifacts/anyfun-1.2.1-build15-release.apk
 ```
 
-构建失败时不得上传或发布旧产物。APK 必须另外执行 SHA-256、zipalign、签名和安装验证。
+构建失败时不得上传或发布旧产物。脚本在复制产物前已执行签名者、包名、版本与权限门禁（见 §3.2）；上传后服务端再按租户比对一次。
+
+### 3.1 生产签名密钥（安全评审 N1）
+
+Release 永远不用模板 `debug.keystore`。`plugins/with-release-signing.js` 在 prebuild 时把 release signingConfig 指向四个环境变量，缺任一个 prebuild 与 Gradle 直接失败：
+
+```bash
+export ANDROID_RELEASE_KEYSTORE_PATH=/abs/path/to/<slug>-release.jks   # 必须是绝对路径；可放 .env.local（只是路径）
+export ANDROID_RELEASE_STORE_PASSWORD=...                           # 只能来自密钥管理服务 / CI secret
+export ANDROID_RELEASE_KEY_ALIAS=...
+export ANDROID_RELEASE_KEY_PASSWORD=...
+```
+
+生成与登记（一次性，由密钥保管人在干净机器上执行）。推荐用脚本，它会生成 PKCS12 keystore、提取 64 位小写指纹、把口令与 CI 用的 base64 写成 0600 文件而不上屏，并可选写入 tenant.json：
+
+```bash
+pnpm android:keystore --tenant <slug> --out /secure/keys/<slug>
+```
+
+手动等价步骤：
+
+```bash
+keytool -genkeypair -v -keystore <slug>-release.jks -alias <slug> -keyalg RSA -keysize 4096 -validity 10000
+keytool -list -v -keystore <slug>-release.jks -alias <slug> | grep SHA256
+```
+
+把 SHA-256 指纹（去掉冒号、小写）写进 `tenants/<slug>/tenant.json` 的 `signerSha256`，并在 RN-Server 管理端为该租户登记同一指纹与包名。keystore 与口令进密钥管理服务并离线加密备份两份；仓库、`.env`、tenant.json 都不放密钥本体。密钥丢失等于全员重装。
+
+无租户的开发构建使用 `tenants/development-identity.json` 声明的 `.dev` 包名与 Bundle ID；`pnpm config:check` 会拒绝任何与之相同、或租户之间重复的包名 / Bundle ID / scheme。
+
+### 3.2 产物身份门禁
+
+`pnpm android:release <slug>` 在复制产物前运行 `apksigner verify --print-certs` 与 `aapt dump badging`，要求：签名者 = `tenant.json.signerSha256`；永远拒绝 RN 模板 debug 指纹 `fac61745…1033b9c`；包名 / versionCode / versionName 与 tenant.json 一致；不含 `android.permission.SYSTEM_ALERT_WINDOW`。对任意已有 APK 复跑：
+
+```bash
+pnpm android:verify artifacts/<slug>-<version>-build<code>-release.apk <slug>
+```
+
+CI 的 `android-release-gate` job 在 main 与手动触发时用受保护环境 `android-release` 的 secrets（`ANDROID_RELEASE_KEYSTORE_BASE64`、`ANDROID_RELEASE_STORE_PASSWORD`、`ANDROID_RELEASE_KEY_ALIAS`、`ANDROID_RELEASE_KEY_PASSWORD`）完整构建并复核。
+
+### 3.3 已装机用户从 debug 签名迁移
+
+完整的分步执行手册（角色、命令、预期输出、错误对照、迁移与收尾）见 `docs/RELEASE_SIGNING_ROLLOUT.md`。
+
+Android 不允许签名不同的 APK 覆盖安装；旧密钥公开，也不能走 v3 轮换。第一个生产签名版本发布时：
+
+1. 建议改用新包名（并排安装，用户先在旧 App 备份助记词、在新 App 导入、确认后再卸旧 App）；沿用旧包名则用户必须先卸载，卸载即清空本地钱包。
+2. 给旧 runtime 发最后一个 OTA：全屏迁移引导（备份 → 下载 → 导入 → 卸载）。
+3. bootstrap 提高 `minSupportedVersion`，`releaseNotes` 写迁移说明；旧包下载链接保留一段时间以便回退。
+4. 客服口径：卸载前必须备份；未备份的钱包无法找回。
 
 ## 4. EAS 构建
 
@@ -97,7 +146,7 @@ EXPO_PUBLIC_TENANT=<slug> eas build --profile android-direct
 EXPO_PUBLIC_TENANT=<slug> eas build --profile production-store
 ```
 
-若使用 CI，租户 slug 作为 workflow 输入或环境变量，敏感信息使用 GitHub Secrets。任何版本变更都必须同时更新 `version` 和对应平台递增的 Build。
+若使用 CI，租户 slug 作为 workflow 输入或环境变量，敏感信息使用 GitHub Secrets。EAS 的 `staging`、`android-direct` 等非 development profile 会执行 `with-release-signing` 插件，同样需要在 EAS 环境里配置四个 `ANDROID_RELEASE_*` 变量，否则 prebuild 失败。任何版本变更都必须同时更新 `version` 和对应平台递增的 Build。
 
 ## 5. 版本和升级边界
 
@@ -122,7 +171,8 @@ pnpm android:release <tenant-slug>
 - OTA URL 和 channel 指向当前租户；
 - 清装后能完成远程 Bootstrap；
 - 覆盖安装满足签名和版本递增要求；
-- 生产签名不是 Debug Keystore。
+- `pnpm android:verify` 对产物通过：签名者 = 租户 `signerSha256`，不是 debug keystore，不含 `SYSTEM_ALERT_WINDOW`；
+- RN-Server 管理端已登记该租户的包名与签名指纹，上传未被 `RELEASE_SIGNER_*` 拒绝。
 
 ## 7. 回滚
 

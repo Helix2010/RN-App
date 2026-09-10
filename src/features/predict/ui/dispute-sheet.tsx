@@ -129,7 +129,8 @@ export const DisputeSheet = forwardRef<
     }
     const ok = await verify({
       usdValue: toApproxNumber(terms.data.bond),
-      reason: t("predict.dispute.verifyReason"),
+      // 内置字典 key，不是文案：系统认证弹窗只认 key（安全评审 N12）
+      reason: "predict.dispute.verifyReason",
     });
     if (!ok) return;
     submit.mutate(

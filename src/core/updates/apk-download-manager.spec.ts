@@ -1,6 +1,9 @@
+import { setUpdateTelemetrySink } from "./update-telemetry";
 import {
   ApkDownloadManager,
   apkFileName,
+  apkTargetRefusal,
+  digestMatches,
   isAcceptableApkUrl,
   type ApkDownloadDeps,
   type ApkDownloadState,
@@ -8,6 +11,9 @@ import {
 } from "./apk-download-manager";
 
 const managers: ApkDownloadManager[] = [];
+/** bootstrap 下发的摘要；假文件系统默认让每个文件都算出这个值 */
+const GOOD_SHA256 = "a".repeat(64);
+const ORIGIN = "https://api.test";
 
 /** 假文件系统 + 可控的下载任务：测试自己决定每次 start() 是完成、报错还是挂着 */
 function makeDeps(size = 1_000) {
@@ -24,6 +30,7 @@ function makeDeps(size = 1_000) {
   };
   const tasks: FakeTask[] = [];
   const installs: string[] = [];
+  const digests = new Map<string, string>();
   let now = 1_000_000;
   const states: ApkDownloadState[] = [];
   const deps: ApkDownloadDeps = {
@@ -64,6 +71,10 @@ function makeDeps(size = 1_000) {
     openInstaller: async (uri) => {
       installs.push(uri);
     },
+    hashFile: async (uri) => {
+      const digest = digests.get(uri);
+      return digest === undefined ? GOOD_SHA256 : digest;
+    },
     isForeground: () => foreground,
     onForeground: (listener) => {
       foregroundListeners.add(listener);
@@ -86,8 +97,10 @@ function makeDeps(size = 1_000) {
   managers.push(manager);
   const target = {
     releaseId: "rel_1",
-    url: "https://api.test/v1/public/releases/rel_1/download",
+    url: `${ORIGIN}/v1/public/releases/rel_1/download`,
     size,
+    sha256: GOOD_SHA256,
+    allowedOrigin: ORIGIN,
   };
   const fileUri = `${directory}release-rel_1.apk`;
   return {
@@ -97,6 +110,7 @@ function makeDeps(size = 1_000) {
     files,
     tasks,
     installs,
+    digests,
     states,
     state: () => state,
     tick: (ms: number) => {
@@ -293,20 +307,125 @@ describe("ApkDownloadManager", () => {
     expect(h.state().phase).toBe("idle");
   });
 
-  it("never trusts the release id as a path and only downloads over https", async () => {
+  it("never trusts the release id as a path and only downloads over https from the tenant origin", async () => {
     expect(apkFileName("../../etc/passwd")).toBe(
       "release-______etc_passwd.apk",
     );
     expect(apkFileName("rel_JHrSsfq0LQtaWX1o1NpZjg")).toBe(
       "release-rel_JHrSsfq0LQtaWX1o1NpZjg.apk",
     );
-    expect(isAcceptableApkUrl("https://api.test/x.apk")).toBe(true);
-    expect(isAcceptableApkUrl("http://api.test/x.apk")).toBe(false);
+    expect(isAcceptableApkUrl("https://api.test/x.apk", ORIGIN)).toBe(true);
+    expect(isAcceptableApkUrl("http://api.test/x.apk", ORIGIN)).toBe(false);
+    expect(isAcceptableApkUrl("https://evil.test/x.apk", ORIGIN)).toBe(false);
+    expect(isAcceptableApkUrl("not a url", ORIGIN)).toBe(false);
+    const warn = jest
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
     const h = makeDeps(1_000);
     await h.manager.configure({ ...h.target, url: "http://api.test/x.apk" });
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("refusing apk target"),
+    );
+    warn.mockRestore();
     h.manager.start();
     await flush();
     expect(h.tasks).toHaveLength(0);
-    expect(h.state().phase).toBe("idle");
+    // 不是悄悄当作"没有更新"：失败态让用户与运营看得见
+    expect(h.state()).toMatchObject({
+      phase: "failed",
+      error: "apk url is not https or not the tenant api origin",
+    });
+  });
+
+  it("refuses a target from a foreign origin or without a sha256 to verify against", async () => {
+    const warn = jest
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+    const foreign = makeDeps(1_000);
+    await foreign.manager.configure({
+      ...foreign.target,
+      url: "https://evil.test/v1/public/releases/rel_1/download",
+    });
+    expect(foreign.state()).toMatchObject({ phase: "failed" });
+    expect(apkTargetRefusal({ ...foreign.target, sha256: null })).toBe(
+      "release has no sha256 to verify the download against",
+    );
+    const unhashed = makeDeps(1_000);
+    await unhashed.manager.configure({ ...unhashed.target, sha256: null });
+    unhashed.manager.start();
+    await flush();
+    expect(unhashed.tasks).toHaveLength(0);
+    expect(unhashed.state()).toMatchObject({
+      phase: "failed",
+      error: "release has no sha256 to verify the download against",
+    });
+    // bootstrap 每次重取都会 configure 一次：同一被拒目标只告警、上报一次
+    const events: string[] = [];
+    const restore = setUpdateTelemetrySink((event) => {
+      events.push(event.stage);
+    });
+    warn.mockClear();
+    await unhashed.manager.configure({ ...unhashed.target, sha256: null });
+    await unhashed.manager.configure({ ...unhashed.target, sha256: null });
+    expect(unhashed.state().phase).toBe("failed");
+    expect(events).toEqual([]);
+    expect(warn).not.toHaveBeenCalled();
+    restore();
+    warn.mockRestore();
+  });
+
+  it("deletes a downloaded file whose hash does not match, retries once, then fails without ever offering install", async () => {
+    const h = makeDeps(1_000);
+    await h.manager.configure(h.target);
+    h.manager.start();
+    await flush();
+    h.files.set(h.fileUri, 1_000);
+    h.digests.set(h.fileUri, "b".repeat(64));
+    h.tasks[0]!.resolve(h.fileUri);
+    await flush();
+    await flush();
+    // 大小对、摘要不对：删掉重下一次
+    expect(h.files.has(h.fileUri)).toBe(false);
+    expect(h.tasks).toHaveLength(2);
+    h.files.set(h.fileUri, 1_000);
+    h.tasks[1]!.resolve(h.fileUri);
+    await flush();
+    await flush();
+    expect(h.state()).toMatchObject({
+      phase: "failed",
+      error: "downloaded file hash does not match the release",
+    });
+    expect(h.files.has(h.fileUri)).toBe(false);
+    expect(h.installs).toEqual([]);
+    expect(h.states.some((state) => state.phase === "ready")).toBe(false);
+  });
+
+  it("hashes a complete file found on cold start before offering it for install", async () => {
+    const events: string[] = [];
+    const restore = setUpdateTelemetrySink((event) => {
+      events.push(event.stage);
+    });
+    const tampered = makeDeps(1_000);
+    tampered.files.set(tampered.fileUri, 1_000);
+    tampered.digests.set(tampered.fileUri, "c".repeat(64));
+    await tampered.manager.configure(tampered.target);
+    // 与下载完成后的路径一致：删除、失败态可见、上报
+    expect(tampered.state()).toMatchObject({
+      phase: "failed",
+      error: "downloaded file hash does not match the release",
+    });
+    expect(tampered.files.has(tampered.fileUri)).toBe(false);
+    expect(events).toContain("error");
+    restore();
+
+    const intact = makeDeps(1_000);
+    intact.files.set(intact.fileUri, 1_000);
+    await intact.manager.configure(intact.target);
+    expect(intact.state()).toMatchObject({ phase: "ready", size: 1_000 });
+  });
+
+  it("accepts the digest regardless of hex case", () => {
+    expect(digestMatches("ABCDEF", "abcdef")).toBe(true);
+    expect(digestMatches("abcdef", "abcdee")).toBe(false);
   });
 });

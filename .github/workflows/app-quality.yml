@@ -4,19 +4,71 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
+
+# 最小权限：工作流只读取仓库；需要更多权限的 job 自己声明（安全评审 N28）
+permissions:
+  contents: read
 
 jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      # 全部 action 固定到完整 commit SHA（tag 可被移动）；升级时改 SHA 并在注释里写对应版本
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
         with:
           version: 10.28.1
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
       - run: node scripts/check-expo-doctor.mjs
+
+  # 发布身份门禁（安全评审 N1 / N16 / N18 / N28）：用租户的生产签名密钥完整构建一次 release APK，
+  # 并用 apksigner / aapt 复核签名者、包名、版本与权限。只在 main 与手动触发上跑，
+  # 密钥来自受保护环境 android-release 的 secrets；没有配置 secrets 时这个 job 会失败，这是有意的。
+  android-release-gate:
+    if: github.event_name != 'pull_request'
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: android-release
+    timeout-minutes: 45
+    env:
+      TENANT: anyfun
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        with:
+          version: 10.28.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: 17
+      - run: pnpm install --frozen-lockfile
+      - name: Materialise the release keystore from the secret store
+        # secrets 只经 env 进入脚本，不做模板内插（避免进入日志与脚本文本）
+        env:
+          ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$ANDROID_RELEASE_KEYSTORE_BASE64" || { echo "ANDROID_RELEASE_KEYSTORE_BASE64 secret is not configured"; exit 1; }
+          printf '%s' "$ANDROID_RELEASE_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "ANDROID_RELEASE_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+      - name: Build the release APK through the tenant gate
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+        run: pnpm android:release "$TENANT" --no-push
+      - name: Re-verify the artifact independently of the build script
+        run: pnpm android:verify artifacts/*.apk "$TENANT"
+      - name: Remove the keystore from the runner
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.jks"

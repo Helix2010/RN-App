@@ -89,7 +89,7 @@ export function BackupScreen({
     if (phrase !== null || !address) return;
     let cancelled = false;
     void wallet
-      .revealMnemonic(address, t("backup.revealReason"))
+      .revealMnemonic(address, "backup.revealReason")
       .then((value) => {
         if (!cancelled) setPhrase(value);
       })

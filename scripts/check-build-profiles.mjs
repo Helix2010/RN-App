@@ -1,6 +1,10 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { readTenantConfig } from "./tenant-config.mjs";
+import {
+  readDevelopmentIdentity,
+  readTenantConfig,
+  tenantsRoot,
+} from "./tenant-config.mjs";
 
 const eas = JSON.parse(
   readFileSync(resolve(process.cwd(), "eas.json"), "utf8"),
@@ -65,10 +69,42 @@ for (const [profileName, expectedChannel] of Object.entries(expectedChannels)) {
   }
 }
 
-const tenantsRoot = resolve(process.cwd(), "tenants");
-for (const slug of readdirSync(tenantsRoot)) {
-  const tenant = readTenantConfig(slug);
-  if (tenant.slug !== slug) throw new Error(`${slug}: tenant slug mismatch`);
+// 无租户开发构建的身份（tenants/development-identity.json，app.config.ts 读同一份）：
+// 不得与任何生产租户相同（安全评审 N20）
+const DEV_BUILD_IDENTITY = readDevelopmentIdentity();
+
+const tenants = readdirSync(tenantsRoot(), { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => {
+    const tenant = readTenantConfig(entry.name);
+    if (tenant.slug !== entry.name)
+      throw new Error(`${entry.name}: tenant slug mismatch`);
+    return tenant;
+  });
+// 租户之间的应用身份必须唯一：同包名 + 同签名的两个租户在同一台设备上会互相覆盖（N20）
+for (const key of ["androidPackage", "iosBundleId", "scheme"]) {
+  const seen = new Map();
+  for (const tenant of tenants) {
+    const value = tenant[key];
+    if (seen.has(value))
+      throw new Error(
+        `${tenant.slug}: ${key} ${value} is already used by tenant ${seen.get(value)}`,
+      );
+    seen.set(value, tenant.slug);
+  }
+}
+for (const tenant of tenants) {
+  if (
+    tenant.androidPackage === DEV_BUILD_IDENTITY.androidPackage ||
+    tenant.iosBundleId === DEV_BUILD_IDENTITY.iosBundleId ||
+    tenant.androidPackage.endsWith(".dev")
+  )
+    throw new Error(
+      `${tenant.slug}: production identity must not equal the no-tenant development build identity`,
+    );
+}
+for (const tenant of tenants) {
+  const slug = tenant.slug;
   if (
     !tenant.apiBaseUrl.startsWith("https://") ||
     tenant.apiBaseUrl.includes("localhost") ||

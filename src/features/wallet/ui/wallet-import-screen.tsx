@@ -29,6 +29,8 @@ import {
   useTheme,
 } from "../../../design-system";
 import type { RootStackParamList } from "../../../navigation/types";
+import { WalletAuthRequiredError } from "../../../core/wallet/vault/keystore-vault";
+import { recoveryReasonOf } from "../api/gateway";
 
 type Mode = "mnemonic" | "private-key";
 
@@ -80,8 +82,11 @@ export function WalletImportScreen({
     setBusy(true);
     setError("");
     try {
-      if (mode === "mnemonic") await wallet.importMnemonic(trimmed);
-      else await wallet.importPrivateKey(trimmed);
+      // vault 里已有账户时会弹系统验证；文案在这里给，网关不替我们决定
+      // 弹窗文案 key：由认证端口从内置字典取文案（N12）
+      const options = { reason: "wallet.import.authReason" };
+      if (mode === "mnemonic") await wallet.importMnemonic(trimmed, 0, options);
+      else await wallet.importPrivateKey(trimmed, options);
       setSecret("");
       void queryClient.invalidateQueries({ queryKey: ["wallet-accounts"] });
       toast(t("wallet.import.done"), "success");
@@ -89,11 +94,15 @@ export function WalletImportScreen({
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "";
       setError(
-        /already exists/i.test(message)
-          ? t("wallet.import.duplicate")
-          : mode === "mnemonic"
-            ? t("wallet.import.invalidMnemonic")
-            : t("wallet.import.invalidPrivateKey"),
+        recoveryReasonOf(caught)
+          ? t("wallet.recovery.blocked")
+          : caught instanceof WalletAuthRequiredError
+            ? t("wallet.import.authRequired")
+            : /already exists/i.test(message)
+              ? t("wallet.import.duplicate")
+              : mode === "mnemonic"
+                ? t("wallet.import.invalidMnemonic")
+                : t("wallet.import.invalidPrivateKey"),
       );
     } finally {
       submitting.current = false;

@@ -1,6 +1,10 @@
 import type { ChainId, TokenRef, Tx } from "../../../core/gateways/types";
 import type { WalletSigner } from "../../../core/wallet/signer/types";
 import type { Money } from "../../../core/money/money";
+import {
+  WalletVaultCorruptedError,
+  WalletVaultKeyMissingError,
+} from "../../../core/wallet/vault/keystore-vault";
 import type { WalletConnectorId } from "../../session/model/session";
 import type {
   BalanceSnapshot,
@@ -28,6 +32,40 @@ export class WalletNotProvisionedError extends Error {
   }
 }
 
+/** 本机账户注册表读不出来（JSON 损坏 / 版本不认识）。原文不会被覆盖，走恢复流程。 */
+export class WalletRegistryCorruptedError extends Error {
+  constructor() {
+    super(
+      "stored wallet account registry is corrupted or has an unknown version",
+    );
+    this.name = "WalletRegistryCorruptedError";
+  }
+}
+
+/**
+ * 本机钱包存储为什么需要恢复：
+ * - `corrupted`：vault 文件或账户注册表读不出来；
+ * - `key-missing`：vault 有账户但密钥库里的 WK 丢了或对不上。
+ * 两种情况都不能在原地创建 / 导入，UI 必须转去恢复面板。
+ */
+export type WalletRecoveryReason = "corrupted" | "key-missing";
+
+export function recoveryReasonOf(error: unknown): WalletRecoveryReason | null {
+  if (
+    error instanceof WalletVaultCorruptedError ||
+    error instanceof WalletRegistryCorruptedError
+  )
+    return "corrupted";
+  if (error instanceof WalletVaultKeyMissingError) return "key-missing";
+  return null;
+}
+
+/** `recoverStorage` 实际归档了什么；两项都是 false 表示存储本来就健康，什么都没动。 */
+export type WalletStorageRecovery = {
+  vaultArchived: boolean;
+  registryArchived: boolean;
+};
+
 export interface WalletGateway {
   listConnectors(): Promise<WalletConnector[]>;
   listAccounts(): Promise<WalletAccount[]>;
@@ -53,11 +91,30 @@ export interface WalletGateway {
     options?: { reason?: string },
   ): Promise<string>;
   /** 生成新的自托管钱包；助记词只在此处返回一次供备份展示 */
-  createWallet(): Promise<{ account: WalletAccount; mnemonic: string }>;
-  importMnemonic(phrase: string, index?: number): Promise<WalletAccount>;
-  importPrivateKey(privateKey: string): Promise<WalletAccount>;
+  /** `reason` 是认证弹窗文案的内置字典 key；vault 已有账户时新建必须先过身份验证 */
+  createWallet(options?: {
+    reason?: string;
+  }): Promise<{ account: WalletAccount; mnemonic: string }>;
+  /**
+   * 导入。vault 里已有账户时会先弹系统验证，`reason` 是弹窗文案；
+   * 不传而 vault 非空即失败（网关不替调用方决定文案）。
+   */
+  importMnemonic(
+    phrase: string,
+    index?: number,
+    options?: { reason?: string },
+  ): Promise<WalletAccount>;
+  importPrivateKey(
+    privateKey: string,
+    options?: { reason?: string },
+  ): Promise<WalletAccount>;
   /** 导出助记词，必须通过身份验证 */
   revealMnemonic(address: string, reason: string): Promise<string>;
+  /**
+   * 把读不出来 / 解不开的本机存储归档到带时间戳的键下并清空原位，让用户能重新导入。
+   * 只归档确实损坏的部分；健康的 vault 一律不动。归档 vault 前要过身份验证。
+   */
+  recoverStorage?(reason: string): Promise<WalletStorageRecovery>;
   send(request: SendRequest): Promise<WalletTransfer>;
   getTransaction(id: string): Promise<Tx | null>;
   listTransfers(address: string): Promise<WalletTransfer[]>;

@@ -2,8 +2,10 @@ import { NATIVE_TOKEN_ADDRESS } from "../../../core/gateways/types";
 import { useNavigation } from "@react-navigation/native";
 import { fill, formatMoney, shortenAddress } from "../../../core/i18n/format";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { useEffect, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
 import { useFoundationRuntime } from "../../../app/runtime-context";
+import { useGateways } from "../../../core/gateways/gateway-context";
 import {
   AppIcon,
   Body,
@@ -25,6 +27,8 @@ import {
   useWalletBalances,
   useWalletConnectors,
 } from "../../wallet/hooks/use-wallet";
+import { WalletAuthRequiredError } from "../../../core/wallet/vault/keystore-vault";
+import type { WalletRecoveryReason } from "../../wallet/api/gateway";
 import type { WalletConnector } from "../../wallet/model/wallet";
 import { tenantDomain, useWalletLogin } from "../hooks/use-session";
 import { useAuthSheet } from "../model/auth-sheet-store";
@@ -62,9 +66,13 @@ export function ConnectWalletSheet() {
   const { t } = useFoundationRuntime();
   const { open, intent, close, fulfill } = useAuthSheet();
   const sheet = useRef<SheetHandle>(null);
-  const login = useWalletLogin(tenantDomain(), t("login.reason"));
+  // 传内置字典 key，不传翻译后的文案：系统认证弹窗只认 key（安全评审 N12）
+  const login = useWalletLogin(tenantDomain(), "login.reason");
   const connectors = useWalletConnectors();
   const accounts = useWalletAccounts();
+  const { wallet } = useGateways();
+  const queryClient = useQueryClient();
+  const [recovering, setRecovering] = useState(false);
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const hasEmbedded = (accounts.data ?? []).some(
@@ -92,6 +100,36 @@ export function ConnectWalletSheet() {
   const busy =
     login.state.step === "connecting" || login.state.step === "signing";
   const locked = login.state.step === "signing";
+
+  // 存储坏了：归档损坏的部分（vault 归档前弹系统验证）。归档了 vault 才需要去导入助记词；
+  // 只归档了注册表时钱包密钥完好，留在原地刷新账户即可。什么都没归档就如实说"数据保持原样"。
+  const onRecover = async () => {
+    if (recovering) return;
+    setRecovering(true);
+    try {
+      if (!wallet.recoverStorage)
+        throw new Error("wallet gateway cannot recover storage");
+      const result = await wallet.recoverStorage("wallet.recovery.authReason");
+      void queryClient.invalidateQueries({ queryKey: ["wallet-accounts"] });
+      if (result.vaultArchived) {
+        goToWallet("WalletImport");
+        return;
+      }
+      if (result.registryArchived) {
+        toast(t("wallet.recovery.registryArchived"), "success");
+      } else {
+        toast(t("wallet.recovery.failed"), "warning");
+      }
+      login.reset();
+    } catch (error) {
+      // 用户取消系统验证是正常路径，只提示；其它错误要留痕，不能吞
+      if (!(error instanceof WalletAuthRequiredError))
+        console.warn("[wallet] storage recovery failed", error);
+      toast(t("wallet.recovery.failed"), "error");
+    } finally {
+      setRecovering(false);
+    }
+  };
 
   const onSign = async () => {
     const session = await login.sign();
@@ -152,10 +190,19 @@ export function ConnectWalletSheet() {
     login.state.step === "connecting" ||
     (login.state.step === "error" && !login.state.account);
 
+  const recovery =
+    login.state.step === "needs-recovery" ? login.state.reason : null;
+
   return (
     <Sheet
       ref={sheet}
-      title={picking ? t("home.connectWallet") : t("login.confirmTitle")}
+      title={
+        recovery
+          ? t("wallet.recovery.title")
+          : picking
+            ? t("home.connectWallet")
+            : t("login.confirmTitle")
+      }
       subtitle={
         picking && action ? fill(t("login.continueTo"), { action }) : undefined
       }
@@ -171,7 +218,15 @@ export function ConnectWalletSheet() {
         ) : undefined
       }
     >
-      {picking ? (
+      {recovery ? (
+        <RecoveryPanel
+          reason={recovery}
+          busy={recovering}
+          onRecover={() => void onRecover()}
+          onClose={close}
+          t={t}
+        />
+      ) : picking ? (
         <ConnectorPicker
           connectors={connectors.data ?? []}
           loading={connectors.isLoading}
@@ -294,6 +349,57 @@ function ConnectorPicker({
           busy={busyConnector === "walletconnect"}
         />
       </Stack>
+    </Stack>
+  );
+}
+
+/**
+ * 本机钱包数据读不出来 / 解不开时的面板。不提供"创建钱包"：那会覆盖唯一的一份数据。
+ * 唯一动作是归档后去导入助记词。
+ */
+function RecoveryPanel({
+  reason,
+  busy,
+  onRecover,
+  onClose,
+  t,
+}: {
+  reason: WalletRecoveryReason;
+  busy: boolean;
+  onRecover: () => void;
+  onClose: () => void;
+  t: (key: string) => string;
+}) {
+  return (
+    <Stack gap="$3" testID="login-recovery">
+      <Row
+        alignItems="center"
+        gap="$3"
+        padding="$3"
+        borderRadius="$4"
+        backgroundColor="$surfaceVariant"
+      >
+        <AppIcon name="shield-alert-outline" size={24} colorToken="danger" />
+        <Body flex={1} fontSize={13} accessibilityLiveRegion="polite">
+          {reason === "corrupted"
+            ? t("wallet.recovery.corrupted")
+            : t("wallet.recovery.keyMissing")}
+        </Body>
+      </Row>
+      <PrimaryButton
+        onPress={onRecover}
+        disabled={busy}
+        testID="login-recovery-import"
+      >
+        {t("wallet.recovery.action")}
+      </PrimaryButton>
+      <SecondaryButton
+        onPress={onClose}
+        disabled={busy}
+        testID="login-recovery-close"
+      >
+        {t("common.close")}
+      </SecondaryButton>
     </Stack>
   );
 }

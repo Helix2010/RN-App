@@ -11,9 +11,12 @@ export type SecureStorePort = {
   remove: (key: string) => Promise<void>;
 };
 
-/** 身份验证（生物识别 / 设备密码）。`unavailable` = 设备未录入，调用方不得因此把用户锁死。 */
+/**
+ * 身份验证（生物识别 / 设备密码）。`unavailable` = 设备未录入，调用方不得因此把用户锁死。
+ * 参数是内置字典的 key，不是文案：系统弹窗显示什么只由内置字典决定（安全评审 N12）。
+ */
 export type AuthOutcome = "success" | "cancelled" | "failed" | "unavailable";
-export type AuthenticatePort = (reason: string) => Promise<AuthOutcome>;
+export type AuthenticatePort = (reasonKey: string) => Promise<AuthOutcome>;
 
 export function memorySecureStore(): SecureStorePort {
   const map = new Map<string, string>();

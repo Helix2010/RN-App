@@ -19,6 +19,7 @@ import {
   type AppIconName,
 } from "../../../design-system";
 import type { RootStackParamList } from "../../../navigation/types";
+import { recoveryReasonOf } from "../api/gateway";
 
 /**
  * 自托管钱包的入口：创建新钱包 或 导入已有钱包。
@@ -38,11 +39,19 @@ export function WalletSetupScreen({
     if (creating) return;
     setCreating(true);
     try {
-      const { mnemonic } = await wallet.createWallet();
+      const { mnemonic } = await wallet.createWallet({
+        reason: "wallet.create.authReason",
+      });
       void queryClient.invalidateQueries({ queryKey: ["wallet-accounts"] });
       navigation.replace("WalletBackup", { phrase: mnemonic });
-    } catch {
-      toast(t("wallet.setup.failed"), "error");
+    } catch (error) {
+      // 存储坏了时 vault 会拒绝写入：说清要先恢复，而不是"创建失败请重试"
+      toast(
+        recoveryReasonOf(error)
+          ? t("wallet.recovery.blocked")
+          : t("wallet.setup.failed"),
+        "error",
+      );
     } finally {
       setCreating(false);
     }

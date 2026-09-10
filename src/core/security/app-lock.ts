@@ -1,5 +1,6 @@
 import * as LocalAuthentication from "expo-local-authentication";
 import { create } from "zustand";
+import { builtinPromptText } from "./prompt-text";
 
 /** 认证结果：`unavailable` = 设备没硬件或没录入，调用方不应因此拦住用户。 */
 export type AuthOutcome = "success" | "cancelled" | "failed" | "unavailable";
@@ -87,12 +88,15 @@ export async function biometricKind(): Promise<BiometricKind> {
 /**
  * 弹系统认证。设备没录入时返回 `unavailable`，调用方按"不拦截"处理。
  * 连续失败 3 次后禁用生物识别、只允许设备密码。通过后记下时刻，供「智能」策略判断。
+ * `reasonKey` 是内置字典的 key：弹窗文案只从内置字典取，服务端字典改不了它（安全评审 N12）。
  */
-export async function authenticate(reason: string): Promise<AuthOutcome> {
+export async function authenticate(reasonKey: string): Promise<AuthOutcome> {
+  // 先解析文案：未知 key 是代码错误，要抛出去，不能被下面的 catch 记成一次用户认证失败
+  const promptMessage = builtinPromptText(reasonKey);
   if (!(await isDeviceEnrolled())) return "unavailable";
   try {
     const result = await LocalAuthentication.authenticateAsync({
-      promptMessage: reason,
+      promptMessage,
       disableDeviceFallback: false,
       requireConfirmation: false,
       biometricsSecurityLevel: shouldFallbackToPasscode(consecutiveFailures)

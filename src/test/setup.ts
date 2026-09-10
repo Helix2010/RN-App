@@ -1,5 +1,4 @@
 import "react-native-gesture-handler/jestSetup";
-import { forgetVerification } from "../core/security/app-lock";
 import { resetEnablePrompts } from "../features/predict/model/enable-prompt";
 /* eslint-disable @typescript-eslint/no-require-imports */
 import { resetDeliveredWalletConfig } from "../core/wallet/config/wallet-runtime-config";
@@ -51,7 +50,11 @@ beforeEach(() => {
   anchorTestClock();
   useMockRuntime.getState().set({ clockOffsetMs: 0 });
   // "最近验证过"是模块级状态：上个用例通过的验证不能让这个用例跳过弹窗
-  forgetVerification();
+  // 延迟加载：app-lock → prompt-text → system-locale 会引入 expo-localization，
+  // 静态 import 会让它先于各 spec 的 jest.mock 进入模块注册表，spec 里的 mock 就失效
+  const appLock: typeof import("../core/security/app-lock") =
+    jest.requireActual("../core/security/app-lock");
+  appLock.forgetVerification();
 });
 
 export {};

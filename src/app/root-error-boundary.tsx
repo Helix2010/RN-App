@@ -1,8 +1,8 @@
 import * as Clipboard from "expo-clipboard";
-import { getLocales } from "expo-localization";
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { appRuntime } from "../core/network/api-client";
+import { systemLocale } from "../core/config/system-locale";
 
 /**
  * 根级错误边界。任何渲染期异常到这里都变成一个能操作的界面，而不是白屏：
@@ -101,7 +101,7 @@ export class RootErrorBoundary extends Component<
           {this.props.children}
         </View>
       );
-    const copy = getLocales()[0]?.languageCode === "en" ? COPY.en : COPY.zh;
+    const copy = systemLocale() === "en-US" ? COPY.en : COPY.zh;
     return (
       <View style={styles.screen} testID="root-error-boundary">
         <Text style={styles.title}>{copy.title}</Text>

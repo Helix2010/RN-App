@@ -5,8 +5,12 @@ import { emitUpdateTelemetry } from "./update-telemetry";
 export type ApkReleaseTarget = {
   releaseId: string;
   url: string;
-  /** 平台给的包大小；null 时无法核对完整性，只能信任系统安装器 */
+  /** 平台给的包大小；用于续传与第一道完整性判断 */
   size: number | null;
+  /** bootstrap `update.full.sha256`（hex）：安装前文件摘要必须与之一致；缺失即不可直装（安全评审 N2） */
+  sha256: string | null;
+  /** 下载地址必须与租户 API 同源（N2）：bootstrap 本身走 HTTPS，但地址仍是服务端下发的字符串 */
+  allowedOrigin: string;
 };
 
 export type ApkDownloadState =
@@ -61,6 +65,8 @@ export type ApkDownloadDeps = {
   ensureDirectory(directory: string): Promise<void>;
   listDirectory(directory: string): Promise<string[]>;
   openInstaller(fileUri: string): Promise<void>;
+  /** 文件的 SHA-256（hex）；分块读取，不把整包读进内存 */
+  hashFile(uri: string): Promise<string>;
   isForeground(): boolean;
   onForeground(listener: () => void): () => void;
   now(): number;
@@ -92,9 +98,37 @@ export function apkFileName(releaseId: string): string {
   return `release-${releaseId.replace(/[^A-Za-z0-9_-]/g, "_")}.apk`;
 }
 
-/** 安装包只从 HTTPS 下载：bootstrap 本身走 HTTPS，但地址仍是服务端下发的字符串，这里再守一道 */
-export function isAcceptableApkUrl(url: string): boolean {
-  return /^https:\/\//i.test(url.trim());
+/** 安装包只从 HTTPS、且与租户 API 同源的地址下载（安全评审 N2） */
+export function isAcceptableApkUrl(
+  url: string,
+  allowedOrigin: string,
+): boolean {
+  try {
+    const parsed = new URL(url.trim());
+    return parsed.protocol === "https:" && parsed.origin === allowedOrigin;
+  } catch {
+    // 解析不了的字符串不是可接受的下载地址
+    return false;
+  }
+}
+
+const SHA256_HEX = /^[0-9a-f]{64}$/i;
+
+/** 文件摘要必须等于 bootstrap 给的 sha256；大小写无关，其余任何差异都是不符 */
+export function digestMatches(expected: string, actual: string): boolean {
+  return expected.trim().toLowerCase() === actual.trim().toLowerCase();
+}
+
+/** 通过安全前提检查的目标：sha256 一定存在，后续摘要比对不再需要判空 */
+type VerifiedApkTarget = ApkReleaseTarget & { sha256: string };
+
+/** 目标不满足安全前提的原因；null = 可以下载 */
+export function apkTargetRefusal(target: ApkReleaseTarget): string | null {
+  if (!isAcceptableApkUrl(target.url, target.allowedOrigin))
+    return "apk url is not https or not the tenant api origin";
+  if (target.sha256 === null || !SHA256_HEX.test(target.sha256.trim()))
+    return "release has no sha256 to verify the download against";
+  return null;
 }
 
 /**
@@ -103,7 +137,9 @@ export function isAcceptableApkUrl(url: string): boolean {
  * 停滞 / 断网自动暂停并按退避重试，回到前台立即续传；版本换了清掉旧文件。
  */
 export class ApkDownloadManager {
-  private target: ApkReleaseTarget | null = null;
+  private target: VerifiedApkTarget | null = null;
+  /** 上一次被拒目标的指纹：bootstrap 每次重取都会再 configure 一次，同一目标只告警、上报一次 */
+  private lastRefusalKey: string | null = null;
   private task: ApkDownloadTask | null = null;
   private running: Promise<void> | null = null;
   private pausing = false;
@@ -140,19 +176,50 @@ export class ApkDownloadManager {
       previous &&
       target &&
       previous.releaseId === target.releaseId &&
-      previous.url === target.url
+      previous.url === target.url &&
+      previous.sha256 === target.sha256
     )
       return;
-    if (target && !isAcceptableApkUrl(target.url)) {
-      console.warn("[updates] refusing non-https apk url");
-      target = null;
-    }
-    this.target = target;
+    const refusal = target ? apkTargetRefusal(target) : null;
+    this.target =
+      target && !refusal && target.sha256 !== null
+        ? { ...target, sha256: target.sha256 }
+        : null;
     try {
       if (!target) {
+        this.lastRefusalKey = null;
         await this.reset(true);
         return;
       }
+      if (refusal) {
+        // 服务端下发的目标不满足安全前提：不下载，也不装作没有更新——失败态让用户与运营都看得见
+        const refusalKey = [
+          target.releaseId,
+          target.url,
+          String(target.sha256),
+          refusal,
+        ].join("|");
+        if (this.lastRefusalKey !== refusalKey) {
+          this.lastRefusalKey = refusalKey;
+          console.warn(`[updates] refusing apk target: ${refusal}`);
+          emitUpdateTelemetry({
+            stage: "error",
+            updateId: target.releaseId,
+            channel: "apk",
+            error: refusal,
+          });
+        }
+        await this.reset(true);
+        this.setState({
+          phase: "failed",
+          releaseId: target.releaseId,
+          written: 0,
+          total: target.size ?? 0,
+          error: refusal,
+        });
+        return;
+      }
+      this.lastRefusalKey = null;
       if (previous) await this.reset(false);
       this.unsubscribeForeground ??= this.deps.onForeground(() =>
         this.onForeground(),
@@ -235,12 +302,31 @@ export class ApkDownloadManager {
       return;
     }
     if (target.size !== null && info.size === target.size) {
-      this.setState({
-        phase: "ready",
-        releaseId: target.releaseId,
-        fileUri,
-        size: info.size,
-      });
+      // 冷启动恢复的完整文件同样要过摘要：上次没校验完就被杀进程、或磁盘上的文件已不是当初下的
+      if (await this.digestOk(target, fileUri)) {
+        this.setState({
+          phase: "ready",
+          releaseId: target.releaseId,
+          fileUri,
+          size: info.size,
+        });
+      } else {
+        // 与下载完成后的处理一致：删除、失败态、上报；用户点"重试"会重新下载
+        await this.deps.deleteFile(fileUri);
+        this.setState({
+          phase: "failed",
+          releaseId: target.releaseId,
+          written: 0,
+          total: target.size,
+          error: "downloaded file hash does not match the release",
+        });
+        emitUpdateTelemetry({
+          stage: "error",
+          updateId: target.releaseId,
+          channel: "apk",
+          error: "cold-start digest mismatch",
+        });
+      }
       return;
     }
     if (target.size !== null && info.size > target.size) {
@@ -254,9 +340,27 @@ export class ApkDownloadManager {
 
   private launch(): void {
     if (this.running) return;
-    this.running = this.run().finally(() => {
-      this.running = null;
+    const running: Promise<void> = this.run().finally(() => {
+      // 校验不符后 run() 内部会重启一次：旧的 finally 不能把新一轮的引用清掉
+      if (this.running === running) this.running = null;
     });
+    this.running = running;
+  }
+
+  /** 摘要必须与 bootstrap 一致；读文件失败也算完整性问题（重试无济于事） */
+  private async digestOk(
+    target: VerifiedApkTarget,
+    fileUri: string,
+  ): Promise<boolean> {
+    let actual: string;
+    try {
+      actual = await this.deps.hashFile(fileUri);
+    } catch (error) {
+      throw new ApkIntegrityError(
+        `could not hash the downloaded file: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    return digestMatches(target.sha256, actual);
   }
 
   private async run(): Promise<void> {
@@ -272,15 +376,18 @@ export class ApkDownloadManager {
       let resumeFrom = info.exists && info.size > 0 ? info.size : null;
       if (resumeFrom !== null && target.size !== null) {
         if (resumeFrom === target.size) {
-          this.setState({
-            phase: "ready",
-            releaseId: target.releaseId,
-            fileUri,
-            size: resumeFrom,
-          });
-          return;
-        }
-        if (resumeFrom > target.size) {
+          if (await this.digestOk(target, fileUri)) {
+            this.setState({
+              phase: "ready",
+              releaseId: target.releaseId,
+              fileUri,
+              size: resumeFrom,
+            });
+            return;
+          }
+          await this.deps.deleteFile(fileUri);
+          resumeFrom = null;
+        } else if (resumeFrom > target.size) {
           await this.deps.deleteFile(fileUri);
           resumeFrom = null;
         }
@@ -335,6 +442,19 @@ export class ApkDownloadManager {
         }
         throw new ApkIntegrityError(
           "downloaded size does not match the release",
+        );
+      }
+      if (!(await this.digestOk(target, result.uri))) {
+        // 大小对但摘要不对：传输损坏或文件被换。给一次重下机会，再不对就是终态，不交给安装器
+        await this.deps.deleteFile(result.uri);
+        if (!this.restartedAfterMismatch) {
+          this.restartedAfterMismatch = true;
+          this.running = null;
+          this.launch();
+          return;
+        }
+        throw new ApkIntegrityError(
+          "downloaded file hash does not match the release",
         );
       }
       this.restartedAfterMismatch = false;

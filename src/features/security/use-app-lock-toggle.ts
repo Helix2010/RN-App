@@ -18,7 +18,7 @@ export function useAppLockToggle(): {
     async (next: boolean) => {
       const prefs = usePreferencesStore.getState();
       if (!next && prefs.appLockEnabled) {
-        const outcome = await authenticate(t("security.appLock.disableReason"));
+        const outcome = await authenticate("security.appLock.disableReason");
         if (outcome === "failed") toast(t("security.verify.failed"), "error");
         if (outcome !== "success" && outcome !== "unavailable") return;
       }

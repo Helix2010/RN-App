@@ -1,4 +1,3 @@
-import { getLocales } from "expo-localization";
 import {
   createContext,
   useCallback,
@@ -23,6 +22,7 @@ import { createFallbackConfig } from "../core/config/fallback-config";
 import { translateMessage } from "../core/config/localization";
 import { bootstrapQueryFn, useBootstrap } from "../core/config/use-bootstrap";
 import { changeLocalePreference } from "../core/config/locale-change";
+import { systemLocale } from "../core/config/system-locale";
 import {
   usePreferencesStore,
   type LocalePreference,
@@ -35,6 +35,7 @@ import {
 } from "../core/updates/update-service";
 import { useUpdateStatus } from "../core/updates/use-update-status";
 import { getApkDownloadManager } from "../core/updates/apk-download";
+import { appRuntime } from "../core/network/api-client";
 import { resolveUpdatePlan } from "../core/updates/update-coordinator";
 import {
   Body,
@@ -103,10 +104,6 @@ export type UpdateCheckResult =
 /** 导出仅供测试壳（src/test/harness.tsx）注入假运行时；业务代码请用 useFoundationRuntime。 */
 export const RuntimeContext = createContext<RuntimeValue | null>(null);
 export type { RuntimeValue };
-
-function systemLocale(): SupportedLocale {
-  return getLocales()[0]?.languageCode === "en" ? "en-US" : "zh-CN";
-}
 
 export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   const localePreference = usePreferencesStore((state) => state.locale);
@@ -289,12 +286,15 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
       config.update.decision !== "none" &&
       Boolean(full.actionUrl) &&
       Boolean(full.releaseId);
+    // sha256 与同源要求由管理器自己判定并以失败态呈现（安全评审 N2）：这里不替它过滤
     void getApkDownloadManager().configure(
       canDirectInstall
         ? {
             releaseId: full.releaseId as string,
             url: full.actionUrl as string,
             size: full.size ?? null,
+            sha256: full.sha256,
+            allowedOrigin: new URL(appRuntime.apiBaseUrl).origin,
           }
         : null,
     );

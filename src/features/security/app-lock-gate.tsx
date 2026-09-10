@@ -149,14 +149,14 @@ export function AppLockGate() {
   const unlock = useCallback(async () => {
     if (prompting.current) return;
     prompting.current = true;
-    const outcome = await authenticate(t("security.locked.subtitle"));
+    const outcome = await authenticate("security.locked.subtitle");
     prompting.current = false;
     if (outcome === "success" || outcome === "unavailable") {
       useAppLock.getState().unlock();
       return;
     }
     if (outcome === "failed") useAppLock.getState().noteAttemptFailed();
-  }, [t]);
+  }, []);
 
   // 一进入锁定态就自动弹一次系统验证，用户取消后可轻触图标重试
   useEffect(() => {
