@@ -61,6 +61,23 @@
 - **第一个灰度版本定向不到尚未升级的老设备**：bootstrap 带身份是这一版才有的。必须先全量发一版带身份上报的客户端，之后才能开始灰度。这是链条的固有顺序。
 - 无原生变更（`setExtraParamAsync` 是既有 API），客户端这部分可随 OTA 发布。
 
+## 模拟器实测（2026-09-11，四台在线模拟器对生产环境）
+
+| 验证项                 | 结果                                                                                                     |
+| ---------------------- | -------------------------------------------------------------------------------------------------------- |
+| 迁移 39 上生产         | `schema_migrations` 到 39，`app_releases.status` ENUM 含 `canary`，`canary_installations` 列在位         |
+| 匿名 `latest` 回归     | 仍然只返回 active，灰度期间也一样                                                                        |
+| bootstrap 新增段       | 匿名请求拿到 `canary={enrolled:false, otaToken:null}`，配置照发                                          |
+| 客户端上报身份         | 四台都拿到了服务端签发的灰度令牌（只有验证过凭证的安装才发）                                             |
+| 令牌落到原生侧         | `updates.db` 的 `json_data.extraParams` = `{"canary-token":"…"}`，键是小写                               |
+| 带令牌的 manifest 请求 | `Check → CheckCompleteUnavailable`，无异常——大写键那个坑确实被绕开了                                     |
+| 灰度只对名单可见       | 名单内那台 `latest=1.3.3 / decision=recommended / enrolled=true`，另外三台 `latest=1.3.2 / none / false` |
+| 改名单                 | 把名单换到另一台后，原来那台掉回 1.3.2，新那台升到 1.3.3，始终只有一台                                   |
+| 名单为空 / ID 拼错     | 生产上分别被 `CANARY_AUDIENCE_REQUIRED`、`CANARY_INSTALLATION_UNKNOWN` 拒绝                              |
+| 匿名拿灰度包 ID 下载   | 404；同一时刻 active 包匿名下载 206                                                                      |
+| 令牌不落明文缓存       | AsyncStorage 里的 bootstrap 快照 `otaToken=null`，令牌只在原生库里                                       |
+| **灰度设备下载灰度包** | **第一次失败**（"下载失败"），原因见下；修掉后复测通过                                                   |
+
 ## 实现时发现并修掉的坑
 
 - **迁移注释里的单引号**把 SQL 字符串字面量提前截断，`ALTER TABLE` 报 1064。集成测试当场挡下。
@@ -68,3 +85,4 @@
 - **强制升级会被灰度悄悄解除**：`mandatoryVersion` 原来跟着"取到的那一条"走，而灰度记录不得设 mandatory——于是给某台机器发个灰度包就等于单独给它关掉了强制升级。抽出 `activeMandatoryVersion`，强制版本只认 active。
 - **`otaAsset` 会把灰度设备卡在"取到 manifest 却下不了资源"**：它的状态白名单里没有 `canary`。资源请求不带 `Expo-Extra-Params`（只有 manifest 请求带），所以这里没有身份可验，与 `paused` / `superseded` 同档放行；把关的是 manifest。
 - **bootstrap 里还有第五条读路径**（OTA 提示）。不改它的话，灰度设备在"升级中心"看到的修订号和它真正会下到的对不上。
+- **安装包下载器不带身份**（模拟器实测才暴露）。服务端的下载接口已按灰度放行，客户端 `createExpoApkDownloadDeps` 却把 `DownloadOptions` 传成 `{}`，请求匿名发出去，服务端只能 404。现象是：名单里的设备在设置页看得到"有 1.3.3 可用"，一点下载就是"下载失败"。这正是设计 §3.4 点名的"最容易漏的一处"，只是漏在了客户端那一层——服务端改对了不等于这条链路通了。
