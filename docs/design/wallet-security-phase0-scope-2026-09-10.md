@@ -140,11 +140,9 @@ A3 小计约 **2.6 人日**。
 | A3-5 | N13 assetlinks/AASA | RN-Server 无该路由 |
 | A3-6 | N27 ADR-0002 措辞 | 未改 |
 
-**2026-09-11 更新：上表除 A3-5 外全部完成**，见 `docs/changes/2026-09-10-fix-verification-scale-and-session-binding.md`（A1-9/16/19 部分/20 部分/21）与 `docs/changes/2026-09-10-fix-wallet-hardening-batch-2.md`（其余项 + 对抗复核后的补齐）。仍未做：
+**2026-09-11 更新：上表全部完成，范围 A 已关闭。** 见 `docs/changes/2026-09-10-fix-verification-scale-and-session-binding.md`（A1-9/16/19 部分/20 部分/21）、`docs/changes/2026-09-10-fix-wallet-hardening-batch-2.md`（其余项 + 对抗复核后的补齐）、`docs/changes/2026-09-11-feature-android-app-links.md`（A3-5 的 Android 半边）、`docs/changes/2026-09-11-fix-uncontroversial-security-batch-1.md`（A3-5 的 iOS 半边）。
 
-| 未做项 | 关联 | 为什么 |
-| --- | --- | --- |
-| A3-5 | N13 服务端 `/.well-known/assetlinks.json` 与 AASA | 客户端已改用钱包厂商域名的通用链接并在 Android 走显式包名，抢注路径已闭合；这一项是给**本 App 自己**的深链（`anyfun://` 回跳）用的，属服务端工作，另行排期 |
+A3-5 的两次记录：本节此前写的"仍未做 A3-5"在 `93e0d03` / RN-Server `749184c`+`d37248e` 之后就已过期，是一次滞后登记；2026-09-11 补上 `/.well-known/apple-app-site-association`（按租户从 `release.ios` 生成，未登记 404）后整项关闭。**iOS 侧仍缺真实 Apple Team ID**，接口与路由就位但没有数据可填——这是外部资源缺口，不是代码缺口。
 
 与本表已实现项的偏差与补充如下，均为有意为之：
 

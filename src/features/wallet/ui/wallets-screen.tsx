@@ -263,6 +263,13 @@ export function WalletsScreen({
         closeLabel={t("common.close")}
         locked={disconnecting}
       >
+        {/* 断开对内置钱包只是"移出当前使用"：金库条目原样保留。不写清楚，
+            用户会把这个红色按钮当成删除（安全评审 §6 删除语义） */}
+        <Body>
+          {current?.connector === "embedded"
+            ? t("wallets.disconnectHint.embedded")
+            : t("wallets.disconnectHint.external")}
+        </Body>
         <ActionButton
           backgroundColor="$danger"
           onPress={() => onDisconnect()}

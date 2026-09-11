@@ -223,6 +223,11 @@ export function SecurityCenterScreen({
               testID="sec-login-history"
             />
           </Group>
+          {/* 断开 / 退出 / 卸载都不删除本机密钥材料（安全评审 §6）：不说清楚，
+              用户会以为"退出登录"或"卸载重装"等于销毁钱包 */}
+          <Body testID="sec-wallets-footnote">
+            {t("security.wallets.footnote")}
+          </Body>
 
           <Group title={t("security.section.funds")}>
             <SRow
@@ -278,6 +283,7 @@ export function SecurityCenterScreen({
         title={t("security.disconnectAllConfirm")}
         closeLabel={t("common.close")}
       >
+        <Body>{t("security.disconnectAllHint")}</Body>
         <PrimaryButton
           backgroundColor="$danger"
           disabled={signOut.isPending}

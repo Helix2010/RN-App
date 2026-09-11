@@ -178,3 +178,39 @@ test("release build rejects a relative keystore path (Gradle would resolve it el
     expect(result.stderr).toContain("must be an absolute path");
   });
 });
+
+test("release build refuses to ship without an OTA trust root once the switch is on", () => {
+  withTenantFixture(pinned, (root) => {
+    const result = spawnSync(
+      process.execPath,
+      [script, pinned.slug, "--no-push"],
+      {
+        env: releaseEnv(root, {
+          EXPO_REQUIRE_OTA_SIGNING: "1",
+          EXPO_UPDATES_CODE_SIGNING_CERTIFICATE: "",
+        }),
+        encoding: "utf8",
+      },
+    );
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("EXPO_REQUIRE_OTA_SIGNING is on");
+  });
+});
+
+test("the OTA trust root is not required while the switch is off", () => {
+  withTenantFixture(pinned, (root) => {
+    const result = spawnSync(
+      process.execPath,
+      [script, pinned.slug, "--no-push"],
+      {
+        env: releaseEnv(root, { EXPO_UPDATES_CODE_SIGNING_CERTIFICATE: "" }),
+        encoding: "utf8",
+      },
+    );
+    // 开关默认关：构建继续往下走，停在签名材料那一道，而不是 OTA 信任根这一道
+    expect(result.stderr).not.toContain("EXPO_REQUIRE_OTA_SIGNING");
+    expect(result.stderr).toContain(
+      "Release signing requires ANDROID_RELEASE_KEYSTORE_PATH",
+    );
+  });
+});

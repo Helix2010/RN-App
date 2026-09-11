@@ -764,7 +764,8 @@ const zhCN = {
   "profile.sessionUntil": "会话有效期至 {date}",
   "profile.manageSessions": "管理会话",
   "profile.logoutConfirm": "确定断开连接并退出？",
-  "profile.logoutHint": "将清除会话与账户级缓存，保留语言、主题等设备偏好。",
+  "profile.logoutHint":
+    "将清除会话与账户级缓存，保留语言、主题等设备偏好。本机保存的助记词与私钥不会被删除。",
   "settings.notificationsOn": "已开启 {n} 项",
   "settings.predictConfirm.hint": "关闭后点击买 Yes / No 直接提交",
   "settings.orderType.market": "市价",
@@ -818,6 +819,8 @@ const zhCN = {
   "security.suggest.txConfirm": "建议开启交易前验证",
   "security.section.protection": "应用保护",
   "security.section.wallets": "钱包与会话",
+  "security.wallets.footnote":
+    "断开连接和退出登录都不会删除本机的助记词与私钥；卸载应用也不保证系统钥匙串里的材料已被清除。唯一可靠的凭据是你抄写下来的助记词。",
   "security.section.funds": "资金安全",
   "security.appLock.hint": "Face ID，失败 3 次回落 PIN",
   "security.autoLock": "自动锁定",
@@ -840,6 +843,8 @@ const zhCN = {
   "security.approvals.count": "{n} 项",
   "security.disconnectAll": "断开所有会话",
   "security.disconnectAllConfirm": "断开所有会话并退出？",
+  "security.disconnectAllHint":
+    "只结束登录会话。本机保存的助记词与私钥不受影响，也不会被删除。",
   "security.locked.title": "应用已锁定",
   "security.locked.subtitle": "验证身份后继续使用",
   "security.unlock": "解锁",
@@ -858,6 +863,10 @@ const zhCN = {
   "wallets.explorer": "在区块浏览器查看",
   "wallets.disconnect": "断开此钱包",
   "wallets.disconnectConfirm": "断开 {label}？",
+  "wallets.disconnectHint.embedded":
+    "只是把它移出当前使用。助记词与私钥仍然留在本机，不会被删除。",
+  "wallets.disconnectHint.external":
+    "本应用将不再持有这个钱包的会话；钱包应用里的账户不受影响。",
   "wallets.add": "添加钱包",
   "wallets.notBackedUp": "未备份",
   "wallets.hint":
@@ -1989,7 +1998,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "profile.manageSessions": "Manage sessions",
   "profile.logoutConfirm": "Disconnect and sign out?",
   "profile.logoutHint":
-    "Clears the session and account cache; device preferences like language and theme are kept.",
+    "Clears the session and account cache; device preferences like language and theme are kept. The recovery phrase and private keys stored on this device are not deleted.",
   "settings.notificationsOn": "{n} on",
   "settings.predictConfirm.hint":
     "When off, tapping Buy Yes / No submits immediately",
@@ -2048,6 +2057,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "security.suggest.txConfirm": "Turn on verification before trading",
   "security.section.protection": "App protection",
   "security.section.wallets": "Wallets & sessions",
+  "security.wallets.footnote":
+    "Disconnecting and signing out never delete the recovery phrase or private keys stored on this device, and uninstalling the app does not guarantee the system keychain is cleared. The phrase you wrote down is the only reliable credential.",
   "security.section.funds": "Funds",
   "security.appLock.hint": "Face ID, falls back to PIN after 3 failures",
   "security.autoLock": "Auto-lock",
@@ -2070,6 +2081,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "security.approvals.count": "{n}",
   "security.disconnectAll": "Disconnect all sessions",
   "security.disconnectAllConfirm": "Disconnect all sessions and sign out?",
+  "security.disconnectAllHint":
+    "This ends sign-in sessions only. The recovery phrase and private keys stored on this device are untouched.",
   "security.locked.title": "App locked",
   "security.locked.subtitle": "Verify your identity to continue",
   "security.unlock": "Unlock",
@@ -2089,6 +2102,10 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "wallets.explorer": "View on explorer",
   "wallets.disconnect": "Disconnect this wallet",
   "wallets.disconnectConfirm": "Disconnect {label}?",
+  "wallets.disconnectHint.embedded":
+    "This only takes it out of use. The recovery phrase and private key stay on this device and are not deleted.",
+  "wallets.disconnectHint.external":
+    "This app will no longer hold a session for this wallet; the account in the wallet app is unaffected.",
   "wallets.add": "Add wallet",
   "wallets.notBackedUp": "Not backed up",
   "wallets.hint":

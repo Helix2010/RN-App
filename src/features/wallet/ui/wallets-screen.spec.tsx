@@ -64,6 +64,18 @@ describe("WalletsScreen", () => {
     );
   });
 
+  it("tells the user that disconnecting an embedded wallet does not delete its keys", async () => {
+    // 红色的"断开此钱包"对内置钱包只是移出当前使用：金库条目原样保留。
+    // 没有这句话，用户会把它当成删除（安全评审 §6 删除语义）
+    const { runtime } = await renderScreen();
+
+    void fireEvent.press(await screen.findByTestId("wallets-disconnect"));
+
+    expect(
+      await screen.findByText(runtime.t("wallets.disconnectHint.embedded")),
+    ).toBeTruthy();
+  });
+
   it("keeps the wallet signed in when disconnect fails", async () => {
     const { gateways, navigation } = await renderScreen();
     gateways.wallet.disconnect = jest.fn(async () => {

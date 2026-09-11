@@ -75,6 +75,17 @@ describe("SecurityCenterScreen", () => {
     );
   });
 
+  it("states that signing out and uninstalling do not delete the keys on this device", async () => {
+    // 卸载不等于删除（iOS 钥匙串会留）、退出登录也不删金库：用户据此判断
+    // "我还能不能拿回这个钱包"，这句必须一直在（安全评审 §6 / §13 0c-5）
+    const { runtime } = await renderSecurity();
+    await waitFor(() =>
+      expect(
+        screen.getByText(runtime.t("security.wallets.footnote")),
+      ).toBeTruthy(),
+    );
+  });
+
   it("only offers token approvals when DEX is enabled", async () => {
     await renderSecurity({ modules: { dex: false } });
     await waitFor(() =>

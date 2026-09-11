@@ -126,6 +126,14 @@ pnpm android:verify artifacts/<slug>-<version>-build<code>-release.apk <slug>
 
 CI 的 `android-release-gate` job 在 main 与手动触发时用受保护环境 `android-release` 的 secrets（`ANDROID_RELEASE_KEYSTORE_BASE64`、`ANDROID_RELEASE_STORE_PASSWORD`、`ANDROID_RELEASE_KEY_ALIAS`、`ANDROID_RELEASE_KEY_PASSWORD`）完整构建并复核。
 
+`EXPO_UPDATES_CODE_SIGNING_CERTIFICATE` 一旦设置，`app.config.ts` 会先确认那个路径真的存在（相对仓库根解析，与 expo-updates 一致）——拼错的路径原本会一路沉默到运行时才表现为"更新没有验签"。
+
+### 3.2.1 OTA 信任根门禁（安全评审 N19，默认关闭）
+
+`EXPO_REQUIRE_OTA_SIGNING=1` 打开后，任何会真正启用 OTA 的非 development 构建缺 `EXPO_UPDATES_CODE_SIGNING_CERTIFICATE` 即失败，两道都会拦：`pnpm android:release` 在跑任何构建步骤之前先报错，`expo prebuild` 走到 `app.config.ts` 时再报一次。
+
+**现在默认关闭是有意的**：证书体系还没建立——密钥仪式、服务端对最终 manifest 与 directive 签名、`includeManifestResponseCertificateChain` 的自定义 plugin，三件一件都没到位。开关先就位，等证书发下来后把默认改成开、再把开关本身删掉。在那之前，OTA 仍然只有完整性（bootstrap 下发的 sha256）而没有真实性，这一条是评审 §12.1 未关闭的 P0 门禁。
+
 ### 3.3 已装机用户从 debug 签名迁移
 
 完整的分步执行手册（角色、命令、预期输出、错误对照、迁移与收尾）见 `docs/RELEASE_SIGNING_ROLLOUT.md`。

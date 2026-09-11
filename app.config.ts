@@ -63,6 +63,31 @@ const updatesUrl = process.env.EXPO_UPDATES_URL || undefined;
 const codeSigningCertificate =
   process.env.EXPO_UPDATES_CODE_SIGNING_CERTIFICATE;
 const codeSigningKeyId = process.env.EXPO_UPDATES_CODE_SIGNING_KEY_ID ?? "main";
+// 证书路径由 expo-updates 相对项目根解析：拼错的路径会一路沉默到运行时才发现
+// "更新没有验签"，在这里当场停下来。
+if (
+  codeSigningCertificate &&
+  !existsSync(resolve(process.cwd(), codeSigningCertificate))
+)
+  throw new Error(
+    `EXPO_UPDATES_CODE_SIGNING_CERTIFICATE points to a missing file: ${codeSigningCertificate}`,
+  );
+// OTA 真实性门禁（安全评审 N19）。默认关闭：证书体系还没建立——密钥仪式、
+// 服务端对最终 manifest 与 directive 签名、自定义 plugin 三件都没到位，现在就
+// 强制会把所有发布卡死。开关先落在这里，等证书就位后把默认改成开、再把开关删掉。
+// 开着的时候，任何会真正启用 OTA 的非 development 构建缺信任根即构建失败。
+const requireOTASigning = /^(1|true|yes|on)$/i.test(
+  process.env.EXPO_REQUIRE_OTA_SIGNING ?? "",
+);
+if (
+  requireOTASigning &&
+  distributionChannel !== "development" &&
+  updatesUrl &&
+  !codeSigningCertificate
+)
+  throw new Error(
+    "EXPO_REQUIRE_OTA_SIGNING is on but EXPO_UPDATES_CODE_SIGNING_CERTIFICATE is missing: a non-development build must carry the tenant OTA trust root (security review N19)",
+  );
 const applicationId =
   tenant?.applicationId ??
   process.env.EXPO_PUBLIC_APPLICATION_ID ??

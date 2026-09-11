@@ -21,6 +21,9 @@ const MACHINE_ENV_KEYS = [
   "GOOGLE_SERVICES_JSON",
   // keystore 的路径不是秘密；口令与别名只能来自进程环境（密钥管理服务注入），不读 .env
   "ANDROID_RELEASE_KEYSTORE_PATH",
+  // OTA 信任根：证书本身是公钥材料，路径与开关都不是秘密
+  "EXPO_UPDATES_CODE_SIGNING_CERTIFICATE",
+  "EXPO_REQUIRE_OTA_SIGNING",
 ];
 // 脚本测试用临时目录隔离开发者本机的 .env.local（RN_ENV_ROOT 只在 Jest 子进程里生效）；构建永远读仓库根
 const envRoot =
@@ -103,6 +106,17 @@ if (
 ) {
   throw new Error(
     `tenants/${tenant.slug}/tenant.json must pin signerSha256 (SHA-256 of the production signing certificate, 64 lowercase hex) before a release can be built; see docs/SAAS_TENANT_BUILD_RUNBOOK.md §3`,
+  );
+}
+// OTA 真实性门禁（安全评审 N19）：开关打开后，缺 per-tenant 代码签名证书就不开始构建。
+// app.config.ts 里也有同一条判定——那条在 expo prebuild 才触发，这条让 pnpm android:release
+// 在跑任何构建步骤之前就说清楚缺什么。
+if (
+  /^(1|true|yes|on)$/i.test(env.EXPO_REQUIRE_OTA_SIGNING ?? "") &&
+  !env.EXPO_UPDATES_CODE_SIGNING_CERTIFICATE
+) {
+  throw new Error(
+    "EXPO_REQUIRE_OTA_SIGNING is on but EXPO_UPDATES_CODE_SIGNING_CERTIFICATE is missing: the release would ship without an OTA trust root; see docs/SAAS_TENANT_BUILD_RUNBOOK.md",
   );
 }
 const missingSigning = missingReleaseSigningEnv(env);
