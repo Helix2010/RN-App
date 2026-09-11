@@ -6,6 +6,7 @@ import { isFundRecordOpen } from "../model/fund-record";
 import type { PlatformAgreement } from "../../../core/predict-platform/agreements";
 import { PredictServiceNotConfiguredError } from "../../../core/predict-platform/config";
 import { PredictPlatformMismatchError } from "../../../core/predict-platform/public-info";
+import { PredictPlatformContractsChangedError } from "../../../core/predict-platform/contract-pin";
 import {
   PlatformHttpError,
   PlatformRateLimitedError,
@@ -29,6 +30,8 @@ function predictRetry(count: number, error: unknown): boolean {
   if (error instanceof PredictNotEnabledError) return false;
   if (error instanceof PredictServiceNotConfiguredError) return false;
   if (error instanceof PredictPlatformMismatchError) return false;
+  // 合约地址与第一次钉住的不一致：重试只会把同一组被换过的地址再取一遍（N3）
+  if (error instanceof PredictPlatformContractsChangedError) return false;
   if (error instanceof PlatformRateLimitedError) return false;
   if (error instanceof PlatformHttpError && error.status === 403) return false;
   return count < 1;

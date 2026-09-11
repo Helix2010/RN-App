@@ -30,6 +30,15 @@ uses-permission: name='android.permission.READ_EXTERNAL_STORAGE' maxSdkVersion='
 uses-permission: name='android.permission.INTERNET'
 uses-permission-sdk-23: name='android.permission.ACCESS_MEDIA_LOCATION'
 `;
+// 只含真实产物里出现过、且在允许列表上的权限；各用例在它上面加自己要试的那一条
+const CLEAN_BADGING = `package: name='com.anyfun.foundation' versionCode='25' versionName='1.2.11' platformBuildVersionName='16' platformBuildVersionCode='36' compileSdkVersion='36' compileSdkVersionCodename='16'
+sdkVersion:'24'
+targetSdkVersion:'36'
+uses-permission: name='android.permission.CAMERA'
+uses-permission: name='android.permission.INTERNET'
+uses-permission: name='android.permission.READ_EXTERNAL_STORAGE' maxSdkVersion='32'
+uses-permission: name='android.permission.USE_BIOMETRIC'
+`;
 // APK Signature Scheme v3.1 轮换后 apksigner 会打印多组签名者
 const APKSIGNER_ROTATED = `Signer #1 certificate DN: CN=AnyFun Release
 Signer #1 certificate SHA-256 digest: ${PROD_SIGNER}
@@ -41,6 +50,7 @@ const tenant = {
   androidVersionCode: 25,
   version: "1.2.11",
   signerSha256: PROD_SIGNER,
+  distributionChannel: "direct",
 };
 
 describe("android release identity", () => {
@@ -129,17 +139,65 @@ describe("android release identity", () => {
   });
 
   it("passes a production-signed APK whose identity matches the tenant", () => {
-    const badging = parseBadging(
-      BADGING.replace(
-        /^uses-permission: name='android.permission.SYSTEM_ALERT_WINDOW'\n/m,
-        "",
-      ),
-    );
+    const badging = parseBadging(CLEAN_BADGING);
     expect(
       assertReleaseIdentity({ signers: [PROD_SIGNER], badging, tenant }),
     ).toMatchObject({
       signer: PROD_SIGNER,
       packageName: "com.anyfun.foundation",
     });
+  });
+
+  // 禁用列表只认得我们已经想到的那几个。真正危险的是**新冒出来**的权限：
+  // 某个依赖升级顺手加了录音或定位，禁用列表永远不会提到它。
+  it("rejects a permission a dependency slipped in, including via uses-permission-sdk-23", () => {
+    for (const line of [
+      "uses-permission: name='android.permission.RECORD_AUDIO'",
+      "uses-permission: name='android.permission.ACCESS_FINE_LOCATION'",
+      // sdk-23 声明同样是清单的一部分，不能成为绕过允许列表的后门
+      "uses-permission-sdk-23: name='android.permission.ACCESS_MEDIA_LOCATION'",
+    ]) {
+      const badging = parseBadging(`${CLEAN_BADGING}${line}\n`);
+      expect(() =>
+        assertReleaseIdentity({ signers: [PROD_SIGNER], badging, tenant }),
+      ).toThrow(/permissions not on the allow list/);
+    }
+  });
+
+  it("allows the per-tenant dynamic receiver permission but not another tenant's", () => {
+    const ours = parseBadging(
+      `${CLEAN_BADGING}uses-permission: name='com.anyfun.foundation.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'\n`,
+    );
+    expect(() =>
+      assertReleaseIdentity({ signers: [PROD_SIGNER], badging: ours, tenant }),
+    ).not.toThrow();
+
+    const theirs = parseBadging(
+      `${CLEAN_BADGING}uses-permission: name='com.other.tenant.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'\n`,
+    );
+    expect(() =>
+      assertReleaseIdentity({
+        signers: [PROD_SIGNER],
+        badging: theirs,
+        tenant,
+      }),
+    ).toThrow(/permissions not on the allow list/);
+  });
+
+  // 商店包带着"应用内装 APK"既过不了审，也说明构建拿错了渠道配置
+  it("allows REQUEST_INSTALL_PACKAGES only on the direct channel", () => {
+    const badging = parseBadging(
+      `${CLEAN_BADGING}uses-permission: name='android.permission.REQUEST_INSTALL_PACKAGES'\n`,
+    );
+    expect(() =>
+      assertReleaseIdentity({ signers: [PROD_SIGNER], badging, tenant }),
+    ).not.toThrow();
+    expect(() =>
+      assertReleaseIdentity({
+        signers: [PROD_SIGNER],
+        badging,
+        tenant: { ...tenant, distributionChannel: "store" },
+      }),
+    ).toThrow(/REQUEST_INSTALL_PACKAGES/);
   });
 });

@@ -57,6 +57,7 @@ import {
   type PlatformContracts,
   type PublicInfo,
 } from "../../../core/predict-platform/public-info";
+import { assertPinnedPlatformContracts } from "../../../core/predict-platform/contract-pin";
 import {
   deployedSafe,
   safeNonce,
@@ -196,7 +197,11 @@ export class HttpPredictAccountGateway implements PredictAccountGateway {
     )
       return this.context;
     const info = await fetchPublicInfo(service);
-    const next = { service, info, contracts: platformContracts(info) };
+    const contracts = platformContracts(info);
+    // 合约地址是运行时下发的，而开通会对它们做无限额授权：第一次看到就钉住，
+    // 之后再变就拒绝，不照单全收（安全评审 N3）
+    await assertPinnedPlatformContracts(this.deps.storage, service, contracts);
+    const next = { service, info, contracts };
     this.context = next;
     return next;
   }
