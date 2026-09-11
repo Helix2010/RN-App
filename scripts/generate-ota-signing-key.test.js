@@ -139,6 +139,37 @@ maybe("ota signing key generator", () => {
     });
   });
 
+  test("rebuilds a shredded request body without touching the key pair", () => {
+    withFixture((root) => {
+      expect(generate(root, ["--keysize", "2048"]).status).toBe(0);
+      const keyPath = join(root, "keys", "private-key.pem");
+      const before = readFileSync(keyPath, "utf8");
+      rmSync(join(root, "keys", "signing-key.json"));
+
+      // 请求体装完就该 shred，可 PUT 会失败、环境会重装。没有这条路径，
+      // 唯一的出路是手拼含私钥的 JSON——PEM 带换行，手拼必错
+      const again = generate(root, [
+        "--rebuild-body",
+        "--expected-version",
+        "2",
+      ]);
+      expect(again.status).toBe(0);
+      const body = JSON.parse(
+        readFileSync(join(root, "keys", "signing-key.json"), "utf8"),
+      );
+      expect(body.expectedVersion).toBe(2);
+      expect(readFileSync(keyPath, "utf8")).toBe(before);
+    });
+  });
+
+  test("refuses to rebuild a body for a key pair that is not there", () => {
+    withFixture((root) => {
+      const result = generate(root, ["--rebuild-body"]);
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toMatch(/rebuild-body/);
+    });
+  });
+
   test("refuses to write inside the repository", () => {
     withFixture((root) => {
       // 私钥一旦入库就无法撤回

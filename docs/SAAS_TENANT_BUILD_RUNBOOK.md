@@ -191,6 +191,12 @@ pnpm ota:keygen --tenant <slug> --expected-version <线上 version> --out /secur
 # 3. PUT 进去（请求体已经带好 expectedVersion，不用手改 JSON）、shred、销毁旧私钥
 ```
 
+请求体装完就要 shred，但 PUT 会失败、环境会重装。要它再来一次用 `--rebuild-body`，它只读 `--out` 目录里已有的两个 PEM 重新拼请求体，不碰密钥本身：
+
+```bash
+pnpm ota:keygen --tenant <slug> --out /secure/keys/<slug>-ota --rebuild-body --expected-version <线上 version> --yes
+```
+
 `expectedVersion` 是服务端的乐观锁：不等于线上当前 `version` 就拒绝写入。两个人同时换密钥时，后一个必须失败而不是悄悄盖掉——被盖掉的那把可能正是刚编进原生包的那张证书对应的私钥。
 
 **轮换的时机不自由**：已经装在用户手机上、内嵌旧证书的原生包只认编进包里的那张证书，OTA 换不了自己的证书。所以换掉的那一刻，旧版设备就再也验不过任何 OTA，直到它们升到带新证书的原生版本。只有两种安全时机：还没有任何原生包带过证书（此时零成本），或者你已经准备好立刻发带新证书的原生版本并接受这段空窗。

@@ -31,7 +31,7 @@ if [ -f "$REPO_ROOT/package.json" ] && [ -d "$REPO_ROOT/scripts" ] && [ -d "$REP
 fi
 
 TENANT=""; OUT_DIR=""; YEARS=10; COMMON_NAME=""; KEY_ID="main"; KEYSIZE=4096; ASSUME_YES=0
-EXPECTED_VERSION=0
+EXPECTED_VERSION=0; REBUILD_BODY=0
 
 usage() {
   cat <<'USAGE'
@@ -46,6 +46,9 @@ usage() {
                          版本号**（GET /v1/admin/ota/signing-key 的 version）。填错服务端拒绝写入，
                          这是防并发覆盖用的——两个人同时换密钥，后一个必须失败而不是悄悄盖掉
   --keysize <bits>       RSA 位数，默认 4096（服务端下限 2048）
+  --rebuild-body         不生成新密钥，只用 --out 目录里已有的 private-key.pem /
+                         certificate.pem 重新拼出 signing-key.json。请求体装完就该 shred，
+                         而 PUT 失败、换环境重装都需要它再来一次——没有这个就只能手拼 JSON
   --yes                  非交互：全部用默认值 / 已给参数
   -h, --help
 USAGE
@@ -61,6 +64,7 @@ while [ $# -gt 0 ]; do
     --common-name) COMMON_NAME="$2"; shift 2 ;;
     --key-id) KEY_ID="$2"; shift 2 ;;
     --expected-version) EXPECTED_VERSION="$2"; shift 2 ;;
+    --rebuild-body) REBUILD_BODY=1; shift ;;
     --keysize) KEYSIZE="$2"; shift 2 ;;
     --yes) ASSUME_YES=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -112,18 +116,28 @@ fi
 KEY_OUT="$OUT_ABS/private-key.pem"
 CERT_OUT="$OUT_ABS/certificate.pem"
 BODY_OUT="$OUT_ABS/signing-key.json"
-for f in "$KEY_OUT" "$CERT_OUT"; do
-  [ ! -e "$f" ] || fail "已存在 $f，拒绝覆盖。要重新生成请先手动移走整个目录"
-done
-
-ask YEARS "证书有效期（年）" "10"
-[[ "$YEARS" =~ ^[0-9]+$ ]] && [ "$YEARS" -ge 1 ] || fail "有效期必须是正整数年"
-ask COMMON_NAME "证书 CN" "$APP_NAME OTA"
-[[ "$KEYSIZE" =~ ^[0-9]+$ ]] && [ "$KEYSIZE" -ge 2048 ] || fail "RSA 位数不得小于 2048（服务端会拒绝）"
 [[ "$EXPECTED_VERSION" =~ ^[0-9]+$ ]] || fail "--expected-version 必须是非负整数（首次安装填 0）"
 
-# ---- 生成 ----
+if [ "$REBUILD_BODY" = 1 ]; then
+  for f in "$KEY_OUT" "$CERT_OUT"; do
+    [ -f "$f" ] || fail "--rebuild-body 需要 $f，但它不存在"
+  done
+else
+  for f in "$KEY_OUT" "$CERT_OUT"; do
+    [ ! -e "$f" ] || fail "已存在 $f，拒绝覆盖。要重新生成请先手动移走整个目录"
+  done
+
+  ask YEARS "证书有效期（年）" "10"
+  [[ "$YEARS" =~ ^[0-9]+$ ]] && [ "$YEARS" -ge 1 ] || fail "有效期必须是正整数年"
+  ask COMMON_NAME "证书 CN" "$APP_NAME OTA"
+  [[ "$KEYSIZE" =~ ^[0-9]+$ ]] && [ "$KEYSIZE" -ge 2048 ] || fail "RSA 位数不得小于 2048（服务端会拒绝）"
+fi
+
+# ---- 生成（--rebuild-body 时跳过，复验与请求体照跑） ----
 umask 077
+if [ "$REBUILD_BODY" = 1 ]; then
+  echo "复用 $OUT_ABS 里已有的密钥对，只重建请求体..."
+else
 DAYS=$(( YEARS * 365 ))
 EXT_CONF="$(mktemp)"
 trap 'rm -f "$EXT_CONF"' EXIT
@@ -147,6 +161,7 @@ distinguished_name=req"; echo "
   -keyout "$KEY_OUT" -out "$CERT_OUT" >/dev/null 2>&1 \
   || fail "openssl 生成失败"
 chmod 600 "$KEY_OUT"; chmod 644 "$CERT_OUT"
+fi
 
 # ---- 复验：逐条对照 expo-updates 实际会检查的东西 ----
 # 少任何一项都会在运行时被拒，而那时的症状是"所有设备静默停在内置 bundle"。
