@@ -2,6 +2,7 @@ import * as Clipboard from "expo-clipboard";
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { appRuntime } from "../core/network/api-client";
+import { redactSecrets } from "../core/security/secret-scan";
 import { systemLocale } from "../core/config/system-locale";
 
 /**
@@ -58,23 +59,35 @@ export class RootErrorBoundary extends Component<
 
   override componentDidCatch(error: Error, info: ErrorInfo): void {
     this.setState({ info: info.componentStack ?? "" });
+    // 异常的 message 可能带着助记词（导入失败、解密失败都会把输入拼进去）。
+    // 这里不能直接把 error 交给 console.error——它会打印完整对象（安全评审 §12.2）
     console.error(
       `[root-error-boundary] ${this.state.diagnosticId || "pending"}`,
-      error,
-      info.componentStack,
+      redactSecrets(`${error.name}: ${error.message}`),
+      redactSecrets(info.componentStack ?? ""),
     );
   }
 
+  /**
+   * 给客服看的诊断文本。
+   *
+   * 它会被复制到剪贴板、由用户自己发出去——这是应用里少数几个"内容离开设备"
+   * 的出口之一，而其中两段（`error.message`、`componentStack`）的内容不受我们
+   * 控制。所以出口上过一遍秘密扫描：助记词或配对 URI 混进来时遮蔽掉，其余原样
+   * 保留（安全评审 §12.2）。
+   */
   private diagnostics(): string {
     const { error, diagnosticId, info } = this.state;
-    return [
-      `diagnosticId: ${diagnosticId}`,
-      `time: ${new Date().toISOString()}`,
-      `app: ${appRuntime.version} (${appRuntime.buildNumber}) ${appRuntime.platform} ${appRuntime.distributionChannel}`,
-      `runtimeVersion: ${appRuntime.runtimeVersion}`,
-      `error: ${error?.name ?? "Error"}: ${error?.message ?? ""}`,
-      `componentStack: ${info.trim()}`,
-    ].join("\n");
+    return redactSecrets(
+      [
+        `diagnosticId: ${diagnosticId}`,
+        `time: ${new Date().toISOString()}`,
+        `app: ${appRuntime.version} (${appRuntime.buildNumber}) ${appRuntime.platform} ${appRuntime.distributionChannel}`,
+        `runtimeVersion: ${appRuntime.runtimeVersion}`,
+        `error: ${error?.name ?? "Error"}: ${error?.message ?? ""}`,
+        `componentStack: ${info.trim()}`,
+      ].join("\n"),
+    );
   }
 
   private retry = (): void => {
