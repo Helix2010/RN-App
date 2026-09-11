@@ -1,15 +1,23 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 import * as FileSystem from "expo-file-system/legacy";
-import { hashFileSha256 } from "./apk-download";
+import { createExpoApkDownloadDeps, hashFileSha256 } from "./apk-download";
 
 jest.mock("expo-file-system/legacy", () => ({
   EncodingType: { Base64: "base64" },
   cacheDirectory: "file:///cache/",
   getInfoAsync: jest.fn(),
   readAsStringAsync: jest.fn(),
+  createDownloadResumable: jest.fn(),
 }));
 jest.mock("expo-intent-launcher", () => ({ startActivityAsync: jest.fn() }));
+jest.mock("../device/installation-service", () => ({
+  installationAuthorization: jest.fn(async () => ({})),
+}));
+
+const { installationAuthorization } = jest.requireMock(
+  "../device/installation-service",
+) as { installationAuthorization: jest.Mock };
 
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -63,5 +71,101 @@ describe("hashFileSha256", () => {
     await expect(hashFileSha256("file:///cache/gone.apk")).rejects.toThrow(
       "file to hash is missing",
     );
+  });
+});
+
+// 灰度包只对名单里的安装可见：下载不带身份就是 404，用户看得到版本却装不上
+// （设计 canary-release-allowlist-2026-09-11 §3.4，2026-09-11 在模拟器上真的踩到过）
+describe("createExpoApkDownloadDeps", () => {
+  beforeEach(() => {
+    jest.mocked(FileSystem.createDownloadResumable).mockReset();
+    installationAuthorization.mockReset();
+    installationAuthorization.mockResolvedValue({});
+  });
+
+  function stubTask() {
+    const downloadAsync = jest.fn(async () => ({ uri: "file:///cache/a.apk" }));
+    const resumeAsync = jest.fn(async () => ({ uri: "file:///cache/a.apk" }));
+    const pauseAsync = jest.fn(async () => undefined);
+    jest
+      .mocked(FileSystem.createDownloadResumable)
+      .mockReturnValue({ downloadAsync, resumeAsync, pauseAsync } as never);
+    return { downloadAsync, resumeAsync, pauseAsync };
+  }
+
+  it("sends the installation credential so a canary build can actually be downloaded", async () => {
+    installationAuthorization.mockResolvedValue({
+      "X-Installation-ID": "inst_1",
+      Authorization: "Installation icred_abc",
+    });
+    const { downloadAsync } = stubTask();
+
+    const task = createExpoApkDownloadDeps().createDownload({
+      url: "https://api.example.com/v1/public/releases/rel_1/download",
+      fileUri: "file:///cache/a.apk",
+      resumeFrom: null,
+      onProgress: () => undefined,
+    });
+    await task.start();
+
+    const [, , options] = jest.mocked(FileSystem.createDownloadResumable).mock
+      .calls[0] as [string, string, { headers?: Record<string, string> }];
+    expect(options.headers).toEqual({
+      "X-Installation-ID": "inst_1",
+      Authorization: "Installation icred_abc",
+    });
+    expect(downloadAsync).toHaveBeenCalled();
+  });
+
+  it("still downloads an active build when the installation is not registered yet", async () => {
+    const { downloadAsync } = stubTask();
+
+    const task = createExpoApkDownloadDeps().createDownload({
+      url: "https://api.example.com/v1/public/releases/rel_1/download",
+      fileUri: "file:///cache/a.apk",
+      resumeFrom: null,
+      onProgress: () => undefined,
+    });
+    await task.start();
+
+    const [, , options] = jest.mocked(FileSystem.createDownloadResumable).mock
+      .calls[0] as [string, string, { headers?: Record<string, string> }];
+    expect(options.headers).toEqual({});
+    expect(downloadAsync).toHaveBeenCalled();
+  });
+
+  it("resumes from the byte offset and still carries the credential", async () => {
+    installationAuthorization.mockResolvedValue({
+      "X-Installation-ID": "inst_1",
+      Authorization: "Installation icred_abc",
+    });
+    const { resumeAsync, downloadAsync } = stubTask();
+
+    const task = createExpoApkDownloadDeps().createDownload({
+      url: "https://api.example.com/v1/public/releases/rel_1/download",
+      fileUri: "file:///cache/a.apk",
+      resumeFrom: 4096,
+      onProgress: () => undefined,
+    });
+    await task.start();
+
+    expect(resumeAsync).toHaveBeenCalled();
+    expect(downloadAsync).not.toHaveBeenCalled();
+    const call = jest.mocked(FileSystem.createDownloadResumable).mock
+      .calls[0] as unknown as unknown[];
+    expect(call[4]).toBe("4096");
+  });
+
+  // 任务在 start 里才建（凭证是异步读的）：还没开始就被叫停不能炸
+  it("tolerates a pause before the download ever started", async () => {
+    stubTask();
+    const task = createExpoApkDownloadDeps().createDownload({
+      url: "https://api.example.com/v1/public/releases/rel_1/download",
+      fileUri: "file:///cache/a.apk",
+      resumeFrom: null,
+      onProgress: () => undefined,
+    });
+    await expect(task.pause()).resolves.toBeUndefined();
+    expect(FileSystem.createDownloadResumable).not.toHaveBeenCalled();
   });
 });

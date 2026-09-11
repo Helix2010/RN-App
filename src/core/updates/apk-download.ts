@@ -3,6 +3,7 @@ import { bytesToHex } from "@noble/hashes/utils.js";
 import * as FileSystem from "expo-file-system/legacy";
 import * as IntentLauncher from "expo-intent-launcher";
 import { AppState } from "react-native";
+import { installationAuthorization } from "../device/installation-service";
 import {
   ApkDownloadManager,
   ApkIntegrityError,
@@ -44,18 +45,28 @@ export function createExpoApkDownloadDeps(): ApkDownloadDeps {
   return {
     directory,
     createDownload: ({ url, fileUri, resumeFrom, onProgress }) => {
-      const task = FileSystem.createDownloadResumable(
-        url,
-        fileUri,
-        {},
-        ({ totalBytesWritten, totalBytesExpectedToWrite }) =>
-          onProgress(totalBytesWritten, totalBytesExpectedToWrite),
-        resumeFrom === null ? undefined : String(resumeFrom),
-      );
+      // 下载要带安装身份：灰度包只对名单里的安装可见，匿名地拉它是 404。
+      // 凭证要到运行时才读得到（钥匙串），所以任务在 start 里才建；没注册过就
+      // 不带，正式包照样下得动（设计 canary-release-allowlist-2026-09-11 §3.4）
+      let task: FileSystem.DownloadResumable | null = null;
       return {
-        start: () =>
-          resumeFrom === null ? task.downloadAsync() : task.resumeAsync(),
-        pause: () => task.pauseAsync(),
+        start: async () => {
+          task = FileSystem.createDownloadResumable(
+            url,
+            fileUri,
+            { headers: await installationAuthorization() },
+            ({ totalBytesWritten, totalBytesExpectedToWrite }) =>
+              onProgress(totalBytesWritten, totalBytesExpectedToWrite),
+            resumeFrom === null ? undefined : String(resumeFrom),
+          );
+          return resumeFrom === null
+            ? task.downloadAsync()
+            : task.resumeAsync();
+        },
+        // 还没 start 就被叫停：没有任务可暂停，什么都不做
+        pause: async () => {
+          await task?.pauseAsync();
+        },
       };
     },
     fileInfo: async (uri) => {
