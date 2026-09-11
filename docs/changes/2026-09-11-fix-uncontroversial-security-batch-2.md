@@ -36,9 +36,36 @@
 - `scripts/lib/android-release-identity.js`：新增 `ALLOWED_PERMISSIONS`（34 条，基线取自已上线的 anyfun 1.3.7 (33)，逐条 `aapt dump badging` 核对）、`DIRECT_ONLY_PERMISSIONS`（`REQUEST_INSTALL_PACKAGES`，只有直发渠道能有）、`allowedPermissionsFor(tenant)`（额外放行本租户的 `<package>.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`）。禁用列表保留，报错更直白。
   - 测试夹具里那条 `uses-permission-sdk-23: ACCESS_MEDIA_LOCATION` 是当初为了测 sdk-23 解析编出来的，两个真实 APK（1.2.11、1.3.7）都没有——允许列表正确地把它拦了下来，用例改成断言"它应该被拒"。
 
+## 追加：calldata 语义解码与补齐的费率表（N22 的无争议部分）
+
+守卫此前只看 chainId / to / 手续费，对 `data` 里写着什么一无所知——"把全部余额的
+支配权交给某个地址"和"转 1 块钱"在签名前长得一模一样（`transaction-guard.ts` 全文
+91 行，`grep selector\|spender\|decode` 零命中）。
+
+- 新增 `src/core/wallet/signer/calldata.ts`：`describeCalldata()` 用 ethers `Interface`
+  解出 `approve` / `increaseAllowance` / `permit` / `setApprovalForAll` / `transfer` /
+  `transferFrom`，给出 spender（或收款人）、金额与"是否无限额度"。
+  - **`permit` 的 spender 在第 2 个参数位**，`approve` 在第 1 个。取错位置会在确认
+    界面上显示成钱包自己的地址，看起来完全正常——专门有一条用例钉住它。
+  - "无限"按 `>= 2^255-1` 判定：有些前端用 2^255-1，链上效果与 2^256-1 一样。
+  - `grantsAllowance()` 把"交出支配权"和"转钱"分开，`setApprovalForAll(false)` 是撤销
+    不算授权。
+- `assertSubmittable` 现在会拦 `impossibleIntentReason()` 认定的组合：把额度授权给
+  零地址（撤销应当是把额度设成 0）、转账到零地址（代币被销毁）。只列"任何正常流程
+  都不会产生、且签下去救不回来"的情况，**不做策略判断**。
+- **认不出来不拦**。解不开、不在词表里、参数截断，一律返回 `null` 放行——把"看不懂"
+  变成拒绝就是拒绝服务。评审 §12.2 那条"真实资金档未知 calldata 默认拒绝"会改变现有
+  流程的可用性，是待决策项，不在这里。
+- 费率表补上 `monad` (143)：评审记的是"费率表仅 4 条链"，第 5 条链此前静默退回
+  10000 Gwei 的通用红线。新增的用例用 `Record<ChainId, true>` 枚举全部链，往联合类型里
+  加链却忘了给红线会直接变成**类型错误**，而不是一条悄悄没有保护的链。
+
+仍未做（需要决策或原生）：把解码结果显示在每个确认层上、spender 白名单、未知
+calldata 在真实资金档默认拒绝、`signTypedData` 的策略。
+
 ## 验证与发布
 
-- **passed** — `pnpm check` 全绿，130 套 / 953 用例（+1 套 +12 用例）。
+- **passed** — `pnpm check` 全绿，131 套 / 968 用例（+2 套 +27 用例）。
 - **passed** — `pnpm android:verify artifacts/anyfun-1.3.7-build33-release.apk anyfun`：已上线产物的 34 条权限全部在允许列表上，门禁通过。
 - **not run** — 模拟器/真机。合约钉住的失败路径没有在真机上走过（需要一个会换地址的平台环境）。
 - 无原生变更，可走 OTA。

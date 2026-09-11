@@ -1,4 +1,5 @@
 import { getAddress } from "ethers";
+import { describeCalldata, impossibleIntentReason } from "./calldata";
 import type { EvmTransactionRequest } from "./types";
 
 /**
@@ -34,6 +35,7 @@ const GWEI = 1_000_000_000n;
 const MAX_FEE_PER_GAS_BY_CHAIN: Record<number, bigint> = {
   1: 2_000n * GWEI,
   56: 200n * GWEI,
+  143: 500n * GWEI,
   8453: 100n * GWEI,
   11155420: 100n * GWEI,
 };
@@ -58,6 +60,10 @@ export function assertSubmittable(transaction: EvmTransactionRequest): void {
   }
   if (transaction.value === undefined && !transaction.data)
     throw new UnsignableTransactionError("既没有转账金额也没有调用数据");
+  // 解得开的 calldata 里那些"任何正常流程都不会产生、且签下去救不回来"的组合
+  // （安全评审 N22）。解不开不拦——看不懂不等于危险，把它变成拒绝就是拒绝服务。
+  const impossible = impossibleIntentReason(describeCalldata(transaction.data));
+  if (impossible) throw new UnsignableTransactionError(impossible);
 }
 
 /**
