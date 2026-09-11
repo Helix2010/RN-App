@@ -42,6 +42,11 @@ jobs:
     timeout-minutes: 45
     env:
       TENANT: anyfun
+      # 依赖校验开关（安全评审 N28）。这个 job 的 runner 每次都是冷的，正是清单
+      # 生成时对齐的那种环境。清单必须与依赖同步：改了依赖就要
+      # `pnpm android:verification-metadata anyfun` 重新生成，否则这一步会失败，
+      # 报的是"某个坐标不在清单里"。这是预期行为，不要靠关掉开关绕过去。
+      GRADLE_DEPENDENCY_VERIFICATION: "1"
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
