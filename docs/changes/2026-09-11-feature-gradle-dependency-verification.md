@@ -53,3 +53,22 @@ Gradle 的依赖校验没有 lenient 档：文件在就强制执行，清单里�
      修法不是在文档里写一句"记得用干净缓存"——`--write-verification-metadata` 现在自己建一个临时 `GRADLE_USER_HOME`，生成完删掉。代价是重新生成要把依赖整套下一遍（约 1 GB / 十几分钟），但这是个低频操作，而正确性没有折中余地。
 - **passed** — 冷缓存重新生成：**1313** 个组件（暖缓存那次 1309，多出来的正是 `guava-parent` 等只在原始文件被读时才会记下的条目）。
 - **passed** — 用一个**全新的**冷缓存 + `GRADLE_DEPENDENCY_VERIFICATION=1` 跑真实 `assembleRelease`：`BUILD SUCCESSFUL`，0 条 `Dependency verification failed`。这是这个开关可以在 CI 上打开的凭据。
+
+## 追加：CI 首次实跑的结果，以及它暴露的一个缺口（2026-09-11）
+
+开关打开后 `android-release-gate` 的第一次真正执行：run `34599611444`，12:37:58 → 13:02:02，**success**。runner 是冷的（日志里现下 Gradle 9.3.1、`Starting a Gradle Daemon`），所以每一个依赖都是新下载的，全部经过比对。0 条 `Dependency verification failed`。在此之前的两次红都停在 `verify` 阶段，门禁被 skip，跟依赖校验无关。
+
+**但这次运行也暴露了一件事：从日志里根本证明不了校验发生过。** Gradle 的依赖校验成功时一个字都不打——既不说"校验已开启"，也不说校验了多少个。于是「清单没装进去」和「装进去且全部通过」在 CI 上长得一模一样，都是绿的。插件万一因为某个原因没装上（开关拼错、源文件被删、prebuild 的 mod 顺序变了），没有任何人会发现，而所有人都以为原生依赖已经被校验了。
+
+这正是这批工作里已经踩过两次的同一个坑：`pnpm audit` 跑不起来却静默通过、syft 安静输出一份 0 组件的合法 SBOM。**一个不声不响没跑的安全检查比没有这项检查更坏，因为它让人以为已经查过了。**
+
+所以补一条正向证据：
+
+- `plugins/with-gradle-dependency-verification.js` 新增纯函数 `enforcementProblem({ installed, components, floor })`——开关、清单路径、"到底有没有在强制"本来就是同一件事，放在同一个文件里。
+- `scripts/build-android-release.mjs` 在 prebuild 之后、`assembleRelease` 之前调它：开关开着时，工程里必须有清单且组件数不低于下限，否则当场失败；通过则打印 `Gradle dependency verification: enforcing 1313 pinned components`。CI 日志从此带着这行。
+- 组件计数与 `--write-verification-metadata` 那条共用同一个 `countPinnedComponents`。
+
+### 验证
+
+- **passed** — `enforcementProblem` 三条用例：没装清单 / 清单被截断 / 完整清单。
+- **passed** — 真实 prebuild 端到端：开关打开跑 `expo prebuild`，`android/gradle/verification-metadata.xml` 落地 1313 条；开关关掉再跑一次，残留被删干净。

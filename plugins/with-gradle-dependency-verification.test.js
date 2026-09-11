@@ -11,6 +11,7 @@ const { tmpdir } = require("node:os");
 const { join } = require("node:path");
 const {
   applyVerificationAction,
+  enforcementProblem,
   verificationAction,
   verificationRequested,
 } = require("./with-gradle-dependency-verification");
@@ -102,5 +103,30 @@ describe("gradle dependency verification plugin", () => {
         ),
       ).not.toThrow();
     });
+  });
+});
+
+// CI 是绿的并不说明这条检查跑过：Gradle 的依赖校验成功时一个字都不打。
+// 这组用例钉住的是「构建前必须拿到正向证据」，而不是「构建没报错」。
+describe("proving the verification actually happens", () => {
+  it("refuses to build when prebuild installed no manifest", () => {
+    const problem = enforcementProblem({
+      installed: false,
+      components: 0,
+      floor: 1000,
+    });
+    expect(problem).toMatch(/without checking a single one/);
+  });
+
+  it("refuses a truncated manifest instead of enforcing a handful of components", () => {
+    expect(
+      enforcementProblem({ installed: true, components: 12, floor: 1000 }),
+    ).toMatch(/pins only 12 components/);
+  });
+
+  it("says nothing is wrong when a full manifest is in place", () => {
+    expect(
+      enforcementProblem({ installed: true, components: 1313, floor: 1000 }),
+    ).toBeNull();
   });
 });

@@ -15,6 +15,11 @@ import {
   verifyReleaseApk,
 } from "./lib/android-release-identity.js";
 import { missingReleaseSigningEnv } from "../plugins/with-release-signing.js";
+import {
+  TARGET_RELATIVE_PATH as VERIFICATION_METADATA_PATH,
+  enforcementProblem,
+  verificationRequested,
+} from "../plugins/with-gradle-dependency-verification.js";
 
 const projectRoot = process.cwd();
 
@@ -40,6 +45,10 @@ const MACHINE_ENV_KEYS = [
  * 2026-09-11 的基线是 1309。
  */
 const MIN_VERIFIED_COMPONENTS = 1000;
+
+/** 清单里钉住的组件条数。 */
+const countPinnedComponents = (path) =>
+  (readFileSync(path, "utf8").match(/<component /g) ?? []).length;
 
 const envRoot =
   process.env.RN_ENV_ROOT && process.env.JEST_WORKER_ID
@@ -192,6 +201,24 @@ const config = JSON.parse(
   run("pnpm", ["exec", "expo", "config", "--json"], { capture: true }),
 );
 run("pnpm", ["exec", "expo", "prebuild", "--platform", "android", "--clean"]);
+
+// 开关开着时，prebuild 之后、构建之前留下一条"校验确实会发生"的正向证据。
+// 理由见 enforcementProblem 的注释：这条检查成功时是静默的，绿色本身不说明它跑过。
+if (!writingVerificationMetadata && verificationRequested(env)) {
+  const installed = resolve(projectRoot, "android", VERIFICATION_METADATA_PATH);
+  const present = existsSync(installed);
+  const components = present ? countPinnedComponents(installed) : 0;
+  const problem = enforcementProblem({
+    installed: present,
+    components,
+    floor: MIN_VERIFIED_COMPONENTS,
+  });
+  if (problem) throw new Error(problem);
+  console.log(
+    `Gradle dependency verification: enforcing ${components} pinned components`,
+  );
+}
+
 run(
   "./gradlew",
   writingVerificationMetadata
@@ -208,9 +235,8 @@ if (writingVerificationMetadata) {
     throw new Error(
       "Gradle did not write android/gradle/verification-metadata.xml",
     );
-  const contents = readFileSync(generated, "utf8");
   // 一份残缺的清单比没有更坏：它会被强制执行，然后在别人手里炸成"依赖校验失败"
-  const components = (contents.match(/<component /g) ?? []).length;
+  const components = countPinnedComponents(generated);
   if (components < MIN_VERIFIED_COMPONENTS)
     throw new Error(
       `verification-metadata.xml only lists ${components} components (floor ${MIN_VERIFIED_COMPONENTS}); the build resolved less than a full release does`,

@@ -61,6 +61,29 @@ function verificationAction({ requested, sourceExists }) {
   return { kind: "install" };
 }
 
+/**
+ * 开关开着时，构建前检查"校验真的会发生"。
+ *
+ * Gradle 的依赖校验**成功时完全静默**——日志里既不说校验已开启，也不说校验了多少个。
+ * 于是「清单没装进去」和「装进去且全部通过」在 CI 上长得一模一样：都是绿的。一个
+ * 不声不响没跑的安全检查比没有这项检查更坏，因为它让人以为已经查过了。
+ *
+ * 返回 `null` 表示确实在强制执行；返回字符串是要抛出去的原因。
+ */
+function enforcementProblem({ installed, components, floor }) {
+  if (!installed)
+    return (
+      `GRADLE_DEPENDENCY_VERIFICATION is on but prebuild left no ${TARGET_RELATIVE_PATH} ` +
+      `in android/; Gradle would resolve every dependency without checking a single one`
+    );
+  if (components < floor)
+    return (
+      `${TARGET_RELATIVE_PATH} pins only ${components} components (floor ${floor}); ` +
+      `a truncated manifest enforces almost nothing`
+    );
+  return null;
+}
+
 function applyVerificationAction(action, { source, target }) {
   if (action.kind === "fail") throw new Error(action.message);
   if (action.kind === "remove") {
@@ -96,5 +119,6 @@ module.exports = withGradleDependencyVerification;
 module.exports.SOURCE_RELATIVE_PATH = SOURCE_RELATIVE_PATH;
 module.exports.TARGET_RELATIVE_PATH = TARGET_RELATIVE_PATH;
 module.exports.applyVerificationAction = applyVerificationAction;
+module.exports.enforcementProblem = enforcementProblem;
 module.exports.verificationAction = verificationAction;
 module.exports.verificationRequested = verificationRequested;

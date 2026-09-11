@@ -36,7 +36,8 @@ GOOGLE_SERVICES_JSON=/path/to/RN-App/secrets/<slug>/google-services.json
 1. 创建 `tenants/<slug>/tenant.json`。
 2. 为该租户准备独立品牌资源：`assets/tenants/<slug>/`，并在 `tenant.json.icon` 中逐项指定文件名；不要复用其他租户的包名、签名或品牌资产。
 3. 确认 API 域名指向对应租户，生产环境必须使用 HTTPS。
-4. 运行配置检查：
+4. 为该租户生成一把**独立**的 OTA 签名密钥并装进它自己的服务端（§3.2.2）。**每租户一把、每环境一把**，不得复用：密钥按租户存在服务端 `app_configs` 的 `ota.signing` 里，每个租户的包里编的是它自己那张证书；共用一把就意味着任何一个租户（或 staging）泄露，所有租户的 OTA 真实性一起失效。staging 和生产也各一把——staging 的私钥必然更多人碰得到。
+5. 运行配置检查：
 
 ```bash
 pnpm config:check
@@ -177,6 +178,22 @@ pnpm sbom --tenant <slug> --apk artifacts/<slug>-<version>-build<code>-release.a
 5. 发布后验证：用装了新包的设备拉一次 OTA，确认更新能装上（能装上就说明验签通过）。**故意用错的证书再验一次**——那次必须失败并停在内置 bundle，否则说明验签根本没生效。
 
 在密钥装进服务端之前，OTA 仍然只有完整性（bootstrap 下发的 sha256）而没有真实性，这一条是评审 §12.1 未关闭的 P0 门禁。
+
+**这套仪式每个租户都要走一遍，每个环境也要走一遍**（见 §2 第 4 步）。密钥是按租户存的，证书是按租户编进包的，共用一把 = 任何一处泄露就打穿全部。
+
+#### 轮换（私钥泄露、到期前、保管人交接）
+
+```bash
+# 1. 先看线上当前版本号
+curl -sS https://<租户域名>/v1/admin/ota/signing-key -H "x-admin-key: $ADMIN_API_KEY"
+# 2. 用那个 version 作为 --expected-version 生成新密钥（旧目录先整个移走，脚本拒绝覆盖）
+pnpm ota:keygen --tenant <slug> --expected-version <线上 version> --out /secure/keys/<slug>-ota-2 --yes
+# 3. PUT 进去（请求体已经带好 expectedVersion，不用手改 JSON）、shred、销毁旧私钥
+```
+
+`expectedVersion` 是服务端的乐观锁：不等于线上当前 `version` 就拒绝写入。两个人同时换密钥时，后一个必须失败而不是悄悄盖掉——被盖掉的那把可能正是刚编进原生包的那张证书对应的私钥。
+
+**轮换的时机不自由**：已经装在用户手机上、内嵌旧证书的原生包只认编进包里的那张证书，OTA 换不了自己的证书。所以换掉的那一刻，旧版设备就再也验不过任何 OTA，直到它们升到带新证书的原生版本。只有两种安全时机：还没有任何原生包带过证书（此时零成本），或者你已经准备好立刻发带新证书的原生版本并接受这段空窗。
 
 ### 3.2.3 Gradle 依赖校验（安全评审 N28）
 
