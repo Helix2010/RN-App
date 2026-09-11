@@ -172,7 +172,10 @@ function TabButton({
       accessibilityRole="tab"
       accessibilityState={{ selected }}
       accessibilityLabel={label}
-      pressStyle={{ opacity: 0.78 }}
+      // backgroundColor 必须一起钉住：主题把 Button 的 backgroundPress 映射到
+      // surfaceVariant，只写 opacity 的话按下时那块灰底照样画出来——页签是方角、
+      // 占满整格，看起来就是凭空出现一个灰方块。按压反馈只让图标与文字变淡。
+      pressStyle={{ opacity: 0.5, backgroundColor: "$surface" }}
     >
       <Stack alignItems="center" gap="$1">
         <AppIcon
