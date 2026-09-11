@@ -1,6 +1,6 @@
 # Bugfix: predict-featured-skeleton
 
-状态：Implemented
+状态：Shipped（OTA rev 1 已发布）
 
 ## 用户场景与现状证据
 
@@ -9,7 +9,7 @@
   1. 策展没回来时 `FeaturedSection` 整块 `return null`，数据到了从上方插进来，把下面的列表整体推下去；
   2. `SnapCarousel` 的 `fullWidth` 卡宽要等 `onLayout` 才知道，首帧按默认 `itemWidth={236}` 画，随后撑满，卡片先窄一下再变宽；
   3. `FeaturedCard` 自己再量一次卡宽算 16:9 图高，量到之前用 180 兜底，量到后又改一次高度。
-  首页"热门预测"虽然已有骨架，但骨架和内容是两个不同的 `SnapCarousel` 实例，换内容时重新挂载、重新测宽，成因 2 照样发生。
+     首页"热门预测"虽然已有骨架，但骨架和内容是两个不同的 `SnapCarousel` 实例，换内容时重新挂载、重新测宽，成因 2 照样发生。
 - 代码调用链：`market-list-screen.tsx`（`useCuratedEvents` → `curationZone` → `FeaturedSection`）→ `curation-sections.tsx` → `design-system/components.tsx` 的 `SnapCarousel` / `SnapCarouselItem`；图片走 `predict/ui/shared.tsx` 的 `EventImage`。
 - 非目标：榜单（`RankBoards`）与周期市场区不补骨架——它们在折叠线以下，补了只是把首屏铺成一片灰块，弹入看不见；个人中心、安全中心、钱包列表也不补，那几处行高固定、值位已有 `—`，本地数据几毫秒就回来，骨架闪一帧反而更糟。一级标签行同理留在原样。
 
@@ -46,3 +46,25 @@
 - iOS / Android：Android 模拟器实测（见下）；iOS 未验证（无原生改动，且本仓库当前只出 Android 直装包）。
 - 灰度指标与停止条件：OTA 发布后看预测页签崩溃与白屏；异常即回滚到上一版 OTA。
 - 回滚：发布上一份 OTA（`applyStrategy: immediate`），或撤销本次提交重出包。
+
+## 实际验证（2026-09-10）
+
+工作区当时有另一条会话的未提交改动，为了不把别人的半成品打进包里，本次构建与发包都在
+`git worktree`（干净检出 `33ec7f7`）里做，产物只含本提交及其祖先。
+
+- 门禁：在该干净检出上 `pnpm check` 全绿——format / lint / typecheck / 121 suites 857 tests / API 契约 / 构建档位 / i18n。
+- 生产签名 APK：`anyfun-1.3.0-build26-release.apk`，签名指纹与 `tenant.json` 的 `signerSha256` 一致（`1a5d9fb4…`），装到 rwa_test2（emulator-5556）。
+- 模拟器实测（把网络压到 edge + gprs 延时，让加载态停留足够长）：
+  - 精选位在策展回来前画同形骨架，卡片首帧就是满宽（不再先窄后宽），轮播页点已在；
+  - 逐像素比对加载态与内容态：区段标题顶边到轮播页点顶边都是 939px，**骨架换成卡片零跳版**（整段比内容态低 8px 是顶栏从钱包 chip 换成 Enable 按钮导致的，与本次改动无关）；
+  - 横滑到第二张，"无报价"的卡片与有报价的卡片等高，页点位置不变。
+- OTA 包：`ota-android-production.zip`（5,324,626 B，sha256 `98036d42…`），runtimeVersion 1.3.0，applyStrategy `immediate`，sourceCommitSha `33ec7f7b329d5e1ef3b25a3e41033a3a5eb40862`。
+- 发布：基线 `rel_4W0ZTVaCWwY2aZXIKLxu4Q`（android 1.3.0 / build 26 / runtime 1.3.0，active）之上
+  `ota_scREMNfSiGBd42eg1wj1vQ`，revision 1，updateId `81dcb339-2ea0-48d7-9bee-cca32b98061a`，
+  上传 PUT 200 → 登记 201（verified）→ 发布 201（active）。
+- 线上核对：`GET /v1/ota/manifest`（android / runtime 1.3.0 / production / 1.3.0 (26)）返回该 updateId，
+  ETag 带 `-immediate` 后缀，`metadata.sourceCommitSha` 与提交一致。
+- 到端验证：rn_smoke（emulator-5570，装的是线上 build 26 整包、没有本地 JS）重启后下载并应用该更新，
+  进预测页签能看到新的精选骨架——即只靠 OTA 也拿到了本次改动。
+
+未验证项：iOS（无原生改动，本仓库当前只出 Android 直装包）；深色模式与字体放大只靠令牌与 `minHeight` 保证，没有逐项截图。
