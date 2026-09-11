@@ -432,6 +432,19 @@ describe("KeystoreVault", () => {
     );
   });
 
+  it("cannot be fooled by metadata that contains the field separator", async () => {
+    const { vault, storage } = setup();
+    await vault.importMnemonic(PHRASE);
+    const file = await rawFile(storage);
+    const [entry] = file.entries as [RawEntry];
+    // 元数据编码若是简单拼接，把分隔符塞进字段就能凑出同一个认证串
+    entry.path = `${String(entry.path ?? "")}"|mnemonic|`;
+    await storage.setItem(VAULT_KEY, JSON.stringify(file));
+    await expect(
+      vault.withPrivateKey(ADDRESS, "sign", () => undefined),
+    ).rejects.toThrow("could not be decrypted");
+  });
+
   it("refuses a tampered kind or path on an authenticated entry", async () => {
     const { vault, storage } = setup();
     await vault.importMnemonic(PHRASE);

@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import QRCode from "react-native-qrcode-svg";
 import { useScreenProtect } from "../../../core/security/screen-protect";
 import { useFoundationRuntime } from "../../../app/runtime-context";
-import { copyToClipboard } from "../../../core/ui/copy-to-clipboard";
+import { useScrubbedClipboard } from "../../../core/ui/use-scrubbed-clipboard";
 import {
   AppIcon,
   Body,
@@ -44,9 +44,12 @@ export function WalletConnectSheet() {
     }
   }, [uri]);
 
+  // 配对 URI 里带着会话对称密钥：拿到它就能冒充本 App 与钱包通信，
+  // 和助记词一样不能一直躺在剪贴板里（安全评审 N23）
+  const clipboard = useScrubbedClipboard();
   const copy = async () => {
     if (!uri) return;
-    await copyToClipboard(uri, {
+    await clipboard.copy(uri, {
       success: t("walletconnect.copied"),
       failure: t("common.copyFailed"),
     });

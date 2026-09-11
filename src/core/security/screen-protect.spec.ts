@@ -5,6 +5,7 @@ import { PROTECTED_FLOWS, useScreenProtect } from "./screen-protect";
 jest.mock("expo-screen-capture", () => ({
   preventScreenCaptureAsync: jest.fn(async () => {}),
   allowScreenCaptureAsync: jest.fn(async () => {}),
+  enableAppSwitcherProtectionAsync: jest.fn(async () => {}),
 }));
 
 const prevent = ScreenCapture.preventScreenCaptureAsync as jest.MockedFunction<
@@ -46,6 +47,7 @@ describe("useScreenProtect", () => {
       "wallet-key-import",
       "wallet-pairing-qr",
       "wallet-sign-confirm",
+      "wallet-send-confirm",
     ]);
   });
 });

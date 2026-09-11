@@ -59,6 +59,35 @@ describe("SIWE message check", () => {
     ).toThrow(SiweMessageRejected);
   });
 
+  it("matches the server's port-less host against a client domain that has a port", () => {
+    // 服务端渲染消息时去掉端口，客户端的 domain 来自 URL.host 带端口；
+    // 开发 / 预发环境不统一就会把登录整个挡死
+    expect(() =>
+      assertSiweMessage(message({ domain: "10.0.2.2" }), {
+        ...expected,
+        domain: "10.0.2.2:3100",
+      }),
+    ).not.toThrow();
+  });
+
+  it("matches an IPv6 literal the way the server writes it", () => {
+    expect(() =>
+      assertSiweMessage(message({ domain: "::1" }), {
+        ...expected,
+        domain: "[::1]:3100",
+      }),
+    ).not.toThrow();
+  });
+
+  it("still refuses a different host even when ports are ignored", () => {
+    expect(() =>
+      assertSiweMessage(message({ domain: "evil.example.com" }), {
+        ...expected,
+        domain: "api.example.com:8443",
+      }),
+    ).toThrow(SiweMessageRejected);
+  });
+
   it("refuses a message bound to a different account", () => {
     expect(() =>
       assertSiweMessage(
@@ -71,6 +100,18 @@ describe("SIWE message check", () => {
   it("accepts the same account written in a different letter case", () => {
     expect(() =>
       assertSiweMessage(message({ address: ADDRESS.toLowerCase() }), expected),
+    ).not.toThrow();
+  });
+
+  it("refuses a message bound to a chain this session never approved", () => {
+    expect(() =>
+      assertSiweMessage(message(), { ...expected, chainIds: [1, 8453] }),
+    ).toThrow(/is not one of the chains this session approved/);
+  });
+
+  it("accepts a message on one of the approved chains", () => {
+    expect(() =>
+      assertSiweMessage(message(), { ...expected, chainIds: [1, 56] }),
     ).not.toThrow();
   });
 

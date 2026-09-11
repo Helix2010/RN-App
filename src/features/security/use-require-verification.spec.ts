@@ -159,22 +159,31 @@ describe("requireVerification call sites", () => {
       for (const file of sourceFiles(root)) {
         const source = readFileSync(file, "utf8");
         if (!source.includes("useRequireVerification")) continue;
-        const binding =
-          /const\s+([A-Za-z_$][\w$]*)\s*=\s*useRequireVerification\(\)/.exec(
-            source,
-          );
-        if (!binding) continue;
-        const name = binding[1] as string;
-        const call = new RegExp(`\\b${name}\\(`, "g");
-        for (
-          let match = call.exec(source);
-          match !== null;
-          match = call.exec(source)
-        ) {
-          scanned++;
-          const argument = firstArgument(source, match.index + match[0].length);
-          if (argument === null || !argument.includes("usdValue"))
-            offenders.push(`${file}: ${name}(${argument ?? ""})`);
+        // 一个文件里可能有多个绑定，全都要扫
+        const bindings = [
+          ...source.matchAll(
+            /const\s+([A-Za-z_$][\w$]*)\s*=\s*useRequireVerification\(\)/g,
+          ),
+        ].map((match) => match[1] as string);
+        for (const name of new Set(bindings)) {
+          const call = new RegExp(`\\b${name}\\(`, "g");
+          for (
+            let match = call.exec(source);
+            match !== null;
+            match = call.exec(source)
+          ) {
+            scanned++;
+            const argument = firstArgument(
+              source,
+              match.index + match[0].length,
+            );
+            // `usdValue: undefined` 和不传是同一个效果：都会被判成"非大额"
+            const missing =
+              argument === null ||
+              !argument.includes("usdValue") ||
+              /usdValue\s*:\s*(undefined|void 0)/.test(argument);
+            if (missing) offenders.push(`${file}: ${name}(${argument ?? ""})`);
+          }
         }
       }
     }

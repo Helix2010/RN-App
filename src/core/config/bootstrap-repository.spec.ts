@@ -169,6 +169,42 @@ describe("loadBootstrap", () => {
     ).toBe(false);
   });
 
+  it("does not fall back to a cached package from another tenant either", async () => {
+    const Crypto = jest.requireMock("expo-crypto") as {
+      digestStringAsync: jest.Mock;
+    };
+    const config = createFallbackConfig("zh-CN");
+    const foreign = JSON.stringify({
+      schemaVersion: 1,
+      tenantId: "999999999",
+      languageCode: "zh-CN",
+      version: "1",
+      generatedAt: "2026-08-26T00:00:00.000Z",
+      messages: { "app.name": "别家的名称" },
+    });
+    config.localization.resource = {
+      version: "2",
+      objectKey: "localization/test.json",
+      fileUrl: "/v1/mobile/languages/zh-CN/document?v=2",
+      sha256: "abc",
+      size: 10,
+      publishedAt: "2026-08-26T00:00:00.000Z",
+    };
+    getBootstrap.mockResolvedValue(config);
+    // 下载失败 → 走缓存回退；缓存里存的是别家租户的包
+    getLanguage.mockRejectedValue(new Error("offline"));
+    Crypto.digestStringAsync.mockResolvedValue("abc");
+    storage.getItem.mockImplementation(async (key: string) =>
+      key.endsWith(".tenant") ? "100000001" : foreign,
+    );
+
+    const snapshot = await loadBootstrap("zh-CN");
+
+    expect(snapshot.config.localization.messages["app.name"]).not.toBe(
+      "别家的名称",
+    );
+  });
+
   it("pins the tenant of the first language package it accepts", async () => {
     const Crypto = jest.requireMock("expo-crypto") as {
       digestStringAsync: jest.Mock;

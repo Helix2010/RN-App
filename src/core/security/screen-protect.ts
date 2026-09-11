@@ -20,6 +20,8 @@ export const PROTECTED_FLOWS = [
   "wallet-pairing-qr",
   /** 登录签名确认：展示待签消息与账户 */
   "wallet-sign-confirm",
+  /** 转出确认：完整收款地址与金额，最后一道可见防线 */
+  "wallet-send-confirm",
 ] as const;
 
 type ProtectedFlow = (typeof PROTECTED_FLOWS)[number];
@@ -34,6 +36,21 @@ type ProtectedFlow = (typeof PROTECTED_FLOWS)[number];
  * 实际上截得了，这个差别必须让他知道（安全评审 N24）。
  */
 export type ScreenProtectStatus = "pending" | "on" | "unavailable";
+
+/**
+ * 应用切换器里的隐私遮罩。系统在切后台时会给最近任务列表截一张缩略图，
+ * 那张图里可能正好是助记词或收款地址；`FLAG_SECURE` 只管当前窗口，管不到它。
+ * 启动时开一次，全程有效（安全评审 N24）。
+ */
+export async function enableAppSwitcherProtection(): Promise<boolean> {
+  try {
+    await ScreenCapture.enableAppSwitcherProtectionAsync();
+    return true;
+  } catch {
+    // 平台不支持（部分 Android 版本）时不影响任何功能，如实返回 false
+    return false;
+  }
+}
 
 /**
  * 进入页面时加保护，离开时释放。

@@ -1,11 +1,10 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { fill } from "../../../core/i18n/format";
 import { useQueryClient } from "@tanstack/react-query";
-import * as Clipboard from "expo-clipboard";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
-import { copyToClipboard } from "../../../core/ui/copy-to-clipboard";
+import { useScrubbedClipboard } from "../../../core/ui/use-scrubbed-clipboard";
 import { useGateways } from "../../../core/gateways/gateway-context";
 import { useScreenProtect } from "../../../core/security/screen-protect";
 import {
@@ -33,8 +32,6 @@ import { takePendingPhrase } from "../model/pending-reveal";
 import { useWalletAccounts } from "../hooks/use-wallet";
 
 const WORD_COUNT = 12;
-/** 剪贴板里的助记词最多留这么久 */
-const CLIPBOARD_TTL_MS = 60_000;
 
 /** L-04 备份助记词：抄写 → 验证（乱序选词 3 个）→ 完成；三段进度；可"稍后备份"。 */
 export function BackupScreen({
@@ -58,6 +55,8 @@ export function BackupScreen({
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [wrong, setWrong] = useState(false);
   const [attempts, setAttempts] = useState(0);
+  /** 答错满三次就换一套题；不换的话退回去再进来还是原来那三个位置，等于可以穷举 */
+  const [quizRound, setQuizRound] = useState(0);
   // 刚创建的钱包把助记词经模块级一次性通道交过来（不进导航参数，安全评审 N36），
   // 避免紧接着再弹一次身份验证；从设置页进来则必须现场解封（会弹系统验证）。
   const [phrase, setPhrase] = useState<string | null>(() =>
@@ -81,41 +80,24 @@ export function BackupScreen({
     };
   }, [address, phrase, t, wallet]);
   const words = useMemo(() => (phrase ? phrase.split(" ") : []), [phrase]);
-  // 每次进入都重新随机：位置和干扰词固定时，旁观者看一次就知道下次考哪几个
+  // 每次进入都重新随机：位置和干扰词固定时，旁观者看一次就知道下次考哪几个。
+  // `quizRound` 变了也重出题：连续错满退回抄写页之后不能还是原来那套。
   const quiz = useMemo(
     () => buildQuiz(words, { targetCount: 3, decoyCount: 3 }),
-    [words],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- quizRound 是"重新出题"的信号，不参与计算
+    [words, quizRound],
   );
   const targets = quiz.targets;
   const options = quiz.choices;
 
-  const clipboardTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(
-    () => () => {
-      if (clipboardTimer.current !== null) clearTimeout(clipboardTimer.current);
-    },
-    [],
-  );
+  // 助记词复制出去要按时抹掉，离开页面立刻抹（安全评审 N23）
+  const clipboard = useScrubbedClipboard();
   const copy = async () => {
     if (!phrase) return;
-    await copyToClipboard(phrase, {
+    await clipboard.copy(phrase, {
       success: t("backup.copied"),
       failure: t("common.copyFailed"),
     });
-    // 助记词不能一直躺在剪贴板里。清理前先确认里面还是它：用户这一分钟里
-    // 复制了别的东西的话，清掉的就是用户自己的内容（安全评审 N23）。
-    if (clipboardTimer.current !== null) clearTimeout(clipboardTimer.current);
-    clipboardTimer.current = setTimeout(() => {
-      clipboardTimer.current = null;
-      void Clipboard.getStringAsync()
-        .then((current) => {
-          if (current === phrase) return Clipboard.setStringAsync("");
-          return undefined;
-        })
-        .catch(() => {
-          // 读不到剪贴板（权限 / 平台限制）时不猜内容，宁可不清也不误删
-        });
-    }, CLIPBOARD_TTL_MS);
   };
   const { run: verify, pending: marking } = useAsyncAction(
     async () => {
@@ -133,6 +115,8 @@ export function BackupScreen({
           setAnswers({});
           setWrong(false);
           setStep(1);
+          // 换一套题：只归零计数的话，退回去再进来考的还是同样三个位置
+          setQuizRound((round) => round + 1);
           toast(t("backup.rereadAfterMisses"), "error");
         }
         return false;
@@ -210,26 +194,30 @@ export function BackupScreen({
                   </Body>
                 </Row>
               ) : null}
+              {/* 保护还没落地就先不画单词：先画出来再加 FLAG_SECURE，
+                  中间这一帧是可以被截走的（安全评审 N24） */}
               <Row flexWrap="wrap" gap="$2">
-                {words.map((word, index) => (
-                  <Row
-                    // 助记词可能重复（12 词里同一个词出现两次是合法的），键要带位置
-                    key={`${index}-${word}`}
-                    width="31%"
-                    alignItems="center"
-                    gap="$2"
-                    paddingHorizontal="$3"
-                    paddingVertical="$2.5"
-                    borderRadius="$3"
-                    backgroundColor="$surfaceVariant"
-                    testID={`backup-word-${index + 1}`}
-                  >
-                    <InlineText fontSize={12} color="$textMuted" width={18}>
-                      {index + 1}
-                    </InlineText>
-                    <InlineText fontWeight="700">{word}</InlineText>
-                  </Row>
-                ))}
+                {(screenProtect === "pending" ? [] : words).map(
+                  (word, index) => (
+                    <Row
+                      // 助记词可能重复（12 词里同一个词出现两次是合法的），键要带位置
+                      key={`${index}-${word}`}
+                      width="31%"
+                      alignItems="center"
+                      gap="$2"
+                      paddingHorizontal="$3"
+                      paddingVertical="$2.5"
+                      borderRadius="$3"
+                      backgroundColor="$surfaceVariant"
+                      testID={`backup-word-${index + 1}`}
+                    >
+                      <InlineText fontSize={12} color="$textMuted" width={18}>
+                        {index + 1}
+                      </InlineText>
+                      <InlineText fontWeight="700">{word}</InlineText>
+                    </Row>
+                  ),
+                )}
               </Row>
               <SecondaryButton
                 onPress={() => void copy()}

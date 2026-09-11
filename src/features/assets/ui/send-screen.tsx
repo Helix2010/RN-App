@@ -9,6 +9,7 @@ import {
   shortenAddress,
 } from "../../../core/i18n/format";
 import { useRef, useState } from "react";
+import { useScreenProtect } from "../../../core/security/screen-protect";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import {
@@ -169,6 +170,9 @@ function SendForm({
   const [verifying, setVerifying] = useState(false);
   const submitting = useRef(false);
   const confirm = useRef<SheetHandle>(null);
+  /** 确认层是否正在展示：它常驻挂载，防截屏要按展示状态开关（安全评审 N24） */
+  const [confirming, setConfirming] = useState(false);
+  useScreenProtect("wallet-send-confirm", confirming);
   const book = useRef<SheetHandle>(null);
   const picker = useRef<SheetHandle>(null);
   const [scanning, setScanning] = useState(false);
@@ -612,7 +616,10 @@ function SendForm({
           ) : null}
           <PrimaryButton
             disabled={!canSubmit}
-            onPress={() => confirm.current?.present()}
+            onPress={() => {
+              setConfirming(true);
+              confirm.current?.present();
+            }}
             testID="send-submit"
           >
             {fill(t("send.confirm"), {
@@ -740,6 +747,7 @@ function SendForm({
         title={t("send.confirmTitle")}
         closeLabel={t("common.close")}
         locked={send.isPending}
+        onDismiss={() => setConfirming(false)}
       >
         {selected && amount ? (
           <Stack gap="$3">

@@ -7,6 +7,7 @@ import { useGateways } from "../../../core/gateways/gateway-context";
 import { AppError } from "../../../core/network/app-error";
 import type { SignInChallenge } from "../api/gateway";
 import type { Session, WalletConnectorId } from "../model/session";
+import { evmChainIdOf } from "../../../core/wallet/config/wallet-runtime-config";
 import { assertSiweMessage } from "../model/siwe";
 import type { WalletAccount } from "../../wallet/model/wallet";
 import {
@@ -209,6 +210,7 @@ export function useWalletLogin(domain: string, signReason?: string) {
         domain,
         address: account.address,
         nonce: challenge.nonce,
+        chainIds: account.chains.map(evmChainIdOf),
       });
       const signature = await wallet.signMessage(
         account.address,

@@ -1,9 +1,11 @@
-import { Linking } from "react-native";
+import { Linking, Platform } from "react-native";
 import { pairingLinks, launchLinks } from "./wallet-deep-links";
 import {
   isWalletInstalled,
   openWalletOrFallback,
 } from "./walletconnect-client";
+
+jest.mock("expo-intent-launcher", () => ({ startActivityAsync: jest.fn() }));
 
 describe("wallet deep links", () => {
   it("uses the schemes the wallet vendors actually registered", () => {
@@ -63,6 +65,69 @@ describe("openWalletOrFallback", () => {
     );
     expect(canOpenURL).not.toHaveBeenCalled();
     expect(fallback).not.toHaveBeenCalled();
+  });
+
+  it("launches the wallet by explicit package on Android before any implicit intent", async () => {
+    const IntentLauncher = jest.requireMock("expo-intent-launcher") as {
+      startActivityAsync: jest.Mock;
+    };
+    const realOS = Platform.OS;
+    Object.defineProperty(Platform, "OS", {
+      value: "android",
+      configurable: true,
+    });
+    const openURL = jest.spyOn(Linking, "openURL").mockResolvedValue(undefined);
+    IntentLauncher.startActivityAsync.mockResolvedValue(undefined);
+    try {
+      await openWalletOrFallback(
+        {
+          uri: "wc:abc@2",
+          connector: "metamask",
+          deepLinks: pairingLinks("metamask"),
+        },
+        jest.fn(),
+      );
+      // 隐式 intent 由系统挑接收方，抢注同样 host 的应用能接走配对 URI
+      expect(IntentLauncher.startActivityAsync).toHaveBeenCalledWith(
+        "android.intent.action.VIEW",
+        expect.objectContaining({ packageName: "io.metamask" }),
+      );
+      expect(openURL).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(Platform, "OS", {
+        value: realOS,
+        configurable: true,
+      });
+    }
+  });
+
+  it("falls back to the implicit intent when the explicit one cannot start", async () => {
+    const IntentLauncher = jest.requireMock("expo-intent-launcher") as {
+      startActivityAsync: jest.Mock;
+    };
+    const realOS = Platform.OS;
+    Object.defineProperty(Platform, "OS", {
+      value: "android",
+      configurable: true,
+    });
+    const openURL = jest.spyOn(Linking, "openURL").mockResolvedValue(undefined);
+    IntentLauncher.startActivityAsync.mockRejectedValue(new Error("no app"));
+    try {
+      await openWalletOrFallback(
+        {
+          uri: "wc:abc@2",
+          connector: "metamask",
+          deepLinks: pairingLinks("metamask"),
+        },
+        jest.fn(),
+      );
+      expect(openURL).toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(Platform, "OS", {
+        value: realOS,
+        configurable: true,
+      });
+    }
   });
 
   it("tries the next scheme when a wallet has more than one app", async () => {

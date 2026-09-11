@@ -1,4 +1,4 @@
-import { act, cleanup, screen, waitFor } from "@testing-library/react-native";
+import { act, screen, waitFor } from "@testing-library/react-native";
 import { AppState } from "react-native";
 import * as LocalAuthentication from "expo-local-authentication";
 import { usePreferencesStore } from "../../core/preferences/preferences-store";
@@ -128,8 +128,9 @@ describe("AppLockGate", () => {
     await waitFor(() => expect(useAppLock.getState().enrolled).toBe(true));
     expect(screen.queryByTestId("app-lock-gate")).toBeNull();
   });
-  // 放在最后：这个用例把 AppState.addEventListener 换成替身，替身在位期间
-  // 挂载的组件不会真正注册监听器，排在它后面的用例会读到残留状态。
+  // 必须排在最后：这个用例把 AppState.addEventListener 换成替身，替身在位期间
+  // 挂载的 gate 不会注册真实监听器，而它触发的 zustand 更新会让 React 19 把
+  // 未 flush 完的 act 工作（AggregateError）抛进后面的用例里。
   it("locks the wallet keys the moment the app leaves the foreground", async () => {
     const lockKeys = jest.fn();
     const gateways = createTestGateways({ lockKeys });
@@ -141,16 +142,14 @@ describe("AppLockGate", () => {
       // 等挂载时的异步探测落地再动，否则它们会漏到下一个用例里执行
       await waitFor(() => expect(useAppLock.getState().enrolled).toBe(true));
       lockKeys.mockClear();
-      // RNTL 的 act 返回 Thenable；这里是同步回调，明确忽略返回值
-      void act(() => {
+      await act(async () => {
         appState.emit("background");
       });
       // 解封窗口是"用户在场"的凭据，人一离开就不成立（阶段 0c-2）
       expect(lockKeys).toHaveBeenCalled();
     } finally {
-      // 先卸载再撤掉替身：让 gate 的清理跑在替身还在的时候，
-      // 不把这次的监听器留到后面的用例里
-      void cleanup();
+      // 卸载交给 RNTL 的自动清理：在这里手动 cleanup 会让 React 19 把
+      // 尚未 flush 的 act 工作抛到下一个用例里（AggregateError）
       appState.restore();
     }
   });

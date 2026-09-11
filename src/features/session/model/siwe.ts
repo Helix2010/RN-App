@@ -20,6 +20,24 @@ export type SiweFields = {
   expirationTime: string | null;
 };
 
+/**
+ * 取出可比较的主机名。
+ *
+ * 服务端渲染消息时用的是**去掉端口**的 Host（`net.SplitHostPort`，见 RN-Server
+ * `normalizeHost`），而客户端手里的 `domain` 来自 `new URL(apiBaseUrl).host`，
+ * 带端口。生产域名没有端口，两边碰巧一致；开发 / 预发环境（`http://10.0.2.2:3100`）
+ * 一比就不等，登录会被这道检查直接挡死。所以比较前统一去掉端口，IPv6 字面量
+ * 再去掉方括号，和 Go 侧的输出对齐。
+ */
+function comparableHost(value: string): string {
+  const bracketed = /^\[([^\]]+)\](?::\d+)?$/.exec(value);
+  if (bracketed) return (bracketed[1] as string).toLowerCase();
+  // 只有恰好一个冒号才当作 host:port —— 裸 IPv6（`::1`）有多个冒号，
+  // Go 的 SplitHostPort 也解不开它，两边都原样保留
+  const single = /^([^:]+):\d+$/.exec(value);
+  return (single ? (single[1] as string) : value).toLowerCase();
+}
+
 export class SiweMessageRejected extends Error {
   constructor(reason: string) {
     super(`sign-in message rejected: ${reason}`);
@@ -66,11 +84,18 @@ export function parseSiweMessage(message: string): SiweFields | null {
  */
 export function assertSiweMessage(
   message: string,
-  expected: { domain: string; address: string; nonce: string; nowMs?: number },
+  expected: {
+    domain: string;
+    address: string;
+    nonce: string;
+    /** 本次会话批准的链（EIP-155 数字 id）；消息里的链必须在其中 */
+    chainIds?: number[];
+    nowMs?: number;
+  },
 ): SiweFields {
   const parsed = parseSiweMessage(message);
   if (!parsed) throw new SiweMessageRejected("not a valid EIP-4361 message");
-  if (parsed.domain !== expected.domain)
+  if (comparableHost(parsed.domain) !== comparableHost(expected.domain))
     throw new SiweMessageRejected(
       `domain ${parsed.domain} is not ${expected.domain}`,
     );
@@ -80,6 +105,16 @@ export function assertSiweMessage(
     );
   if (parsed.nonce !== expected.nonce)
     throw new SiweMessageRejected("nonce does not match the issued challenge");
+  // 消息把登录绑在某条链上。服务端给了一条本次会话没批准的链时，这张凭证
+  // 可能是替另一条链换的，不能替它签名（安全评审 N26）。
+  if (
+    expected.chainIds !== undefined &&
+    parsed.chainId !== null &&
+    !expected.chainIds.includes(parsed.chainId)
+  )
+    throw new SiweMessageRejected(
+      `chain ${parsed.chainId} is not one of the chains this session approved`,
+    );
   if (parsed.expirationTime !== null) {
     const expiresAt = Date.parse(parsed.expirationTime);
     if (Number.isNaN(expiresAt))

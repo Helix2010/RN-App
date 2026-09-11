@@ -75,6 +75,27 @@ export function launchLinks(connector: WalletConnectorId): string[] {
 }
 
 /**
+ * Android 上唤起钱包时要带的显式包名（安全评审 N13）。
+ *
+ * 隐式 `Intent.ACTION_VIEW` 由系统按 intent filter 选接收方，装了恶意应用的
+ * 机器上，它可以声明同样的 scheme / host 把配对 URI 接走。带上包名后目标只
+ * 可能是这个应用本身。包名与 `plugins/with-wallet-deep-links.js` 的 `<queries>`
+ * 声明一致 —— Android 11+ 要求先能"看见"这个包才允许显式启动它。
+ *
+ * OKX 有两个 App（交易所主 App 与独立 Web3 钱包），按顺序试。
+ */
+const WALLET_ANDROID_PACKAGES: Partial<Record<WalletConnectorId, string[]>> = {
+  metamask: ["io.metamask"],
+  okx: ["com.okinc.okex.gp", "com.okx.wallet"],
+  trust: ["com.wallet.crypto.trustapp"],
+};
+
+/** 这个钱包在 Android 上的候选包名；未知钱包返回空数组（退回隐式启动）。 */
+export function androidPackages(connector: WalletConnectorId): string[] {
+  return WALLET_ANDROID_PACKAGES[connector] ?? [];
+}
+
+/**
  * 用来探测"这个钱包装了没"，需要 AndroidManifest 的 queries 声明配合。
  *
  * 返回所有候选：OKX 的两个 App 装哪个都算装了，只探第一个会把只装了独立

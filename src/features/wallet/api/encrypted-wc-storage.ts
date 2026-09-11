@@ -89,6 +89,18 @@ export function createEncryptedWcStorage(
   const writeIndex = (keys: string[]): Promise<void> =>
     deps.storage.setItem(INDEX_KEY, JSON.stringify(keys));
 
+  /**
+   * 索引的读-改-写要排队。SDK 建会话时会并发写好几个键，不串行的话两次
+   * `setItem` 会各自读到同一份旧索引再各写回自己那份，后写的把先写的那个键
+   * 挤掉 —— 条目还在，但 `getKeys`/`getEntries` 再也看不到它，表现为会话丢失。
+   */
+  let indexQueue: Promise<unknown> = Promise.resolve();
+  const withIndex = <T>(task: () => Promise<T>): Promise<T> => {
+    const run = indexQueue.then(task, task);
+    indexQueue = run.catch(() => undefined);
+    return run;
+  };
+
   const decode = async <T>(raw: string): Promise<T | undefined> => {
     const bytes = fromBase64(raw);
     if (bytes.length <= 12) return undefined;
@@ -132,14 +144,18 @@ export function createEncryptedWcStorage(
       packed.set(nonce);
       packed.set(ciphertext, nonce.length);
       await deps.storage.setItem(STORAGE_PREFIX + key, toBase64(packed));
-      const keys = await readIndex();
-      if (!keys.includes(key)) await writeIndex([...keys, key]);
+      await withIndex(async () => {
+        const keys = await readIndex();
+        if (!keys.includes(key)) await writeIndex([...keys, key]);
+      });
     },
 
     removeItem: async (key) => {
       await deps.storage.removeItem(STORAGE_PREFIX + key);
-      const keys = await readIndex();
-      if (keys.includes(key)) await writeIndex(keys.filter((k) => k !== key));
+      await withIndex(async () => {
+        const keys = await readIndex();
+        if (keys.includes(key)) await writeIndex(keys.filter((k) => k !== key));
+      });
     },
 
     purgeLegacy: async (keys) => {

@@ -19,6 +19,7 @@ import { EmbeddedWalletGateway } from "../../features/wallet/api/embedded-wallet
 import { HttpWalletIndex } from "../../features/wallet/api/http-wallet-index";
 import {
   createWalletConnectConnector,
+  purgeLegacyWalletConnectStorage,
   openWalletOrFallback,
 } from "../../features/wallet/api/walletconnect-client";
 import {
@@ -63,6 +64,8 @@ function createGateways(storage: KeyValueStorage): Gateways {
   });
   const chainData = new MockWalletGateway(storage);
   // 外部钱包：projectId 由服务端 bootstrap 下发，没下发时 UI 如实标记不可用
+  // 升级前 SDK 把会话（含 symKey）明文写在普通存储里，启动就清掉（安全评审 N14）
+  void purgeLegacyWalletConnectStorage();
   const external = createWalletConnectConnector({
     appName: appRuntime.applicationId,
     present: (input) =>

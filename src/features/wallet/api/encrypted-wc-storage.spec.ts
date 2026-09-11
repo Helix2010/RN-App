@@ -75,6 +75,29 @@ describe("encrypted WalletConnect storage", () => {
     await expect(wc.getItem("a")).resolves.toEqual({ n: 2 });
   });
 
+  it("keeps every key when the SDK writes several at once", async () => {
+    const { wc } = setup();
+    const keys = ["a", "b", "c", "d", "e", "f", "g", "h"];
+    // SDK 建会话时并发写多个键：索引不串行就会互相覆盖，会话看起来凭空消失
+    await Promise.all(keys.map((key) => wc.setItem(key, { key })));
+    await expect(wc.getKeys()).resolves.toEqual(expect.arrayContaining(keys));
+    expect((await wc.getKeys()).length).toBe(keys.length);
+  });
+
+  it("keeps the index consistent when writes and deletes interleave", async () => {
+    const { wc } = setup();
+    await Promise.all([
+      wc.setItem("a", { n: 1 }),
+      wc.setItem("b", { n: 2 }),
+      wc.removeItem("a"),
+      wc.setItem("c", { n: 3 }),
+    ]);
+    const keys = await wc.getKeys();
+    expect(keys).toContain("b");
+    expect(keys).toContain("c");
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
   it("forgets a removed key completely", async () => {
     const { wc, storage } = setup();
     await wc.setItem("a", SESSION);

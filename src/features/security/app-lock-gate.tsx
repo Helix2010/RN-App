@@ -11,6 +11,7 @@ import {
   useAppLock,
   type BiometricKind,
 } from "../../core/security/app-lock";
+import { enableAppSwitcherProtection } from "../../core/security/screen-protect";
 import { usePreferencesStore } from "../../core/preferences/preferences-store";
 import {
   AppIcon,
@@ -99,6 +100,11 @@ export function AppLockGate() {
       ),
     ).start();
   }, [failed, shake]);
+
+  // 最近任务列表的缩略图里可能正好是助记词或收款地址（安全评审 N24）
+  useEffect(() => {
+    void enableAppSwitcherProtection();
+  }, []);
 
   useEffect(() => {
     let alive = true;

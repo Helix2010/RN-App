@@ -92,8 +92,14 @@ function entryAad(entry: {
   kind: VaultEntryKind;
   path: string | null;
 }): Uint8Array {
+  // 用 JSON 数组而不是分隔符拼接：拼接的话，字段里出现分隔符就可能让两组不同的
+  // 元数据拼出同一个串（`a|b` + `c` 与 `a` + `b|c`），认证范围就被绕开了。
+  // 解密时这些字段来自普通存储，攻击者能随便写，所以编码必须是单射的。
+  //
+  // `createdAt` / `backedUpAt` 故意不在里面：`markBackedUp` 会改它们但不重新
+  // 加密，放进来会让备份标记本身把条目变成解不开的。
   return new TextEncoder().encode(
-    `v1|${entry.address.toLowerCase()}|${entry.kind}|${entry.path ?? ""}`,
+    JSON.stringify(["v1", entry.address.toLowerCase(), entry.kind, entry.path]),
   );
 }
 

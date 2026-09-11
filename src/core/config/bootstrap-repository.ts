@@ -201,9 +201,15 @@ async function applyRemoteLanguagePackage(
     if (!cached) return config;
     try {
       const parsed = languagePackageSchema.safeParse(JSON.parse(cached));
+      // 退回缓存时同样要过租户这一关。少了它，"拒收别家语言包"就只挡住了
+      // 本次下载：抛错之后照样把缓存里的整套文案铺上去（安全评审 N27）。
+      const pinnedTenant = await AsyncStorage.getItem(
+        languageTenantKey(config.localization.selectedLocale),
+      );
       if (
         !parsed.success ||
-        parsed.data.languageCode !== config.localization.selectedLocale
+        parsed.data.languageCode !== config.localization.selectedLocale ||
+        (pinnedTenant !== null && parsed.data.tenantId !== pinnedTenant)
       )
         return config;
       return {

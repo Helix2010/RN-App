@@ -269,7 +269,7 @@ describe("WalletConnectConnector", () => {
     await connector.connect("metamask");
     await connector.signer(ADDRESS).submitTransaction(
       {
-        chainId: 8453,
+        chainId: 1,
         to: "0x000000000000000000000000000000000000dEaD",
         value: 255n,
         gasLimit: 21000n,
@@ -280,12 +280,43 @@ describe("WalletConnectConnector", () => {
       },
     );
     const call = request.mock.calls[0][0];
-    expect(call.chainId).toBe("eip155:8453");
+    expect(call.chainId).toBe("eip155:1");
     expect(call.request.params[0]).toMatchObject({
       from: ADDRESS,
       value: "0xff",
       gas: "0x5208",
     });
+  });
+
+  it("refuses a transaction on a chain the session never approved", async () => {
+    const { connector, request } = setup();
+    await connector.connect("metamask");
+    // 会话只批准了 bsc(56) 与 eth(1)；往 base(8453) 发请求不该出门（安全评审 N37）
+    await expect(
+      connector.signer(ADDRESS).submitTransaction(
+        {
+          chainId: 8453,
+          to: "0x000000000000000000000000000000000000dEaD",
+          value: 1n,
+        },
+        { reason: "r" },
+        async () => "0xhash",
+      ),
+    ).rejects.toBeInstanceOf(WalletConnectRejectedError);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("refuses a session that shares a different account per chain", () => {
+    const mixed = {
+      eip155: {
+        accounts: [
+          `eip155:56:${ADDRESS}`,
+          "eip155:1:0x1111111111111111111111111111111111111111",
+        ],
+      },
+    };
+    // 取首地址再把所有链并给它，等于声称它在没批准的链上也能签
+    expect(parseAccounts(mixed, NETWORKS)).toBeNull();
   });
 
   it("turns a wallet refusal into a typed rejection", async () => {

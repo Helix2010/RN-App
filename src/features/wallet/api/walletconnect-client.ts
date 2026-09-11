@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
-import { Linking } from "react-native";
+import * as IntentLauncher from "expo-intent-launcher";
+import { Linking, Platform } from "react-native";
 import type { KeyValueStorage } from "../../../core/gateways/types";
 import { expoSecureStoreIn } from "../../../core/wallet/vault/expo-ports";
 import { createEncryptedWcStorage } from "./encrypted-wc-storage";
@@ -11,7 +12,7 @@ import {
   walletNetworks,
 } from "../../../core/wallet/config/wallet-runtime-config";
 import type { WalletConnectorId } from "../../session/model/session";
-import { launchLinks, probeLinks } from "./wallet-deep-links";
+import { androidPackages, launchLinks, probeLinks } from "./wallet-deep-links";
 import {
   WalletConnectConnector,
   WalletConnectUnavailableError,
@@ -71,6 +72,20 @@ const LEGACY_WC_KEYS = [
   "wc@2:client:0.3//request",
 ];
 
+/**
+ * 清掉升级前 SDK 写下的明文条目。
+ *
+ * 放在启动路径上而不是只在建客户端时做：用户如果再也不连外部钱包，
+ * 那些带 symKey 的明文就会一直留在盘上（安全评审 N14）。
+ */
+export async function purgeLegacyWalletConnectStorage(): Promise<void> {
+  const storage = createEncryptedWcStorage({
+    secure: expoSecureStoreIn(WC_KEYCHAIN_SERVICE),
+    storage: asyncStorageAdapter,
+  });
+  await storage.purgeLegacy(LEGACY_WC_KEYS);
+}
+
 async function createClient(appName: string): Promise<SignClientLike> {
   const projectId = walletConnectProjectId();
   if (!projectId) throw new WalletConnectUnavailableError();
@@ -106,8 +121,26 @@ async function createClient(appName: string): Promise<SignClientLike> {
  * 对未在 manifest `<queries>` 里声明的 scheme 一律返回 false，哪怕钱包装着。
  * `openURL` 走 startActivity，不受这个限制，所以直接开、开不了再退。
  */
-async function openFirstAvailable(links: string[]): Promise<boolean> {
+async function openFirstAvailable(
+  links: string[],
+  packages: string[] = [],
+): Promise<boolean> {
   for (const link of links) {
+    // Android 优先显式启动：隐式 ACTION_VIEW 由系统挑接收方，抢注了同样
+    // scheme / host 的应用可以把配对 URI 接走（安全评审 N13）
+    if (Platform.OS === "android") {
+      for (const packageName of packages) {
+        try {
+          await IntentLauncher.startActivityAsync(
+            "android.intent.action.VIEW",
+            { data: link, packageName },
+          );
+          return true;
+        } catch {
+          // 这个包没装 / 不接这个链接，试下一个候选
+        }
+      }
+    }
     try {
       await Linking.openURL(link);
       return true;
@@ -162,7 +195,10 @@ export function createWalletConnectConnector(options: {
     available: isWalletConnectConfigured,
     installed: isWalletInstalled,
     openWallet: async (connector) => {
-      await openFirstAvailable(launchLinks(connector));
+      await openFirstAvailable(
+        launchLinks(connector),
+        androidPackages(connector),
+      );
     },
   });
 }
@@ -175,6 +211,6 @@ export async function openWalletOrFallback(
   const links = (input.deepLinks ?? []).map(
     (link) => `${link}${encodeURIComponent(input.uri)}`,
   );
-  if (await openFirstAvailable(links)) return;
+  if (await openFirstAvailable(links, androidPackages(input.connector))) return;
   fallback(input.uri);
 }

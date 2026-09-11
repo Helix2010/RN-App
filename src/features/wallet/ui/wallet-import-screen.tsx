@@ -43,7 +43,7 @@ export function WalletImportScreen({
   const theme = useTheme();
   const { wallet } = useGateways();
   // 用户会在这里粘贴助记词 / 私钥，同样要挡住截图
-  useScreenProtect("wallet-key-import");
+  const screenProtect = useScreenProtect("wallet-key-import");
   const queryClient = useQueryClient();
   const [mode, setMode] = useState<Mode>("mnemonic");
   const [secret, setSecret] = useState("");
@@ -149,6 +149,21 @@ export function WalletImportScreen({
               {t("wallet.import.warning")}
             </Body>
           </Row>
+          {screenProtect === "unavailable" ? (
+            <Row
+              alignItems="flex-start"
+              gap="$2"
+              padding="$3"
+              borderRadius="$4"
+              style={{ backgroundColor: `${theme.warning.val}22` }}
+              testID="import-screen-protect-warning"
+            >
+              <AppIcon name="alert-outline" size={18} colorToken="warning" />
+              <Body flex={1} fontSize={12} color="$warning">
+                {t("backup.screenProtectUnavailable")}
+              </Body>
+            </Row>
+          ) : null}
           <Stack gap="$2">
             <SectionTitle fontSize={14}>
               {mode === "mnemonic"

@@ -158,6 +158,10 @@ export function parseAccounts(
     // CAIP-10: eip155:56:0xabc…
     const [namespace, rawChain, rawAddress] = account.split(":");
     if (namespace !== "eip155" || !rawAddress) continue;
+    // 钱包在不同链上分享了不同账户：取第一个地址再把所有链并给它，等于声称
+    // 这个地址在它其实没批准的链上也能签。这种会话不收（安全评审 N37）。
+    if (address !== null && address.toLowerCase() !== rawAddress.toLowerCase())
+      return null;
     address ??= rawAddress;
     const chain = networks.find(
       (network) => network.chainId === Number(rawChain),
@@ -430,7 +434,16 @@ class WalletConnectSigner implements WalletSigner {
   }
 
   private chainRef(chainId?: number): string {
-    if (chainId !== undefined) return `eip155:${chainId}`;
+    const approved = this.connection.chains.map(evmChainIdOf);
+    if (chainId !== undefined) {
+      // 会话只批准了这几条链。往别的链上发请求，钱包多半直接拒，更糟的是
+      // 有的钱包会照签 —— 那就是在用户没批准的链上花钱（安全评审 N37）。
+      if (!approved.includes(chainId))
+        throw new WalletConnectRejectedError(
+          `chain ${chainId} is not one of the chains this session approved`,
+        );
+      return `eip155:${chainId}`;
+    }
     const preferred = this.connection.chains[0];
     if (!preferred) throw new WalletConnectNoEnabledChainError();
     return `eip155:${evmChainIdOf(preferred)}`;
