@@ -171,6 +171,7 @@ ALTER TABLE ota_releases ADD COLUMN canary_installations JSON NULL COMMENT '灰�
 
 - 代码回滚：读路径的 OR 分支去掉即可，灰度记录变成「谁都拿不到」的孤儿行，不影响全量用户。
 - 数据回滚：ENUM 里多一个值、多一个可空列，都不影响旧代码。**不要**在回滚里删这两处，留着即可。
+- **管理端不能单独回滚到不认识 `canary` 的版本**：`otaReleaseSchema.status` 是 `z.enum`，多出来的值会让整份 OTA 列表解析失败、页面打不开（全量发布那边 `status` 是 `z.string()`，不受影响）。回滚顺序：先把灰度记录取消或转正，再回滚管理端。
 - 运营回滚：灰度版本出问题时点「取消灰度」，设备下次请求即回到 active 版本；OTA 同理，回到上一条 active 修订。
 
 ## 7. 验收用例
@@ -364,18 +365,22 @@ Extra: Using where; Backward index scan
 
 阶段 1、2、3 已落地，阶段 4（账户级灰度）未做。与本文原稿的差异，逐条：
 
-| 差异                                                                            | 原因                                                                                                                                                                  |
-| ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 迁移号 39，不是 38                                                              | 38 已被 `release_notes_line_arrays` 占用                                                                                                                              |
-| OTA extra param 的键是 `canary-token`，不是 `canaryToken`                       | `expo-structured-headers` 拒绝大写键，见 §9.4                                                                                                                         |
-| 读路径是**五**条，不是四条                                                      | bootstrap 里还有一条内联的 OTA 提示查询（`update.ota.revision`）。不改它的话，灰度设备在"升级中心"看到的修订号和它真正会下到的对不上                                  |
-| `otaAsset` 的状态白名单加了 `canary`                                            | 不加的话灰度设备取到 manifest 却下不了资源，见 §8.2                                                                                                                   |
-| `mandatoryVersion` 改为只查 active 记录                                         | 原来它跟着"取到的那一条"走。灰度记录不得设 mandatory，于是设备一进灰度就把 active 上的强制要求弄丢了——等于给那台机器单独解除了强制升级。抽出 `activeMandatoryVersion` |
-| 名单里的安装 ID 校验存在性                                                      | 见 §8.2 第一条                                                                                                                                                        |
-| `promote` 与 `publish` 分开                                                     | 状态机上完全一样（都到 active、都收尾旧 active），分开只为审计能区分"灰度转正"和"直接全量"                                                                            |
-| `last_action` 改为存动作名（`publish` / `canary` / `promote`…），不再存目标状态 | 否则 `publish` 与 `promote`、`cancel-canary` 与其它拒绝在列表里长得一样。`set-mandatory` 本来就是这么存的，现在一致了                                                 |
-| bootstrap 响应新增 `update.canary.{enrolled,otaToken}`                          | 令牌要有地方下发；`enrolled` 让客户端知道自己拿的是灰度包                                                                                                             |
-| 客户端缓存快照里抹掉 `otaToken`                                                 | 缓存只用来决定启动页画哪版品牌，没必要把令牌留在明文 AsyncStorage 里                                                                                                  |
+| 差异                                                                            | 原因                                                                                                                                                                             |
+| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 迁移号 39，不是 38                                                              | 38 已被 `release_notes_line_arrays` 占用                                                                                                                                         |
+| OTA extra param 的键是 `canary-token`，不是 `canaryToken`                       | `expo-structured-headers` 拒绝大写键，见 §9.4                                                                                                                                    |
+| 读路径是**五**条，不是四条                                                      | bootstrap 里还有一条内联的 OTA 提示查询（`update.ota.revision`）。不改它的话，灰度设备在"升级中心"看到的修订号和它真正会下到的对不上                                             |
+| `otaAsset` 的状态白名单加了 `canary`                                            | 不加的话灰度设备取到 manifest 却下不了资源，见 §8.2                                                                                                                              |
+| 抽出 `activeMandatoryVersion`                                                   | 不是偏差，是 §3.5「MandatoryVersion 仍只来自 active 记录」的落点。原来它跟着"取到的那一条"走，照搬会让设备一进灰度就把 active 上的强制要求弄丢——等于给那台机器单独解除了强制升级 |
+| `canary` 与 `active` 一样要过"产物仍可发布"检查                                 | 灰度也是往设备上装真包，object_key / sha256 / verified_at 缺一不可。设计没写，补上                                                                                               |
+| 名单上限 200 做成硬性拒绝（`CANARY_AUDIENCE_TOO_LARGE`）                        | §3.2 说"文档里写明这个门槛，不要等它慢慢长大"。只写文档挡不住，做成 422 才挡得住                                                                                                 |
+| `otaFlagEditable` 加上 `canary`，全量侧的 `releaseFlagEditable` 不加            | 两个开关不一样：灰度修订确实会下发给名单里的设备，生效策略必须可改；而 §3.5 禁止灰度版本设强制升级。管理端也拆成两个集合                                                         |
+| §4 的"发布总览状态筛选加灰度"改为总览页加一张「灰度中」指标卡                   | 发布总览页没有状态筛选，只有指标卡；发布记录表上的两个下拉是没接状态的占位符。真正接了状态的筛选在 OTA 列表，那里加了「灰度中」                                                  |
+| 名单里的安装 ID 校验存在性                                                      | 见 §8.2 第一条                                                                                                                                                                   |
+| `promote` 与 `publish` 分开                                                     | 状态机上完全一样（都到 active、都收尾旧 active），分开只为审计能区分"灰度转正"和"直接全量"                                                                                       |
+| `last_action` 改为存动作名（`publish` / `canary` / `promote`…），不再存目标状态 | 否则 `publish` 与 `promote`、`cancel-canary` 与其它拒绝在列表里长得一样。`set-mandatory` 本来就是这么存的，现在一致了                                                            |
+| bootstrap 响应新增 `update.canary.{enrolled,otaToken}`                          | 令牌要有地方下发；`enrolled` 让客户端知道自己拿的是灰度包                                                                                                                        |
+| 客户端缓存快照里抹掉 `otaToken`                                                 | 缓存只用来决定启动页画哪版品牌，没必要把令牌留在明文 AsyncStorage 里                                                                                                             |
 
 **验收用例覆盖**：§7 的 17 条里，1–11、13–17 有自动化用例（`RN-Server/internal/api/canary_test.go`，需要 `RN_TEST_MYSQL_HOST`）。第 12 条（灰度 OTA 的基线是 verified 包）走的是既有的基线校验，本轮一行没改，没有新增用例。
 
