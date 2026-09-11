@@ -58,4 +58,9 @@
 - **passed** — RN-Server `gofmt` / `go vet` 干净，`go test ./...` 11 个包全绿。8 条新用例，地基那条是**用 Go 侧同一套算法（`rsa.VerifyPKCS1v15` + SHA-256）复验服务端签出来的东西**，并断言改一个字节就验不过——否则签的等于没签。另有：keyid 转义、PKCS#1/PKCS#8 都接受、1024 位拒绝、证书必须配对、view 不泄私钥、nil signer 静默不签。
 - **passed** — 依赖升级后复核协议未变：`expo-updates@57.0.22` 里 `SHA256withRSA` 与三处 `expo-signature` 都在。
 - **not run** — 真机端到端（需要先做密钥仪式、发一个带证书的包）。runbook §3.2.2 第 5 步写了怎么验：装上新包拉一次 OTA 确认能装上，再**故意用错的证书验一次**——那次必须失败并停在内置 bundle，否则说明验签根本没生效。
+- **passed** — `pnpm ota:keygen` 的 9 条用例（含 `--expected-version` 写进请求体、负数被拒）。轮换是会反复发生的操作，之前只能手改那个**含私钥**的 JSON——编辑器备份和剪贴板都是泄露面，所以这个参数不是便利而是安全项。
 - 契约 2026.09.13 增加两条路由与 `OTASigningKeyWrite`；RN-App 的 pin 副本同步。
+
+## 每租户 / 每环境各一把
+
+密钥按租户存在 `app_configs` 的 `ota.signing`，证书按租户编进各自的原生包。共用一把 = 任何一个租户或 staging 泄露就打穿全部租户的 OTA 真实性。已写进 RN-App `docs/SAAS_TENANT_BUILD_RUNBOOK.md` §2 第 4 步（新租户清单）与 §3.2.2「轮换」。

@@ -128,7 +128,12 @@ maybe("ota signing key generator", () => {
 
   test("refuses an expectedVersion the server could never match", () => {
     withFixture((root) => {
-      const result = generate(root, ["--keysize", "2048", "--expected-version", "-1"]);
+      const result = generate(root, [
+        "--keysize",
+        "2048",
+        "--expected-version",
+        "-1",
+      ]);
       expect(result.status).not.toBe(0);
       expect(result.stderr).toMatch(/expected-version/);
     });
