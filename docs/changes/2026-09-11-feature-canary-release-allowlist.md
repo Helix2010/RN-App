@@ -54,32 +54,35 @@
 
 ## 验证与发布
 
-- RN-Server：`go vet` 干净；`go test ./...` 全绿；`canary_test.go` 的 14 组用例（覆盖设计 §7 的 1–11、13–17）在 MySQL 8.0.46 上跑通。第 12 条走既有基线校验，本轮没改，未新增用例。
-- RN-App：`pnpm check` 全绿，129 套 / 931 用例；契约 2026.09.12。
+- RN-Server：`gofmt` / `go vet` 干净；`go test -race ./...` 在全新库上全绿。`canary_test.go` 覆盖设计 §7 的 1–11、13–17；`canary_router_test.go` 走真实 gin 路由再验一遍（真实请求头、按 Host 解析租户）。第 12 条走既有基线校验，本轮没改，未新增用例。
+- RN-App：`pnpm check` 全绿，129 套 / 937 用例；契约 2026.09.12。
 - RN-Admin：`pnpm check` 全绿，14 套 / 102 用例。
+- 线上收尾：1.3.7 (33) 已 active 且 mandatory；联调期间用过的 1.3.3 (29) 已 `cancel-canary` 置为 rejected；测试用的探针安装已吊销。
 - **上线顺序**：迁移必须先于任何写入 `canary` 的代码——ENUM 里没有这个值时严格模式报错、非严格模式静默截断，后者会把记录写坏。
 - **第一个灰度版本定向不到尚未升级的老设备**：bootstrap 带身份是这一版才有的。必须先全量发一版带身份上报的客户端，之后才能开始灰度。这是链条的固有顺序。
 - 无原生变更（`setExtraParamAsync` 是既有 API），客户端这部分可随 OTA 发布。
 
 ## 模拟器实测（2026-09-11，四台在线模拟器对生产环境）
 
-| 验证项                        | 结果                                                                                                     |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------- |
-| 迁移 39 上生产                | `schema_migrations` 到 39，`app_releases.status` ENUM 含 `canary`，`canary_installations` 列在位         |
-| 匿名 `latest` 回归            | 仍然只返回 active，灰度期间也一样                                                                        |
-| bootstrap 新增段              | 匿名请求拿到 `canary={enrolled:false, otaToken:null}`，配置照发                                          |
-| 客户端上报身份                | 四台都拿到了服务端签发的灰度令牌（只有验证过凭证的安装才发）                                             |
-| 令牌落到原生侧                | `updates.db` 的 `json_data.extraParams` = `{"canary-token":"…"}`，键是小写                               |
-| 带令牌的 manifest 请求        | `Check → CheckCompleteUnavailable`，无异常——大写键那个坑确实被绕开了                                     |
-| 灰度只对名单可见              | 名单内那台 `latest=1.3.3 / decision=recommended / enrolled=true`，另外三台 `latest=1.3.2 / none / false` |
-| 改名单                        | 把名单换到另一台后，原来那台掉回 1.3.2，新那台升到 1.3.3，始终只有一台                                   |
-| 名单为空 / ID 拼错            | 生产上分别被 `CANARY_AUDIENCE_REQUIRED`、`CANARY_INSTALLATION_UNKNOWN` 拒绝                              |
-| 匿名拿灰度包 ID 下载          | 404；同一时刻 active 包匿名下载 206                                                                      |
-| 令牌不落明文缓存              | AsyncStorage 里的 bootstrap 快照 `otaToken=null`，令牌只在原生库里                                       |
-| 服务端下载鉴权（curl 真凭证） | 带全套身份头 206，去掉凭证 404                                                                           |
-| 死灰度行                      | 发了更高的 active 之后，灰度行仍是 `canary` 且名单还在——不自动改状态                                     |
-| 取消灰度 / 转正               | `cancel-canary` → `rejected` 名单清空；`promote` → `active` 旧 active 收尾                               |
-| **灰度设备下载灰度包**        | **两次失败才通**，原因见下——客户端下载器的坑                                                             |
+| 验证项                           | 结果                                                                                                               |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| 迁移 39 上生产                   | `schema_migrations` 到 39，`app_releases.status` ENUM 含 `canary`，`canary_installations` 列在位                   |
+| 匿名 `latest` 回归               | 仍然只返回 active，灰度期间也一样                                                                                  |
+| bootstrap 新增段                 | 匿名请求拿到 `canary={enrolled:false, otaToken:null}`，配置照发                                                    |
+| 客户端上报身份                   | 四台都拿到了服务端签发的灰度令牌（只有验证过凭证的安装才发）                                                       |
+| 令牌落到原生侧                   | `updates.db` 的 `json_data.extraParams` = `{"canary-token":"…"}`，键是小写                                         |
+| 带令牌的 manifest 请求           | `Check → CheckCompleteUnavailable`，无异常——大写键那个坑确实被绕开了                                               |
+| 灰度只对名单可见                 | 名单内那台 `latest=1.3.3 / decision=recommended / enrolled=true`，另外三台 `latest=1.3.2 / none / false`           |
+| 改名单                           | 把名单换到另一台后，原来那台掉回 1.3.2，新那台升到 1.3.3，始终只有一台                                             |
+| 名单为空 / ID 拼错               | 生产上分别被 `CANARY_AUDIENCE_REQUIRED`、`CANARY_INSTALLATION_UNKNOWN` 拒绝                                        |
+| 匿名拿灰度包 ID 下载             | 404；同一时刻 active 包匿名下载 206                                                                                |
+| 令牌不落明文缓存                 | AsyncStorage 里的 bootstrap 快照 `otaToken=null`，令牌只在原生库里                                                 |
+| 服务端下载鉴权（curl 真凭证）    | 带全套身份头 206，去掉凭证 404                                                                                     |
+| 死灰度行                         | 发了更高的 active 之后，灰度行仍是 `canary` 且名单还在——不自动改状态                                               |
+| 取消灰度 / 转正                  | `cancel-canary` → `rejected` 名单清空；`promote` → `active` 旧 active 收尾                                         |
+| **灰度设备下载灰度包**           | **两次失败才通**，原因见下——客户端下载器的坑                                                                       |
+| 修复后复测（1.3.6 → 灰度 1.3.7） | 名单内设备 "Downloading 100%"，落盘 38,751,710 字节、sha256 与发布记录逐字节相同；同一时刻匿名拿同一个包 ID 仍 404 |
+| 灰度转正 + 设强制                | `promote` → active，`set-mandatory` → mandatory=true；1.3.6 的设备再拉 bootstrap 得到 `decision=required`          |
 
 ## 实现时发现并修掉的坑
 
