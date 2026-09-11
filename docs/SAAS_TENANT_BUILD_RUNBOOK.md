@@ -181,6 +181,15 @@ pnpm sbom --tenant <slug> --apk artifacts/<slug>-<version>-build<code>-release.a
 
 5. 发布后验证：用装了新包的设备拉一次 OTA，确认更新能装上（能装上就说明验签通过）。**故意用错的证书再验一次**——那次必须失败并停在内置 bundle，否则说明验签根本没生效。
 
+   不想等一个原生包也能先验签名链路：
+
+   ```bash
+   OTA_RUNTIME=1.3.7 OTA_CERTIFICATE=~/ota-keys/<slug>/certificate.pem \
+     scripts/ota-signature-android-check/run.sh https://<租户域名>/v1/ota/manifest
+   ```
+
+   它把服务端真实下发的签名与正文推到**真实 Android 运行时**上，用 `CertificateChain.kt` 的原判据跑一遍。服务端的 Go 测试证明的是"我们的实现自洽"，而客户端跑的是 Android 的 Conscrypt，是另一套实现；两者不一致的症状是所有设备静默停在内置 bundle，线上完全看不出来。
+
 在密钥装进服务端之前，OTA 仍然只有完整性（bootstrap 下发的 sha256）而没有真实性，这一条是评审 §12.1 未关闭的 P0 门禁。
 
 **这套仪式每个租户都要走一遍，每个环境也要走一遍**（见 §2 第 4 步）。密钥是按租户存的，证书是按租户编进包的，共用一把 = 任何一处泄露就打穿全部。

@@ -45,5 +45,23 @@ Android keystore 三条都反过来：服务端运行时根本不用它；它泄
 
 - **passed** — RN-Server `gofmt` / `go vet` 干净，`go test ./...` 全绿。新增 3 条用例：生成的证书逐条对照 `CertificateChain.kt` 的判据（含 NotBefore 已过去、非 CA），并用客户端那套算法（`rsa.VerifyPKCS1v15` + SHA-256）复验它真的能签能验；参数越界一律拒绝；handler 在碰数据库之前拒掉不合法请求（`db` 为 nil，走到数据库就会 panic）。
 - **passed** — RN-Admin `pnpm check` 全绿，15 个测试文件 110 条。新增 8 条，包括"指纹完整显示不截断"、"临期告警"、"expectedVersion 来自记录而不是输入框"、"确认前说清楚轮换后果"、"页面上没有任何地方能粘贴私钥"。
-- **not run** — 真机端到端（需要先发一个带证书的原生包）。runbook §3.2.2 第 5 步写了怎么验，关键是**故意用错证书再验一次**必须失败。
+- **passed** — **在真实 Android 运行时上验过**（模拟器 emulator-5558，Android 16 / API 36，Dalvik 2.1.0）。搭了一套一次性的本地栈：MySQL 容器 + 本地 RN-Server，用**新接口**生成密钥、插一条 rollback OTA、按 expo 协议拉一次 `/v1/ota/manifest`，把 **part 头**里的 `expo-signature` 与被签的正文原样取出来，推到设备上用 `CertificateChain.kt` 的原判据（`CertificateFactory` + `checkValidity()` + `keyUsage[0]` + EKU `1.3.6.1.5.5.7.3.3`）和 `CodeSigningConfiguration.kt` 的 `Signature.getInstance("SHA256withRSA")` 跑：
+
+  | 用例 | 结果 |
+  | --- | --- |
+  | 新证书 + 新签名 | ACCEPTED |
+  | 改一个字节的正文 | 拒绝 |
+  | 轮换后拿旧证书验新签名（= 内嵌旧证书的存量包） | REJECTED |
+  | 裸 `openssl req -x509` 生成的证书 | `keyUsage[0]=false`、`EKU=false`，REJECTED |
+
+  最后一行是这套生成器存在的全部理由：不写那两个扩展的证书，在 Android 上根本不算代码签名证书。
+
+  这次还抓到一件事：**模拟器时钟比宿主机慢 1 秒**，一张 `NotBefore=now` 的证书当场 `CertificateNotYetValidException`。往前挪 5 分钟不是讲究，是这个。
+
+  复跑用 `scripts/ota-signature-android-check/run.sh`（已入库）。
+
+- **passed** — 接口层在真实 MySQL 上验过：生成 → version 1；用过期的 `expectedVersion` 再写一次 → 409 `STALE_OTA_SIGNING_KEY`；正确版本号轮换 → version 2；库里 `ota.signing.privateKey` 是密文不是 PEM；审计记 `ota_signing_key_generate` + 指纹 + 版本，不记私钥；响应不含私钥。
+- **passed** — `EXPO_UPDATES_CODE_SIGNING_CERTIFICATE` 指向证书时，`expo config` 解析出的 `updates.codeSigningMetadata` 是 `{alg: rsa-v1_5-sha256, keyid: main}`，与服务端 `expo-signature` 里发的两个值一致。
+- **not run** — 整包端到端（装一个带证书的原生包、拉一次真的 bundle 更新）。缺的是对象存储与一次原生构建，不是签名链路。
+- **not run** — 管理端页面没有真浏览器跑过，RN-Admin 只有 jsdom，没装 Playwright 之类。页面逻辑由 8 条 vitest 用例覆盖。
 - 契约 2026.09.14 增加 `POST /v1/admin/ota/signing-key/generate` 与 `OTASigningKeyGenerate`；RN-App 的 pin 副本同步。
