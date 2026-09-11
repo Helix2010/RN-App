@@ -10,6 +10,7 @@ import {
   forgetInstallationCredential,
   forgetInstallationSyncInputForTests,
   heartbeatFingerprint,
+  installationTransportHeaders,
   syncInstallationHeartbeat,
 } from "./installation-service";
 
@@ -265,5 +266,34 @@ describe("syncInstallationHeartbeat", () => {
     runtime.applicationId = "com.anyfun.foundation";
     expect(heartbeatFingerprint(base)).not.toBe(rebuilt);
     runtime.applicationId = "dex-mobile";
+  });
+});
+
+// 不走 apiClient 的传输（安装包下载、OTA 下载器）拿不到 apiClient 的默认头。
+// 服务端按 (tenant, application_id, platform, installation_id) 定位安装记录，
+// 少了平台或应用身份就查不到行，凭证有效也会被当成匿名——灰度包于是 404。
+// 2026-09-11 在模拟器上真的踩到过。
+describe("installationTransportHeaders", () => {
+  beforeEach(() => {
+    mockSecureStore.clear();
+  });
+
+  it("always carries the platform and application identity the server looks up by", async () => {
+    await expect(installationTransportHeaders()).resolves.toEqual({
+      "X-Platform": appRuntime.platform,
+      "X-Application-ID": appRuntime.applicationId,
+    });
+  });
+
+  it("adds the installation credential once the installation is registered", async () => {
+    mockSecureStore.set("foundation.installation-id.v1", "inst_1");
+    mockSecureStore.set("foundation.installation-credential.v1", "icred_abc");
+
+    await expect(installationTransportHeaders()).resolves.toEqual({
+      "X-Platform": appRuntime.platform,
+      "X-Application-ID": appRuntime.applicationId,
+      "X-Installation-ID": "inst_1",
+      Authorization: "Installation icred_abc",
+    });
   });
 });

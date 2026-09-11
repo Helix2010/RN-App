@@ -154,6 +154,24 @@ export async function installationAuthorization(): Promise<
   };
 }
 
+/**
+ * 给**不走 apiClient 的传输**用的完整身份头（安装包下载走 expo-file-system，
+ * OTA 走原生下载器，都不经过 apiClient 的默认头）。
+ *
+ * 只带 `X-Installation-ID` + `Authorization` 是不够的：服务端按
+ * `(tenant, application_id, platform, installation_id)` 四元组定位安装记录，
+ * 缺了平台和应用身份就查不到行，凭证明明有效也会被判成匿名——灰度包于是 404。
+ */
+export async function installationTransportHeaders(): Promise<
+  Record<string, string>
+> {
+  return {
+    "X-Platform": appRuntime.platform,
+    "X-Application-ID": appRuntime.applicationId,
+    ...(await installationAuthorization()),
+  };
+}
+
 /** 服务端判定凭证失效时丢掉它：下次心跳会重新注册拿新凭证。 */
 export async function forgetInstallationCredential(): Promise<void> {
   await SecureStore.deleteItemAsync(CREDENTIAL_KEY);

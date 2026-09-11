@@ -3,7 +3,7 @@ import { bytesToHex } from "@noble/hashes/utils.js";
 import * as FileSystem from "expo-file-system/legacy";
 import * as IntentLauncher from "expo-intent-launcher";
 import { AppState } from "react-native";
-import { installationAuthorization } from "../device/installation-service";
+import { installationTransportHeaders } from "../device/installation-service";
 import {
   ApkDownloadManager,
   ApkIntegrityError,
@@ -46,6 +46,9 @@ export function createExpoApkDownloadDeps(): ApkDownloadDeps {
     directory,
     createDownload: ({ url, fileUri, resumeFrom, onProgress }) => {
       // 下载要带安装身份：灰度包只对名单里的安装可见，匿名地拉它是 404。
+      // 这条请求不走 apiClient，平台与应用身份两个头也得自己带上——服务端按
+      // (tenant, application_id, platform, installation_id) 定位安装记录，
+      // 少一个就查不到行（模拟器上实测：只带凭证仍然 404）。
       // 凭证要到运行时才读得到（钥匙串），所以任务在 start 里才建；没注册过就
       // 不带，正式包照样下得动（设计 canary-release-allowlist-2026-09-11 §3.4）
       let task: FileSystem.DownloadResumable | null = null;
@@ -54,7 +57,7 @@ export function createExpoApkDownloadDeps(): ApkDownloadDeps {
           task = FileSystem.createDownloadResumable(
             url,
             fileUri,
-            { headers: await installationAuthorization() },
+            { headers: await installationTransportHeaders() },
             ({ totalBytesWritten, totalBytesExpectedToWrite }) =>
               onProgress(totalBytesWritten, totalBytesExpectedToWrite),
             resumeFrom === null ? undefined : String(resumeFrom),

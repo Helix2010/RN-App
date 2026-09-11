@@ -12,12 +12,15 @@ jest.mock("expo-file-system/legacy", () => ({
 }));
 jest.mock("expo-intent-launcher", () => ({ startActivityAsync: jest.fn() }));
 jest.mock("../device/installation-service", () => ({
-  installationAuthorization: jest.fn(async () => ({})),
+  installationTransportHeaders: jest.fn(async () => ({
+    "X-Platform": "android",
+    "X-Application-ID": "dex-mobile",
+  })),
 }));
 
-const { installationAuthorization } = jest.requireMock(
+const { installationTransportHeaders } = jest.requireMock(
   "../device/installation-service",
-) as { installationAuthorization: jest.Mock };
+) as { installationTransportHeaders: jest.Mock };
 
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -79,8 +82,11 @@ describe("hashFileSha256", () => {
 describe("createExpoApkDownloadDeps", () => {
   beforeEach(() => {
     jest.mocked(FileSystem.createDownloadResumable).mockReset();
-    installationAuthorization.mockReset();
-    installationAuthorization.mockResolvedValue({});
+    installationTransportHeaders.mockReset();
+    installationTransportHeaders.mockResolvedValue({
+      "X-Platform": "android",
+      "X-Application-ID": "dex-mobile",
+    });
   });
 
   function stubTask() {
@@ -94,7 +100,9 @@ describe("createExpoApkDownloadDeps", () => {
   }
 
   it("sends the installation credential so a canary build can actually be downloaded", async () => {
-    installationAuthorization.mockResolvedValue({
+    installationTransportHeaders.mockResolvedValue({
+      "X-Platform": "android",
+      "X-Application-ID": "dex-mobile",
       "X-Installation-ID": "inst_1",
       Authorization: "Installation icred_abc",
     });
@@ -110,7 +118,10 @@ describe("createExpoApkDownloadDeps", () => {
 
     const [, , options] = jest.mocked(FileSystem.createDownloadResumable).mock
       .calls[0] as [string, string, { headers?: Record<string, string> }];
+    // 平台与应用身份必须一起带：服务端按四元组定位安装记录，缺一个就查不到行
     expect(options.headers).toEqual({
+      "X-Platform": "android",
+      "X-Application-ID": "dex-mobile",
       "X-Installation-ID": "inst_1",
       Authorization: "Installation icred_abc",
     });
@@ -130,12 +141,17 @@ describe("createExpoApkDownloadDeps", () => {
 
     const [, , options] = jest.mocked(FileSystem.createDownloadResumable).mock
       .calls[0] as [string, string, { headers?: Record<string, string> }];
-    expect(options.headers).toEqual({});
+    expect(options.headers).toEqual({
+      "X-Platform": "android",
+      "X-Application-ID": "dex-mobile",
+    });
     expect(downloadAsync).toHaveBeenCalled();
   });
 
   it("resumes from the byte offset and still carries the credential", async () => {
-    installationAuthorization.mockResolvedValue({
+    installationTransportHeaders.mockResolvedValue({
+      "X-Platform": "android",
+      "X-Application-ID": "dex-mobile",
       "X-Installation-ID": "inst_1",
       Authorization: "Installation icred_abc",
     });
