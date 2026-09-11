@@ -257,6 +257,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     // Gradle 依赖校验清单（安全评审 N28）。默认不安装，GRADLE_DEPENDENCY_VERIFICATION=1
     // 才把 gradle/verification-metadata.xml 放进去；关着时确保工程里不残留旧清单
     "./plugins/with-gradle-dependency-verification.js",
+    // jitpack 排在 google/mavenCentral 之后，解析不到的坐标都会落到它身上，
+    // 而它的内容随作者仓库可变。清单里没有一个组件来自它（安全评审 N28）
+    "./plugins/with-pinned-maven-repositories.js",
     // 原生启动图改成纯色：模板默认那张占位图（网格 + 同心圆）不属于任何租户
     [
       "./plugins/with-plain-splash.js",

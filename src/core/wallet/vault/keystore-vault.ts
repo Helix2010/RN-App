@@ -10,6 +10,10 @@ import {
   normalizeMnemonic,
   normalizePrivateKey,
 } from "../keygen/mnemonic";
+import {
+  authenticateOverrideAllowed,
+  platformAuthenticate,
+} from "./platform-authenticate";
 import type { AuthenticatePort, SecureStorePort } from "./ports";
 
 /**
@@ -158,7 +162,11 @@ function wipe(bytes: Uint8Array): void {
 type KeystoreVaultDeps = {
   storage: KeyValueStorage;
   secureStore: SecureStorePort;
-  authenticate: AuthenticatePort;
+  /**
+   * 只在测试构建里生效。发布构建一律用平台实现，忽略这里传进来的东西——
+   * 认证是**不可注入**的能力（安全评审 N6）。
+   */
+  authenticate?: AuthenticatePort;
   unlockTtlMs?: number;
   now?: () => number;
 };
@@ -171,9 +179,16 @@ export class KeystoreVault {
   /** 所有会写 vault 文件的操作排在这条队列上，读→取 WK→写 对同一实例是原子的。 */
   private queue: Promise<unknown> = Promise.resolve();
 
+  /** 真正用来弹认证的那个实现；发布构建里它永远是平台实现。 */
+  private readonly authenticatePort: AuthenticatePort;
+
   constructor(private readonly deps: KeystoreVaultDeps) {
     this.unlockTtlMs = deps.unlockTtlMs ?? DEFAULT_UNLOCK_TTL_MS;
     this.now = deps.now ?? Date.now;
+    this.authenticatePort =
+      deps.authenticate && authenticateOverrideAllowed()
+        ? deps.authenticate
+        : platformAuthenticate;
   }
 
   /** 丢弃内存中的包裹密钥；应用进入后台或上锁时调用。 */
@@ -519,7 +534,7 @@ export class KeystoreVault {
 
   /** 弹一次系统认证，取消 / 失败即拒绝。`unavailable`（设备未录入）放行，见 N10。 */
   private async authenticateFresh(reason: string): Promise<void> {
-    const outcome = await this.deps.authenticate(reason);
+    const outcome = await this.authenticatePort(reason);
     if (outcome === "cancelled" || outcome === "failed")
       throw new WalletAuthRequiredError(outcome);
   }

@@ -5,6 +5,11 @@ import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 import * as Updates from "expo-updates";
 import { Platform } from "react-native";
+import {
+  collectDeviceIntegrity,
+  hasAnySignal,
+  type DeviceIntegritySignals,
+} from "../security/device-integrity";
 import { z } from "zod";
 import type { BootstrapConfig } from "../config/bootstrap.schema";
 import type { ThemePreference } from "../preferences/preferences-store";
@@ -64,6 +69,11 @@ type InstallationReport = {
   theme: ThemePreference;
   osVersion: string;
   deviceClass: string;
+  /**
+   * 设备完整性信号（安全评审 N31）。自报，只作舰队统计，不参与任何放行判定。
+   * 每一项都探不出来时整个省略——服务端会把它与"旧版 App 没上报"存成同一个 NULL。
+   */
+  deviceIntegrity?: DeviceIntegritySignals;
 };
 
 /**
@@ -101,7 +111,20 @@ async function installationReport(
     theme,
     osVersion: String(Platform.Version),
     deviceClass: Platform.OS === "android" ? "android-phone" : "ios-device",
+    ...(await integritySignals()),
   };
+}
+
+/** 采集失败不该连累心跳：心跳挂掉会让一台设备在管理端整个消失。 */
+async function integritySignals(): Promise<{
+  deviceIntegrity?: DeviceIntegritySignals;
+}> {
+  try {
+    const signals = await collectDeviceIntegrity();
+    return hasAnySignal(signals) ? { deviceIntegrity: signals } : {};
+  } catch {
+    return {};
+  }
 }
 
 /**
