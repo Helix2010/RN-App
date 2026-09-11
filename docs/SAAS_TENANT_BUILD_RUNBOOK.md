@@ -134,7 +134,23 @@ CI 门禁在复核通过后还会生成一份 SBOM（`artifacts/<slug>-<version>
 pnpm sbom --tenant <slug> --apk artifacts/<slug>-<version>-build<code>-release.apk
 ```
 
-需要 syft（CI 里按固定版本 + sha256 下载，不进 `package.json`）。**这份 SBOM 只覆盖 JS 依赖**：本工程没有 Gradle 依赖锁定，APK 里是 dex 不是 jar，原生那一半扫不出来；文件自己的 `rn-app:coverage` 属性会如实写着 `javascript-only`。要补上原生的一半，前置条件是给 Gradle 加 `verification-metadata.xml`（N28 的另一项欠账）。
+需要 syft（CI 里按固定版本 + sha256 下载，不进 `package.json`）。**这份 SBOM 只覆盖 JS 依赖**：APK 里是 dex 不是 jar，原生那一半扫不出来；文件自己的 `rn-app:coverage` 属性会如实写着 `javascript-only`。原生依赖的清单在 `gradle/verification-metadata.xml`（见 §3.2.2），两份合起来才是完整的物料清单。
+
+### 3.2.2 Gradle 依赖校验（安全评审 N28，默认关闭）
+
+`gradle/verification-metadata.xml` 给每一个 Android 依赖记了 sha256（当前 1313 个组件）。`GRADLE_DEPENDENCY_VERIFICATION=1` 时，`plugins/with-gradle-dependency-verification.js` 在 prebuild 把它装进 `android/gradle/`，Gradle 会在**下载之后、使用之前**逐个比对——被顶替的 maven 仓库、被改写的缓存、下毒的传递依赖都会当场失败，而不是安静地进 APK。
+
+**为什么默认关闭**：Gradle 的依赖校验靠"文件在不在"生效，没有 lenient 档。清单里少任何一条都会让构建失败，而升一个 Expo 小版本、加一个原生模块、甚至 AGP 换个变体都会引入清单里没有的坐标。这条路径是发布门禁，让它在无人预期的时候变红，结果一定是有人为了发版把校验关掉、然后再也不打开。先用开关在 CI 上跑一段时间，确认"改依赖 → 重新生成"这条流程真的走得通，再把默认改成开。
+
+依赖变了就必须重新生成，否则开着开关的构建会直接失败：
+
+```bash
+pnpm android:verification-metadata <slug>
+```
+
+它跑一次**真实的 release 构建**并让 Gradle 记下全部解析结果——只有真实构建才覆盖得到所有配置（buildscript 类路径、各个 Expo 子工程、变体相关的依赖）；`:app:dependencies` 只解析依赖图，取不到 `.aar`。生成期间脚本会强制把校验关掉，否则就是拿旧清单去校验、再用校验失败的结果写新清单。写出前校验组件数不低于 1000，一份残缺的清单比没有更坏——它会被强制执行，然后在别人手里炸成"依赖校验失败"。
+
+**脚本会自己建一个临时的 `GRADLE_USER_HOME`，在冷缓存下生成，完事删掉。** 这不是保险起见：暖缓存里 Gradle 用的是已解析的模块元数据，不会重读原始 `.pom` / `.module`，那些文件就不会被记进清单。2026-09-11 第一次用开发机缓存生成的清单，在冷缓存下差一条 `guava-parent-33.3.1-jre.pom` 就把构建打挂了——而 CI 的 runner 每次都是冷的。代价是重新生成要把依赖整套下一遍（约 1 GB / 十几分钟）。
 
 ### 3.2.1 OTA 信任根门禁（安全评审 N19，默认关闭）
 

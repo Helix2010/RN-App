@@ -1,5 +1,13 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { readTenantConfig, tenantEnvironment } from "./tenant-config.mjs";
 import {
@@ -26,6 +34,13 @@ const MACHINE_ENV_KEYS = [
   "EXPO_REQUIRE_OTA_SIGNING",
 ];
 // 脚本测试用临时目录隔离开发者本机的 .env.local（RN_ENV_ROOT 只在 Jest 子进程里生效）；构建永远读仓库根
+/**
+ * 清单里的组件数下限。低于这个值说明这次构建解析到的依赖比一次完整 release 少
+ * （任务被 up-to-date 跳过、配置没求值到），写出去就是一份会被强制执行的残缺清单。
+ * 2026-09-11 的基线是 1309。
+ */
+const MIN_VERIFIED_COMPONENTS = 1000;
+
 const envRoot =
   process.env.RN_ENV_ROOT && process.env.JEST_WORKER_ID
     ? resolve(process.env.RN_ENV_ROOT)
@@ -152,11 +167,62 @@ const run = (command, args, options = {}) => {
   return result.stdout;
 };
 
+// --write-verification-metadata：重新生成 Gradle 依赖校验清单（安全评审 N28）。
+// 走真实的 release 构建而不是 `:app:dependencies`——只有真实构建才覆盖得到所有配置
+// （buildscript 类路径、各个 Expo 子工程、变体相关的依赖）。生成期间必须把校验本身
+// 关掉，否则就是拿旧清单去校验、然后用校验失败的结果写新清单。
+const writingVerificationMetadata = process.argv.includes(
+  "--write-verification-metadata",
+);
+if (writingVerificationMetadata) {
+  env.GRADLE_DEPENDENCY_VERIFICATION = "0";
+  // 必须在**冷缓存**下生成，这一条是实测出来的，不是保险起见：
+  // 暖缓存里 Gradle 用的是已解析的模块元数据，不会重读原始 .pom / .module，
+  // 于是那些文件根本不会被记进清单。2026-09-11 第一次用开发机缓存生成的清单，
+  // 在冷缓存下就差一条 guava-parent-33.3.1-jre.pom（buildscript classpath），
+  // 直接把构建打挂——而 CI 的 runner 每次都是冷的。
+  // 代价是重新生成要把依赖整套下一遍（约 1 GB / 十几分钟），但这是个低频操作。
+  env.GRADLE_USER_HOME = mkdtempSync(join(tmpdir(), "rn-gradle-verify-"));
+  console.log(
+    `Generating verification metadata against a cold Gradle cache: ${env.GRADLE_USER_HOME}`,
+  );
+}
+
 const config = JSON.parse(
   run("pnpm", ["exec", "expo", "config", "--json"], { capture: true }),
 );
 run("pnpm", ["exec", "expo", "prebuild", "--platform", "android", "--clean"]);
-run("./gradlew", ["assembleRelease"], { cwd: resolve(projectRoot, "android") });
+run(
+  "./gradlew",
+  writingVerificationMetadata
+    ? ["--write-verification-metadata", "sha256", "assembleRelease"]
+    : ["assembleRelease"],
+  { cwd: resolve(projectRoot, "android") },
+);
+if (writingVerificationMetadata) {
+  const generated = resolve(
+    projectRoot,
+    "android/gradle/verification-metadata.xml",
+  );
+  if (!existsSync(generated))
+    throw new Error(
+      "Gradle did not write android/gradle/verification-metadata.xml",
+    );
+  const contents = readFileSync(generated, "utf8");
+  // 一份残缺的清单比没有更坏：它会被强制执行，然后在别人手里炸成"依赖校验失败"
+  const components = (contents.match(/<component /g) ?? []).length;
+  if (components < MIN_VERIFIED_COMPONENTS)
+    throw new Error(
+      `verification-metadata.xml only lists ${components} components (floor ${MIN_VERIFIED_COMPONENTS}); the build resolved less than a full release does`,
+    );
+  const target = resolve(projectRoot, "gradle/verification-metadata.xml");
+  mkdirSync(dirname(target), { recursive: true });
+  copyFileSync(generated, target);
+  console.log(
+    `Gradle dependency verification metadata: ${components} components → ${target}`,
+  );
+  rmSync(env.GRADLE_USER_HOME, { recursive: true, force: true });
+}
 
 const embeddedConfigPath = resolve(
   projectRoot,

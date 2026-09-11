@@ -254,6 +254,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     "./plugins/with-wallet-deep-links.js",
     // Gradle wrapper 分发包校验和（安全评审 N28）
     "./plugins/with-gradle-distribution-checksum.js",
+    // Gradle 依赖校验清单（安全评审 N28）。默认不安装，GRADLE_DEPENDENCY_VERIFICATION=1
+    // 才把 gradle/verification-metadata.xml 放进去；关着时确保工程里不残留旧清单
+    "./plugins/with-gradle-dependency-verification.js",
     // 原生启动图改成纯色：模板默认那张占位图（网格 + 同心圆）不属于任何租户
     [
       "./plugins/with-plain-splash.js",

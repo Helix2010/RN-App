@@ -31,6 +31,7 @@
     "i18n:check": "node scripts/export-i18n-seed.mjs --check",
     "audit:deps": "node scripts/check-dependency-audit.mjs",
     "sbom": "node scripts/build-sbom.mjs",
+    "android:verification-metadata": "node scripts/build-android-release.mjs --write-verification-metadata",
     "tenant": "node scripts/tenant.mjs"
   },
   "dependencies": {
