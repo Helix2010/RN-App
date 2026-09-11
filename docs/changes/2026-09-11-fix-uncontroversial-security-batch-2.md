@@ -94,3 +94,37 @@ calldata 在真实资金档默认拒绝、`signTypedData` 的策略。
 **未做**：SBOM。要么加 `@cyclonedx/cyclonedx-npm` 这类工具（本身是一次供应链决策），
 要么自己拼 CycloneDX（容易产出"看着像官方格式但其实不对"的东西）。这一项需要先选定工具，
 不属于"无争议"。
+
+## 追加：SBOM（§12.2，替换上一节"未做"的结论）
+
+上一节写的是"SBOM 需要先选工具，不属于无争议"。工具选定为 **syft**（Anchore 的 Go 单二进制，按固定版本 + 固定 sha256 下载，**不进 `package.json`**——为了做供应链安全而往依赖树里塞一个新的大依赖是自相矛盾的）。
+
+### 扫什么：实测推翻了原计划
+
+原本打算扫构建出来的 APK（"用户手机上装了什么"）。实测（syft 1.51.1）：
+
+| 扫描目标 | 结果 |
+| --- | --- |
+| Android APK 本身 | **0 个组件** |
+| 整个仓库目录 | 1689 个，约 27% 是噪声 |
+| `pnpm-lock.yaml` | 1230 个 npm 包，全部带版本，零噪声 |
+
+- **扫 APK 没用**：代码在 `classes.dex` 里，syft 没有 dex 编目器（它的 "apk" 支持指的是 Alpine 的 apk）。它不会报错，只会安静地输出一份 0 组件的合法 CycloneDX 文档。
+- **扫仓库目录会说谎**：噪声全部来自 `node_modules` 内部 vendor 的文件——`react-native-qrcode-svg` 里的 `Gemfile.lock`（38 个 gem）、`react-native-svg` 里的 Windows 工程（10 个 nuget）、Expo 各包的 `-sources` jar（伪装成 maven）。这些一个都不进 APK，写进 SBOM 只会让人以为产物里有它们。
+
+所以扫 lockfile。
+
+### 实现
+
+- 新增 `scripts/build-sbom.mjs`（`pnpm sbom`）：调 syft 扫 `pnpm-lock.yaml`，把结果**绑定到具体产物**——`metadata.component` 换成该 APK（包名、版本、sha256），`metadata.properties` 写进租户、buildNumber、产物文件名与 source commit。不绑定的 SBOM 只是"某次扫描的结果"，回答不了"用户手机上那个包里有什么"。
+- **丢掉 syft 列出的"被扫文件自己"那一条**：它没有版本号，而且 `name` 是**绝对路径**（`/home/ubuntu/.../pnpm-lock.yaml`），会把构建机目录结构写进一份要分发出去的文件。依赖图里指向它的边一并清掉。
+- **两条 fail-closed 守卫**，都来自 `pnpm audit` 那次教训（静默产出空结果的安全工具比没有更坏）：组件数低于 200 判定为"扫错了目标"而不是"依赖真的很少"；任何组件缺版本号即失败——SBOM 的全部意义就是回答"装的是哪个版本"。
+- CI：`android-release-gate` 在 `pnpm android:verify` 通过后生成 SBOM，`actions/upload-artifact@ea165f8d`（v4.6.2）保留 90 天。syft 按 `SYFT_VERSION=1.51.1` + `SYFT_SHA256=8fcb3301…` 下载并校验。
+
+### 已知边界（写在文件里，不只写在文档里）
+
+**原生依赖不在这份 SBOM 里。** 本工程没有 Gradle 依赖锁定，仓库里没有权威的原生依赖清单可读；APK 又是 dex。文件的 `rn-app:coverage` 属性如实写着 `javascript-only`，`rn-app:coverage-note` 说明原因——拿到这份 SBOM 的人未必读过 runbook。补上这一半的前置条件是 N28 里另一项欠账：给 Gradle 加 `verification-metadata.xml`，那份文件本身就是权威的 Android 依赖列表。
+
+### 实测验证
+
+对已上线的 1.3.7 (33) 跑了一次：1230 个组件，绑定的 sha256 `b9e300ce…8e86` 与线上 `GET /v1/mobile/bootstrap` 返回的 `update.full.sha256` **逐字节一致**——这份 SBOM 绑的就是用户正在下载的那份字节。

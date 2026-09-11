@@ -30,6 +30,7 @@
     "i18n:seed": "node scripts/export-i18n-seed.mjs",
     "i18n:check": "node scripts/export-i18n-seed.mjs --check",
     "audit:deps": "node scripts/check-dependency-audit.mjs",
+    "sbom": "node scripts/build-sbom.mjs",
     "tenant": "node scripts/tenant.mjs"
   },
   "dependencies": {

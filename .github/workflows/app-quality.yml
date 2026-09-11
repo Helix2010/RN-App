@@ -76,6 +76,27 @@ jobs:
           pnpm android:release "$TENANT" --no-push
       - name: Re-verify the artifact independently of the build script
         run: pnpm android:verify artifacts/*.apk "$TENANT"
+      # SBOM（安全评审 §12.2）：audit 回答"今天有哪些已知漏洞"，SBOM 回答"已经发出去的
+      # 那个包里装的是哪个版本"。syft 按固定版本 + 固定 sha256 下载——为了做供应链安全
+      # 而引入一个不固定的二进制是自相矛盾的，也因此不把它加进 package.json。
+      - name: Generate the SBOM for the built artifact
+        env:
+          SYFT_VERSION: 1.51.1
+          SYFT_SHA256: 8fcb33017a0dc1058298c923c436d19dfa68ae93968e0b423248542e3afb9fc3
+        run: |
+          archive="$RUNNER_TEMP/syft.tar.gz"
+          curl -sSLo "$archive" \
+            "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_linux_amd64.tar.gz"
+          echo "$SYFT_SHA256  $archive" | sha256sum -c -
+          tar xzf "$archive" -C "$RUNNER_TEMP" syft
+          node scripts/build-sbom.mjs --tenant "$TENANT" \
+            --syft "$RUNNER_TEMP/syft" --apk artifacts/*.apk
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sbom-${{ env.TENANT }}
+          path: artifacts/*-sbom.cdx.json
+          if-no-files-found: error
+          retention-days: 90
       - name: Remove the keystore from the runner
         if: always()
         run: rm -f "$RUNNER_TEMP/release.jks"

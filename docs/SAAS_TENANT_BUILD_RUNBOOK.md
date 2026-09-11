@@ -128,6 +128,14 @@ CI 的 `android-release-gate` job 在 main 与手动触发时用受保护环境 
 
 `EXPO_UPDATES_CODE_SIGNING_CERTIFICATE` 一旦设置，`app.config.ts` 会先确认那个路径真的存在（相对仓库根解析，与 expo-updates 一致）——拼错的路径原本会一路沉默到运行时才表现为"更新没有验签"。
 
+CI 门禁在复核通过后还会生成一份 SBOM（`artifacts/<slug>-<version>-build<code>-sbom.cdx.json`，CycloneDX，保留 90 天）并绑定到该 APK 的 sha256。本地复现：
+
+```bash
+pnpm sbom --tenant <slug> --apk artifacts/<slug>-<version>-build<code>-release.apk
+```
+
+需要 syft（CI 里按固定版本 + sha256 下载，不进 `package.json`）。**这份 SBOM 只覆盖 JS 依赖**：本工程没有 Gradle 依赖锁定，APK 里是 dex 不是 jar，原生那一半扫不出来；文件自己的 `rn-app:coverage` 属性会如实写着 `javascript-only`。要补上原生的一半，前置条件是给 Gradle 加 `verification-metadata.xml`（N28 的另一项欠账）。
+
 ### 3.2.1 OTA 信任根门禁（安全评审 N19，默认关闭）
 
 `EXPO_REQUIRE_OTA_SIGNING=1` 打开后，任何会真正启用 OTA 的非 development 构建缺 `EXPO_UPDATES_CODE_SIGNING_CERTIFICATE` 即失败，两道都会拦：`pnpm android:release` 在跑任何构建步骤之前先报错，`expo prebuild` 走到 `app.config.ts` 时再报一次。
