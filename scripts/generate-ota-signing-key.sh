@@ -22,13 +22,22 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 CODE_SIGNING_OID="1.3.6.1.5.5.7.3.3"
 
+# 这个脚本是给人拷到运维机上单独跑的，那时它上一级目录不是仓库而是随便什么地方
+# （拷到 ~/tools/ 就会把 $HOME 当成"仓库根"，然后拒绝一切输出目录）。
+# 所以"不许写进仓库"这条只在脚本确实待在仓库里时才生效。
+IN_REPO=0
+if [ -f "$REPO_ROOT/package.json" ] && [ -d "$REPO_ROOT/scripts" ] && [ -d "$REPO_ROOT/tenants" ]; then
+  IN_REPO=1
+fi
+
 TENANT=""; OUT_DIR=""; YEARS=10; COMMON_NAME=""; KEY_ID="main"; KEYSIZE=4096; ASSUME_YES=0
 
 usage() {
   cat <<'USAGE'
 用法: generate-ota-signing-key.sh [选项]
-  --tenant <slug>        租户 slug（tenants/<slug>/tenant.json 必须存在；仅用于取名与默认值）
-  --out <dir>            输出目录，必须在仓库之外；默认 ~/ota-keys/<slug>
+  --tenant <slug>        只用于取名：证书 CN 与默认输出目录。读得到 tenants/<slug>/tenant.json
+                         就用里面的 appName，读不到就直接用 slug（拷到别的机器上跑时如此）
+  --out <dir>            输出目录；默认 ~/ota-keys/<slug>。脚本在仓库里时禁止写进仓库
   --years <n>            证书有效期年数，默认 10。过期后只能发原生新版换证书，OTA 救不了自己
   --common-name <name>   证书 CN，默认 "<appName> OTA"
   --key-id <id>          expo-signature 的 keyid，默认 main
@@ -91,7 +100,9 @@ fi
 ask OUT_DIR "输出目录（仓库之外）" "$HOME/ota-keys/$TENANT"
 mkdir -p "$OUT_DIR"; chmod 700 "$OUT_DIR"
 OUT_ABS="$(cd "$OUT_DIR" && pwd -P)"
-case "$OUT_ABS/" in "$REPO_ROOT"/*) fail "输出目录不能在仓库内（$OUT_ABS）：私钥一旦入库就无法撤回" ;; esac
+if [ "$IN_REPO" = 1 ]; then
+  case "$OUT_ABS/" in "$REPO_ROOT"/*) fail "输出目录不能在仓库内（$OUT_ABS）：私钥一旦入库就无法撤回" ;; esac
+fi
 
 KEY_OUT="$OUT_ABS/private-key.pem"
 CERT_OUT="$OUT_ABS/certificate.pem"

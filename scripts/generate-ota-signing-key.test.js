@@ -164,3 +164,37 @@ maybe("ota signing key generator", () => {
     });
   });
 });
+
+// 这个脚本的意义之一就是能单独拷到运维机上跑——私钥生成在哪台机器，就等于它被
+// 保管在哪。回归：第一版把「脚本所在目录的上一级」当成仓库根，拷到 ~/tools/ 之后
+// 会把整个 $HOME 当成仓库，拒绝一切输出目录，等于在仓库外完全不可用。
+maybe("portability", () => {
+  test("still works when the script is copied out of the repository", () => {
+    withFixture((root) => {
+      const elsewhere = join(root, "opsbox");
+      mkdirSync(elsewhere, { recursive: true });
+      const copied = join(elsewhere, "generate-ota-signing-key.sh");
+      writeFileSync(copied, readFileSync(script, "utf8"));
+
+      const result = spawnSync(
+        "bash",
+        [
+          copied,
+          "--tenant",
+          "anyfun",
+          "--common-name",
+          "AnyFun OTA",
+          "--out",
+          join(elsewhere, "keys"),
+          "--keysize",
+          "2048",
+          "--yes",
+        ],
+        { encoding: "utf8" },
+      );
+      expect(result.stderr).not.toMatch(/不能在仓库内/);
+      expect(result.status).toBe(0);
+      expect(existsSync(join(elsewhere, "keys", "certificate.pem"))).toBe(true);
+    });
+  });
+});
