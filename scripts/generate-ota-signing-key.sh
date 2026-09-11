@@ -31,6 +31,7 @@ if [ -f "$REPO_ROOT/package.json" ] && [ -d "$REPO_ROOT/scripts" ] && [ -d "$REP
 fi
 
 TENANT=""; OUT_DIR=""; YEARS=10; COMMON_NAME=""; KEY_ID="main"; KEYSIZE=4096; ASSUME_YES=0
+EXPECTED_VERSION=0
 
 usage() {
   cat <<'USAGE'
@@ -41,6 +42,9 @@ usage() {
   --years <n>            证书有效期年数，默认 10。过期后只能发原生新版换证书，OTA 救不了自己
   --common-name <name>   证书 CN，默认 "<appName> OTA"
   --key-id <id>          expo-signature 的 keyid，默认 main
+  --expected-version <n> 请求体里的 expectedVersion，默认 0（首次安装）。轮换时填**当前线上
+                         版本号**（GET /v1/admin/ota/signing-key 的 version）。填错服务端拒绝写入，
+                         这是防并发覆盖用的——两个人同时换密钥，后一个必须失败而不是悄悄盖掉
   --keysize <bits>       RSA 位数，默认 4096（服务端下限 2048）
   --yes                  非交互：全部用默认值 / 已给参数
   -h, --help
@@ -56,6 +60,7 @@ while [ $# -gt 0 ]; do
     --years) YEARS="$2"; shift 2 ;;
     --common-name) COMMON_NAME="$2"; shift 2 ;;
     --key-id) KEY_ID="$2"; shift 2 ;;
+    --expected-version) EXPECTED_VERSION="$2"; shift 2 ;;
     --keysize) KEYSIZE="$2"; shift 2 ;;
     --yes) ASSUME_YES=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -115,6 +120,7 @@ ask YEARS "证书有效期（年）" "10"
 [[ "$YEARS" =~ ^[0-9]+$ ]] && [ "$YEARS" -ge 1 ] || fail "有效期必须是正整数年"
 ask COMMON_NAME "证书 CN" "$APP_NAME OTA"
 [[ "$KEYSIZE" =~ ^[0-9]+$ ]] && [ "$KEYSIZE" -ge 2048 ] || fail "RSA 位数不得小于 2048（服务端会拒绝）"
+[[ "$EXPECTED_VERSION" =~ ^[0-9]+$ ]] || fail "--expected-version 必须是非负整数（首次安装填 0）"
 
 # ---- 生成 ----
 umask 077
@@ -169,16 +175,17 @@ NOT_AFTER="$(openssl x509 -in "$CERT_OUT" -noout -enddate | cut -d= -f2)"
 if command -v node >/dev/null; then
   node -e '
     const fs = require("fs");
-    const [keyFile, certFile, keyId] = process.argv.slice(1);
+    const [keyFile, certFile, keyId, expectedVersion] = process.argv.slice(1);
+    const version = Number(expectedVersion);
     process.stdout.write(JSON.stringify({
       keyId,
       privateKeyPem: fs.readFileSync(keyFile, "utf8"),
       certificatePem: fs.readFileSync(certFile, "utf8"),
-      expectedVersion: 0,
-      reason: "install ota code signing key",
+      expectedVersion: version,
+      reason: version === 0 ? "install ota code signing key" : "rotate ota code signing key",
       confirm: true,
     }));
-  ' "$KEY_OUT" "$CERT_OUT" "$KEY_ID" > "$BODY_OUT"
+  ' "$KEY_OUT" "$CERT_OUT" "$KEY_ID" "$EXPECTED_VERSION" > "$BODY_OUT"
   chmod 600 "$BODY_OUT"
   BODY_NOTE="$BODY_OUT   （0600，**含私钥**，装完 shred 掉）"
 else
@@ -193,9 +200,25 @@ cat <<SUMMARY
 私钥:          $KEY_OUT   （0600，机密）
 证书:          $CERT_OUT
 keyId:         $KEY_ID
+expectedVersion: $EXPECTED_VERSION$( [ "$EXPECTED_VERSION" = 0 ] && echo "   （首次安装）" || echo "   （轮换：线上当前版本必须正好是这个数）" )
 证书 SHA-256:  $CERT_SHA256
 有效期至:      $NOT_AFTER   ← 记进日历。过期后只能发原生新版换证书，OTA 救不了自己
 请求体:        $BODY_NOTE
+SUMMARY
+
+if [ "$EXPECTED_VERSION" != 0 ]; then
+  cat <<ROTATE
+
+!! 这是一次**轮换**。已经装在用户手机上、内嵌旧证书的原生包，从换掉的那一刻起
+   就再也验不过任何 OTA——它们只认编进包里的那张证书，而 OTA 换不了自己的证书。
+   所以轮换只有两种安全时机：(a) 还没有任何原生包带过证书；(b) 你已经准备好
+   立刻发一个带新证书的原生版本，并接受旧版设备在升级前收不到 OTA。
+   先用 GET /v1/admin/ota/signing-key 确认 version 确实等于 $EXPECTED_VERSION，
+   不等就说明中间还有人动过，停下来查清楚——服务端也会用这个数拒掉并发覆盖。
+ROTATE
+fi
+
+cat <<SUMMARY
 
 接下来两步，**顺序不能反**：
 

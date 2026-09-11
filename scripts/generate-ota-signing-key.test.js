@@ -111,6 +111,29 @@ maybe("ota signing key generator", () => {
     });
   });
 
+  test("carries the caller's expectedVersion so rotation needs no hand-edited JSON", () => {
+    withFixture((root) => {
+      expect(
+        generate(root, ["--keysize", "2048", "--expected-version", "3"]).status,
+      ).toBe(0);
+      const body = JSON.parse(
+        readFileSync(join(root, "keys", "signing-key.json"), "utf8"),
+      );
+      // 服务端拿 expectedVersion 做乐观锁：不等于线上当前 version 就拒绝写入。
+      // 之前只能手改这个 JSON——而这个文件里有私钥，编辑器备份/剪贴板都是泄露面
+      expect(body.expectedVersion).toBe(3);
+      expect(body.reason).toMatch(/rotate/);
+    });
+  });
+
+  test("refuses an expectedVersion the server could never match", () => {
+    withFixture((root) => {
+      const result = generate(root, ["--keysize", "2048", "--expected-version", "-1"]);
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toMatch(/expected-version/);
+    });
+  });
+
   test("refuses to write inside the repository", () => {
     withFixture((root) => {
       // 私钥一旦入库就无法撤回
