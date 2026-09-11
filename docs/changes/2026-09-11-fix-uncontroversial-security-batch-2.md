@@ -69,3 +69,28 @@ calldata 在真实资金档默认拒绝、`signTypedData` 的策略。
 - **passed** — `pnpm android:verify artifacts/anyfun-1.3.7-build33-release.apk anyfun`：已上线产物的 34 条权限全部在允许列表上，门禁通过。
 - **not run** — 模拟器/真机。合约钉住的失败路径没有在真机上走过（需要一个会换地址的平台环境）。
 - 无原生变更，可走 OTA。
+
+## 追加：依赖漏洞体检接入 CI（N28 的 SCA 一项）
+
+`grep -rn "audit\|snyk\|osv" .github/workflows` 此前零命中——依赖漏洞完全没有人看。
+
+- 新增 `scripts/check-dependency-audit.mjs`（`pnpm audit:deps`），整理 `pnpm audit --json`
+  的结果成按严重度排序的表，同一个包的多条公告合成一行并附上引入路径。
+  接进 `app-quality` 的 verify job。
+- **当前是报告模式**：有漏洞不挡发布。"high/critical 一律阻断"要先定 SLA 与例外流程，
+  否则上游第一次发公告就会把所有人的发布卡死，最后一定有人把这一步注释掉。
+  定了之后加 `--fail-on high` 即可，判定逻辑和用例都已经在。
+- **但 audit 跑不起来必须 fail closed**。评审里记过"本次 `pnpm audit` 未成功"，
+  而那次失败是**静默**的：CI 绿着，没有人知道这项检查其实没跑。注册表不可达、
+  代理拦截、输出不是合法 JSON，现在都会让这一步变红并打出原始 stderr。
+  一个跑不起来的安全检查比没有这项检查更坏，因为它让人以为已经查过了。
+- `--input <file>` 读一份抓好的结果：脚本因此可以用固定夹具测试，不依赖网络，
+  也方便排查"CI 上看到的到底是哪一份"。
+- 当前基线（2026-09-11）：23 条公告，17 high / 6 moderate，全部来自构建期工具链的
+  传递依赖（`@expo/config-plugins` → `xcode` → `plist` → `@xmldom/xmldom`、
+  `babel-jest` → `js-yaml`、`@react-navigation` → `decode-uri-component`）。
+  没有一条在运行时的钱包路径上。
+
+**未做**：SBOM。要么加 `@cyclonedx/cyclonedx-npm` 这类工具（本身是一次供应链决策），
+要么自己拼 CycloneDX（容易产出"看着像官方格式但其实不对"的东西）。这一项需要先选定工具，
+不属于"无争议"。

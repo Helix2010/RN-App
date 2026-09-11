@@ -26,6 +26,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
       - run: node scripts/check-expo-doctor.mjs
+      # 依赖漏洞体检（安全评审 N28）。当前是报告模式——有漏洞不挡发布，但 audit
+      # 本身跑不起来会让这一步变红：静默失败的安全检查比没有这项检查更坏。
+      # 定了 high/critical 的 SLA 与例外流程之后，加上 `--fail-on high`。
+      - run: node scripts/check-dependency-audit.mjs
 
   # 发布身份门禁（安全评审 N1 / N16 / N18 / N28）：用租户的生产签名密钥完整构建一次 release APK，
   # 并用 apksigner / aapt 复核签名者、包名、版本与权限。只在 main 与手动触发上跑，
