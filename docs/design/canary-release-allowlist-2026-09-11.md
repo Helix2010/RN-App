@@ -1,6 +1,6 @@
 # 设计：灰度发布与设备白名单（全量包 + OTA）
 
-- 状态：Draft，待评审
+- 状态：已实现（2026-09-11）
 - 日期：2026-09-11
 - 涉及仓库：RN-Server（主）、RN-App、RN-Admin
 
@@ -35,12 +35,13 @@ UPDATE app_releases SET status='completed' WHERE tenant_id=? AND id<>? AND platf
 
 四条相关读路径：
 
-| 用途                 | 位置                                                     | 现在的条件                                               |
-| -------------------- | -------------------------------------------------------- | -------------------------------------------------------- |
-| bootstrap 的更新决策 | `simplified_releases.go` `activeSimplifiedRelease`       | `status='active' ORDER BY build_number DESC LIMIT 1`     |
-| 公开最新版本         | `simplified_releases.go` `publicLatestReleaseFromDomain` | 同上                                                     |
-| 公开下载             | `simplified_releases.go` `publicReleaseDownload`         | `id=? AND status='active'`                               |
-| OTA manifest         | `ota.go` `otaManifest`                                   | `o.status='active' ... ORDER BY o.revision DESC LIMIT 1` |
+| 用途                  | 位置                                                     | 现在的条件                                               |
+| --------------------- | -------------------------------------------------------- | -------------------------------------------------------- |
+| bootstrap 的更新决策  | `simplified_releases.go` `activeSimplifiedRelease`       | `status='active' ORDER BY build_number DESC LIMIT 1`     |
+| 公开最新版本          | `simplified_releases.go` `publicLatestReleaseFromDomain` | 同上                                                     |
+| 公开下载              | `simplified_releases.go` `publicReleaseDownload`         | `id=? AND status='active'`                               |
+| OTA manifest          | `ota.go` `otaManifest`                                   | `o.status='active' ... ORDER BY o.revision DESC LIMIT 1` |
+| bootstrap 的 OTA 提示 | `server.go` bootstrap 内联查询                           | 同上（实现时发现的第五条，见 §11）                       |
 
 **服务端目前不知道请求来自哪台设备**。bootstrap 只读 `x-app-version`、`x-build-number`、`x-distribution-channel`、`x-platform`；OTA manifest 只读 expo 的平台 / 运行时 / 渠道；`/v1/public/releases/latest` 完全匿名。安装 ID 是有的（`app_installations.installation_id`，客户端存在 SecureStore），但只在登录相关接口上作为 `X-Installation-ID` 发送。
 
@@ -152,7 +153,7 @@ WHERE tenant_id=? AND id=?
 
 ## 5. 迁移
 
-迁移 38 `release_canary`，前向执行，两步：
+迁移 39 `release_canary`（38 已被 `release_notes_line_arrays` 占用），前向执行，两步：
 
 ```sql
 ALTER TABLE app_releases MODIFY status ENUM('uploaded','verified','active','canary','paused','completed','rejected','rolled_back') NOT NULL COMMENT '发布状态';
@@ -161,7 +162,8 @@ ALTER TABLE ota_releases MODIFY status ENUM('draft','verified','active','canary'
 ALTER TABLE ota_releases ADD COLUMN canary_installations JSON NULL COMMENT '灰度设备白名单…' AFTER status;
 ```
 
-按既有迁移的写法先查 `INFORMATION_SCHEMA.COLUMNS` 判重，可重复执行。
+按既有迁移的写法先查 `INFORMATION_SCHEMA.COLUMNS` 判重，可重复执行（抽成了 `addColumnIfMissing`）。
+**列注释里不能出现单引号**，它会提前终止 SQL 字符串字面量——第一版写成 `仅 status='canary' 时有意义` 直接让迁移报 1064，集成测试当场挡下。
 
 **上线顺序**：迁移必须先于任何写入 `canary` 的代码。ENUM 里没有这个值时写入会被 MySQL 拒绝（严格模式）或静默截断（非严格模式），后者更糟。
 
@@ -254,7 +256,100 @@ Play Integrity / DeviceCheck 是这类问题的教科书答案，在这里却是
 
 ### 8.2 其它限制
 
-## 9. 分期与工作量
+- **名单里的设备必须已经上报过安装**。服务端按 `(tenant, platform, installation_id)` 校验存在性，拼错一个字符会当场被拒（`CANARY_INSTALLATION_UNKNOWN`）——不这么做的话，错的 ID 只会表现为"发了但那台机器没收到"，查起来很贵。
+- **令牌是"这次存、下次生效"**。extra params 由原生侧持久化，本次启动那一次 manifest 请求已经发出去了。所以刚加入名单的设备通常要多开一次 App 才会拿到灰度 OTA。全量包没有这个延迟（bootstrap 当场就按身份匹配）。
+- **灰度 OTA 的资源请求带不了身份**。`Expo-Extra-Params` 只加在 manifest 请求上，资源请求没有。所以 `otaAsset` 对 `canary` 的放行与 `paused` / `superseded` 同档：把关的是 manifest，资源路径只能从已经过灰度校验的 manifest 里拿到，且要逐条对得上 `object_metadata`。
+- **harmony 没有安装上报**，管理端在那个平台上只能粘贴安装 ID，勾选列表是空的。
+
+## 9. 可行性与安全性论证
+
+本节的每条结论都在真实环境上验证过，不是推断。
+
+### 9.1 查询计划：OR + JSON_CONTAINS 不会拖垮启动接口
+
+顾虑是 bootstrap 每次启动都打，而 `JSON_CONTAINS` 用不上索引。在生产库（MySQL 8.0.45）上对同形状的语句取执行计划：
+
+```
+type: ref
+key: uq_release_tenant_platform_build
+ref: const,const
+rows: 23
+Extra: Using where; Backward index scan
+```
+
+三点结论：
+
+- 走的是 `(tenant_id, platform, build_number)` 唯一索引的 **ref** 访问，不是全表扫；
+- `ORDER BY build_number DESC` 由索引反向扫描满足，**没有 filesort**；
+- 配合 `LIMIT 1`，MySQL 从最大 build 往下走、命中第一条满足 `WHERE` 的就停。现实里最新一条通常就是 `active`，所以实际检查的行数是个位数，`JSON_CONTAINS` 只在这几行上求值。
+
+当前该租户 Android 发布记录共 23 条，即便退化成全部扫一遍也是 23 行的 JSON 求值。规模按 3.2 节的门槛管控即可。
+
+### 9.2 身份校验：现成的纯函数，正好适配可选鉴权
+
+`verifyInstallationCredential`（`installations.go:336`）读了一遍就返回错误码，**不写 `problem()` 响应、不写库**：一条 SELECT 取出凭证哈希、版本、过期时间、吊销状态，然后 `subtle.ConstantTimeCompare` 比对 SHA-256。它同时按 `(tenant, application_id, platform, installation_id)` 四元组定位记录，而这三个头客户端本来就在发。
+
+这正是可选鉴权需要的形状：bootstrap 调它，拿到空错误码就用这个身份匹配灰度，拿到任何错误码就当匿名继续往下走，配置照发。相比之下 `authenticateInstallation` 会直接写 401 响应，只适合强鉴权端点，不能用在这里。
+
+抗攻击性上，凭证是 32 字节随机数的 `icred_` 串，服务端只存 SHA-256，比对是常量时间的，且带过期与吊销。这与会话令牌同一档。
+
+### 9.3 灰度令牌：复用既有的认证加密，不自造密码学
+
+服务端已有一套令牌机制在用（`encodeReleaseArtifactToken`）：`secrets.Encrypt(json, aad)` 做认证加密，`base64.RawURLEncoding` 编码，过期时间写在载荷里，租户通过 AAD 与字段双重绑定。灰度令牌原样复刻，只换 AAD 前缀与载荷字段。
+
+由此得到的性质不是"签名"而是"认证加密"，比签名更强：
+
+- 客户端**读不出**里面的安装 ID，令牌对它是不透明的；
+- 改一个字节就解不开，无法延长有效期或换成别人的安装 ID；
+- 24 小时过期，且过期判断在服务端；
+- 密钥是 `STORAGE_MASTER_KEY`，与发布产物令牌同源，不新增密钥管理面。
+
+### 9.4 OTA 通道：extra params 是唯一能用的通道，且格式可控
+
+`Expo-Extra-Params` 由原生侧在 manifest 请求上发出（Android `FileDownloader.kt:943`，iOS `FileDownloader.swift:359`），值是 RFC 8941 的结构化字典，形如 `canary-token="…"`。三点：
+
+- **键必须全小写**。`expo-structured-headers` 的 `Utils.checkKey` 只接受 `lcalpha / digit / _ - . *`，键里有一个大写字母就在拼请求头时抛 `IllegalArgumentException`——`setExtraParamAsync` 本身不校验，炸在下一次启动的更新检查上。本文早先写的 `canaryToken` 会踩这个坑，实现时改成 `canary-token`。
+
+- **持久化**：extra params 存在原生侧，**下次启动那一次原生请求就会带上**。而 `setUpdateRequestHeadersOverride` 由 JS 调用，对本次启动那一次检查已经来不及，并且标着 `@experimental`。所以令牌走 extra params 是唯一可行解，不是偏好问题。
+- **无转义风险**：base64url 的字符集是 `A-Za-z0-9-_`，不含结构化字段需要转义的 `"` 与 `\`，服务端解析不会遇到歧义。
+
+### 9.5 安全性：逐条对照攻击者能力
+
+| 攻击者能做什么                          | 结果                      | 为什么                                                                                          |
+| --------------------------------------- | ------------------------- | ----------------------------------------------------------------------------------------------- |
+| 伪造 `X-Installation-ID`                | 拿不到灰度                | 没有对应凭证，`verifyInstallationCredential` 返回 `INSTALLATION_CREDENTIAL_INVALID`，按匿名处理 |
+| 抓到别人的安装 ID（日志、截图）         | 拿不到灰度                | 同上，ID 不是凭据                                                                               |
+| 抓到灰度令牌（抓包 / 读 extra params）  | 24 小时内可冒充，之后失效 | 令牌短时；且令牌不泄漏凭证本身，无法续期                                                        |
+| 篡改灰度令牌延长有效期 / 换安装 ID      | 失败                      | 认证加密，改一字节即解不开                                                                      |
+| 拿到整台设备（含 SecureStore 里的凭证） | 等价于克隆这次安装        | 与会话令牌同一档；管理端可 `INSTALLATION_REVOKED` 吊销，下次请求即失效                          |
+| 猜发布 ID 直接下下载接口                | 404                       | 下载接口同样带灰度条件（3.4 节），不是只靠"不告诉你 ID"                                         |
+| 让服务端把灰度发给全体                  | 做不到                    | 灰度是独立状态，公开 `latest` 与匿名请求永远只看 `active`                                       |
+| 拿到灰度包后篡改再分发                  | 做不到                    | 包过生产签名与 sha256 校验，服务端 pin 了签名者指纹（N1/N2/N33）                                |
+
+### 9.6 fail-closed 的完整枚举
+
+"认不出身份就只给 active"必须在每条分支上成立，逐个列出：
+
+| 分支                                         | 行为                                            |
+| -------------------------------------------- | ----------------------------------------------- |
+| 不带任何身份头（老版本客户端）               | 匿名，只匹配 `active`                           |
+| 带 ID 不带凭证                               | `INSTALLATION_CREDENTIAL_REQUIRED` → 匿名       |
+| 凭证过期 / 被吊销 / 哈希不符                 | `INSTALLATION_CREDENTIAL_INVALID` → 匿名        |
+| 安装记录不存在（换了 application_id 或平台） | 查询不到 → 匿名                                 |
+| 不带灰度令牌取 manifest                      | 匿名，只匹配 `active` 修订                      |
+| 灰度令牌过期 / 解不开 / 租户不符             | 解码失败 → 匿名                                 |
+| `canary_installations` 为 NULL 或空数组      | `JSON_CONTAINS` 不成立 → 该灰度行对所有人不可见 |
+| 数据库里出现 `canary` 但代码已回滚           | OR 分支不存在 → 该行对所有人不可见              |
+
+最后两行是重点：**任何一处出错的方向都是"少发"而不是"多发"**。
+
+### 9.7 这个方案不解决什么
+
+- 不防有心人拿到灰度包。见 8.1 的威胁模型，目标是别误发与能撤销。
+- 不防被灰度设备的持有者把包分享出去。包一旦装到设备上就在对方手里。
+- 不提供百分比灰度、地区灰度。见第 1 节非目标。
+
+## 10. 分期与工作量
 
 | 阶段 | 内容                                                                                        | 估时   |
 | ---- | ------------------------------------------------------------------------------------------- | ------ |
@@ -264,3 +359,28 @@ Play Integrity / DeviceCheck 是这类问题的教科书答案，在这里却是
 | 4    | 账户级灰度（名单换成钱包地址，凭 SIWE 会话证明），等有高价值灰度需求时再做                  | 1 天   |
 
 阶段 1 必须先上线并铺开，阶段 2、3 才有意义。
+
+## 11. 实现记录（2026-09-11）
+
+阶段 1、2、3 已落地，阶段 4（账户级灰度）未做。与本文原稿的差异，逐条：
+
+| 差异                                                                            | 原因                                                                                                                                                                  |
+| ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 迁移号 39，不是 38                                                              | 38 已被 `release_notes_line_arrays` 占用                                                                                                                              |
+| OTA extra param 的键是 `canary-token`，不是 `canaryToken`                       | `expo-structured-headers` 拒绝大写键，见 §9.4                                                                                                                         |
+| 读路径是**五**条，不是四条                                                      | bootstrap 里还有一条内联的 OTA 提示查询（`update.ota.revision`）。不改它的话，灰度设备在"升级中心"看到的修订号和它真正会下到的对不上                                  |
+| `otaAsset` 的状态白名单加了 `canary`                                            | 不加的话灰度设备取到 manifest 却下不了资源，见 §8.2                                                                                                                   |
+| `mandatoryVersion` 改为只查 active 记录                                         | 原来它跟着"取到的那一条"走。灰度记录不得设 mandatory，于是设备一进灰度就把 active 上的强制要求弄丢了——等于给那台机器单独解除了强制升级。抽出 `activeMandatoryVersion` |
+| 名单里的安装 ID 校验存在性                                                      | 见 §8.2 第一条                                                                                                                                                        |
+| `promote` 与 `publish` 分开                                                     | 状态机上完全一样（都到 active、都收尾旧 active），分开只为审计能区分"灰度转正"和"直接全量"                                                                            |
+| `last_action` 改为存动作名（`publish` / `canary` / `promote`…），不再存目标状态 | 否则 `publish` 与 `promote`、`cancel-canary` 与其它拒绝在列表里长得一样。`set-mandatory` 本来就是这么存的，现在一致了                                                 |
+| bootstrap 响应新增 `update.canary.{enrolled,otaToken}`                          | 令牌要有地方下发；`enrolled` 让客户端知道自己拿的是灰度包                                                                                                             |
+| 客户端缓存快照里抹掉 `otaToken`                                                 | 缓存只用来决定启动页画哪版品牌，没必要把令牌留在明文 AsyncStorage 里                                                                                                  |
+
+**验收用例覆盖**：§7 的 17 条里，1–11、13–17 有自动化用例（`RN-Server/internal/api/canary_test.go`，需要 `RN_TEST_MYSQL_HOST`）。第 12 条（灰度 OTA 的基线是 verified 包）走的是既有的基线校验，本轮一行没改，没有新增用例。
+
+**代码位置**：
+
+- 服务端：`internal/api/canary.go`（可见性 SQL、身份解析、令牌、名单校验）、`internal/store/migrations.go` 迁移 39、`internal/api/server.go`（状态机、bootstrap）、`internal/api/simplified_releases.go`、`internal/api/ota.go`。
+- 客户端：`src/core/updates/canary-token.ts`、`src/core/config/bootstrap-repository.ts`、`src/core/config/bootstrap.schema.ts`。
+- 管理端：`src/modules/release-management/canary-audience.tsx`、`pages.tsx`、`src/core/api.ts`。

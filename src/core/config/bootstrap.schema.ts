@@ -262,6 +262,18 @@ export const bootstrapSchema = z.object({
       sha256: z.string().nullable(),
       size: z.number().int().positive().nullable(),
     }),
+    /**
+     * 灰度发布（设计 canary-release-allowlist-2026-09-11）：
+     * `enrolled` 表示本次给这台设备的全量版本是灰度包；`otaToken` 是给
+     * expo-updates 原生侧带的短时令牌（服务端验明安装凭证后才发，24 小时）。
+     * 服务端旧版本不下发这一段，因此整段可选；缺省按"不在灰度里"处理。
+     */
+    canary: z
+      .object({
+        enrolled: z.boolean(),
+        otaToken: z.string().min(1).nullable(),
+      })
+      .optional(),
   }),
   support: z.object({
     diagnosticId: z.string().min(1),

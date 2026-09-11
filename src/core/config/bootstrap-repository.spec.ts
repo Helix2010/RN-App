@@ -26,7 +26,19 @@ jest.mock("expo-crypto", () => ({
   CryptoEncoding: { HEX: "hex" },
   digestStringAsync: jest.fn(),
 }));
+jest.mock("../device/installation-service", () => ({
+  installationAuthorization: jest.fn(async () => ({})),
+}));
+jest.mock("../updates/canary-token", () => ({
+  rememberCanaryToken: jest.fn(async () => undefined),
+}));
 
+const { installationAuthorization } = jest.requireMock(
+  "../device/installation-service",
+) as { installationAuthorization: jest.Mock };
+const { rememberCanaryToken } = jest.requireMock("../updates/canary-token") as {
+  rememberCanaryToken: jest.Mock;
+};
 const storage = AsyncStorage as jest.Mocked<typeof AsyncStorage>;
 const getBootstrap = apiClient.get as jest.MockedFunction<typeof apiClient.get>;
 const getLanguage = apiClient.getText as jest.MockedFunction<
@@ -36,6 +48,59 @@ const getLanguage = apiClient.getText as jest.MockedFunction<
 describe("loadBootstrap", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    installationAuthorization.mockResolvedValue({});
+  });
+
+  // 灰度靠"服务端签发的安装凭证"识别身份，不是裸的安装 ID（设计 §8.1）
+  it("sends the installation credential so the server can match a canary release", async () => {
+    installationAuthorization.mockResolvedValue({
+      "X-Installation-ID": "inst_1",
+      Authorization: "Installation icred_abc",
+    });
+    getBootstrap.mockResolvedValue(createFallbackConfig("zh-CN"));
+
+    await loadBootstrap("zh-CN");
+
+    expect(getBootstrap).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.anything(),
+      expect.objectContaining({
+        headers: {
+          "X-Installation-ID": "inst_1",
+          Authorization: "Installation icred_abc",
+        },
+      }),
+    );
+  });
+
+  it("hands the canary token to expo-updates and keeps it out of the cache", async () => {
+    const config = createFallbackConfig("zh-CN");
+    getBootstrap.mockResolvedValue({
+      ...config,
+      update: {
+        ...config.update,
+        canary: { enrolled: true, otaToken: "canary-tok" },
+      },
+    });
+
+    await loadBootstrap("zh-CN");
+
+    expect(rememberCanaryToken).toHaveBeenCalledWith("canary-tok");
+    const [, cached] = storage.setItem.mock.calls.at(-1) as [string, string];
+    expect(cached).not.toContain("canary-tok");
+    expect(JSON.parse(cached).config.update.canary).toEqual({
+      enrolled: true,
+      otaToken: null,
+    });
+  });
+
+  // 服务端认不出身份时不下发令牌，客户端要把旧的清掉，否则过期令牌会一直带着
+  it("clears the stored token when the server issues none", async () => {
+    getBootstrap.mockResolvedValue(createFallbackConfig("zh-CN"));
+
+    await loadBootstrap("zh-CN");
+
+    expect(rememberCanaryToken).toHaveBeenCalledWith(null);
   });
 
   it("blocks startup when the server is unavailable, whatever the cache holds", async () => {
@@ -78,7 +143,7 @@ describe("loadBootstrap", () => {
     expect(getBootstrap).toHaveBeenCalledWith(
       "/v1/mobile/bootstrap?locale=en-US",
       expect.anything(),
-      { signal: undefined, timeoutMs: 15_000 },
+      { signal: undefined, timeoutMs: 15_000, headers: {} },
     );
     expect(storage.setItem).toHaveBeenCalledWith(
       "foundation.bootstrap.v3.https%3A%2F%2Ftenant-a.example.com.dex-mobile.en-US",

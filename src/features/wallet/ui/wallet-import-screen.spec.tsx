@@ -89,6 +89,13 @@ describe("WalletImportScreen", () => {
     });
 
     await waitFor(() => expect(navigation.popToTop).toHaveBeenCalled());
+    // 导航发生在 finally 里 setBusy(false) 之前：只等 popToTop 的话，收尾那次
+    // setState 会落在 act 之外，负载高时 React 19 会把它抛进后面的用例
+    await waitFor(() =>
+      expect(button.props.accessibilityState).toEqual(
+        expect.objectContaining({ busy: false }),
+      ),
+    );
   });
 
   it("explains an invalid phrase as soon as it is typed and refuses to submit", async () => {

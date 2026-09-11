@@ -1,7 +1,9 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Crypto from "expo-crypto";
 import { z } from "zod";
+import { installationAuthorization } from "../device/installation-service";
 import { apiClient, appRuntime } from "../network/api-client";
+import { rememberCanaryToken } from "../updates/canary-token";
 import {
   bootstrapSchema,
   type BootstrapConfig,
@@ -49,6 +51,21 @@ function normalizeConfig(config: BootstrapConfig): BootstrapConfig {
         ...embeddedMessages,
         ...normalizeMessages(config.localization.messages),
       },
+    },
+  };
+}
+
+/**
+ * 缓存快照只用来决定启动页画哪版品牌，不该顺手把灰度令牌留在明文 AsyncStorage 里。
+ * 令牌每次 bootstrap 都会重发，缓存里留着也没有用途。
+ */
+function withoutCanaryToken(config: BootstrapConfig): BootstrapConfig {
+  if (!config.update.canary?.otaToken) return config;
+  return {
+    ...config,
+    update: {
+      ...config.update,
+      canary: { ...config.update.canary, otaToken: null },
     },
   };
 }
@@ -237,18 +254,32 @@ export async function loadBootstrap(
   locale: SupportedLocale,
   signal?: AbortSignal,
 ): Promise<BootstrapSnapshot> {
+  // 可选携带安装身份：服务端验明凭证后才让这台设备参与灰度匹配（设计
+  // canary-release-allowlist-2026-09-11 §8.1）。还没注册过就不带，
+  // bootstrap 照常返回配置——它是启动门禁，不能因为身份问题失败
   const config = await apiClient.get(
     `/v1/mobile/bootstrap?locale=${encodeURIComponent(locale)}`,
     bootstrapSchema,
     // 60 KB 的下发在弱网下 8 秒会误判超时（真机实测过一次"暂时无法获取远程配置"）
-    { signal, timeoutMs: BOOTSTRAP_TIMEOUT_MS },
+    {
+      signal,
+      timeoutMs: BOOTSTRAP_TIMEOUT_MS,
+      headers: await installationAuthorization(),
+    },
   );
+  // 令牌"这次存、下次启动生效"，所以每次都写，不等到真有灰度包。
+  // 不 await：setExtraParamAsync 走 expo-updates 自己的执行器，更新正在下载时
+  // 会排在它后面。灰度是附加能力，不该让启动门禁等它（函数内部已吞掉所有失败）
+  void rememberCanaryToken(config.update.canary?.otaToken ?? null);
   const enriched = await hydrateCachedBranding(
     await applyRemoteLanguagePackage(normalizeConfig(config), signal),
   );
   await AsyncStorage.setItem(
     cacheKey(locale),
-    JSON.stringify({ savedAt: Date.now(), config: enriched }),
+    JSON.stringify({
+      savedAt: Date.now(),
+      config: withoutCanaryToken(enriched),
+    }),
   );
   return { config: enriched, source: "remote" };
 }
