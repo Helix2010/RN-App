@@ -134,9 +134,48 @@ CI 门禁在复核通过后还会生成一份 SBOM（`artifacts/<slug>-<version>
 pnpm sbom --tenant <slug> --apk artifacts/<slug>-<version>-build<code>-release.apk
 ```
 
-需要 syft（CI 里按固定版本 + sha256 下载，不进 `package.json`）。**这份 SBOM 只覆盖 JS 依赖**：APK 里是 dex 不是 jar，原生那一半扫不出来；文件自己的 `rn-app:coverage` 属性会如实写着 `javascript-only`。原生依赖的清单在 `gradle/verification-metadata.xml`（见 §3.2.2），两份合起来才是完整的物料清单。
+需要 syft（CI 里按固定版本 + sha256 下载，不进 `package.json`）。**这份 SBOM 只覆盖 JS 依赖**：APK 里是 dex 不是 jar，原生那一半扫不出来；文件自己的 `rn-app:coverage` 属性会如实写着 `javascript-only`。原生依赖的清单在 `gradle/verification-metadata.xml`（见 §3.2.3），两份合起来才是完整的物料清单。
 
-### 3.2.2 Gradle 依赖校验（安全评审 N28，默认关闭）
+### 3.2.1 OTA 信任根门禁（安全评审 N19，默认关闭）
+
+`EXPO_REQUIRE_OTA_SIGNING=1` 打开后，任何会真正启用 OTA 的非 development 构建缺 `EXPO_UPDATES_CODE_SIGNING_CERTIFICATE` 即失败，两道都会拦：`pnpm android:release` 在跑任何构建步骤之前先报错，`expo prebuild` 走到 `app.config.ts` 时再报一次。
+
+**现在默认关闭是有意的**：还差密钥仪式这一步。服务端签名已经就位（2026-09-11，见 RN-Server `docs/OPERATIONS_AND_RELEASE.md` §5「OTA」），开关默认打开的前提是先有密钥、且已装进服务端。
+
+### 3.2.2 OTA 签名密钥仪式（发布负责人 + 服务端/运维）
+
+**顺序不能反**：先装服务端密钥，再发带证书的原生包。反过来的话，新包的所有设备都收不到 OTA——它们要求验签，而服务端给不出签名。
+
+1. 生成密钥对（RSA ≥ 2048）。expo 自带的生成器直接给出两份 PEM：
+
+   ```bash
+   npx expo-updates codesigning:generate \
+     --key-output-directory keys --certificate-output-directory certs \
+     --certificate-validity-duration-years 10 \
+     --certificate-common-name "AnyFun OTA"
+   ```
+
+   私钥**不进仓库**，按生产密钥保管（与 Android keystore 同档）。
+
+2. 把私钥与证书装进服务端（私钥在服务端用 storage master key 加密落库，之后只能整把替换，读不回来）：
+
+   ```
+   PUT /v1/admin/ota/signing-key
+   {"keyId":"main","privateKeyPem":"…","certificatePem":"…",
+    "expectedVersion":0,"reason":"install ota signing key","confirm":true}
+   ```
+
+   服务端会校验证书与私钥是一对——不匹配的话它签得出来而客户端一定验不过，症状是所有设备静默停在内置 bundle。
+
+3. 用 `GET /v1/admin/ota/signing-key` 记下 `certificateSha256`，与下一步编进包里的那份证书核对。
+
+4. 构建带证书的原生包：`EXPO_UPDATES_CODE_SIGNING_CERTIFICATE=<certs/certificate.pem>`（可放 `.env.local`，证书是公钥材料），并把 `EXPO_REQUIRE_OTA_SIGNING=1` 打开，让"忘了带证书"变成构建失败而不是一个不验签的包。
+
+5. 发布后验证：用装了新包的设备拉一次 OTA，确认更新能装上（能装上就说明验签通过）。**故意用错的证书再验一次**——那次必须失败并停在内置 bundle，否则说明验签根本没生效。
+
+在密钥装进服务端之前，OTA 仍然只有完整性（bootstrap 下发的 sha256）而没有真实性，这一条是评审 §12.1 未关闭的 P0 门禁。
+
+### 3.2.3 Gradle 依赖校验（安全评审 N28）
 
 `gradle/verification-metadata.xml` 给每一个 Android 依赖记了 sha256（当前 1313 个组件）。`GRADLE_DEPENDENCY_VERIFICATION=1` 时，`plugins/with-gradle-dependency-verification.js` 在 prebuild 把它装进 `android/gradle/`，Gradle 会在**下载之后、使用之前**逐个比对——被顶替的 maven 仓库、被改写的缓存、下毒的传递依赖都会当场失败，而不是安静地进 APK。
 
@@ -151,12 +190,6 @@ pnpm android:verification-metadata <slug>
 它跑一次**真实的 release 构建**并让 Gradle 记下全部解析结果——只有真实构建才覆盖得到所有配置（buildscript 类路径、各个 Expo 子工程、变体相关的依赖）；`:app:dependencies` 只解析依赖图，取不到 `.aar`。生成期间脚本会强制把校验关掉，否则就是拿旧清单去校验、再用校验失败的结果写新清单。写出前校验组件数不低于 1000，一份残缺的清单比没有更坏——它会被强制执行，然后在别人手里炸成"依赖校验失败"。
 
 **脚本会自己建一个临时的 `GRADLE_USER_HOME`，在冷缓存下生成，完事删掉。** 这不是保险起见：暖缓存里 Gradle 用的是已解析的模块元数据，不会重读原始 `.pom` / `.module`，那些文件就不会被记进清单。2026-09-11 第一次用开发机缓存生成的清单，在冷缓存下差一条 `guava-parent-33.3.1-jre.pom` 就把构建打挂了——而 CI 的 runner 每次都是冷的。代价是重新生成要把依赖整套下一遍（约 1 GB / 十几分钟）。
-
-### 3.2.1 OTA 信任根门禁（安全评审 N19，默认关闭）
-
-`EXPO_REQUIRE_OTA_SIGNING=1` 打开后，任何会真正启用 OTA 的非 development 构建缺 `EXPO_UPDATES_CODE_SIGNING_CERTIFICATE` 即失败，两道都会拦：`pnpm android:release` 在跑任何构建步骤之前先报错，`expo prebuild` 走到 `app.config.ts` 时再报一次。
-
-**现在默认关闭是有意的**：证书体系还没建立——密钥仪式、服务端对最终 manifest 与 directive 签名、`includeManifestResponseCertificateChain` 的自定义 plugin，三件一件都没到位。开关先就位，等证书发下来后把默认改成开、再把开关本身删掉。在那之前，OTA 仍然只有完整性（bootstrap 下发的 sha256）而没有真实性，这一条是评审 §12.1 未关闭的 P0 门禁。
 
 ### 3.3 已装机用户从 debug 签名迁移
 
