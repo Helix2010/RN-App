@@ -146,23 +146,26 @@ pnpm sbom --tenant <slug> --apk artifacts/<slug>-<version>-build<code>-release.a
 
 **顺序不能反**：先装服务端密钥，再发带证书的原生包。反过来的话，新包的所有设备都收不到 OTA——它们要求验签，而服务端给不出签名。
 
-1. 生成密钥对（RSA ≥ 2048）。expo 自带的生成器直接给出两份 PEM：
+1. 生成密钥对。**在你打算长期保管私钥的那台机器上**执行——私钥生成在哪台机器，就等于它被保管在哪：
 
    ```bash
-   npx expo-updates codesigning:generate \
-     --key-output-directory keys --certificate-output-directory certs \
-     --certificate-validity-duration-years 10 \
-     --certificate-common-name "AnyFun OTA"
+   pnpm ota:keygen --tenant anyfun          # 交互式
+   pnpm ota:keygen --tenant anyfun --out /secure/keys/anyfun-ota --yes
    ```
 
-   私钥**不进仓库**，按生产密钥保管（与 Android keystore 同档）。
+   脚本只用 openssl、不联网、不需要 node_modules，可以直接拷到运维机上跑（`scripts/generate-ota-signing-key.sh` 是自包含的）。它拒绝写进仓库、拒绝覆盖已有密钥、私钥 0600。
 
-2. 把私钥与证书装进服务端（私钥在服务端用 storage master key 加密落库，之后只能整把替换，读不回来）：
+   **为什么不直接 `openssl req -x509`**：expo-updates 会检查叶证书带 `X509v3 Key Usage: Digital Signature` 与 `X509v3 Extended Key Usage: Code Signing`（`CertificateChain.kt:39-58`）。少任何一个都会在**运行时**被拒，症状是所有设备静默停在内置 bundle。脚本显式写这两个扩展，并在生成后逐条复验；测试里也钉住了这两条。
 
-   ```
-   PUT /v1/admin/ota/signing-key
-   {"keyId":"main","privateKeyPem":"…","certificatePem":"…",
-    "expectedVersion":0,"reason":"install ota signing key","confirm":true}
+   产出 `private-key.pem`（机密）、`certificate.pem`（公开）、`signing-key.json`（第 2 步直接用的请求体，**含私钥，装完 shred**）。
+
+2. 把私钥与证书装进服务端（私钥在服务端用 storage master key 加密落库，之后只能整把替换，读不回来）。PEM 带换行，**不要手拼 JSON**——用第 1 步生成的请求体：
+
+   ```bash
+   curl -sS -X PUT https://<租户域名>/v1/admin/ota/signing-key \
+     -H "content-type: application/json" -H "x-admin-key: $ADMIN_API_KEY" \
+     --data-binary @/secure/keys/anyfun-ota/signing-key.json
+   shred -u /secure/keys/anyfun-ota/signing-key.json
    ```
 
    服务端会校验证书与私钥是一对——不匹配的话它签得出来而客户端一定验不过，症状是所有设备静默停在内置 bundle。
