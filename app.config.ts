@@ -128,6 +128,23 @@ if (resolvedUpdatesUrl) {
   }
 }
 
+/**
+ * 回跳用的 App Link（安全评审 N13）。
+ *
+ * 自定义 scheme（`anyfun://`）谁都能在自己的 manifest 里声明，装了恶意应用的
+ * 机器上，外部钱包批准后的回跳可能落到别人手里。App Link 绑在租户自己的 API
+ * 域名上，由服务端的 `/.well-known/assetlinks.json` 决定谁能接管，抢注不了。
+ *
+ * **只声明一条窄路径**，不要声明整个 host：把 `api.anyfun.win/*` 都交给 App，
+ * 浏览器里打开任何一个 API 地址都会被系统拉起应用。
+ *
+ * http（本地开发）没有 App Link，返回 undefined，回跳退回自定义 scheme。
+ */
+const APP_LINK_PATH = "/app/wc";
+const walletConnectRedirectUrl = apiBaseUrl.startsWith("https://")
+  ? `${new URL(apiBaseUrl).origin}${APP_LINK_PATH}`
+  : undefined;
+
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: tenant?.appName ?? "AnyFun",
@@ -172,6 +189,26 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       "POST_NOTIFICATIONS",
       ...(distributionChannel === "direct" ? ["REQUEST_INSTALL_PACKAGES"] : []),
     ],
+    // autoVerify 让系统开机时去拉 assetlinks.json 核验域名归属；核验通过后
+    // 这条链接只会打开本应用，不会弹"用什么打开"的选择框
+    ...(walletConnectRedirectUrl
+      ? {
+          intentFilters: [
+            {
+              action: "VIEW",
+              autoVerify: true,
+              category: ["BROWSABLE", "DEFAULT"],
+              data: [
+                {
+                  scheme: "https",
+                  host: new URL(apiBaseUrl).host,
+                  pathPrefix: APP_LINK_PATH,
+                },
+              ],
+            },
+          ],
+        }
+      : {}),
     ...(googleServicesFile ? { googleServicesFile } : {}),
   },
   plugins: [
@@ -243,6 +280,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     otaChannel,
     applicationId,
     nativePushConfigured: Boolean(googleServicesFile),
+    // 没有就是没有（本地 http 构建）：WalletConnect 只用自定义 scheme 回跳
+    walletConnectRedirectUrl,
     appVersion,
     buildNumber,
   },

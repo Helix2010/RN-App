@@ -45,15 +45,25 @@ onWalletConfigChange(() => {
  * 展示给对端钱包的应用身份，来自租户构建配置（tenant.json → app.config.ts）。
  * 两项都是构建期必填：缺了或不合法就是构建坏了，抛错而不是换一个域名顶上。
  */
-function appIdentity(): { url: string; native: string } {
+function appIdentity(): {
+  url: string;
+  native: string;
+  universal: string | undefined;
+} {
   const extra = Constants.expoConfig?.extra as
-    { apiBaseUrl?: string } | undefined;
+    { apiBaseUrl?: string; walletConnectRedirectUrl?: string } | undefined;
   const scheme = Constants.expoConfig?.scheme;
   if (typeof scheme !== "string" || scheme.length === 0)
     throw new Error("app scheme is not configured for this tenant build");
   if (!extra?.apiBaseUrl)
     throw new Error("apiBaseUrl is not configured for this tenant build");
-  return { url: new URL(extra.apiBaseUrl).origin, native: `${scheme}://` };
+  return {
+    url: new URL(extra.apiBaseUrl).origin,
+    native: `${scheme}://`,
+    // 构建期没有 App Link（本地 http）时是 undefined：这是"确实没有"，
+    // 不是兜底默认值，回跳只能退回自定义 scheme
+    universal: extra.walletConnectRedirectUrl,
+  };
 }
 
 /**
@@ -107,8 +117,12 @@ async function createClient(appName: string): Promise<SignClientLike> {
       description: `${appName} mobile`,
       url: identity.url,
       icons: [],
-      // 没有 redirect，用户在钱包里点完批准会停在钱包里，回到 App 才看到结果
-      redirect: { native: identity.native },
+      // 回跳优先走 App Link：自定义 scheme 可被其它应用抢注，钱包批准后的
+      // 回跳会落到别人手里（安全评审 N13）。钱包不支持 universal 时退回 native。
+      redirect: {
+        native: identity.native,
+        ...(identity.universal ? { universal: identity.universal } : {}),
+      },
     },
   });
   return client as unknown as SignClientLike;
