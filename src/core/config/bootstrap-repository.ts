@@ -16,6 +16,15 @@ import { hydrateCachedBranding } from "./branding-assets";
 /** bootstrap 请求超时：比通用 8 秒宽，启动门禁与手动检查共用 */
 const BOOTSTRAP_TIMEOUT_MS = 15_000;
 const MAX_CACHE_AGE_MS = 7 * 24 * 60 * 60 * 1_000;
+/**
+ * 缓存可以**代替远程下发放行业务页**的最长年龄。
+ *
+ * 比渲染启动页品牌用的 `MAX_CACHE_AGE_MS` 短得多，而且必须短：bootstrap 是一条
+ * 安全控制通道，强制升级、下线一条链、改 RPC 端点都靠它。放行一份七天前的配置
+ * 等于让这些决定七天内都到不了这台设备。一天是权衡后的上限——一次请求失败不该
+ * 让设备打不开，但"长期离线还能进业务页"不在可接受范围里。
+ */
+export const MAX_CACHE_ENTRY_AGE_MS = 24 * 60 * 60 * 1_000;
 const cacheSchema = z.object({
   savedAt: z.number(),
   config: bootstrapSchema,
@@ -31,8 +40,14 @@ const languagePackageSchema = z.object({
 
 export type BootstrapSnapshot = {
   config: BootstrapConfig;
-  /** remote：本次从服务端拿到的；fallback：内置配置，只用于渲染启动门禁 */
-  source: "remote" | "fallback";
+  /**
+   * - `remote`：本次真的从服务端拿到了。只有它能驱动更新判定。
+   * - `cache`：这次请求失败，用的是上一次成功下发并落盘的那份（最多 7 天）。
+   *   它足以让应用启动——那是一份验过 schema 的真实下发——但**不是新鲜的**，
+   *   所以不能拿它决定"要不要升级"。
+   * - `fallback`：内置配置，只用于渲染启动门禁本身。
+   */
+  source: "remote" | "cache" | "fallback";
 };
 
 function cacheKey(locale: SupportedLocale): string {
@@ -83,6 +98,7 @@ async function discardInvalidCache(key: string): Promise<void> {
 
 async function readCache(
   locale: SupportedLocale,
+  maxAgeMs = MAX_CACHE_AGE_MS,
 ): Promise<BootstrapConfig | null> {
   const key = cacheKey(locale);
   const value = await AsyncStorage.getItem(key);
@@ -101,13 +117,20 @@ async function readCache(
     await discardInvalidCache(key);
     return null;
   }
+  // 比调用方要求的还旧：不算错误，也不清缓存（画启动页还用得上），只是这次不给。
+  if (Date.now() - parsed.data.savedAt > maxAgeMs) return null;
   return hydrateCachedBranding(normalizeConfig(parsed.data.config));
 }
 
+/**
+ * 读缓存。`maxAgeMs` 不传按 7 天——那是画启动页品牌用的窗口。要拿它**代替下发
+ * 放行业务页**的调用方必须传 `MAX_CACHE_ENTRY_AGE_MS`。
+ */
 export async function loadCachedBootstrap(
   locale: SupportedLocale,
+  maxAgeMs?: number,
 ): Promise<BootstrapConfig | null> {
-  return readCache(locale);
+  return readCache(locale, maxAgeMs);
 }
 
 function languagePackageKey(locale: SupportedLocale): string {

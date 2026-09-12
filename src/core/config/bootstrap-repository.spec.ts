@@ -1,6 +1,10 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { apiClient } from "../network/api-client";
-import { loadBootstrap, loadCachedBootstrap } from "./bootstrap-repository";
+import {
+  loadBootstrap,
+  loadCachedBootstrap,
+  MAX_CACHE_ENTRY_AGE_MS,
+} from "./bootstrap-repository";
 import { createFallbackConfig } from "./fallback-config";
 
 jest.mock("@react-native-async-storage/async-storage", () => ({
@@ -121,7 +125,8 @@ describe("loadBootstrap", () => {
   });
 
   it("does not hand out a cached snapshot when the server is unavailable", async () => {
-    // 缓存只用来决定启动页画哪版品牌；拿不到远程下发就是失败，业务界面不能跑在旧配置上
+    // loadBootstrap 只回答"这次下发到了吗"。要不要退回缓存是上一层（use-bootstrap）
+    // 的决定，这里不替它做，也就不会有"以为是远程、其实是缓存"的快照流出去。
     getBootstrap.mockRejectedValue(new Error("server unavailable"));
     storage.getItem.mockResolvedValue(
       JSON.stringify({
@@ -131,6 +136,35 @@ describe("loadBootstrap", () => {
     );
 
     await expect(loadBootstrap("zh-CN")).rejects.toThrow("server unavailable");
+  });
+
+  it("withholds a cache older than the caller's window without discarding it", async () => {
+    // 放行业务页只认一天内的下发；但那份缓存画启动页品牌还有用，不能顺手清掉
+    storage.getItem.mockResolvedValue(
+      JSON.stringify({
+        savedAt: Date.now() - MAX_CACHE_ENTRY_AGE_MS - 1_000,
+        config: createFallbackConfig("zh-CN"),
+      }),
+    );
+
+    await expect(
+      loadCachedBootstrap("zh-CN", MAX_CACHE_ENTRY_AGE_MS),
+    ).resolves.toBeNull();
+    expect(storage.removeItem).not.toHaveBeenCalled();
+    await expect(loadCachedBootstrap("zh-CN")).resolves.not.toBeNull();
+  });
+
+  it("hands out a cache inside the caller's window", async () => {
+    storage.getItem.mockResolvedValue(
+      JSON.stringify({
+        savedAt: Date.now() - 60_000,
+        config: createFallbackConfig("zh-CN"),
+      }),
+    );
+
+    await expect(
+      loadCachedBootstrap("zh-CN", MAX_CACHE_ENTRY_AGE_MS),
+    ).resolves.not.toBeNull();
   });
 
   it("uses the request domain and writes only the domain-scoped cache", async () => {

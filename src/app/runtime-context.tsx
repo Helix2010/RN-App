@@ -404,9 +404,14 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
     ])
       void queryClient.invalidateQueries({ queryKey: key });
   }, [config.wallet, config.services, queryClient]);
-  // 放行条件：本次拿到了远程下发（不是内置配置）且最短停留已到。没有超时放行：
-  // 数据没下来就不进业务页，失败走重试屏。进入过就锁住，后续刷新失败不回门禁
-  const deliveryReady = snapshot !== undefined && snapshot.source === "remote";
+  // 放行条件：手上有一份**真实下发过**的配置（本次远程，或上一次成功下发落盘的
+  // 缓存）且最短停留已到。内置配置不算——它只够画门禁本身。没有超时放行：
+  // 什么都没有就不进业务页，走重试屏。进入过就锁住，后续刷新失败不回门禁。
+  //
+  // 缓存也放行是有意的：一次请求失败不该让一台配置齐全的设备打不开（2026-09-12）。
+  // 但它**不能**驱动更新判定，那里仍然只认 `remote`（见 checkForUpdates）。
+  const deliveryReady =
+    snapshot !== undefined && snapshot.source !== "fallback";
   if (!entered && deliveryReady && launchMinimumElapsed) setEntered(true);
   useEffect(
     () =>

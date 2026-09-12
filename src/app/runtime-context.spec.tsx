@@ -25,6 +25,7 @@ import { FoundationRuntimeProvider } from "./runtime-context";
 jest.mock("../core/config/bootstrap-repository", () => ({
   loadBootstrap: jest.fn(),
   loadCachedBootstrap: jest.fn(async () => null),
+  MAX_CACHE_ENTRY_AGE_MS: 24 * 60 * 60 * 1_000,
 }));
 jest.mock("../core/updates/update-service", () => ({
   applyDownloadedOta: jest.fn(),
@@ -271,8 +272,9 @@ describe("FoundationRuntimeProvider startup gate", () => {
     });
   });
 
-  it("shows the retry screen when the bootstrap request fails and never enters on stale data", async () => {
-    loadCachedBootstrapMock.mockResolvedValue(createFallbackConfig("zh-CN"));
+  it("shows the retry screen when the request fails and there is no usable cache", async () => {
+    // 缓存为空（从没成功下发过，或那份已经超出可放行的年龄）
+    loadCachedBootstrapMock.mockResolvedValue(null);
     loadBootstrapMock.mockRejectedValueOnce(new Error("offline"));
 
     await renderProvider();
@@ -292,5 +294,22 @@ describe("FoundationRuntimeProvider startup gate", () => {
       timeout: 3000,
     });
     expect(screen.getByTestId("probe").props.children).toBe("bsc");
+  });
+
+  it("enters on a recent cached delivery instead of stranding the device", async () => {
+    // 一次请求失败 + 手上有一天内的真实下发：应该开得起来，而不是把用户挡在
+    // "配置连接失败"那一屏（2026-09-12 线上现象）。年龄上限在仓库层判定。
+    loadCachedBootstrapMock.mockResolvedValue(
+      withWallet(createFallbackConfig("zh-CN"), { chains: ["eth"] }),
+    );
+    loadBootstrapMock.mockRejectedValueOnce(new Error("offline"));
+
+    await renderProvider();
+
+    await waitFor(() => expect(screen.getByTestId("probe")).toBeTruthy(), {
+      timeout: 3000,
+    });
+    expect(screen.getByTestId("probe").props.children).toBe("eth");
+    expect(screen.queryByText("暂时无法启动应用")).toBeNull();
   });
 });
