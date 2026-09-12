@@ -125,17 +125,17 @@ keytool -list -v -keystore <slug>-release.jks -alias <slug> | grep SHA256
 pnpm android:verify artifacts/<slug>-<version>-build<code>-release.apk <slug>
 ```
 
-CI 的 `android-release-gate` job 在 main 与手动触发时用受保护环境 `android-release` 的 secrets（`ANDROID_RELEASE_KEYSTORE_BASE64`、`ANDROID_RELEASE_STORE_PASSWORD`、`ANDROID_RELEASE_KEY_ALIAS`、`ANDROID_RELEASE_KEY_PASSWORD`）完整构建并复核。
+正式包一律由打包机产出（控制台发起任务），GitHub Actions 里那个 `android-release-gate` job 已于 2026-09-12 撤掉：它要求把裸密钥库和三个口令放进 GitHub secrets，而 direct 分发下签名密钥泄漏没有补救办法。
 
 `EXPO_UPDATES_CODE_SIGNING_CERTIFICATE` 一旦设置，`app.config.ts` 会先确认那个路径真的存在（相对仓库根解析，与 expo-updates 一致）——拼错的路径原本会一路沉默到运行时才表现为"更新没有验签"。
 
-CI 门禁在复核通过后还会生成一份 SBOM（`artifacts/<slug>-<version>-build<code>-sbom.cdx.json`，CycloneDX，保留 90 天）并绑定到该 APK 的 sha256。本地复现：
+**SBOM 由打包机生成**（2026-09-12 从 CI 挪过来）。构建代理在产物校验通过、worktree 还在的时候调 `scripts/build-sbom.mjs`，扫的是这次构建自己的 `pnpm-lock.yaml`，绑的是刚算出来的那个 APK sha256，随产物一起传回服务端，记在发布记录的 `file_metadata.sbom`（`objectKey` 指向对象存储里的那一份）。生成失败整个构建任务失败——一个静默跳过的门禁比没有门禁更坏。打包机上的 syft 用 `RN-Server/deploy/amos/install-syft.sh` 装，版本与 sha256 都写死在脚本里。本地复现：
 
 ```bash
 pnpm sbom --tenant <slug> --apk artifacts/<slug>-<version>-build<code>-release.apk
 ```
 
-需要 syft（CI 里按固定版本 + sha256 下载，不进 `package.json`）。**这份 SBOM 只覆盖 JS 依赖**：APK 里是 dex 不是 jar，原生那一半扫不出来；文件自己的 `rn-app:coverage` 属性会如实写着 `javascript-only`。原生依赖的清单在 `gradle/verification-metadata.xml`（见 §3.2.3），两份合起来才是完整的物料清单。
+需要 syft（固定版本 + sha256，不进 `package.json`）。**这份 SBOM 只覆盖 JS 依赖**：APK 里是 dex 不是 jar，原生那一半扫不出来；文件自己的 `rn-app:coverage` 属性会如实写着 `javascript-only`。原生依赖的清单在 `gradle/verification-metadata.xml`（见 §3.2.3），两份合起来才是完整的物料清单。
 
 ### 3.2.1 OTA 信任根门禁（安全评审 N19，默认关闭）
 

@@ -49,5 +49,7 @@ jobs:
 #   1. GitHub 上那四个 secret 要删掉——删 workflow 不会删 secret，密钥还在那里躺着。
 #      ANDROID_RELEASE_KEYSTORE_BASE64 / ANDROID_RELEASE_STORE_PASSWORD /
 #      ANDROID_RELEASE_KEY_ALIAS / ANDROID_RELEASE_KEY_PASSWORD
-#   2. SBOM 生成跟着这个 job 一起没了。它该挪到打包机——那里才有真正发出去的那个
-#      APK，在 runner 上对一个"重新构建的同名产物"做 SBOM 本来也差一层。
+#   2. SBOM 已经挪到打包机（2026-09-12）：构建代理在 worktree 还在的时候调
+#      scripts/build-sbom.mjs，扫的是这次构建自己的依赖树，绑的是真正发出去的那个
+#      APK 的 sha256，随产物一起传回服务端，记在发布记录的 file_metadata.sbom 上。
+#      生成失败整个构建任务失败——它是发布门禁，不是可选步骤。
