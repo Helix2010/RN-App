@@ -162,6 +162,12 @@ export const brandingSchema = z.object({
 
 export const bootstrapSchema = z.object({
   schemaVersion: z.literal(1),
+  /**
+   * 这份下发的签发时刻（unix 毫秒）。用来挡重放：签名挡不住"把昨天那份**合法**
+   * 响应再发一遍"，从而把强制升级、灰度名单或链配置回滚回旧值（安全评审 N3）。
+   * 服务端旧版本不下发，所以可选；缺省时不做重放判定。
+   */
+  issuedAt: z.number().int().positive().optional(),
   configVersion: z.string().min(1),
   generatedAt: z.iso.datetime(),
   ttlSeconds: z.number().int().positive().max(86_400),

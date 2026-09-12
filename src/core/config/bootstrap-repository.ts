@@ -2,7 +2,12 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Crypto from "expo-crypto";
 import { z } from "zod";
 import { installationAuthorization } from "../device/installation-service";
+import { AppError } from "../network/app-error";
 import { apiClient, appRuntime } from "../network/api-client";
+import {
+  isReplayed,
+  verifyBootstrapSignature,
+} from "./bootstrap-signature";
 import { rememberCanaryToken } from "../updates/canary-token";
 import {
   bootstrapSchema,
@@ -273,6 +278,56 @@ async function applyRemoteLanguagePackage(
  * 拿不到远程下发就是失败，错误原样抛出：不用上次的缓存冒充一份"配置"。
  * 缓存只供 loadCachedBootstrap 决定启动页画哪版品牌，业务界面不会跑在它上面。
  */
+/**
+ * 服务端已经签、但客户端还没到"没有签名就拒"的那一步时，这里是 false。
+ *
+ * 这条链路必须分两个版本上线：服务端先签 → 客户端"有就验" → 客户端"没有就拒"。
+ * 跳过中间那步直接强制，会把所有还没升级的设备当场锁在门外（安全评审 N3 §2.4）。
+ * 翻成 true 之前，先确认带验签的这一版已经铺开。
+ */
+export const REQUIRE_BOOTSTRAP_SIGNATURE = false;
+
+/** 见过的最大 issuedAt。按租户 + 应用分键，与配置缓存同一套键空间。 */
+function issuedAtKey(): string {
+  return `foundation.bootstrap.issued-at.v1.${encodeURIComponent(appRuntime.apiBaseUrl)}.${appRuntime.applicationId}`;
+}
+
+async function highestIssuedAt(): Promise<number> {
+  try {
+    const raw = await AsyncStorage.getItem(issuedAtKey());
+    const value = raw === null ? Number.NaN : Number(raw);
+    return Number.isFinite(value) ? value : 0;
+  } catch {
+    return 0;
+  }
+}
+
+async function rememberIssuedAt(issuedAt: number): Promise<void> {
+  try {
+    await AsyncStorage.setItem(issuedAtKey(), String(issuedAt));
+  } catch {
+    // 记不住只是让重放判定退化成"不判"，不该让启动失败
+  }
+}
+
+/**
+ * 验签 + 反重放。两者都**fail closed**：宁可停在启动门禁，也不能拿一份来路不明
+ * 或被回滚的配置去连 RPC、去决定要不要强制升级（安全评审 N3）。
+ */
+async function assertAuthentic(body: string, header: string): Promise<void> {
+  const signerAddress = appRuntime.bootstrapSignerAddress;
+  if (signerAddress === "") return; // 这个租户还没开签名
+  if (header === "") {
+    if (!REQUIRE_BOOTSTRAP_SIGNATURE) return;
+    throw new AppError(
+      "incompatible_response",
+      "The server did not sign its configuration",
+      false,
+    );
+  }
+  verifyBootstrapSignature({ body, header, signerAddress });
+}
+
 export async function loadBootstrap(
   locale: SupportedLocale,
   signal?: AbortSignal,
@@ -280,9 +335,11 @@ export async function loadBootstrap(
   // 可选携带安装身份：服务端验明凭证后才让这台设备参与灰度匹配（设计
   // canary-release-allowlist-2026-09-11 §8.1）。还没注册过就不带，
   // bootstrap 照常返回配置——它是启动门禁，不能因为身份问题失败
-  const config = await apiClient.get(
+  //
+  // 用 getText 而不是 get：验签验的是**收到的那串原始字节**，必须在 JSON.parse
+  // 之前拿到手。先解析再验等于给自己留一个"解析过程改写了什么"的缺口。
+  const response = await apiClient.getText(
     `/v1/mobile/bootstrap?locale=${encodeURIComponent(locale)}`,
-    bootstrapSchema,
     // 60 KB 的下发在弱网下 8 秒会误判超时（真机实测过一次"暂时无法获取远程配置"）
     {
       signal,
@@ -290,6 +347,31 @@ export async function loadBootstrap(
       headers: await installationAuthorization(),
     },
   );
+  await assertAuthentic(
+    response.text,
+    response.headers.get("x-bootstrap-signature") ?? "",
+  );
+  const parsed = bootstrapSchema.safeParse(JSON.parse(response.text));
+  if (!parsed.success) {
+    throw new AppError(
+      "incompatible_response",
+      "The server response does not match the mobile contract",
+      false,
+      response.headers.get("x-request-id") ?? undefined,
+      undefined,
+      { cause: parsed.error },
+    );
+  }
+  const config = parsed.data;
+  if (config.issuedAt !== undefined) {
+    if (isReplayed(config.issuedAt, await highestIssuedAt()))
+      throw new AppError(
+        "incompatible_response",
+        "The server replayed an older configuration",
+        false,
+      );
+    await rememberIssuedAt(config.issuedAt);
+  }
   // 令牌"这次存、下次启动生效"，所以每次都写，不等到真有灰度包。
   // 不 await：setExtraParamAsync 走 expo-updates 自己的执行器，更新正在下载时
   // 会排在它后面。灰度是附加能力，不该让启动门禁等它（函数内部已吞掉所有失败）

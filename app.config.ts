@@ -9,6 +9,12 @@ type TenantBuildConfig = {
   androidPackage: string;
   iosBundleId: string;
   apiBaseUrl: string;
+  /**
+   * bootstrap 响应签名者的地址（安全评审 N3）。钉住它，客户端才能判断收到的配置
+   * 是不是这个租户的服务端签的。不是秘密，可以随便打印比对。
+   * 没有这一项的租户还没开签名，客户端按"没配就不验"处理。
+   */
+  bootstrapSignerAddress?: string;
   applicationId: string;
   distributionChannel: "development" | "staging" | "store" | "direct" | "mdm";
   otaChannel: "development" | "staging" | "production";
@@ -310,6 +316,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     distributionChannel,
     otaChannel,
     applicationId,
+    bootstrapSignerAddress: tenant?.bootstrapSignerAddress ?? null,
     nativePushConfigured: Boolean(googleServicesFile),
     // 没有就是没有（本地 http 构建）：WalletConnect 只用自定义 scheme 回跳
     walletConnectRedirectUrl,

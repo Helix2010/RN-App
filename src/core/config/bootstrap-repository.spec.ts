@@ -1,5 +1,12 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { apiClient } from "../network/api-client";
+import {
+  HDNodeWallet,
+  encodeBase64,
+  getBytes,
+  toUtf8Bytes,
+} from "ethers";
+import { apiClient, appRuntime } from "../network/api-client";
+import { BOOTSTRAP_SIGNATURE_ALGORITHM } from "./bootstrap-signature";
 import {
   loadBootstrap,
   loadCachedBootstrap,
@@ -23,6 +30,8 @@ jest.mock("../network/api-client", () => ({
     runtimeVersion: "test",
     apiBaseUrl: "https://tenant-a.example.com",
     applicationId: "dex-mobile",
+    // 可变：验签的用例要按租户开关它
+    bootstrapSignerAddress: "",
   },
 }));
 jest.mock("expo-crypto", () => ({
@@ -44,14 +53,57 @@ const { rememberCanaryToken } = jest.requireMock("../updates/canary-token") as {
   rememberCanaryToken: jest.Mock;
 };
 const storage = AsyncStorage as jest.Mocked<typeof AsyncStorage>;
-const getBootstrap = apiClient.get as jest.MockedFunction<typeof apiClient.get>;
-const getLanguage = apiClient.getText as jest.MockedFunction<
+const getText = apiClient.getText as jest.MockedFunction<
   typeof apiClient.getText
 >;
+
+/**
+ * bootstrap 现在走 getText：验签验的是收到的原始字节，必须在 JSON.parse 之前
+ * 拿到手。语言包也走 getText，所以这里按路径分派，两条路互不干扰。
+ */
+type TextResponse = { text: string; headers: Headers };
+let bootstrapResponse: (() => Promise<TextResponse>) | null = null;
+let languageResponse: (() => Promise<TextResponse>) | null = null;
+
+function bootstrapReturns(config: unknown, headers: Record<string, string> = {}) {
+  bootstrapResponse = async () => ({
+    text: typeof config === "string" ? config : JSON.stringify(config),
+    headers: new Headers(headers),
+  });
+}
+function bootstrapFails(error: Error) {
+  bootstrapResponse = () => Promise.reject(error);
+}
+const getBootstrap = {
+  mockResolvedValue: bootstrapReturns,
+  mockRejectedValue: bootstrapFails,
+};
+const getLanguage = {
+  mockResolvedValue: (value: TextResponse) => {
+    languageResponse = async () => value;
+  },
+  mockRejectedValue: (error: Error) => {
+    languageResponse = () => Promise.reject(error);
+  },
+};
+
+function installTextDispatcher() {
+  bootstrapResponse = null;
+  languageResponse = null;
+  getText.mockImplementation(async (path: string) => {
+    if (path.startsWith("/v1/mobile/bootstrap")) {
+      if (!bootstrapResponse) throw new Error("no bootstrap response configured");
+      return bootstrapResponse();
+    }
+    if (!languageResponse) throw new Error("no language response configured");
+    return languageResponse();
+  });
+}
 
 describe("loadBootstrap", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    installTextDispatcher();
     installationAuthorization.mockResolvedValue({});
   });
 
@@ -65,9 +117,8 @@ describe("loadBootstrap", () => {
 
     await loadBootstrap("zh-CN");
 
-    expect(getBootstrap).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.anything(),
+    expect(getText).toHaveBeenCalledWith(
+      expect.stringContaining("/v1/mobile/bootstrap"),
       expect.objectContaining({
         headers: {
           "X-Installation-ID": "inst_1",
@@ -174,11 +225,11 @@ describe("loadBootstrap", () => {
     const snapshot = await loadBootstrap("en-US");
 
     expect(snapshot.source).toBe("remote");
-    expect(getBootstrap).toHaveBeenCalledWith(
-      "/v1/mobile/bootstrap?locale=en-US",
-      expect.anything(),
-      { signal: undefined, timeoutMs: 15_000, headers: {} },
-    );
+    expect(getText).toHaveBeenCalledWith("/v1/mobile/bootstrap?locale=en-US", {
+      signal: undefined,
+      timeoutMs: 15_000,
+      headers: {},
+    });
     expect(storage.setItem).toHaveBeenCalledWith(
       "foundation.bootstrap.v3.https%3A%2F%2Ftenant-a.example.com.dex-mobile.en-US",
       expect.any(String),
@@ -365,5 +416,107 @@ describe("loadBootstrap", () => {
     expect(snapshot.config.update.decision).toBe("recommended");
     expect(snapshot.config.update.latestVersion).toBe("1.1.5");
     expect(snapshot.config.update.full.releaseId).toBe("rel_latest");
+  });
+});
+
+describe("bootstrap 响应验签（N3）", () => {
+  const wallet = HDNodeWallet.createRandom();
+  const runtime = appRuntime as { bootstrapSignerAddress: string };
+
+  async function signed(body: string): Promise<Record<string, string>> {
+    const signature = await wallet.signMessage(toUtf8Bytes(body));
+    return {
+      "x-bootstrap-signature": `sig="${encodeBase64(getBytes(signature))}", keyid="main", alg="${BOOTSTRAP_SIGNATURE_ALGORITHM}"`,
+    };
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    installTextDispatcher();
+    installationAuthorization.mockResolvedValue({});
+    storage.getItem.mockResolvedValue(null);
+    runtime.bootstrapSignerAddress = wallet.address;
+  });
+
+  afterAll(() => {
+    runtime.bootstrapSignerAddress = "";
+  });
+
+  it("接受钉住的那把密钥签的下发", async () => {
+    const body = JSON.stringify({
+      ...createFallbackConfig("zh-CN"),
+      issuedAt: 1_700_000_000_000,
+    });
+    bootstrapReturns(body, await signed(body));
+
+    await expect(loadBootstrap("zh-CN")).resolves.toMatchObject({
+      source: "remote",
+    });
+  });
+
+  it("响应体被改过就拒绝——哪怕只改了一个字节", async () => {
+    const body = JSON.stringify(createFallbackConfig("zh-CN"));
+    const headers = await signed(body);
+    bootstrapReturns(body.replace('"zh-CN"', '"en-US"'), headers);
+
+    await expect(loadBootstrap("zh-CN")).rejects.toThrow(
+      /bootstrap signature rejected/,
+    );
+  });
+
+  it("别的密钥签的也拒绝", async () => {
+    const body = JSON.stringify(createFallbackConfig("zh-CN"));
+    const attacker = HDNodeWallet.createRandom();
+    const signature = await attacker.signMessage(toUtf8Bytes(body));
+    bootstrapReturns(body, {
+      "x-bootstrap-signature": `sig="${encodeBase64(getBytes(signature))}", keyid="main", alg="${BOOTSTRAP_SIGNATURE_ALGORITHM}"`,
+    });
+
+    await expect(loadBootstrap("zh-CN")).rejects.toThrow(/signed by/);
+  });
+
+  it("服务端还没签时先放行：这条链路要分两个版本上线", async () => {
+    bootstrapReturns(createFallbackConfig("zh-CN"));
+
+    await expect(loadBootstrap("zh-CN")).resolves.toMatchObject({
+      source: "remote",
+    });
+  });
+
+  it("租户没配签名者地址时根本不验", async () => {
+    runtime.bootstrapSignerAddress = "";
+    bootstrapReturns(createFallbackConfig("zh-CN"));
+
+    await expect(loadBootstrap("zh-CN")).resolves.toMatchObject({
+      source: "remote",
+    });
+  });
+
+  it("重放一份更旧的合法下发会被拒——签名挡不住回滚更新策略", async () => {
+    storage.getItem.mockImplementation(async (key: string) =>
+      key.includes("issued-at") ? String(1_700_000_000_000) : null,
+    );
+    const body = JSON.stringify({
+      ...createFallbackConfig("zh-CN"),
+      issuedAt: 1_600_000_000_000,
+    });
+    bootstrapReturns(body, await signed(body));
+
+    await expect(loadBootstrap("zh-CN")).rejects.toThrow(/replayed/);
+  });
+
+  it("记住见过的最大 issuedAt", async () => {
+    const body = JSON.stringify({
+      ...createFallbackConfig("zh-CN"),
+      issuedAt: 1_800_000_000_000,
+    });
+    bootstrapReturns(body, await signed(body));
+
+    await loadBootstrap("zh-CN");
+
+    expect(storage.setItem).toHaveBeenCalledWith(
+      expect.stringContaining("issued-at"),
+      "1800000000000",
+    );
   });
 });

@@ -51,6 +51,12 @@ export const appRuntime = {
   runtimeVersion: resolveRuntimeVersion(Updates.runtimeVersion),
   apiBaseUrl: baseUrl() ?? "",
   applicationId: publicExtra("applicationId", "dex-mobile"),
+  /**
+   * bootstrap 响应签名者的地址（安全评审 N3）。空串 = 这个租户还没开签名。
+   * 它随包发布（走 manifest extra，而 manifest 本身已经有代码签名），
+   * 与 apiBaseUrl 同一个信任级别。
+   */
+  bootstrapSignerAddress: publicExtra("bootstrapSignerAddress", ""),
 } as const;
 
 class ApiClient {
@@ -174,7 +180,11 @@ class ApiClient {
 
   async getText(
     path: string,
-    options?: { signal?: AbortSignal; headers?: Record<string, string> },
+    options?: {
+      signal?: AbortSignal;
+      headers?: Record<string, string>;
+      timeoutMs?: number;
+    },
   ): Promise<{ text: string; headers: Headers }> {
     const response = await this.response(path, options);
     return { text: await response.text(), headers: response.headers };
