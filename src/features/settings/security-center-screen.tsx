@@ -83,6 +83,26 @@ export function SecurityCenterScreen({
       order[(order.indexOf(prefs.autoLockMinutes) + 1) % order.length] ?? 5;
     prefs.update({ autoLockMinutes: next });
   };
+  /**
+   * 一次验证之后密钥库还算解锁多久（评审 0c-2）。
+   *
+   * 0 = 每次签名都重新验证，最严，但开通预测一次要签三笔会连弹三次。
+   * 默认 60 秒是折中；给出四档让用户按自己的处境选，而不是替他决定。
+   */
+  const cycleKeyUnlock = () => {
+    const order: (0 | 60 | 300 | 900)[] = [0, 60, 300, 900];
+    const next =
+      order[(order.indexOf(prefs.keyUnlockSeconds) + 1) % order.length] ?? 60;
+    prefs.update({ keyUnlockSeconds: next });
+  };
+  const keyUnlockLabel =
+    prefs.keyUnlockSeconds === 0
+      ? t("security.keyUnlock.everyTime")
+      : prefs.keyUnlockSeconds < 60
+        ? String(prefs.keyUnlockSeconds)
+        : fill(t("security.keyUnlock.value"), {
+            minutes: prefs.keyUnlockSeconds / 60,
+          });
   const cycleThreshold = () => {
     const order = [500, 1000, 5000, 10000];
     const next =
@@ -170,6 +190,13 @@ export function SecurityCenterScreen({
               }
               onPress={cycleLock}
               testID="sec-lock-delay"
+            />
+            <SRow
+              title={t("security.keyUnlock")}
+              subtitle={t("security.keyUnlock.hint")}
+              value={keyUnlockLabel}
+              onPress={cycleKeyUnlock}
+              testID="sec-key-unlock"
             />
             <SRow
               title={t("settings.txConfirm")}

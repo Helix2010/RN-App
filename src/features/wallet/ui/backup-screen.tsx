@@ -4,7 +4,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
-import { useScrubbedClipboard } from "../../../core/ui/use-scrubbed-clipboard";
 import { useGateways } from "../../../core/gateways/gateway-context";
 import { useScreenProtect } from "../../../core/security/screen-protect";
 import {
@@ -95,15 +94,15 @@ export function BackupScreen({
   const targets = quiz.targets;
   const options = quiz.choices;
 
-  // 助记词复制出去要按时抹掉，离开页面立刻抹（安全评审 N23）
-  const clipboard = useScrubbedClipboard();
-  const copy = async () => {
-    if (!phrase) return;
-    await clipboard.copy(phrase, {
-      success: t("backup.copied"),
-      failure: t("common.copyFailed"),
-    });
-  };
+  /*
+   * 这里曾经有一个"复制助记词"按钮（安全评审 N23）。**已经移除，不要加回来。**
+   *
+   * 系统剪贴板是应用外的共享缓冲区：同设备的任何应用都能读，第三方输入法能读，
+   * Android 的剪贴板历史和跨设备同步也会把它带走。定时抹除只缩短了窗口，改变不了
+   * "助记词离开了这个应用"这件事——而助记词泄露是不可逆、全部资金、永久有效的。
+   *
+   * 抄写是慢，但慢正是这一步该有的样子。
+   */
   /**
    * 备份完成之后才引导设置口令（安全评审 N6 / 方案 §3.5）。
    *
@@ -246,13 +245,6 @@ export function BackupScreen({
                   ),
                 )}
               </Row>
-              <SecondaryButton
-                onPress={() => void copy()}
-                testID="backup-copy"
-                icon={<AppIcon name="content-copy" size={18} />}
-              >
-                {t("backup.copy")}
-              </SecondaryButton>
               <Row
                 alignItems="center"
                 gap="$2"

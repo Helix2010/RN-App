@@ -39,6 +39,7 @@ import { builtinPromptText } from "../security/prompt-text";
 import { requestWalletPassphrase } from "../../features/wallet/model/passphrase-prompt";
 import { appRuntime } from "../network/api-client";
 import { setSessionStateProbe } from "../device/session-state-probe";
+import { usePreferencesStore } from "../preferences/preferences-store";
 import type { KeyValueStorage } from "./types";
 
 export type Gateways = {
@@ -70,6 +71,9 @@ function createGateways(storage: KeyValueStorage): Gateways {
       builtinPromptText("wallet.sign.reason"),
     ),
     requestPassphrase: requestWalletPassphrase,
+    // 用户可以在安全设置里改，所以传函数而不是数字——传数字要重启才生效
+    unlockTtlMs: () =>
+      usePreferencesStore.getState().keyUnlockSeconds * 1_000,
   });
   const chainData = new MockWalletGateway(storage);
   // 外部钱包：projectId 由服务端 bootstrap 下发，没下发时 UI 如实标记不可用

@@ -5,6 +5,7 @@
   "androidPackage": "com.anyfun.foundation",
   "iosBundleId": "com.anyfun.foundation",
   "apiBaseUrl": "https://api.anyfun.win",
+  "bootstrapSignerAddress": "0x9269Ca361b9F0427ac883e89cD5B5fe113BBAD17",
   "applicationId": "dex-mobile",
   "distributionChannel": "direct",
   "otaChannel": "production",

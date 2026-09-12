@@ -475,12 +475,11 @@ describe("bootstrap 响应验签（N3）", () => {
     await expect(loadBootstrap("zh-CN")).rejects.toThrow(/signed by/);
   });
 
-  it("服务端还没签时先放行：这条链路要分两个版本上线", async () => {
+  // 2026-09-12 起强制：配了签名者地址的租户，没有签名就不启动
+  it("配了签名者地址却收到没签名的下发，拒绝", async () => {
     bootstrapReturns(createFallbackConfig("zh-CN"));
 
-    await expect(loadBootstrap("zh-CN")).resolves.toMatchObject({
-      source: "remote",
-    });
+    await expect(loadBootstrap("zh-CN")).rejects.toThrow(/did not sign/);
   });
 
   it("租户没配签名者地址时根本不验", async () => {

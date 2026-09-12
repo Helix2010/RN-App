@@ -80,8 +80,14 @@ export const VAULT_CORRUPT_BACKUP_PREFIX = `${VAULT_STORAGE_KEY}.corrupt.`;
 const HKDF_INFO = new TextEncoder().encode("foundation.wallet.entry.v1");
 const WK_CHECK_SALT = new TextEncoder().encode("foundation.wallet.wk-check.v1");
 const WK_CHECK_LENGTH = 8;
-/** 成功验证后 WK 在内存里的有效期，对应 Keystore 的认证有效期，避免每次签名都弹窗。 */
-const DEFAULT_UNLOCK_TTL_MS = 5 * 60 * 1_000;
+/**
+ * 成功验证后 WK 在内存里的有效期。不传时的兜底值。
+ *
+ * 生产里由安全设置决定（默认 60 秒），这个常量只在没传的时候用——测试和任何
+ * 没接偏好的调用方。评审 0c-2 记过 5 分钟太长：它意味着拿到一台刚解锁过的设备的人
+ * 有五分钟可以随便签名。
+ */
+const DEFAULT_UNLOCK_TTL_MS = 60 * 1_000;
 
 type VaultEntryKind = "mnemonic" | "private-key";
 
@@ -297,7 +303,11 @@ type KeystoreVaultDeps = {
   authenticatedStore?: AuthenticatedSecureStorePort;
   /** 向用户要口令。返回 null = 用户取消。不接 = 开不了口令保护，也解不开已开的。 */
   requestPassphrase?: RequestPassphrasePort;
-  unlockTtlMs?: number;
+  /**
+   * 解锁缓存时长。传函数是因为用户可以在安全设置里改它，而金库是启动时构造一次的
+   * ——传死数字会让改了设置的人要重启才生效（评审 0c-2）。
+   */
+  unlockTtlMs?: number | (() => number);
   now?: () => number;
 };
 
@@ -316,7 +326,7 @@ const PASSPHRASE_ATTEMPTS = 3;
 export class KeystoreVault {
   private cachedWrapKey: Uint8Array | null = null;
   private cachedUntil = 0;
-  private readonly unlockTtlMs: number;
+  private readonly unlockTtl: () => number;
   private readonly now: () => number;
   /** 所有会写 vault 文件的操作排在这条队列上，读→取 WK→写 对同一实例是原子的。 */
   private queue: Promise<unknown> = Promise.resolve();
@@ -325,7 +335,8 @@ export class KeystoreVault {
   private readonly authenticatePort: AuthenticatePort;
 
   constructor(private readonly deps: KeystoreVaultDeps) {
-    this.unlockTtlMs = deps.unlockTtlMs ?? DEFAULT_UNLOCK_TTL_MS;
+    const ttl = deps.unlockTtlMs ?? DEFAULT_UNLOCK_TTL_MS;
+    this.unlockTtl = typeof ttl === "function" ? ttl : () => ttl;
     this.now = deps.now ?? Date.now;
     this.authenticatePort =
       deps.authenticate && authenticateOverrideAllowed()
@@ -827,7 +838,8 @@ export class KeystoreVault {
     await this.authenticateFresh(reason);
     const wrapKey = await this.loadWrapKey(file);
     this.cachedWrapKey = wrapKey;
-    this.cachedUntil = this.now() + this.unlockTtlMs;
+    // 每次都重新读：用户刚在安全设置里把它调短，下一次签名就该按新值算
+    this.cachedUntil = this.now() + this.unlockTtl();
     return wrapKey;
   }
 

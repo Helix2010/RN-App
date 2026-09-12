@@ -28,6 +28,14 @@ type PreferencesState = {
   appLockEnabled: boolean;
   appLockMethod: AppLockMethod;
   autoLockMinutes: 0 | 1 | 5 | 15;
+  /**
+   * 一次系统验证之后，密钥库的解锁在内存里还算数多久（秒）。
+   *
+   * 0 = 每次签名都重新验证。默认 60 秒：评审 0c-2 记的 5 分钟太长——它意味着
+   * 拿到一台刚解锁过的设备的人，有五分钟可以随便签名；而开通预测一次要签三笔，
+   * 降到 0 又会连弹三次。60 秒是这两头的折中，并且交给用户自己调。
+   */
+  keyUnlockSeconds: 0 | 60 | 300 | 900;
   txVerification: TxVerificationPolicy;
   largeAmountThresholdUsd: number;
   sendWhitelistOnly: boolean;
@@ -55,6 +63,7 @@ export const usePreferencesStore = create<PreferencesState>()(
       appLockEnabled: true,
       appLockMethod: "biometric",
       autoLockMinutes: 5,
+      keyUnlockSeconds: 60,
       txVerification: "smart",
       largeAmountThresholdUsd: 1000,
       sendWhitelistOnly: false,

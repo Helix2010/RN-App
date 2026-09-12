@@ -1,4 +1,5 @@
 import * as Device from "expo-device";
+import { isDeviceEnrolled } from "./app-lock";
 
 /**
  * 设备完整性信号（安全评审 N31）。
@@ -16,6 +17,15 @@ export type DeviceIntegritySignals = {
   emulator?: boolean;
   sideLoaded?: boolean;
   devBundle?: boolean;
+  /**
+   * 这台设备有没有锁屏或生物识别（安全评审 N10）。
+   *
+   * `false` 意味着金库的身份验证判为"不可用"而放行——密钥在静止态仍然是加密的，
+   * 但没有任何一步会问"是不是本人"。我们**不禁止**这类设备创建或导入钱包：把人
+   * 锁在门外换不来安全，他只会换一个更糟的地方放助记词。但这件事必须能被数出来，
+   * 否则"有多少用户实际上没有这道门"永远没有答案。
+   */
+  screenLock?: boolean;
 };
 
 /** 探针失败一律返回 undefined：不知道就说不知道，不要猜一个 false 出来。 */
@@ -34,9 +44,10 @@ async function probe(
  * 设备在管理端整个消失。
  */
 export async function collectDeviceIntegrity(): Promise<DeviceIntegritySignals> {
-  const [rooted, sideLoaded] = await Promise.all([
+  const [rooted, sideLoaded, screenLock] = await Promise.all([
     probe(() => Device.isRootedExperimentalAsync()),
     probe(() => Device.isSideLoadingEnabledAsync()),
+    probe(() => isDeviceEnrolled()),
   ]);
   let emulator: boolean | undefined;
   try {
@@ -50,6 +61,7 @@ export async function collectDeviceIntegrity(): Promise<DeviceIntegritySignals> 
     rooted,
     emulator,
     sideLoaded,
+    screenLock,
     // 构建期常量：发布包里恒为 false。上报它是为了在管理端一眼分出"这台设备在跑
     // 开发包"，那类设备的其它信号都不该被当成生产事实
     devBundle: typeof __DEV__ === "boolean" ? __DEV__ : undefined,

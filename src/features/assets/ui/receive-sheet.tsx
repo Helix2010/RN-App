@@ -10,7 +10,14 @@ import {
   isChainEnabled,
   isTestnetChain,
 } from "../../../core/wallet/config/wallet-runtime-config";
-import { useIncomingTransferWatch } from "../../wallet/hooks/use-wallet";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { RootStackParamList } from "../../../navigation/types";
+import {
+  useIncomingTransferWatch,
+  useWalletAccounts,
+} from "../../wallet/hooks/use-wallet";
+import { PrimaryButton } from "../../../design-system";
 import {
   AppIcon,
   Body,
@@ -38,6 +45,24 @@ export const ReceiveSheet = forwardRef<
   { address: string; ens?: string; chains: ChainId[] }
 >(function ReceiveSheet({ address, ens, chains }, ref) {
   const { config, t } = useFoundationRuntime();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const accounts = useWalletAccounts();
+  /**
+   * 还没备份的自托管账户不给收款码（安全评审 N25）。
+   *
+   * 收款是"把钱放进一个只有这台设备能打开的抽屉"。助记词还没抄下来之前，任何一次
+   * 换机、清数据、系统作废密钥，这笔钱就再也拿不回来了——而用户当时不会知道。
+   * 先备份再收款，这一步的代价是几分钟，跳过它的代价是全部。
+   *
+   * 只挡自托管账户：外部钱包的恢复材料不在我们手上，也不该由我们判断。
+   */
+  const unbackedUp = (accounts.data ?? []).some(
+    (item) =>
+      item.connector === "embedded" &&
+      !item.backedUp &&
+      item.address.toLowerCase() === address.toLowerCase(),
+  );
   const locale = config.localization.selectedLocale;
   const theme = useTheme();
   const options = chains.filter(isChainEnabled);
@@ -110,6 +135,32 @@ export const ReceiveSheet = forwardRef<
       scroll
       testID="receive-sheet"
     >
+      {unbackedUp ? (
+        <Stack gap="$3" paddingVertical="$2" testID="receive-backup-required">
+          <Row
+            alignItems="flex-start"
+            gap="$2"
+            padding="$3"
+            borderRadius="$4"
+            style={{ backgroundColor: `${theme.warning.val}22` }}
+          >
+            <AppIcon name="alert-outline" size={18} colorToken="warning" />
+            <Body flex={1} fontSize={13} color="$warning">
+              {t("receive.backupRequired")}
+            </Body>
+          </Row>
+          <PrimaryButton
+            onPress={() => {
+              sheet.current?.dismiss();
+              navigation.navigate("WalletBackup");
+            }}
+            testID="receive-go-backup"
+          >
+            {t("receive.goBackup")}
+          </PrimaryButton>
+        </Stack>
+      ) : (
+        <>
       <ChipRow
         value={chain}
         options={options.map((id) => ({
@@ -175,6 +226,8 @@ export const ReceiveSheet = forwardRef<
       <Body fontSize={12}>
         {fill(fill(t("receive.support"), { chain: chainName }), { tokens })}
       </Body>
+        </>
+      )}
     </Sheet>
   );
 });

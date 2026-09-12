@@ -11,9 +11,14 @@ jest.mock("expo-device", () => ({
   isSideLoadingEnabledAsync: jest.fn(async () => false),
 }));
 
+jest.mock("./app-lock", () => ({ isDeviceEnrolled: jest.fn(async () => true) }));
+
 const Device = jest.requireMock("expo-device") as {
   isRootedExperimentalAsync: jest.Mock;
   isSideLoadingEnabledAsync: jest.Mock;
+};
+const { isDeviceEnrolled } = jest.requireMock("./app-lock") as {
+  isDeviceEnrolled: jest.Mock;
 };
 
 describe("device integrity signals", () => {
@@ -21,6 +26,21 @@ describe("device integrity signals", () => {
     mockDeviceState.isDevice = true;
     Device.isRootedExperimentalAsync.mockResolvedValue(false);
     Device.isSideLoadingEnabledAsync.mockResolvedValue(false);
+    isDeviceEnrolled.mockResolvedValue(true);
+  });
+
+  // 没有锁屏就意味着金库的身份验证判为"不可用"而放行——不禁止这类设备用钱包，
+  // 但这件事必须能被数出来（安全评审 N10）
+  it("报出这台设备有没有锁屏", async () => {
+    expect((await collectDeviceIntegrity()).screenLock).toBe(true);
+
+    isDeviceEnrolled.mockResolvedValue(false);
+    expect((await collectDeviceIntegrity()).screenLock).toBe(false);
+  });
+
+  it("探不出锁屏状态时说不知道，不猜一个 false", async () => {
+    isDeviceEnrolled.mockRejectedValue(new Error("module unavailable"));
+    expect((await collectDeviceIntegrity()).screenLock).toBeUndefined();
   });
 
   it("reports what the probes actually said", async () => {

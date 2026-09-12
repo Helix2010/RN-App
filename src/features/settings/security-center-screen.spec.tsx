@@ -184,4 +184,31 @@ describe("SecurityCenterScreen", () => {
       expect(navigation.navigate).not.toHaveBeenCalledWith("WalletPassphrase");
     });
   });
+
+  // 评审 0c-2：5 分钟太长（拿到一台刚解锁的设备就有五分钟随便签名），
+  // 0 又会让开通预测连弹三次。默认 60 秒，四档让用户自己选。
+  it("签名免验证时长默认 60 秒，可以在四档之间轮换", async () => {
+    const { runtime } = await renderSecurity();
+
+    expect(usePreferencesStore.getState().keyUnlockSeconds).toBe(60);
+    expect(await screen.findByText(runtime.t("security.keyUnlock"))).toBeTruthy();
+
+    const row = screen.getByTestId("sec-key-unlock");
+    void fireEvent.press(row);
+    await waitFor(() =>
+      expect(usePreferencesStore.getState().keyUnlockSeconds).toBe(300),
+    );
+    void fireEvent.press(screen.getByTestId("sec-key-unlock"));
+    await waitFor(() =>
+      expect(usePreferencesStore.getState().keyUnlockSeconds).toBe(900),
+    );
+    // 转回"每次都验证"，最严的那一档必须够得着
+    void fireEvent.press(screen.getByTestId("sec-key-unlock"));
+    await waitFor(() =>
+      expect(usePreferencesStore.getState().keyUnlockSeconds).toBe(0),
+    );
+    expect(
+      screen.getByText(runtime.t("security.keyUnlock.everyTime")),
+    ).toBeTruthy();
+  });
 });

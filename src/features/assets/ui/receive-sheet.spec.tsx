@@ -1,5 +1,8 @@
 import { screen } from "@testing-library/react-native";
-import { renderWithProviders } from "../../../test/harness";
+import {
+  createTestGateways,
+  renderWithProviders,
+} from "../../../test/harness";
 import { withWallet } from "../../../test/wallet-config";
 import { CHAINS } from "../../../core/gateways/types";
 import { ReceiveSheet } from "./receive-sheet";
@@ -89,5 +92,45 @@ describe("ReceiveSheet", () => {
     );
 
     expect(screen.getByTestId("receive-testnet-notice")).toBeTruthy();
+  });
+
+  // 收款是"把钱放进一个只有这台设备能打开的抽屉"（安全评审 N25）
+  async function renderSheet(input: {
+    address: string;
+    gateways: ReturnType<typeof createTestGateways>;
+  }) {
+    return renderWithProviders(
+      <ReceiveSheet address={input.address} chains={["eth"]} />,
+      {
+        gateways: input.gateways,
+        config: (c) => withWallet(c, { chains: ["eth"] }),
+      },
+    );
+  }
+
+  describe("未备份的自托管账户", () => {
+    it("不给收款码，只给去备份的入口", async () => {
+      const gateways = createTestGateways();
+      const { account } = await gateways.wallet.createWallet();
+
+      await renderSheet({ address: account.address, gateways });
+
+      expect(
+        await screen.findByTestId("receive-backup-required"),
+      ).toBeTruthy();
+      expect(screen.queryByTestId("receive-copy")).toBeNull();
+      expect(screen.queryByTestId("receive-share")).toBeNull();
+    });
+
+    it("备份过了就照常给码", async () => {
+      const gateways = createTestGateways();
+      const { account } = await gateways.wallet.createWallet();
+      await gateways.wallet.markBackedUp(account.address);
+
+      await renderSheet({ address: account.address, gateways });
+
+      expect(await screen.findByTestId("receive-copy")).toBeTruthy();
+      expect(screen.queryByTestId("receive-backup-required")).toBeNull();
+    });
   });
 });

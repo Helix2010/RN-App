@@ -898,8 +898,6 @@ const zhCN = {
   "backup.heading24": "抄写这 24 个单词",
   "backup.hint":
     "按顺序抄写在纸上并妥善保管。任何拿到助记词的人都能控制你的资产。",
-  "backup.copy": "复制（60 秒后自动清除剪贴板）",
-  "backup.copied": "已复制，60 秒后自动清除",
   "backup.locked": "正在验证身份以读取助记词…",
   "wallet.setup.title": "钱包",
   "wallet.setup.heading": "开始使用你的钱包",
@@ -908,6 +906,13 @@ const zhCN = {
     "这是自托管钱包：助记词只保存在你的设备上，我们无法替你找回。",
   "wallet.setup.create": "创建新钱包",
   "wallet.setup.createHint": "生成助记词，并立即完成备份",
+  "security.keyUnlock": "签名免验证时长",
+  "security.keyUnlock.hint": "验证一次之后，这段时间内的签名不再重复弹窗",
+  "security.keyUnlock.everyTime": "每次都验证",
+  "security.keyUnlock.value": "{minutes} 分钟",
+  "receive.backupRequired":
+    "先备份助记词再收款。没抄下它之前，换机、清数据、或系统作废密钥，这个地址里的钱就再也拿不回来了。",
+  "receive.goBackup": "去备份助记词",
   "security.passphrase": "钱包口令",
   "security.passphrase.hint": "多一道只有你知道的口令，拿到设备密钥也拿不走助记词",
   "security.passphrase.on": "已启用",
@@ -2168,8 +2173,6 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "backup.heading24": "Write down these 24 words",
   "backup.hint":
     "Write them down in order and keep them safe. Anyone with the phrase controls your assets.",
-  "backup.copy": "Copy (clipboard clears in 60s)",
-  "backup.copied": "Copied. Clears in 60s.",
   "backup.locked": "Verifying your identity to read the phrase…",
   "wallet.setup.title": "Wallet",
   "wallet.setup.heading": "Set up your wallet",
@@ -2179,6 +2182,14 @@ const enUS: Record<keyof typeof zhCN, string> = {
     "This is a self-custodial wallet: the recovery phrase stays on your device and we cannot recover it for you.",
   "wallet.setup.create": "Create a new wallet",
   "wallet.setup.createHint": "Generate a recovery phrase and back it up now",
+  "security.keyUnlock": "Signing grace period",
+  "security.keyUnlock.hint":
+    "After one successful check, signing within this window does not ask again",
+  "security.keyUnlock.everyTime": "Every time",
+  "security.keyUnlock.value": "{minutes} min",
+  "receive.backupRequired":
+    "Back up your recovery phrase before receiving. Until it is written down, a new device, cleared data, or an invalidated key means the funds at this address are gone for good.",
+  "receive.goBackup": "Back up the phrase",
   "security.passphrase": "Wallet password",
   "security.passphrase.hint":
     "One more secret only you know, so device keys alone cannot take your recovery phrase",
