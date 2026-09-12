@@ -3,6 +3,7 @@ import {
   WrapKeyEnvelopeError,
   newDeviceKey,
   openWrapKey,
+  openWrapKeyWith,
   sealWrapKey,
 } from "./wrap-key-envelope";
 import { WalletPassphraseError } from "./passphrase";
@@ -14,12 +15,14 @@ async function seal(wrapKey = randomBytes(32), deviceKey = newDeviceKey()) {
   return {
     wrapKey,
     deviceKey,
-    envelope: await sealWrapKey({
-      wrapKey,
-      deviceKey,
-      passphrase: PASSPHRASE,
-      params: FAST,
-    }),
+    envelope: (
+      await sealWrapKey({
+        wrapKey,
+        deviceKey,
+        passphrase: PASSPHRASE,
+        params: FAST,
+      })
+    ).envelope,
   };
 }
 
@@ -117,7 +120,37 @@ describe("包裹密钥的第二份封装（B 路）", () => {
     const first = await sealWrapKey({ wrapKey, deviceKey, passphrase: PASSPHRASE, params: FAST });
     const second = await sealWrapKey({ wrapKey, deviceKey, passphrase: PASSPHRASE, params: FAST });
 
-    expect(first.ciphertext).not.toBe(second.ciphertext);
-    expect(first.kdf.salt).not.toBe(second.kdf.salt);
+    expect(first.envelope.ciphertext).not.toBe(second.envelope.ciphertext);
+    expect(first.envelope.kdf.salt).not.toBe(second.envelope.kdf.salt);
+  });
+});
+
+// scrypt 是故意做得很慢的；开启口令那条路上要用同一把密钥三次，各自再派生一遍
+// 会把按钮卡成"按了没反应"——模拟器上实测过。
+describe("口令密钥只派生一次", () => {
+  it("sealWrapKey 把派生好的密钥交出来，校验值用的就是它", async () => {
+    const wrapKey = randomBytes(32);
+    const deviceKey = newDeviceKey();
+
+    const { envelope, passKey } = await sealWrapKey({
+      wrapKey,
+      deviceKey,
+      passphrase: PASSPHRASE,
+      params: FAST,
+    });
+
+    expect(passKey).toHaveLength(32);
+    // 拿着它就能直接开，不必再跑一次 KDF
+    expect(Array.from(openWrapKeyWith(envelope, passKey, deviceKey))).toEqual(
+      Array.from(wrapKey),
+    );
+  });
+
+  it("拿错密钥的 openWrapKeyWith 仍然报口令不对", async () => {
+    const { deviceKey, envelope } = await seal();
+
+    expect(() =>
+      openWrapKeyWith(envelope, randomBytes(32), deviceKey),
+    ).toThrow(WalletPassphraseError);
   });
 });

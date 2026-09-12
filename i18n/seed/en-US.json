@@ -1088,6 +1088,7 @@
     "wallet.passphrase.authReason": "Turn on the wallet password",
     "wallet.passphrase.confirmLabel": "Repeat it",
     "wallet.passphrase.enabled": "Password enabled",
+    "wallet.passphrase.enabling": "Turning it on… please stay here",
     "wallet.passphrase.failed": "Could not enable it, try again",
     "wallet.passphrase.heading": "Add a password only you know",
     "wallet.passphrase.hint": "With it, someone who gets the keys off this device still cannot take your recovery phrase. Day-to-day signing never asks for it.",

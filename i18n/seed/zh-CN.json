@@ -1088,6 +1088,7 @@
     "wallet.passphrase.authReason": "启用钱包口令",
     "wallet.passphrase.confirmLabel": "再输一次",
     "wallet.passphrase.enabled": "口令已启用",
+    "wallet.passphrase.enabling": "正在启用…请不要离开",
     "wallet.passphrase.failed": "启用失败，请重试",
     "wallet.passphrase.heading": "再加一道只有你知道的口令",
     "wallet.passphrase.hint": "有了它，即使有人拿到这台设备上的密钥，也拿不走你的助记词。日常签名不会问你要口令。",

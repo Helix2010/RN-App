@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import { useGateways } from "../../../core/gateways/gateway-context";
-import { MIN_PASSPHRASE_LENGTH } from "../../../core/wallet/vault/passphrase";
+import { isPassphraseAcceptable } from "../../../core/wallet/vault/passphrase";
 import {
   AppIcon,
   Body,
@@ -43,11 +43,9 @@ export function WalletPassphraseScreen({
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
 
-  const tooShort =
-    passphrase.length > 0 && passphrase.length < MIN_PASSPHRASE_LENGTH;
+  const tooShort = passphrase.length > 0 && !isPassphraseAcceptable(passphrase);
   const mismatch = confirm.length > 0 && confirm !== passphrase;
-  const canSubmit =
-    passphrase.length >= MIN_PASSPHRASE_LENGTH && confirm === passphrase;
+  const canSubmit = isPassphraseAcceptable(passphrase) && confirm === passphrase;
 
   const { run: enable, pending } = useAsyncAction(
     async () => {
@@ -145,12 +143,18 @@ export function WalletPassphraseScreen({
               spellCheck={false}
             />
           </Stack>
+          {/*
+            口令派生是**故意很慢**的：模拟器上一次要以秒计。没有这个进行中的文案，
+            用户看到的就是"按了没反应"的一个灰按钮——实测里我自己先被它骗了一轮。
+          */}
           <PrimaryButton
             disabled={!canSubmit || pending}
             onPress={() => void enable()}
             testID="wallet-passphrase-submit"
           >
-            {t("wallet.passphrase.submit")}
+            {pending
+              ? t("wallet.passphrase.enabling")
+              : t("wallet.passphrase.submit")}
           </PrimaryButton>
           <Body
             textAlign="center"

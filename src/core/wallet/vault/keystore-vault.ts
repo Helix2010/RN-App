@@ -25,6 +25,7 @@ import {
   derivePassKeyFor,
   newDeviceKey,
   openWrapKey,
+  openWrapKeyWith,
   sealWrapKey,
   type WrapKeyEnvelope,
 } from "./wrap-key-envelope";
@@ -1059,23 +1060,30 @@ export class KeystoreVault {
           ENVELOPE_DEVICE_KEY_STORE_KEY,
           toBase64(deviceKey),
         );
-        const envelope = await sealWrapKey({ wrapKey, passphrase, deviceKey });
+        // scrypt 只跑这一次。它是故意做得很慢的，在手机的 JS 引擎上一次要以秒计，
+        // 而这条路上要用同一把密钥三次；各自再派生一遍会把按钮卡成"按了没反应"。
+        const { envelope, passKey } = await sealWrapKey({
+          wrapKey,
+          passphrase,
+          deviceKey,
+        });
         await this.deps.storage.setItem(
           WRAP_KEY_ENVELOPE_STORAGE_KEY,
           JSON.stringify(envelope),
         );
         // 读回来核对：封装写错了要在删旧 WK **之前**发现
-        const reopened = await openWrapKey({ envelope, deviceKey, passphrase });
+        const reopened = openWrapKeyWith(envelope, passKey, deviceKey);
         const matches = toBase64(reopened) === toBase64(wrapKey);
         wipe(reopened);
         wipe(deviceKey);
-        if (!matches)
+        if (!matches) {
+          wipe(passKey);
           throw new WalletVaultError(
             "the sealed wrap key did not read back; passphrase not enabled",
           );
+        }
         // 助记词条目改由 HKDF(WK ‖ 口令密钥) 加密：从这一刻起，拿到 WK 也拿不到
         // 助记词。**必须在删旧 WK 之前做完并落盘**，半开的状态会让 reveal 永远失败。
-        const passKey = await derivePassKeyFor(envelope, passphrase);
         try {
           this.upgradeToV2(file, wrapKey);
           for (const seed of file.seeds ?? []) {

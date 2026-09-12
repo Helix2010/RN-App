@@ -67,12 +67,21 @@ function kdfAad(kdf: WrapKeyEnvelope["kdf"]): Uint8Array {
   );
 }
 
+/**
+ * 封好一份信封，并把**派生出来的口令密钥一起交出去**。
+ *
+ * 交出去不是图省事：scrypt 是故意做得很慢的，在手机的 JS 引擎上一次要以秒计。
+ * 开启口令这条路上要用到同一把密钥三次（加密、读回来核对、重新加密助记词），
+ * 各自再派生一遍就是三倍的等待——实测里那正好把按钮卡成"按了没反应"。
+ *
+ * **调用方负责 wipe 这把密钥。**
+ */
 export async function sealWrapKey(input: {
   wrapKey: Uint8Array;
   passphrase: string;
   deviceKey: Uint8Array;
   params?: ScryptParams;
-}): Promise<WrapKeyEnvelope> {
+}): Promise<{ envelope: WrapKeyEnvelope; passKey: Uint8Array }> {
   const params = input.params ?? DEFAULT_SCRYPT;
   const salt = newPassphraseSalt();
   const passKey = await derivePassphraseKey(input.passphrase, salt, params);
@@ -88,16 +97,17 @@ export async function sealWrapKey(input: {
   const outerNonce = randomBytes(NONCE_LENGTH);
   const outer = gcm(input.deviceKey, outerNonce, OUTER_AAD).encrypt(innerBlob);
 
-  passKey.fill(0);
   innerBlob.fill(0);
   return {
-    version: 1,
-    kdf,
-    check: passphraseCheck(
-      await derivePassphraseKey(input.passphrase, salt, params),
-    ),
-    nonce: toBase64(outerNonce),
-    ciphertext: toBase64(outer),
+    envelope: {
+      version: 1,
+      kdf,
+      // 校验值用**同一把**已经派生好的密钥算，不要为了它再跑一遍 scrypt
+      check: passphraseCheck(passKey),
+      nonce: toBase64(outerNonce),
+      ciphertext: toBase64(outer),
+    },
+    passKey,
   };
 }
 
@@ -106,13 +116,32 @@ export async function openWrapKey(input: {
   passphrase: string;
   deviceKey: Uint8Array;
 }): Promise<Uint8Array> {
-  const { envelope } = input;
+  const passKey = await derivePassKeyFor(input.envelope, input.passphrase);
+  try {
+    return openWrapKeyWith(input.envelope, passKey, input.deviceKey);
+  } finally {
+    passKey.fill(0);
+  }
+}
+
+/**
+ * 已经有口令密钥时用这个，不再跑 scrypt。刚封好就要读回来核对的那一步走这里——
+ * 那一步的目的是"封装写对了吗"，不是"用户的口令对吗"。
+ */
+export function openWrapKeyWith(
+  envelope: WrapKeyEnvelope,
+  passKey: Uint8Array,
+  deviceKey: Uint8Array,
+): Uint8Array {
   if (envelope.version !== 1)
     throw new WrapKeyEnvelopeError("unknown envelope version");
   const params = { N: envelope.kdf.N, r: envelope.kdf.r, p: envelope.kdf.p };
   // 参数来自本地存储，能改存储的人就能把强度调下去；不接受比下限弱的
   assertScryptParams(params);
+  if (passphraseCheck(passKey) !== envelope.check)
+    throw new WalletPassphraseError("passphrase does not match this wallet");
 
+  const input = { envelope, deviceKey };
   let innerBlob: Uint8Array;
   try {
     innerBlob = gcm(
@@ -125,13 +154,6 @@ export async function openWrapKey(input: {
     throw new WrapKeyEnvelopeError("envelope cannot be opened on this device");
   }
 
-  const salt = fromBase64(envelope.kdf.salt);
-  const passKey = await derivePassphraseKey(input.passphrase, salt, params);
-  if (passphraseCheck(passKey) !== envelope.check) {
-    passKey.fill(0);
-    innerBlob.fill(0);
-    throw new WalletPassphraseError("passphrase does not match this wallet");
-  }
   try {
     const nonce = innerBlob.slice(0, NONCE_LENGTH);
     const ciphertext = innerBlob.slice(NONCE_LENGTH);
@@ -141,7 +163,6 @@ export async function openWrapKey(input: {
     // 自己该重输还是该走恢复。
     throw new WrapKeyEnvelopeError("envelope contents are damaged");
   } finally {
-    passKey.fill(0);
     innerBlob.fill(0);
   }
 }

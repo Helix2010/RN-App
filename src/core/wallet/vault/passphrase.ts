@@ -16,16 +16,26 @@ import { toBase64 } from "./base64";
  */
 
 /**
- * scrypt 参数。
+ * scrypt 参数。**这组数是实测出来的，不是拍的。**
  *
- * **这组数要在目标低端机上实测再定。** 这里是起点，不是结论：纯 JS 的 scrypt 在
- * 手机上很慢，N=2^15 已经是 32 MiB。服务端 keystore 用的是 2^16，手机上不要照抄。
- * 解开一次后 WK 会缓存 5 分钟，所以这是"每 5 分钟一次"的开销，不是每次签名。
+ * 2026-09-12 在 Android 模拟器（sdk_gphone64_x86_64）上用发布包量过：
+ *
+ * | N     | 内存  | 一次派生 |
+ * | ----- | ----- | -------- |
+ * | 2^14  | 16MiB | 约 20 秒 |
+ * | 2^13  | 8MiB  | 约 10 秒 |
+ *
+ * 纯 JS 的 scrypt 跑在 Hermes 上没有 JIT，比 Node 慢两个数量级（Node 上 2^15 只要
+ * 90 毫秒）。服务端 keystore 用的 2^16 在手机上完全不能用，不要照抄。
+ *
+ * 取 2^13：需要口令的都是低频、用户主动发起的动作——开启口令、查看助记词、系统
+ * 作废密钥后的恢复。日常签名走认证绑定的那条路，根本不碰 scrypt。真要更快只能把
+ * KDF 搬到原生，那是另一件事。
  */
-export const DEFAULT_SCRYPT = { N: 2 ** 15, r: 8, p: 1 } as const;
+export const DEFAULT_SCRYPT = { N: 2 ** 13, r: 8, p: 1 } as const;
 
 /** 低于这组参数的存量信封不再接受：不能让攻破者把强度调下去再存回来。 */
-export const MIN_SCRYPT = { N: 2 ** 14, r: 8, p: 1 } as const;
+export const MIN_SCRYPT = { N: 2 ** 13, r: 8, p: 1 } as const;
 
 export type ScryptParams = { N: number; r: number; p: number };
 
