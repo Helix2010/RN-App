@@ -22,6 +22,7 @@ import type {
   SecureStorePort,
 } from "./ports";
 import {
+  derivePassKeyFor,
   newDeviceKey,
   openWrapKey,
   sealWrapKey,
@@ -95,14 +96,45 @@ type StoredEntry = VaultEntry & {
   nonce: string;
   ciphertext: string;
   /**
-   * 这条密文是否带 AAD（附加认证数据）。1 表示 `version|address|kind|path`
-   * 参与了 GCM 认证：改元数据会让解密直接失败（安全评审 N9）。
-   * 缺这个字段的是升级前写下的老条目，解密时不带 AAD，读出来后就地升级。
+   * 这条密文带哪一版 AAD（附加认证数据），同时也说明**密文里装的是什么**：
+   *
+   * - 缺这个字段：升级前写下的老条目，解密时不带 AAD。
+   * - `1`：AAD = `v1|address|kind|path`，密文装的是"原始材料"——mnemonic 条目
+   *   装的是助记词本身。
+   * - `2`：AAD = `v2|address|kind|path|seedId`，密文装的是**这个账户的私钥**。
+   *   助记词不在这里，它单独存在 `seeds` 里（安全评审 N29 / 方案 §3.3）。
+   *
+   * 标记参与 AAD，所以改它会让解密直接失败，不会出现"按错误的语义解读明文"。
    */
-  aad?: 1;
+  aad?: 1 | 2;
+  /** 这个账户派生自哪一条助记词。导入的私钥没有。 */
+  seedId?: string;
 };
 
-type VaultFile = { version: 1; entries: StoredEntry[]; wkCheck?: string };
+/**
+ * 一条助记词。它与账户条目分开保管，是这次拆分的全部意义所在：
+ *
+ * - 日常签名只解一把账户私钥，**根种子再也不进 JS 堆**（安全评审 N29 第三部分）。
+ *   在此之前每签一次名都要解出助记词再重新派生一遍。
+ * - 拿到 WK 的攻击者只能拿到已经存在的那几把私钥，拿不到"派生未来账户"的能力，
+ *   也拿不到可以离线、跨链、永久使用的那份材料。
+ */
+type StoredSeed = {
+  id: string;
+  createdAt: string;
+  salt: string;
+  nonce: string;
+  ciphertext: string;
+  /** 1 = 条目密钥是 HKDF(WK ‖ scrypt(口令))，解它必须同时有 WK 和用户口令。 */
+  protected?: 1;
+};
+
+type VaultFile = {
+  version: 1 | 2;
+  entries: StoredEntry[];
+  seeds?: StoredSeed[];
+  wkCheck?: string;
+};
 
 /**
  * GCM 的附加认证数据：把条目元数据绑进密文的认证标签。
@@ -128,6 +160,73 @@ function entryAad(entry: {
   return new TextEncoder().encode(
     JSON.stringify(["v1", entry.address.toLowerCase(), entry.kind, entry.path]),
   );
+}
+
+/**
+ * v2 条目的 AAD。比 v1 多一个 `seedId`，并且**版本号本身参与认证**——这正是
+ * "密文里装的是助记词还是私钥"不会被调包的原因：把 `aad` 从 2 改成 1 会让 AAD
+ * 变成另一串，解密当场失败，而不是按错误的语义读出明文。
+ */
+function entryAadV2(entry: {
+  address: string;
+  kind: VaultEntryKind;
+  path: string | null;
+  seedId?: string;
+}): Uint8Array {
+  return new TextEncoder().encode(
+    JSON.stringify([
+      "v2",
+      entry.address.toLowerCase(),
+      entry.kind,
+      entry.path,
+      entry.seedId ?? null,
+    ]),
+  );
+}
+
+function aadFor(entry: StoredEntry): Uint8Array | undefined {
+  if (entry.aad === 2) return entryAadV2(entry);
+  if (entry.aad === 1) return entryAad(entry);
+  return undefined;
+}
+
+/** 密文里装的是什么。v2 一律是私钥；v1 的 mnemonic 条目装的是助记词。 */
+function secretKindOf(entry: StoredEntry): VaultEntryKind {
+  return entry.aad === 2 ? "private-key" : entry.kind;
+}
+
+const SEED_HKDF_INFO = new TextEncoder().encode("foundation.wallet.seed.v1");
+
+function seedAad(seed: { id: string; protected?: 1 }): Uint8Array {
+  return new TextEncoder().encode(
+    JSON.stringify(["seed.v1", seed.id, seed.protected === 1 ? 1 : 0]),
+  );
+}
+
+/**
+ * 助记词条目的加密密钥。
+ *
+ * 开了口令保护时是 HKDF(WK ‖ scrypt(口令))：**两样都要有才解得开**。拿到 WK 的
+ * 攻击者只能拿到已存在账户的私钥，想拿助记词还得去骗用户的口令，而骗口令是有
+ * 声音的、会失败的、用户看得见的（方案 §3.1）。
+ */
+function deriveSeedKey(
+  wrapKey: Uint8Array,
+  passKey: Uint8Array | null,
+  salt: Uint8Array,
+): Uint8Array {
+  const material =
+    passKey === null
+      ? wrapKey
+      : (() => {
+          const joined = new Uint8Array(wrapKey.length + passKey.length);
+          joined.set(wrapKey, 0);
+          joined.set(passKey, wrapKey.length);
+          return joined;
+        })();
+  const key = hkdf(sha256, material, salt, SEED_HKDF_INFO, 32);
+  if (material !== wrapKey) wipe(material);
+  return key;
 }
 
 export class WalletAuthRequiredError extends Error {
@@ -321,6 +420,30 @@ export class KeystoreVault {
     await this.authenticateFresh(reason);
     const wrapKey = await this.loadWrapKey(file);
     try {
+      // v2：助记词单独存在 seeds 里，开了口令保护就还要口令。这是全文唯一几处
+      // 真的需要根种子的地方之一，签名路径不经过这里。
+      if (entry.aad === 2) {
+        const seed = (file.seeds ?? []).find((item) => item.id === entry.seedId);
+        if (!seed)
+          throw new WalletVaultError(
+            "this account's recovery phrase is not in this vault",
+          );
+        const passKey = seed.protected === 1 ? await this.seedPassKey() : null;
+        try {
+          const phrase = this.readSeed(seed, wrapKey, passKey, file);
+          const derived = deriveAccount(phrase, pathIndex(entry.path));
+          if (!sameAddress(derived.address, entry.address))
+            throw new WalletVaultError(
+              "stored key material does not belong to this account",
+            );
+          // 刚刚证明了密钥库里的 WK 就是加密这份文件的那把，老文件在这里补登记
+          await this.backfillWkCheck(wrapKey);
+          return phrase;
+        } finally {
+          if (passKey) wipe(passKey);
+        }
+      }
+      // 还没升级的老条目：密文里装的就是助记词
       const secret = this.decrypt(entry, wrapKey, file);
       this.assertOwner(entry, secret);
       await this.backfillWkCheck(wrapKey);
@@ -347,7 +470,10 @@ export class KeystoreVault {
     const secret = this.decrypt(entry, wrapKey, file);
     const derived = this.assertOwner(entry, secret);
     await this.backfillWkCheck(wrapKey);
-    if (entry.aad !== 1) await this.upgradeEntryAad(entry.address, secret);
+    if (entry.aad === undefined)
+      await this.upgradeEntryAad(entry.address, secret);
+    // 老文件在这里顺手升级到 v2：这条路径上刚刚证明了 WK 是对的
+    if (file.version !== 2) void this.upgradeVaultFile();
     return consume(derived.privateKey);
   }
 
@@ -371,6 +497,15 @@ export class KeystoreVault {
       file.entries = file.entries.filter(
         (entry) => !sameAddress(entry.address, address),
       );
+      // 没有任何账户再引用的助记词必须一起删掉。留着它等于"删了钱包，助记词还在
+      // 设备上"——用户以为删干净了，实际上没有。
+      const referenced = new Set(
+        file.entries
+          .map((entry) => entry.seedId)
+          .filter((id): id is string => id !== undefined),
+      );
+      if (file.seeds)
+        file.seeds = file.seeds.filter((seed) => referenced.has(seed.id));
       await this.write(file);
     });
   }
@@ -442,15 +577,27 @@ export class KeystoreVault {
       // 老文件（有条目、无 wkCheck）不能在这里打标记——还没证明密钥库里的 WK 解得开
       // 旧条目，标错了会把将来找回正确 WK 的用户误判成 mismatch（评审 1.5）。
       if (file.entries.length === 0) file.wkCheck = wkCheckOf(wrapKey);
+      let passKey: Uint8Array | null = null;
       const entryKey = deriveEntryKey(wrapKey, salt);
       try {
+        // 老文件先就地升级，不然新条目会以 v2 的形状落进一个 v1 的文件里
+        this.upgradeToV2(file, wrapKey);
+        let seedId: string | undefined;
+        if (kind === "mnemonic") {
+          // 开了口令保护就要口令：助记词条目由 HKDF(WK ‖ 口令密钥) 加密
+          passKey = await this.seedPassKey();
+          seedId = this.writeSeed(file, secret, wrapKey, passKey);
+        }
         const metadata = {
           address: account.address,
           kind,
           path: account.path,
+          ...(seedId === undefined ? {} : { seedId }),
         };
-        const ciphertext = gcm(entryKey, nonce, entryAad(metadata)).encrypt(
-          new TextEncoder().encode(secret),
+        // 条目里装的是**这个账户的私钥**，不是助记词。日常签名从此只解这一条，
+        // 根种子不再每签一次名就进一次 JS 堆（安全评审 N29 / 方案 §3.3）。
+        const ciphertext = gcm(entryKey, nonce, entryAadV2(metadata)).encrypt(
+          new TextEncoder().encode(account.privateKey),
         );
         const entry: StoredEntry = {
           ...metadata,
@@ -459,20 +606,106 @@ export class KeystoreVault {
           salt: toBase64(salt),
           nonce: toBase64(nonce),
           ciphertext: toBase64(ciphertext),
-          aad: 1,
+          aad: 2,
         };
         file.entries.push(entry);
         await this.write(file);
-        const { salt: _s, nonce: _n, ciphertext: _c, ...visible } = entry;
+        const {
+          salt: _s,
+          nonce: _n,
+          ciphertext: _c,
+          seedId: _i,
+          aad: _a,
+          ...visible
+        } = entry;
         void _s;
         void _n;
         void _c;
+        void _i;
+        void _a;
         return visible;
       } finally {
         wipe(entryKey);
+        if (passKey) wipe(passKey);
         if (wrapKey !== this.cachedWrapKey) wipe(wrapKey);
       }
     });
+  }
+
+  /**
+   * 把 v1 文件就地升级成 v2：助记词搬进 `seeds`，账户条目改存自己那把私钥。
+   *
+   * **调用方必须已经持有 WK 并处在写队列里。** 纯同步，不写盘——由调用方在同一段
+   * 里一起 `write`，这样"升级到一半"不会落盘。
+   */
+  private upgradeToV2(file: VaultFile, wrapKey: Uint8Array): boolean {
+    if (file.version === 2) return false;
+    const seedIds = new Map<string, string>();
+    for (const entry of file.entries) {
+      const secret = this.decrypt(entry, wrapKey, file);
+      if (entry.kind === "mnemonic") {
+        let seedId = seedIds.get(secret);
+        if (seedId === undefined) {
+          // 升级时一律先存成不带口令的：口令保护是之后由用户开启的，
+          // `enablePassphrase` 会把这些条目重新加密一遍
+          seedId = this.writeSeed(file, secret, wrapKey, null);
+          seedIds.set(secret, seedId);
+        }
+        const derived = deriveAccount(secret, pathIndex(entry.path));
+        if (!sameAddress(derived.address, entry.address))
+          throw new WalletVaultError(
+            "stored key material does not belong to this account",
+          );
+        this.rewriteAsV2(entry, derived.privateKey, wrapKey, seedId);
+      } else {
+        // 私钥条目本来装的就是私钥，只是换一版 AAD
+        this.rewriteAsV2(entry, normalizePrivateKey(secret), wrapKey, undefined);
+      }
+    }
+    file.version = 2;
+    return true;
+  }
+
+  private rewriteAsV2(
+    entry: StoredEntry,
+    privateKey: string,
+    wrapKey: Uint8Array,
+    seedId: string | undefined,
+  ): void {
+    const salt = randomBytes(16);
+    const nonce = randomBytes(12);
+    entry.seedId = seedId;
+    entry.aad = 2;
+    const entryKey = deriveEntryKey(wrapKey, salt);
+    try {
+      entry.ciphertext = toBase64(
+        gcm(entryKey, nonce, entryAadV2(entry)).encrypt(
+          new TextEncoder().encode(privateKey),
+        ),
+      );
+      entry.salt = toBase64(salt);
+      entry.nonce = toBase64(nonce);
+    } finally {
+      wipe(entryKey);
+    }
+  }
+
+  /** 顺手把老文件升级到 v2。失败不影响本次操作，与 `upgradeEntryAad` 同一个约定。 */
+  private async upgradeVaultFile(): Promise<void> {
+    try {
+      await this.serialized(async () => {
+        const file = await this.read();
+        if (file.version === 2) return;
+        const wrapKey = await this.loadWrapKey(file);
+        try {
+          if (this.upgradeToV2(file, wrapKey)) await this.write(file);
+        } finally {
+          if (wrapKey !== this.cachedWrapKey) wipe(wrapKey);
+        }
+      });
+    } catch {
+      // 升级是顺手做的，不是用户要的结果
+    }
   }
 
   /**
@@ -529,7 +762,7 @@ export class KeystoreVault {
     const entryKey = deriveEntryKey(wrapKey, fromBase64(entry.salt));
     try {
       // 老条目（无 `aad` 标记）当初就没带 AAD，得按原样解，否则升级即锁死用户
-      const aad = entry.aad === 1 ? entryAad(entry) : undefined;
+      const aad = aadFor(entry);
       const plaintext = gcm(entryKey, fromBase64(entry.nonce), aad).decrypt(
         fromBase64(entry.ciphertext),
       );
@@ -554,8 +787,10 @@ export class KeystoreVault {
     entry: StoredEntry,
     secret: string,
   ): { address: string; privateKey: string } {
+    // 按**密文里装的是什么**来判断，不是按这个账户当初从哪来。v2 条目装的是私钥，
+    // 哪怕 kind 还记着 "mnemonic"（那是出身，不是内容）。
     const derived =
-      entry.kind === "mnemonic"
+      secretKindOf(entry) === "mnemonic"
         ? deriveAccount(secret, pathIndex(entry.path))
         : accountFromPrivateKey(secret);
     if (!sameAddress(derived.address, entry.address))
@@ -611,6 +846,90 @@ export class KeystoreVault {
   }
 
   // ---- 口令保护（安全评审 N6 / 方案 §3.5）----
+
+  // ---- 助记词条目（方案 §3.3）----
+
+  /**
+   * 向用户要口令并派生口令密钥。只在真的需要助记词时调用——日常签名不走这里，
+   * 那正是拆分的意义。
+   */
+  private async requirePassKey(
+    envelope: WrapKeyEnvelope,
+  ): Promise<Uint8Array> {
+    const passphrase = await this.deps.requestPassphrase?.("unlock");
+    if (!passphrase) throw new WalletPassphraseRequiredError();
+    return derivePassKeyFor(envelope, passphrase);
+  }
+
+  /** 开了口令保护就必须拿到口令密钥；没开就返回 null（条目只由 WK 加密）。 */
+  private async seedPassKey(): Promise<Uint8Array | null> {
+    const envelope = await this.readEnvelope();
+    return envelope === null ? null : this.requirePassKey(envelope);
+  }
+
+  private writeSeed(
+    file: VaultFile,
+    phrase: string,
+    wrapKey: Uint8Array,
+    passKey: Uint8Array | null,
+  ): string {
+    const id = `seed_${toBase64(randomBytes(12)).replace(/[^a-zA-Z0-9]/g, "")}`;
+    const salt = randomBytes(16);
+    const nonce = randomBytes(12);
+    const meta = { id, ...(passKey === null ? {} : { protected: 1 as const }) };
+    const key = deriveSeedKey(wrapKey, passKey, salt);
+    try {
+      const ciphertext = gcm(key, nonce, seedAad(meta)).encrypt(
+        new TextEncoder().encode(phrase),
+      );
+      file.seeds = [
+        ...(file.seeds ?? []),
+        {
+          ...meta,
+          createdAt: new Date(this.now()).toISOString(),
+          salt: toBase64(salt),
+          nonce: toBase64(nonce),
+          ciphertext: toBase64(ciphertext),
+        },
+      ];
+      return id;
+    } finally {
+      wipe(key);
+    }
+  }
+
+  /**
+   * 解一条助记词。失败分类与 `decrypt` 一致：老文件（没有 wkCheck）解不开最可能是
+   * 密钥库里的 WK 已经被静默换掉（修复前 N8 的存量状态），那要进恢复流程，
+   * 不能报成笼统的"解不开"让用户卡在"查看助记词失败"。
+   */
+  private readSeed(
+    seed: StoredSeed,
+    wrapKey: Uint8Array,
+    passKey: Uint8Array | null,
+    file: VaultFile,
+  ): string {
+    if (seed.protected === 1 && passKey === null)
+      throw new WalletPassphraseRequiredError();
+    const key = deriveSeedKey(wrapKey, seed.protected === 1 ? passKey : null, fromBase64(seed.salt));
+    try {
+      const plaintext = gcm(key, fromBase64(seed.nonce), seedAad(seed)).decrypt(
+        fromBase64(seed.ciphertext),
+      );
+      const phrase = new TextDecoder().decode(plaintext);
+      wipe(plaintext);
+      return phrase;
+    } catch (error) {
+      if (error instanceof WalletVaultError) throw error;
+      if (file.wkCheck === undefined)
+        throw new WalletVaultKeyMissingError("mismatch");
+      throw new WalletVaultError(
+        "stored key material could not be decrypted",
+      );
+    } finally {
+      wipe(key);
+    }
+  }
 
   private async readEnvelope(): Promise<WrapKeyEnvelope | null> {
     const raw = await this.deps.storage.getItem(WRAP_KEY_ENVELOPE_STORAGE_KEY);
@@ -709,6 +1028,35 @@ export class KeystoreVault {
           throw new WalletVaultError(
             "the sealed wrap key did not read back; passphrase not enabled",
           );
+        // 助记词条目改由 HKDF(WK ‖ 口令密钥) 加密：从这一刻起，拿到 WK 也拿不到
+        // 助记词。**必须在删旧 WK 之前做完并落盘**，半开的状态会让 reveal 永远失败。
+        const passKey = await derivePassKeyFor(envelope, passphrase);
+        try {
+          this.upgradeToV2(file, wrapKey);
+          for (const seed of file.seeds ?? []) {
+            if (seed.protected === 1) continue;
+            const phrase = this.readSeed(seed, wrapKey, null, file);
+            const salt = randomBytes(16);
+            const nonce = randomBytes(12);
+            const meta = { id: seed.id, protected: 1 as const };
+            const key = deriveSeedKey(wrapKey, passKey, salt);
+            try {
+              seed.ciphertext = toBase64(
+                gcm(key, nonce, seedAad(meta)).encrypt(
+                  new TextEncoder().encode(phrase),
+                ),
+              );
+              seed.salt = toBase64(salt);
+              seed.nonce = toBase64(nonce);
+              seed.protected = 1;
+            } finally {
+              wipe(key);
+            }
+          }
+          await this.write(file);
+        } finally {
+          wipe(passKey);
+        }
         if (this.deps.authenticatedStore?.available())
           await this.deps.authenticatedStore
             .set(WRAP_KEY_STORE_KEY, toBase64(wrapKey))
@@ -769,7 +1117,12 @@ function parseVaultFile(raw: string): VaultFile | null {
   }
   if (typeof parsed !== "object" || parsed === null) return null;
   const file = parsed as Partial<VaultFile>;
-  if (file.version !== 1 || !Array.isArray(file.entries)) return null;
+  if (
+    (file.version !== 1 && file.version !== 2) ||
+    !Array.isArray(file.entries)
+  )
+    return null;
+  if (file.seeds !== undefined && !Array.isArray(file.seeds)) return null;
   if (file.wkCheck !== undefined && typeof file.wkCheck !== "string")
     return null;
   return file as VaultFile;

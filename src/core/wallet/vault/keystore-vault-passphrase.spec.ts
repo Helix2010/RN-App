@@ -4,10 +4,10 @@ import {
   WalletPassphraseRequiredError,
   WalletVaultError,
 } from "./keystore-vault";
-import { memorySecureStore } from "./ports";
-import type {
-  AuthenticatedSecureStorePort,
-  SecureStorePort,
+import {
+  memorySecureStore,
+  type AuthenticatedSecureStorePort,
+  type SecureStorePort,
 } from "./ports";
 import { WalletPassphraseError } from "./passphrase";
 

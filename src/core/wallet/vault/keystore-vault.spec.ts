@@ -97,7 +97,12 @@ function fromBase64Test(value: string): Uint8Array {
 function toBase64Test(value: Uint8Array): string {
   return Buffer.from(value).toString("base64");
 }
-type RawFile = { version: number; entries: RawEntry[]; wkCheck?: string };
+type RawFile = {
+  version: number;
+  entries: RawEntry[];
+  seeds?: RawEntry[];
+  wkCheck?: string;
+};
 
 async function rawFile(storage: KeyValueStorage): Promise<RawFile> {
   return JSON.parse((await storage.getItem(VAULT_KEY)) ?? "null") as RawFile;
@@ -436,8 +441,34 @@ describe("KeystoreVault", () => {
     await expect(
       vault.withPrivateKey(ADDRESS, "sign", () => undefined),
     ).rejects.toThrow("could not be decrypted");
+  });
+
+  // 条目拆分之后多了一条可以被调包的引用：账户指向哪一条助记词。
+  // AAD 覆盖了 seedId，但 revealMnemonic 根本不解账户密文，所以那道认证兜不住它，
+  // 必须靠"解出来的助记词派生出的地址要等于这条账户的地址"这一步。
+  it("refuses an account pointed at another account's recovery phrase", async () => {
+    const { vault, storage } = setup();
+    await vault.importMnemonic(PHRASE);
+    await vault.importMnemonic(OTHER_PHRASE, 0, "import");
+    const file = await rawFile(storage);
+    const [first, second] = file.entries as [RawEntry, RawEntry];
+    [first.seedId, second.seedId] = [second.seedId!, first.seedId!];
+    await storage.setItem(VAULT_KEY, JSON.stringify(file));
+
     await expect(vault.revealMnemonic(ADDRESS, "reveal")).rejects.toThrow(
-      "could not be decrypted",
+      "does not belong to this account",
+    );
+  });
+
+  it("refuses an account whose recovery phrase is missing altogether", async () => {
+    const { vault, storage } = setup();
+    await vault.importMnemonic(PHRASE);
+    const file = await rawFile(storage);
+    file.seeds = [];
+    await storage.setItem(VAULT_KEY, JSON.stringify(file));
+
+    await expect(vault.revealMnemonic(ADDRESS, "reveal")).rejects.toThrow(
+      "not in this vault",
     );
   });
 
@@ -459,7 +490,8 @@ describe("KeystoreVault", () => {
     await vault.importMnemonic(PHRASE);
     const file = await rawFile(storage);
     const [entry] = file.entries as [RawEntry];
-    expect(entry.aad).toBe(1);
+    // v2：密文里装的是这个账户的私钥，AAD 覆盖 address|kind|path|seedId
+    expect(entry.aad).toBe(2);
     // 把助记词条目伪装成私钥条目：改了元数据就解不开
     entry.kind = "private-key";
     await storage.setItem(VAULT_KEY, JSON.stringify(file));
@@ -480,6 +512,7 @@ describe("KeystoreVault", () => {
     // 读过一次之后就地升级成带 AAD 的密文，下次篡改元数据就会被挡住
     const upgraded = await rawFile(storage);
     expect((upgraded.entries[0] as RawEntry).aad).toBe(1);
+    // revealMnemonic 走的是 v1 那条路（条目还没搬进 seeds），所以这里仍然是 1
     const tampered = await rawFile(storage);
     (tampered.entries[0] as RawEntry).path = "m/44'/60'/0'/0/7";
     await storage.setItem(VAULT_KEY, JSON.stringify(tampered));
@@ -549,10 +582,15 @@ describe("KeystoreVault", () => {
     // 已有 wkCheck 的文件不再探测、不再弹认证
     await expect(vault.verifyLegacyWrapKey("recover")).resolves.toBeUndefined();
     expect(authenticate).toHaveBeenCalledTimes(1);
-    // 有 wkCheck 且核对通过的文件里，密文本身坏了仍是笼统的"解不开"，不是 KeyMissing
+    // 有 wkCheck 且核对通过的文件里，密文本身坏了仍是笼统的"解不开"，不是 KeyMissing。
+    // v2 之后签名读的是账户条目、查看助记词读的是 seeds，两边各坏一次都要能报出来。
     const file = await rawFile(storage);
     file.entries[0]!.ciphertext = globalThis.btoa("garbage-ciphertext-bytes!!");
+    file.seeds![0]!.ciphertext = globalThis.btoa("garbage-ciphertext-bytes!!");
     await storage.setItem(VAULT_KEY, JSON.stringify(file));
+    await expect(
+      vault.withPrivateKey(ADDRESS, "sign", () => undefined),
+    ).rejects.toThrow("could not be decrypted");
     await expect(vault.revealMnemonic(ADDRESS, "reveal")).rejects.toThrow(
       "could not be decrypted",
     );
@@ -628,7 +666,7 @@ describe("KeystoreVault", () => {
     const { vault, storage } = setup();
     await storage.setItem(
       VAULT_KEY,
-      JSON.stringify({ version: 2, entries: [{ address: ADDRESS }] }),
+      JSON.stringify({ version: 3, entries: [{ address: ADDRESS }] }),
     );
     await expect(vault.list()).rejects.toBeInstanceOf(
       WalletVaultCorruptedError,
@@ -636,7 +674,8 @@ describe("KeystoreVault", () => {
     await expect(vault.importMnemonic(PHRASE)).rejects.toBeInstanceOf(
       WalletVaultCorruptedError,
     );
-    expect((await rawFile(storage)).version).toBe(2);
+    // 坏文件原样留着，没有被当成空 vault 覆盖掉
+    expect((await rawFile(storage)).version).toBe(3);
   });
 
   it("archives and resets a broken vault only after authentication, keeping the wrap key", async () => {

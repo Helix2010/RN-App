@@ -145,3 +145,29 @@ export async function openWrapKey(input: {
     innerBlob.fill(0);
   }
 }
+
+/**
+ * 由信封里的参数 + 用户口令派生出口令密钥，并核对校验值。
+ *
+ * 助记词条目要的就是这把（`HKDF(WK ‖ 这把)`），而它不能从已经解开的 WK 反推——
+ * 那样的话拿到 WK 就等于拿到助记词，这次拆分的意义就没了。
+ */
+export async function derivePassKeyFor(
+  envelope: WrapKeyEnvelope,
+  passphrase: string,
+): Promise<Uint8Array> {
+  if (envelope.version !== 1)
+    throw new WrapKeyEnvelopeError("unknown envelope version");
+  const params = { N: envelope.kdf.N, r: envelope.kdf.r, p: envelope.kdf.p };
+  assertScryptParams(params);
+  const key = await derivePassphraseKey(
+    passphrase,
+    fromBase64(envelope.kdf.salt),
+    params,
+  );
+  if (passphraseCheck(key) !== envelope.check) {
+    key.fill(0);
+    throw new WalletPassphraseError("passphrase does not match this wallet");
+  }
+  return key;
+}
