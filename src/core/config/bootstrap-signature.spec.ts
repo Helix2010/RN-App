@@ -89,9 +89,9 @@ describe("verifyBootstrapSignature", () => {
 
 describe("parseSignatureHeader", () => {
   it("解开 sf-string 的转义", () => {
-    expect(parseSignatureHeader('sig="a", keyid="we\\"ird\\\\id", alg="x"')).toEqual(
-      { sig: "a", keyid: 'we"ird\\id', alg: "x" },
-    );
+    expect(
+      parseSignatureHeader('sig="a", keyid="we\\"ird\\\\id", alg="x"'),
+    ).toEqual({ sig: "a", keyid: 'we"ird\\id', alg: "x" });
   });
 
   it("缺任何一个字段都当成没有签名", () => {

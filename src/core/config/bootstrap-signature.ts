@@ -66,7 +66,9 @@ export function verifyBootstrapSignature(input: {
   try {
     expected = getAddress(input.signerAddress);
   } catch {
-    throw new BootstrapSignatureError("pinned signer address is not an address");
+    throw new BootstrapSignatureError(
+      "pinned signer address is not an address",
+    );
   }
 
   let recovered: string;

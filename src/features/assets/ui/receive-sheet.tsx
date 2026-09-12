@@ -161,71 +161,80 @@ export const ReceiveSheet = forwardRef<
         </Stack>
       ) : (
         <>
-      <ChipRow
-        value={chain}
-        options={options.map((id) => ({
-          value: id,
-          label: CHAINS[id].shortName,
-          color: CHAINS[id].color,
-          // 测试链必须标出来：主网资产打到测试链地址，虽同地址却在错的链上
-          tag: isTestnetChain(id) ? t("send.testnetTag") : undefined,
-        }))}
-        onChange={setPicked}
-        accessibilityLabel={t("send.network")}
-        testID="receive-chain"
-      />
-      <Stack alignItems="center" gap="$3" paddingVertical="$2">
-        <Stack padding="$3" borderRadius="$4" backgroundColor="white">
-          <QRCode
-            value={address}
-            size={196}
-            backgroundColor="white"
-            color="#0B1220"
+          <ChipRow
+            value={chain}
+            options={options.map((id) => ({
+              value: id,
+              label: CHAINS[id].shortName,
+              color: CHAINS[id].color,
+              // 测试链必须标出来：主网资产打到测试链地址，虽同地址却在错的链上
+              tag: isTestnetChain(id) ? t("send.testnetTag") : undefined,
+            }))}
+            onChange={setPicked}
+            accessibilityLabel={t("send.network")}
+            testID="receive-chain"
           />
-        </Stack>
-        {ens ? <SectionTitle>{ens}</SectionTitle> : null}
-        <Body textAlign="center" fontSize={12} selectable>
-          {address}
-        </Body>
-      </Stack>
-      <Row gap="$2">
-        <SecondaryButton
-          flex={1}
-          onPress={() => void copy()}
-          testID="receive-copy"
-          icon={<AppIcon name="content-copy" size={18} />}
-        >
-          {t("receive.copy")}
-        </SecondaryButton>
-        <SecondaryButton
-          flex={1}
-          onPress={() => void Share.share({ message: address })}
-          testID="receive-share"
-          icon={<AppIcon name="share-variant-outline" size={18} />}
-        >
-          {t("receive.share")}
-        </SecondaryButton>
-      </Row>
-      <Row
-        alignItems="flex-start"
-        gap="$2"
-        padding="$3"
-        borderRadius="$4"
-        style={{ backgroundColor: `${theme.warning.val}22` }}
-      >
-        <AppIcon name="alert-outline" size={18} colorToken="warning" />
-        <InlineText flex={1} fontSize={12} color="$warning" fontWeight="600">
-          {fill(t("receive.warn"), { chain: chainName })}
-        </InlineText>
-      </Row>
-      {testnet ? (
-        <Body fontSize={12} color="$warning" testID="receive-testnet-notice">
-          {t("receive.testnetNotice")}
-        </Body>
-      ) : null}
-      <Body fontSize={12}>
-        {fill(fill(t("receive.support"), { chain: chainName }), { tokens })}
-      </Body>
+          <Stack alignItems="center" gap="$3" paddingVertical="$2">
+            <Stack padding="$3" borderRadius="$4" backgroundColor="white">
+              <QRCode
+                value={address}
+                size={196}
+                backgroundColor="white"
+                color="#0B1220"
+              />
+            </Stack>
+            {ens ? <SectionTitle>{ens}</SectionTitle> : null}
+            <Body textAlign="center" fontSize={12} selectable>
+              {address}
+            </Body>
+          </Stack>
+          <Row gap="$2">
+            <SecondaryButton
+              flex={1}
+              onPress={() => void copy()}
+              testID="receive-copy"
+              icon={<AppIcon name="content-copy" size={18} />}
+            >
+              {t("receive.copy")}
+            </SecondaryButton>
+            <SecondaryButton
+              flex={1}
+              onPress={() => void Share.share({ message: address })}
+              testID="receive-share"
+              icon={<AppIcon name="share-variant-outline" size={18} />}
+            >
+              {t("receive.share")}
+            </SecondaryButton>
+          </Row>
+          <Row
+            alignItems="flex-start"
+            gap="$2"
+            padding="$3"
+            borderRadius="$4"
+            style={{ backgroundColor: `${theme.warning.val}22` }}
+          >
+            <AppIcon name="alert-outline" size={18} colorToken="warning" />
+            <InlineText
+              flex={1}
+              fontSize={12}
+              color="$warning"
+              fontWeight="600"
+            >
+              {fill(t("receive.warn"), { chain: chainName })}
+            </InlineText>
+          </Row>
+          {testnet ? (
+            <Body
+              fontSize={12}
+              color="$warning"
+              testID="receive-testnet-notice"
+            >
+              {t("receive.testnetNotice")}
+            </Body>
+          ) : null}
+          <Body fontSize={12}>
+            {fill(fill(t("receive.support"), { chain: chainName }), { tokens })}
+          </Body>
         </>
       )}
     </Sheet>

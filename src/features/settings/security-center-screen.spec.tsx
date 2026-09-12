@@ -191,7 +191,9 @@ describe("SecurityCenterScreen", () => {
     const { runtime } = await renderSecurity();
 
     expect(usePreferencesStore.getState().keyUnlockSeconds).toBe(60);
-    expect(await screen.findByText(runtime.t("security.keyUnlock"))).toBeTruthy();
+    expect(
+      await screen.findByText(runtime.t("security.keyUnlock")),
+    ).toBeTruthy();
 
     const row = screen.getByTestId("sec-key-unlock");
     void fireEvent.press(row);

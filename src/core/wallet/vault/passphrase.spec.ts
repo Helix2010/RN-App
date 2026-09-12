@@ -26,7 +26,11 @@ describe("derivePassphraseKey", () => {
   it("换口令或换盐都得到不同的密钥", async () => {
     const salt = newPassphraseSalt();
     const base = await derivePassphraseKey("correct horse", salt, FAST);
-    const otherPassphrase = await derivePassphraseKey("correct horsf", salt, FAST);
+    const otherPassphrase = await derivePassphraseKey(
+      "correct horsf",
+      salt,
+      FAST,
+    );
     const otherSalt = await derivePassphraseKey(
       "correct horse",
       newPassphraseSalt(),
@@ -73,12 +77,18 @@ describe("passphraseCheck", () => {
     const right = await derivePassphraseKey("correct horse", salt, FAST);
     const wrong = await derivePassphraseKey("battery staple", salt, FAST);
 
-    expect(passphraseCheck(right)).toBe(passphraseCheck(await derivePassphraseKey("correct horse", salt, FAST)));
+    expect(passphraseCheck(right)).toBe(
+      passphraseCheck(await derivePassphraseKey("correct horse", salt, FAST)),
+    );
     expect(passphraseCheck(wrong)).not.toBe(passphraseCheck(right));
   });
 
   it("校验值不是密钥本身", async () => {
-    const key = await derivePassphraseKey("correct horse", newPassphraseSalt(), FAST);
+    const key = await derivePassphraseKey(
+      "correct horse",
+      newPassphraseSalt(),
+      FAST,
+    );
     expect(passphraseCheck(key).length).toBeLessThan(20);
   });
 });
@@ -88,7 +98,9 @@ describe("口令强度", () => {
     expect(isPassphraseAcceptable("a".repeat(MIN_PASSPHRASE_LENGTH - 1))).toBe(
       false,
     );
-    expect(isPassphraseAcceptable("a".repeat(MIN_PASSPHRASE_LENGTH))).toBe(true);
+    expect(isPassphraseAcceptable("a".repeat(MIN_PASSPHRASE_LENGTH))).toBe(
+      true,
+    );
     expect(() => assertPassphraseAcceptable("short")).toThrow(
       WalletPassphraseError,
     );

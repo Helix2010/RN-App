@@ -6,9 +6,7 @@ import {
 } from "../../../test/harness";
 import { WalletPassphraseScreen } from "./wallet-passphrase-screen";
 
-async function renderScreen(
-  enablePassphrase = jest.fn(async () => undefined),
-) {
+async function renderScreen(enablePassphrase = jest.fn(async () => undefined)) {
   const navigation = fakeNavigation({
     goBack: jest.fn(),
     popToTop: jest.fn(),

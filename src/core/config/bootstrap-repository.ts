@@ -4,10 +4,7 @@ import { z } from "zod";
 import { installationAuthorization } from "../device/installation-service";
 import { AppError } from "../network/app-error";
 import { apiClient, appRuntime } from "../network/api-client";
-import {
-  isReplayed,
-  verifyBootstrapSignature,
-} from "./bootstrap-signature";
+import { isReplayed, verifyBootstrapSignature } from "./bootstrap-signature";
 import { rememberCanaryToken } from "../updates/canary-token";
 import {
   bootstrapSchema,

@@ -1,8 +1,5 @@
 import { screen } from "@testing-library/react-native";
-import {
-  createTestGateways,
-  renderWithProviders,
-} from "../../../test/harness";
+import { createTestGateways, renderWithProviders } from "../../../test/harness";
 import { withWallet } from "../../../test/wallet-config";
 import { CHAINS } from "../../../core/gateways/types";
 import { ReceiveSheet } from "./receive-sheet";
@@ -115,9 +112,7 @@ describe("ReceiveSheet", () => {
 
       await renderSheet({ address: account.address, gateways });
 
-      expect(
-        await screen.findByTestId("receive-backup-required"),
-      ).toBeTruthy();
+      expect(await screen.findByTestId("receive-backup-required")).toBeTruthy();
       expect(screen.queryByTestId("receive-copy")).toBeNull();
       expect(screen.queryByTestId("receive-share")).toBeNull();
     });

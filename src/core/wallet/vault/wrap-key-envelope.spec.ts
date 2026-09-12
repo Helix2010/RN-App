@@ -95,7 +95,10 @@ describe("包裹密钥的第二份封装（B 路）", () => {
 
   it("密文被改过就是坏了", async () => {
     const { deviceKey, envelope } = await seal();
-    const broken = { ...envelope, ciphertext: `A${envelope.ciphertext.slice(1)}` };
+    const broken = {
+      ...envelope,
+      ciphertext: `A${envelope.ciphertext.slice(1)}`,
+    };
 
     await expect(
       openWrapKey({ envelope: broken, deviceKey, passphrase: PASSPHRASE }),
@@ -117,8 +120,18 @@ describe("包裹密钥的第二份封装（B 路）", () => {
   it("同一把 WK 封两次得到不同的密文——盐和 nonce 都是新的", async () => {
     const wrapKey = randomBytes(32);
     const deviceKey = newDeviceKey();
-    const first = await sealWrapKey({ wrapKey, deviceKey, passphrase: PASSPHRASE, params: FAST });
-    const second = await sealWrapKey({ wrapKey, deviceKey, passphrase: PASSPHRASE, params: FAST });
+    const first = await sealWrapKey({
+      wrapKey,
+      deviceKey,
+      passphrase: PASSPHRASE,
+      params: FAST,
+    });
+    const second = await sealWrapKey({
+      wrapKey,
+      deviceKey,
+      passphrase: PASSPHRASE,
+      params: FAST,
+    });
 
     expect(first.envelope.ciphertext).not.toBe(second.envelope.ciphertext);
     expect(first.envelope.kdf.salt).not.toBe(second.envelope.kdf.salt);
@@ -149,8 +162,8 @@ describe("口令密钥只派生一次", () => {
   it("拿错密钥的 openWrapKeyWith 仍然报口令不对", async () => {
     const { deviceKey, envelope } = await seal();
 
-    expect(() =>
-      openWrapKeyWith(envelope, randomBytes(32), deviceKey),
-    ).toThrow(WalletPassphraseError);
+    expect(() => openWrapKeyWith(envelope, randomBytes(32), deviceKey)).toThrow(
+      WalletPassphraseError,
+    );
   });
 });

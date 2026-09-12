@@ -197,7 +197,9 @@ export function BackupScreen({
               <Stack gap="$1">
                 <SectionTitle fontSize={18}>
                   {/* 文案按实际词数取：translateMessage 不支持插值，所以是两个键 */}
-                  {t(words.length === 24 ? "backup.heading24" : "backup.heading")}
+                  {t(
+                    words.length === 24 ? "backup.heading24" : "backup.heading",
+                  )}
                 </SectionTitle>
                 <Body>{t("backup.hint")}</Body>
               </Stack>

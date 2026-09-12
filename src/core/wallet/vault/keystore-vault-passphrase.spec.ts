@@ -119,9 +119,9 @@ describe("开启口令保护", () => {
     await s.vault.createWallet();
     await s.vault.enablePassphrase(PASSPHRASE, "r");
 
-    await expect(s.vault.enablePassphrase("another passphrase", "r")).rejects.toThrow(
-      WalletVaultError,
-    );
+    await expect(
+      s.vault.enablePassphrase("another passphrase", "r"),
+    ).rejects.toThrow(WalletVaultError);
   });
 });
 

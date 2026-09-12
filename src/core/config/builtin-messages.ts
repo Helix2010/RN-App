@@ -914,7 +914,8 @@ const zhCN = {
     "先备份助记词再收款。没抄下它之前，换机、清数据、或系统作废密钥，这个地址里的钱就再也拿不回来了。",
   "receive.goBackup": "去备份助记词",
   "security.passphrase": "钱包口令",
-  "security.passphrase.hint": "多一道只有你知道的口令，拿到设备密钥也拿不走助记词",
+  "security.passphrase.hint":
+    "多一道只有你知道的口令，拿到设备密钥也拿不走助记词",
   "security.passphrase.on": "已启用",
   "security.passphrase.off": "未设置",
   "wallet.passphrase.title": "设置钱包口令",

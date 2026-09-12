@@ -1,10 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import {
-  HDNodeWallet,
-  encodeBase64,
-  getBytes,
-  toUtf8Bytes,
-} from "ethers";
+import { HDNodeWallet, encodeBase64, getBytes, toUtf8Bytes } from "ethers";
 import { apiClient, appRuntime } from "../network/api-client";
 import { BOOTSTRAP_SIGNATURE_ALGORITHM } from "./bootstrap-signature";
 import {
@@ -65,7 +60,10 @@ type TextResponse = { text: string; headers: Headers };
 let bootstrapResponse: (() => Promise<TextResponse>) | null = null;
 let languageResponse: (() => Promise<TextResponse>) | null = null;
 
-function bootstrapReturns(config: unknown, headers: Record<string, string> = {}) {
+function bootstrapReturns(
+  config: unknown,
+  headers: Record<string, string> = {},
+) {
   bootstrapResponse = async () => ({
     text: typeof config === "string" ? config : JSON.stringify(config),
     headers: new Headers(headers),
@@ -92,7 +90,8 @@ function installTextDispatcher() {
   languageResponse = null;
   getText.mockImplementation(async (path: string) => {
     if (path.startsWith("/v1/mobile/bootstrap")) {
-      if (!bootstrapResponse) throw new Error("no bootstrap response configured");
+      if (!bootstrapResponse)
+        throw new Error("no bootstrap response configured");
       return bootstrapResponse();
     }
     if (!languageResponse) throw new Error("no language response configured");

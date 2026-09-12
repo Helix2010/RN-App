@@ -53,7 +53,8 @@ export function WalletPassphraseScreen({
 
   const tooShort = passphrase.length > 0 && !isPassphraseAcceptable(passphrase);
   const mismatch = confirm.length > 0 && confirm !== passphrase;
-  const canSubmit = isPassphraseAcceptable(passphrase) && confirm === passphrase;
+  const canSubmit =
+    isPassphraseAcceptable(passphrase) && confirm === passphrase;
 
   const { run: enable, pending } = useAsyncAction(
     async () => {

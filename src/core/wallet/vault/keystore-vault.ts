@@ -446,7 +446,9 @@ export class KeystoreVault {
       // v2：助记词单独存在 seeds 里，开了口令保护就还要口令。这是全文唯一几处
       // 真的需要根种子的地方之一，签名路径不经过这里。
       if (entry.aad === 2) {
-        const seed = (file.seeds ?? []).find((item) => item.id === entry.seedId);
+        const seed = (file.seeds ?? []).find(
+          (item) => item.id === entry.seedId,
+        );
         if (!seed)
           throw new WalletVaultError(
             "this account's recovery phrase is not in this vault",
@@ -683,7 +685,12 @@ export class KeystoreVault {
         this.rewriteAsV2(entry, derived.privateKey, wrapKey, seedId);
       } else {
         // 私钥条目本来装的就是私钥，只是换一版 AAD
-        this.rewriteAsV2(entry, normalizePrivateKey(secret), wrapKey, undefined);
+        this.rewriteAsV2(
+          entry,
+          normalizePrivateKey(secret),
+          wrapKey,
+          undefined,
+        );
       }
     }
     file.version = 2;
@@ -969,7 +976,11 @@ export class KeystoreVault {
   ): string {
     if (seed.protected === 1 && passKey === null)
       throw new WalletPassphraseRequiredError();
-    const key = deriveSeedKey(wrapKey, seed.protected === 1 ? passKey : null, fromBase64(seed.salt));
+    const key = deriveSeedKey(
+      wrapKey,
+      seed.protected === 1 ? passKey : null,
+      fromBase64(seed.salt),
+    );
     try {
       const plaintext = gcm(key, fromBase64(seed.nonce), seedAad(seed)).decrypt(
         fromBase64(seed.ciphertext),
@@ -981,9 +992,7 @@ export class KeystoreVault {
       if (error instanceof WalletVaultError) throw error;
       if (file.wkCheck === undefined)
         throw new WalletVaultKeyMissingError("mismatch");
-      throw new WalletVaultError(
-        "stored key material could not be decrypted",
-      );
+      throw new WalletVaultError("stored key material could not be decrypted");
     } finally {
       wipe(key);
     }
@@ -1046,8 +1055,7 @@ export class KeystoreVault {
     const stored = await this.deps.secureStore.get(
       ENVELOPE_DEVICE_KEY_STORE_KEY,
     );
-    if (stored === null)
-      throw new WalletVaultKeyMissingError("missing");
+    if (stored === null) throw new WalletVaultKeyMissingError("missing");
     return fromBase64(stored);
   }
 

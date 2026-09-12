@@ -11,7 +11,9 @@ jest.mock("expo-device", () => ({
   isSideLoadingEnabledAsync: jest.fn(async () => false),
 }));
 
-jest.mock("./app-lock", () => ({ isDeviceEnrolled: jest.fn(async () => true) }));
+jest.mock("./app-lock", () => ({
+  isDeviceEnrolled: jest.fn(async () => true),
+}));
 
 const Device = jest.requireMock("expo-device") as {
   isRootedExperimentalAsync: jest.Mock;
