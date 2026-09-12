@@ -29,7 +29,7 @@ ANDROID_HOME=/home/<user>/android-sdk
 GOOGLE_SERVICES_JSON=/path/to/RN-App/secrets/<slug>/google-services.json
 ```
 
-`pnpm android:release <slug>` 会读取这两项；缺少 `GOOGLE_SERVICES_JSON` 时构建直接失败，只有明确传 `--no-push` 才允许出无推送的包。服务端推送凭证（FCM 服务账号、APNs 密钥）只放部署机的 `.env`，见 RN-Server `deploy/web4/README.md`。
+`pnpm android:release <slug>` 会读取这两项；缺少 `GOOGLE_SERVICES_JSON` 时构建直接失败，只有明确传 `--no-push` 才允许出无推送的包。服务端推送凭证（FCM 服务账号、APNs 密钥）只放部署机的配置文件，见 RN-Server `deploy/amos/README.md`（2026-09-12 起生产在 amos，配置是 `/etc/rn-foundation.env`；此前是 web4 的 `.env`）。
 
 ## 2. 新增租户
 
