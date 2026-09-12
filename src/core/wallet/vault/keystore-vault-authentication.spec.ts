@@ -57,6 +57,6 @@ describe("vault authentication is not an injectable capability", () => {
       authenticate: stub,
     });
     const created = await vault.createWallet("reason");
-    expect(created.mnemonic.split(" ")).toHaveLength(12);
+    expect(created.mnemonic.split(" ")).toHaveLength(24);
   });
 });

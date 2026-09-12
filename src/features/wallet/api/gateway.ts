@@ -1,4 +1,5 @@
 import type { ChainId, TokenRef, Tx } from "../../../core/gateways/types";
+import type { MnemonicWordCount } from "../../../core/wallet/keygen/mnemonic";
 import type { WalletSigner } from "../../../core/wallet/signer/types";
 import type { Money } from "../../../core/money/money";
 import {
@@ -92,8 +93,10 @@ export interface WalletGateway {
   ): Promise<string>;
   /** 生成新的自托管钱包；助记词只在此处返回一次供备份展示 */
   /** `reason` 是认证弹窗文案的内置字典 key；vault 已有账户时新建必须先过身份验证 */
+  /** `words` 不传按默认的 24 词（安全评审 N29）；界面允许用户改成 12。 */
   createWallet(options?: {
     reason?: string;
+    words?: MnemonicWordCount;
   }): Promise<{ account: WalletAccount; mnemonic: string }>;
   /**
    * 导入。vault 里已有账户时会先弹系统验证，`reason` 是弹窗文案；

@@ -1,3 +1,4 @@
+import type { MnemonicWordCount } from "../../../core/wallet/keygen/mnemonic";
 import type {
   ChainId,
   KeyValueStorage,
@@ -311,10 +312,12 @@ export class EmbeddedWalletGateway implements WalletGateway {
   // vault、却从未向用户展示过助记词的孤儿条目（评审 2.4）。
   async createWallet(options?: {
     reason?: string;
+    words?: MnemonicWordCount;
   }): Promise<{ account: WalletAccount; mnemonic: string }> {
     await this.readRegistry();
     const { entry, mnemonic } = await this.deps.vault.createWallet(
       options?.reason,
+      options?.words,
     );
     const account = await this.select(entry.address, "embedded");
     return { account, mnemonic };

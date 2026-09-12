@@ -28,9 +28,30 @@ export function evmPath(index: number): string {
   return `${EVM_ACCOUNT_PATH}/${index}`;
 }
 
-/** 128 位熵 = 12 词，256 位 = 24 词。 */
-export function generateMnemonic(strengthBits: 128 | 256 = 128): string {
-  return Mnemonic.fromEntropy(randomBytes(strengthBits / 8)).phrase;
+/** 助记词词数。12 词 = 128 位熵，24 词 = 256 位。 */
+export type MnemonicWordCount = 12 | 24;
+
+/**
+ * 新钱包**默认 24 词**（安全评审 N29）。默认给强的那个，需要好抄的人自己在界面
+ * 上降级——反过来（默认给弱的、把强的藏进高级设置）等于让绝大多数人拿到较弱的
+ * 那一个。导入不受影响，两种一直都收。
+ */
+export const DEFAULT_MNEMONIC_WORDS: MnemonicWordCount = 24;
+
+const ENTROPY_BYTES: Record<MnemonicWordCount, number> = { 12: 16, 24: 32 };
+
+export function generateMnemonic(
+  words: MnemonicWordCount = DEFAULT_MNEMONIC_WORDS,
+): string {
+  const bytes = ENTROPY_BYTES[words];
+  if (!bytes) throw new Error("mnemonic word count must be 12 or 24");
+  return Mnemonic.fromEntropy(randomBytes(bytes)).phrase;
+}
+
+/** 一句助记词有多少个词。备份页要按它画格子，不能再写死 12。 */
+export function wordCountOf(phrase: string): number {
+  const normalized = normalizeMnemonic(phrase);
+  return normalized === "" ? 0 : normalized.split(" ").length;
 }
 
 /** 去掉多余空白并转小写；BIP-39 词表全小写，用户粘贴常带大写和换行。 */

@@ -19,6 +19,10 @@ import {
   type AppIconName,
 } from "../../../design-system";
 import type { RootStackParamList } from "../../../navigation/types";
+import {
+  DEFAULT_MNEMONIC_WORDS,
+  type MnemonicWordCount,
+} from "../../../core/wallet/keygen/mnemonic";
 import { recoveryReasonOf } from "../api/gateway";
 import { stashPendingPhrase } from "../model/pending-reveal";
 
@@ -35,6 +39,9 @@ export function WalletSetupScreen({
   const { wallet } = useGateways();
   const queryClient = useQueryClient();
   const [creating, setCreating] = useState(false);
+  // 默认 24 词（安全评审 N29）。给强的那个当默认，需要好抄的人自己降级——
+  // 反过来等于让绝大多数人拿到较弱的那一个。
+  const [words, setWords] = useState<MnemonicWordCount>(DEFAULT_MNEMONIC_WORDS);
 
   const create = async () => {
     if (creating) return;
@@ -42,6 +49,7 @@ export function WalletSetupScreen({
     try {
       const { mnemonic } = await wallet.createWallet({
         reason: "wallet.create.authReason",
+        words,
       });
       void queryClient.invalidateQueries({ queryKey: ["wallet-accounts"] });
       // 助记词经模块级一次性通道交给备份页，不写进导航参数（安全评审 N36）
@@ -89,6 +97,27 @@ export function WalletSetupScreen({
               {t("wallet.setup.custodyNotice")}
             </Body>
           </Row>
+          <Stack gap="$2">
+            <Body fontSize={12} color="$textMuted">
+              {t("wallet.setup.words")}
+            </Body>
+            <Row gap="$2">
+              {([24, 12] as const).map((count) => (
+                <WordCountOption
+                  key={count}
+                  label={t(
+                    count === 24
+                      ? "wallet.setup.words24"
+                      : "wallet.setup.words12",
+                  )}
+                  selected={words === count}
+                  disabled={creating}
+                  onPress={() => setWords(count)}
+                  testID={`wallet-setup-words-${count}`}
+                />
+              ))}
+            </Row>
+          </Stack>
           <SetupOption
             icon="wallet-plus-outline"
             title={
@@ -110,6 +139,43 @@ export function WalletSetupScreen({
         </Content>
       </PageScroll>
     </Page>
+  );
+}
+
+function WordCountOption({
+  label,
+  selected,
+  disabled,
+  onPress,
+  testID,
+}: {
+  label: string;
+  selected: boolean;
+  disabled?: boolean;
+  onPress: () => void;
+  testID: string;
+}) {
+  return (
+    <Row
+      flex={1}
+      alignItems="center"
+      justifyContent="center"
+      paddingVertical="$3"
+      borderRadius="$4"
+      borderWidth={1}
+      borderColor={selected ? "$primary" : "$borderColor"}
+      backgroundColor={selected ? "$surfaceVariant" : "transparent"}
+      opacity={disabled ? 0.5 : 1}
+      onPress={disabled ? undefined : onPress}
+      accessibilityRole="radio"
+      accessibilityState={{ selected }}
+      accessibilityLabel={label}
+      testID={testID}
+    >
+      <Body fontSize={13} color={selected ? "$primary" : "$textMuted"}>
+        {label}
+      </Body>
+    </Row>
   );
 }
 

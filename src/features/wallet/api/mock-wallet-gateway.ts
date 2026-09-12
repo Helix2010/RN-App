@@ -1,3 +1,4 @@
+import type { MnemonicWordCount } from "../../../core/wallet/keygen/mnemonic";
 import {
   memoryStorage,
   nextId,
@@ -224,7 +225,10 @@ export class MockWalletGateway implements WalletGateway {
    * Mock 的开通流程：地址用真实的 BIP-39/BIP-44 派生（便于 UI 走真实校验路径），
    * 但不保管任何密钥，签名仍是假摘要。
    */
-  async createWallet(): Promise<{ account: WalletAccount; mnemonic: string }> {
+  async createWallet(_options?: {
+    reason?: string;
+    words?: MnemonicWordCount;
+  }): Promise<{ account: WalletAccount; mnemonic: string }> {
     const account = await this.connect("embedded");
     return { account, mnemonic: MOCK_MNEMONIC };
   }

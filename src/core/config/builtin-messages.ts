@@ -895,6 +895,7 @@ const zhCN = {
   "backup.title": "备份助记词",
   "backup.step": "第 {n} / {total} 步",
   "backup.heading": "抄写这 12 个单词",
+  "backup.heading24": "抄写这 24 个单词",
   "backup.hint":
     "按顺序抄写在纸上并妥善保管。任何拿到助记词的人都能控制你的资产。",
   "backup.copy": "复制（60 秒后自动清除剪贴板）",
@@ -906,7 +907,10 @@ const zhCN = {
   "wallet.setup.custodyNotice":
     "这是自托管钱包：助记词只保存在你的设备上，我们无法替你找回。",
   "wallet.setup.create": "创建新钱包",
-  "wallet.setup.createHint": "生成 12 个助记词，并立即完成备份",
+  "wallet.setup.createHint": "生成助记词，并立即完成备份",
+  "wallet.setup.words": "助记词长度",
+  "wallet.setup.words12": "12 个词",
+  "wallet.setup.words24": "24 个词（更安全）",
   "wallet.setup.creating": "正在创建…",
   "wallet.setup.import": "导入已有钱包",
   "wallet.setup.importHint": "用助记词或私钥恢复",
@@ -2134,6 +2138,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "backup.title": "Back up seed phrase",
   "backup.step": "Step {n} of {total}",
   "backup.heading": "Write down these 12 words",
+  "backup.heading24": "Write down these 24 words",
   "backup.hint":
     "Write them down in order and keep them safe. Anyone with the phrase controls your assets.",
   "backup.copy": "Copy (clipboard clears in 60s)",
@@ -2146,7 +2151,10 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "wallet.setup.custodyNotice":
     "This is a self-custodial wallet: the recovery phrase stays on your device and we cannot recover it for you.",
   "wallet.setup.create": "Create a new wallet",
-  "wallet.setup.createHint": "Generate a 12-word phrase and back it up now",
+  "wallet.setup.createHint": "Generate a recovery phrase and back it up now",
+  "wallet.setup.words": "Phrase length",
+  "wallet.setup.words12": "12 words",
+  "wallet.setup.words24": "24 words (stronger)",
   "wallet.setup.creating": "Creating…",
   "wallet.setup.import": "Import an existing wallet",
   "wallet.setup.importHint": "Restore with a recovery phrase or private key",

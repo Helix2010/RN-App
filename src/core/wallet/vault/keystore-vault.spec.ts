@@ -115,10 +115,19 @@ async function backupKeys(storage: KeyValueStorage): Promise<string[]> {
 }
 
 describe("KeystoreVault", () => {
+  // 安全评审 N29：默认给强的那个，用户可以在界面上降级到 12 词
+  it("用户选 12 词时就生成 12 词", async () => {
+    const { vault } = setup();
+
+    const { mnemonic } = await vault.createWallet(undefined, 12);
+
+    expect(mnemonic.split(" ")).toHaveLength(12);
+  });
+
   it("creates a wallet, returns the phrase once, and keeps only ciphertext at rest", async () => {
     const { vault, storage } = setup();
     const { entry, mnemonic } = await vault.createWallet();
-    expect(mnemonic.split(" ")).toHaveLength(12);
+    expect(mnemonic.split(" ")).toHaveLength(24);
     expect(entry).toMatchObject({
       kind: "mnemonic",
       path: "m/44'/60'/0'/0/0",

@@ -9,6 +9,7 @@ import {
   generateMnemonic,
   normalizeMnemonic,
   normalizePrivateKey,
+  type MnemonicWordCount,
 } from "../keygen/mnemonic";
 import {
   authenticateOverrideAllowed,
@@ -249,8 +250,10 @@ export class KeystoreVault {
    */
   async createWallet(
     reason?: string,
+    words?: MnemonicWordCount,
   ): Promise<{ entry: VaultEntry; mnemonic: string }> {
-    const mnemonic = generateMnemonic(128);
+    // 不传按 generateMnemonic 的默认值（24 词，安全评审 N29）
+    const mnemonic = generateMnemonic(words);
     const entry = await this.addSecret(mnemonic, "mnemonic", 0, reason);
     return { entry, mnemonic };
   }

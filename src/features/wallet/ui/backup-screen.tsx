@@ -31,7 +31,12 @@ import { MAX_QUIZ_ATTEMPTS, buildQuiz } from "../model/backup-quiz";
 import { takePendingPhrase } from "../model/pending-reveal";
 import { useWalletAccounts } from "../hooks/use-wallet";
 
-const WORD_COUNT = 12;
+/**
+ * 一句合法 BIP-39 助记词的词数。12 与 24 都要支持（安全评审 N29：新钱包默认 24
+ * 词，界面允许用户选 12），所以这里不能再写死一个数——写死会让 24 词的钱包
+ * 永远通不过验证那一步。
+ */
+const VALID_WORD_COUNTS = new Set([12, 24]);
 
 /** L-04 备份助记词：抄写 → 验证（乱序选词 3 个）→ 完成；三段进度；可"稍后备份"。 */
 export function BackupScreen({
@@ -102,7 +107,7 @@ export function BackupScreen({
   const { run: verify, pending: marking } = useAsyncAction(
     async () => {
       const ok =
-        words.length === WORD_COUNT &&
+        VALID_WORD_COUNTS.has(words.length) &&
         targets.every((index) => answers[index] === words[index]);
       if (!ok) {
         setWrong(true);
@@ -172,7 +177,10 @@ export function BackupScreen({
           ) : step === 1 ? (
             <>
               <Stack gap="$1">
-                <SectionTitle fontSize={18}>{t("backup.heading")}</SectionTitle>
+                <SectionTitle fontSize={18}>
+                  {/* 文案按实际词数取：translateMessage 不支持插值，所以是两个键 */}
+                  {t(words.length === 24 ? "backup.heading24" : "backup.heading")}
+                </SectionTitle>
                 <Body>{t("backup.hint")}</Body>
               </Stack>
               {screenProtect === "unavailable" ? (

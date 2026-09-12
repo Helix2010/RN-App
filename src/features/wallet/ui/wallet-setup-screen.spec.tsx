@@ -29,6 +29,29 @@ describe("WalletSetupScreen", () => {
     clearPendingPhrase();
   });
 
+  // 安全评审 N29：默认给强的那个，用户可以自己降级
+  it("默认选中 24 词，用户可以改成 12 词", async () => {
+    await renderSetup();
+
+    const strong = await screen.findByTestId("wallet-setup-words-24");
+    const weak = await screen.findByTestId("wallet-setup-words-12");
+    expect(strong.props.accessibilityState?.selected).toBe(true);
+    expect(weak.props.accessibilityState?.selected).toBe(false);
+
+    void fireEvent.press(weak);
+
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("wallet-setup-words-12").props.accessibilityState
+          ?.selected,
+      ).toBe(true),
+    );
+    expect(
+      screen.getByTestId("wallet-setup-words-24").props.accessibilityState
+        ?.selected,
+    ).toBe(false);
+  });
+
   it("routes to the import screen", async () => {
     const navigation = fakeNavigation({ replace: jest.fn() });
     await renderSetup(navigation);

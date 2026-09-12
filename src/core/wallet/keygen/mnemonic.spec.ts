@@ -8,6 +8,7 @@ import {
   isValidPrivateKey,
   normalizeMnemonic,
   normalizePrivateKey,
+  wordCountOf,
 } from "./mnemonic";
 
 /** BIP-39 官方全零熵向量，以及它在 BIP-44 EVM 路径上的公开测试地址。 */
@@ -27,13 +28,23 @@ describe("mnemonic", () => {
     );
   });
 
-  it("generates valid 12-word phrases that differ every time", () => {
+  it("默认生成 24 词，每次都不同（安全评审 N29：默认给强的那个）", () => {
     const first = generateMnemonic();
     const second = generateMnemonic();
-    expect(first.split(" ")).toHaveLength(12);
+    expect(first.split(" ")).toHaveLength(24);
     expect(isValidMnemonic(first)).toBe(true);
     expect(first).not.toBe(second);
-    expect(generateMnemonic(256).split(" ")).toHaveLength(24);
+  });
+
+  it("用户选 12 词时就生成 12 词，仍然是合法助记词", () => {
+    const phrase = generateMnemonic(12);
+    expect(phrase.split(" ")).toHaveLength(12);
+    expect(isValidMnemonic(phrase)).toBe(true);
+  });
+
+  it("wordCountOf 数的是词数，不受多余空白影响", () => {
+    expect(wordCountOf("  abandon   abandon\tabandon ")).toBe(3);
+    expect(wordCountOf("   ")).toBe(0);
   });
 
   it("normalizes user-pasted phrases and rejects invalid ones", () => {

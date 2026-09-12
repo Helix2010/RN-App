@@ -183,7 +183,7 @@ describe("EmbeddedWalletGateway", () => {
   it("creates a wallet, selects it, and reports it as not backed up", async () => {
     const { gateway, seeded } = setup();
     const { account, mnemonic } = await gateway.createWallet();
-    expect(mnemonic.split(" ")).toHaveLength(12);
+    expect(mnemonic.split(" ")).toHaveLength(24);
     expect(account).toMatchObject({
       connector: "embedded",
       current: true,
