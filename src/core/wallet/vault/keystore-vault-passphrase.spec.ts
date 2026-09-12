@@ -38,7 +38,10 @@ function setup(options?: { authenticatedAvailable?: boolean }) {
     remove: jest.fn(authInner.remove),
     available: () => available,
   };
-  const requestPassphrase = jest.fn(async () => PASSPHRASE as string | null);
+  const requestPassphrase = jest.fn(
+    async (_purpose: "unlock" | "reveal", _retry: boolean) =>
+      PASSPHRASE as string | null,
+  );
   const vault = new KeystoreVault({
     storage,
     secureStore,
@@ -137,7 +140,7 @@ describe("系统作废了认证绑定的那把密钥", () => {
     );
 
     expect(prefix).toBe("0x");
-    expect(s.requestPassphrase).toHaveBeenCalledWith("unlock");
+    expect(s.requestPassphrase).toHaveBeenCalledWith("unlock", false);
     // 重建过 A 路：这一次之后不该再问口令
     expect(s.authenticatedStore.set).toHaveBeenCalledTimes(2);
   });
@@ -149,7 +152,7 @@ describe("系统作废了认证绑定的那把密钥", () => {
 
     await s.vault.withPrivateKey(entry.address, "wallet.sign", () => null);
 
-    expect(s.requestPassphrase).toHaveBeenCalledWith("unlock");
+    expect(s.requestPassphrase).toHaveBeenCalledWith("unlock", false);
   });
 
   it("用户取消输入口令就是拒绝，不是当成没开口令", async () => {
@@ -172,5 +175,49 @@ describe("系统作废了认证绑定的那把密钥", () => {
     await expect(
       s.vault.withPrivateKey(entry.address, "wallet.sign", () => null),
     ).rejects.toThrow(WalletPassphraseError);
+  });
+});
+
+describe("口令输错", () => {
+  it("再问一次，并告诉界面上一次错了", async () => {
+    const s = setup({ authenticatedAvailable: false });
+    const { entry } = await s.vault.createWallet();
+    await s.vault.enablePassphrase(PASSPHRASE, "r");
+    s.requestPassphrase
+      .mockResolvedValueOnce("wrong one")
+      .mockResolvedValueOnce(PASSPHRASE);
+
+    await s.vault.withPrivateKey(entry.address, "wallet.sign", () => null);
+
+    expect(s.requestPassphrase).toHaveBeenNthCalledWith(1, "unlock", false);
+    // 第二次带上"上次错了"：用户看到的是"口令不对"，不是一个沉默的输入框
+    expect(s.requestPassphrase).toHaveBeenNthCalledWith(2, "unlock", true);
+  });
+
+  it("连错到上限就放弃本次操作，不无限弹", async () => {
+    const s = setup({ authenticatedAvailable: false });
+    const { entry } = await s.vault.createWallet();
+    await s.vault.enablePassphrase(PASSPHRASE, "r");
+    s.requestPassphrase.mockResolvedValue("wrong one");
+
+    await expect(
+      s.vault.withPrivateKey(entry.address, "wallet.sign", () => null),
+    ).rejects.toThrow(WalletPassphraseError);
+    expect(s.requestPassphrase).toHaveBeenCalledTimes(3);
+  });
+
+  // 取消不是"输错了"：不该再追问
+  it("中途取消就立刻结束，不再追问", async () => {
+    const s = setup({ authenticatedAvailable: false });
+    const { entry } = await s.vault.createWallet();
+    await s.vault.enablePassphrase(PASSPHRASE, "r");
+    s.requestPassphrase
+      .mockResolvedValueOnce("wrong one")
+      .mockResolvedValueOnce(null);
+
+    await expect(
+      s.vault.withPrivateKey(entry.address, "wallet.sign", () => null),
+    ).rejects.toThrow(WalletPassphraseRequiredError);
+    expect(s.requestPassphrase).toHaveBeenCalledTimes(2);
   });
 });

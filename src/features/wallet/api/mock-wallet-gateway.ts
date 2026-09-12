@@ -225,6 +225,15 @@ export class MockWalletGateway implements WalletGateway {
    * Mock 的开通流程：地址用真实的 BIP-39/BIP-44 派生（便于 UI 走真实校验路径），
    * 但不保管任何密钥，签名仍是假摘要。
    */
+  /** Mock 不保管密钥，也就没有口令保护这回事。 */
+  async isPassphraseProtected(): Promise<boolean> {
+    return false;
+  }
+
+  async enablePassphrase(): Promise<void> {
+    throw new Error("the mock wallet gateway holds no keys");
+  }
+
   async createWallet(_options?: {
     reason?: string;
     words?: MnemonicWordCount;

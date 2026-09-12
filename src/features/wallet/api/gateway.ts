@@ -93,6 +93,13 @@ export interface WalletGateway {
   ): Promise<string>;
   /** 生成新的自托管钱包；助记词只在此处返回一次供备份展示 */
   /** `reason` 是认证弹窗文案的内置字典 key；vault 已有账户时新建必须先过身份验证 */
+  /**
+   * 这个金库有没有开口令保护（安全评审 N6）。开了之后拿到设备上的密钥也拿不走
+   * 助记词，代价是换锁屏 / 重录指纹之后要靠口令才能重新打开。
+   */
+  isPassphraseProtected(): Promise<boolean>;
+  /** 开启口令保护。`reason` 是系统验证弹窗文案的内置字典 key。只能开一次。 */
+  enablePassphrase(passphrase: string, reason: string): Promise<void>;
   /** `words` 不传按默认的 24 词（安全评审 N29）；界面允许用户改成 12。 */
   createWallet(options?: {
     reason?: string;

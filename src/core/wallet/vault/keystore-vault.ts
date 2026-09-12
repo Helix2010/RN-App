@@ -28,7 +28,10 @@ import {
   sealWrapKey,
   type WrapKeyEnvelope,
 } from "./wrap-key-envelope";
-import { assertPassphraseAcceptable } from "./passphrase";
+import {
+  assertPassphraseAcceptable,
+  WalletPassphraseError,
+} from "./passphrase";
 
 /**
  * 自托管密钥的静止态保管。分层与 Robinhood 一致（逆向 E-011）：
@@ -297,9 +300,17 @@ type KeystoreVaultDeps = {
   now?: () => number;
 };
 
+/**
+ * 向用户要口令。`retry` 为 true 表示上一次输错了——界面据此显示"口令不对"，
+ * 而不是让用户对着一个没有任何反馈的输入框再试一次。
+ */
 export type RequestPassphrasePort = (
-  purpose: "unlock" | "enable",
+  purpose: "unlock" | "reveal",
+  retry: boolean,
 ) => Promise<string | null>;
+
+/** 口令连错这么多次就放弃本次操作。用户可以重新发起，这里只是不无限弹。 */
+const PASSPHRASE_ATTEMPTS = 3;
 
 export class KeystoreVault {
   private cachedWrapKey: Uint8Array | null = null;
@@ -428,7 +439,8 @@ export class KeystoreVault {
           throw new WalletVaultError(
             "this account's recovery phrase is not in this vault",
           );
-        const passKey = seed.protected === 1 ? await this.seedPassKey() : null;
+        const passKey =
+          seed.protected === 1 ? await this.seedPassKey("reveal") : null;
         try {
           const phrase = this.readSeed(seed, wrapKey, passKey, file);
           const derived = deriveAccount(phrase, pathIndex(entry.path));
@@ -853,18 +865,51 @@ export class KeystoreVault {
    * 向用户要口令并派生口令密钥。只在真的需要助记词时调用——日常签名不走这里，
    * 那正是拆分的意义。
    */
-  private async requirePassKey(
+  /**
+   * 要口令、试、错了再要一次。所有需要口令的路径都从这里走，这样"错三次就放弃"
+   * 和"取消就立刻结束"只有一处实现。
+   */
+  private async withPassphrase<T>(
+    purpose: "unlock" | "reveal",
+    // 不要把这个参数叫 `use`：react-hooks 规则会把 `use(...)` 当成 React 19 的 use()
+    consume: (passphrase: string) => Promise<T>,
+  ): Promise<T> {
+    for (let attempt = 0; attempt < PASSPHRASE_ATTEMPTS; attempt += 1) {
+      const passphrase = await this.deps.requestPassphrase?.(
+        purpose,
+        attempt > 0,
+      );
+      // 取消不是"输错了"：直接结束，不再追问
+      if (!passphrase) throw new WalletPassphraseRequiredError();
+      try {
+        return await consume(passphrase);
+      } catch (error) {
+        // 最后一次还是错就把错误抛出去，让调用方能如实告诉用户
+        if (
+          attempt === PASSPHRASE_ATTEMPTS - 1 ||
+          !(error instanceof WalletPassphraseError)
+        )
+          throw error;
+      }
+    }
+    throw new WalletPassphraseRequiredError();
+  }
+
+  private requirePassKey(
     envelope: WrapKeyEnvelope,
+    purpose: "unlock" | "reveal",
   ): Promise<Uint8Array> {
-    const passphrase = await this.deps.requestPassphrase?.("unlock");
-    if (!passphrase) throw new WalletPassphraseRequiredError();
-    return derivePassKeyFor(envelope, passphrase);
+    return this.withPassphrase(purpose, (passphrase) =>
+      derivePassKeyFor(envelope, passphrase),
+    );
   }
 
   /** 开了口令保护就必须拿到口令密钥；没开就返回 null（条目只由 WK 加密）。 */
-  private async seedPassKey(): Promise<Uint8Array | null> {
+  private async seedPassKey(
+    purpose: "unlock" | "reveal" = "unlock",
+  ): Promise<Uint8Array | null> {
     const envelope = await this.readEnvelope();
-    return envelope === null ? null : this.requirePassKey(envelope);
+    return envelope === null ? null : this.requirePassKey(envelope, purpose);
   }
 
   private writeSeed(
@@ -971,10 +1016,10 @@ export class KeystoreVault {
         // 是设计里预期会发生的事——B 路就是为此存在的。
       }
     }
-    const passphrase = await this.deps.requestPassphrase?.("unlock");
-    if (!passphrase) throw new WalletPassphraseRequiredError();
     const deviceKey = await this.readDeviceKey();
-    const wrapKey = await openWrapKey({ envelope, deviceKey, passphrase });
+    const wrapKey = await this.withPassphrase("unlock", (passphrase) =>
+      openWrapKey({ envelope, deviceKey, passphrase }),
+    );
     const encoded = toBase64(wrapKey);
     wipe(wrapKey);
     wipe(deviceKey);

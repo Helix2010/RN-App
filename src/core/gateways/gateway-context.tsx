@@ -31,9 +31,12 @@ import { OnchainTransfers } from "../../features/wallet/api/onchain-transfers";
 import { KeystoreVault } from "../wallet/vault/keystore-vault";
 import {
   expoAuthenticate,
+  expoAuthenticatedSecureStore,
   expoPredictSecureStore,
   expoSecureStore,
 } from "../wallet/vault/expo-ports";
+import { builtinPromptText } from "../security/prompt-text";
+import { requestWalletPassphrase } from "../../features/wallet/model/passphrase-prompt";
 import { appRuntime } from "../network/api-client";
 import { setSessionStateProbe } from "../device/session-state-probe";
 import type { KeyValueStorage } from "./types";
@@ -61,6 +64,12 @@ function createGateways(storage: KeyValueStorage): Gateways {
     storage,
     secureStore: expoSecureStore,
     authenticate: expoAuthenticate,
+    // A 路：读包裹密钥会弹系统验证，JS 绕不开（安全评审 N6）。设备没录入生物识别
+    // 时 `available()` 为 false，金库会自动只走口令那条路
+    authenticatedStore: expoAuthenticatedSecureStore(
+      builtinPromptText("wallet.sign.reason"),
+    ),
+    requestPassphrase: requestWalletPassphrase,
   });
   const chainData = new MockWalletGateway(storage);
   // 外部钱包：projectId 由服务端 bootstrap 下发，没下发时 UI 如实标记不可用

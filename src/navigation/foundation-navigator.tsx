@@ -22,6 +22,8 @@ import { ConnectWalletSheet } from "../features/session/ui/connect-wallet-sheet"
 import { SessionRevalidator } from "../features/session/ui/session-revalidator";
 import { WalletConnectSheet } from "../features/wallet/ui/walletconnect-sheet";
 import { WalletImportScreen } from "../features/wallet/ui/wallet-import-screen";
+import { WalletPassphraseScreen } from "../features/wallet/ui/wallet-passphrase-screen";
+import { WalletPassphraseSheet } from "../features/wallet/ui/wallet-passphrase-sheet";
 import { WalletSetupScreen } from "../features/wallet/ui/wallet-setup-screen";
 import { AccountDetailScreen } from "../features/assets/ui/account-detail-screen";
 import { SendScreen } from "../features/assets/ui/send-screen";
@@ -92,6 +94,10 @@ export function FoundationNavigator() {
         <Stack.Screen name="WalletSetup" component={WalletSetupScreen} />
         <Stack.Screen name="WalletImport" component={WalletImportScreen} />
         <Stack.Screen name="WalletBackup" component={BackupScreen} />
+        <Stack.Screen
+          name="WalletPassphrase"
+          component={WalletPassphraseScreen}
+        />
         <Stack.Screen name="Settings" component={SettingsScreen} />
         <Stack.Screen
           name="LanguageSettings"
@@ -331,6 +337,7 @@ export function FoundationNavigator() {
       <SessionRevalidator />
       <ConnectWalletSheet />
       <WalletConnectSheet />
+      <WalletPassphraseSheet />
     </NavigationContainer>
   );
 }

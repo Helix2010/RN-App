@@ -310,6 +310,14 @@ export class EmbeddedWalletGateway implements WalletGateway {
 
   // 注册表在 vault 写入**之前**读一次：注册表坏了就在这里失败，不会留下一条已经写进
   // vault、却从未向用户展示过助记词的孤儿条目（评审 2.4）。
+  isPassphraseProtected(): Promise<boolean> {
+    return this.deps.vault.isPassphraseProtected();
+  }
+
+  enablePassphrase(passphrase: string, reason: string): Promise<void> {
+    return this.deps.vault.enablePassphrase(passphrase, reason);
+  }
+
   async createWallet(options?: {
     reason?: string;
     words?: MnemonicWordCount;

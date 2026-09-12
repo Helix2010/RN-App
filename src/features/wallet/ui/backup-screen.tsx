@@ -104,6 +104,25 @@ export function BackupScreen({
       failure: t("common.copyFailed"),
     });
   };
+  /**
+   * 备份完成之后才引导设置口令（安全评审 N6 / 方案 §3.5）。
+   *
+   * 顺序是有意的：忘记口令无法找回，而换锁屏或重录生物识别之后系统会作废那把
+   * 认证绑定的密钥，届时只能靠口令重新打开钱包。放在用户已经抄下助记词之后，
+   * 最坏情况才有退路。已经开过口令的（导入到同一个金库）不再打扰。
+   */
+  const finish = async () => {
+    try {
+      if (!(await wallet.isPassphraseProtected())) {
+        navigation.replace("WalletPassphrase");
+        return;
+      }
+    } catch {
+      // 问不出来就当成已经开过：这一步是加固引导，不能因为它让用户卡在备份页
+    }
+    navigation.goBack();
+  };
+
   const { run: verify, pending: marking } = useAsyncAction(
     async () => {
       const ok =
@@ -338,7 +357,7 @@ export function BackupScreen({
               <Body textAlign="center">{t("backup.doneHint")}</Body>
               <PrimaryButton
                 alignSelf="stretch"
-                onPress={() => navigation.goBack()}
+                onPress={() => void finish()}
                 testID="backup-finish"
               >
                 {t("backup.finish")}

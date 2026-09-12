@@ -45,7 +45,10 @@ function setup() {
     remove: jest.fn(authInner.remove),
     available: () => true,
   };
-  const requestPassphrase = jest.fn(async () => PASSPHRASE as string | null);
+  const requestPassphrase = jest.fn(
+    async (_purpose: "unlock" | "reveal", _retry: boolean) =>
+      PASSPHRASE as string | null,
+  );
   const vault = new KeystoreVault({
     storage,
     secureStore,
@@ -97,7 +100,7 @@ describe("账户私钥与助记词分开保管", () => {
 
     const revealed = await vault.revealMnemonic(ADDRESS, "reveal");
     expect(revealed).toBe(PHRASE);
-    expect(requestPassphrase).toHaveBeenCalledWith("unlock");
+    expect(requestPassphrase).toHaveBeenCalledWith("reveal", false);
   });
 
   it("开了口令保护之后，助记词条目标成 protected", async () => {
