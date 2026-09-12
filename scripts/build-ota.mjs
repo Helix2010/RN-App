@@ -60,10 +60,50 @@ const resolvedExpoConfig = JSON.parse(
     },
   ),
 );
-const configuredRuntimeVersion =
-  typeof resolvedExpoConfig.runtimeVersion === "string"
-    ? resolvedExpoConfig.runtimeVersion
-    : undefined;
+// 热更新包必须对准"正在分发的那一版"的 runtime，否则一台设备都收不到它。
+//
+// 这个值以前取自 expo config，而 expo config 读的是仓库里的 tenants/<slug>/
+// tenant.json。自从 App 身份改由服务端下发（版本号来自打包任务），仓库那份就不再跟着
+// 走了——2026-09-12 它停在 1.3.7，而线上分发的是 1.3.12。照它构建会产出一个没有任何
+// 设备能用的包，而且构建、上传、发布每一步都会成功，直到没人收到更新为止。
+//
+// 所以改成向服务端要。取不到就直接失败：默默退回一个可能过期的值，正是上面那个故障
+// 的成因。--runtime-version 仍然保留，作为离线或首发时的显式出口。
+async function runtimeVersionFromServer(targetPlatform, targetApiBaseUrl) {
+  const endpoint =
+    targetApiBaseUrl.replace(/\/+$/, "") +
+    "/v1/public/releases/latest?platform=" +
+    encodeURIComponent(targetPlatform);
+  let response;
+  try {
+    response = await fetch(endpoint, {
+      headers: { accept: "application/json" },
+    });
+  } catch (error) {
+    fail(
+      `连不上 ${endpoint}（${error.message}）。离线构建请用 --runtime-version 显式指定。`,
+    );
+  }
+  if (!response.ok) {
+    fail(
+      `向 ${endpoint} 取当前分发版本失败（HTTP ${response.status}）。` +
+        "这个租户还没有已发布的版本时，用 --runtime-version 显式指定。",
+    );
+  }
+  const body = await response.json();
+  const value = body && body.runtimeVersion;
+  if (typeof value !== "string" || value.trim() === "") {
+    fail(
+      `服务端没有返回 runtimeVersion（${endpoint}）。服务端版本过旧，或该平台没有在分发的版本；` +
+        "用 --runtime-version 显式指定。",
+    );
+  }
+  return value.trim();
+}
+
+const resolvedRuntimeVersion =
+  runtimeVersionOverride ??
+  (await runtimeVersionFromServer(platform, apiBaseUrl));
 
 if (!platform || !["android", "ios"].includes(platform)) {
   fail(
@@ -162,16 +202,7 @@ try {
   const manifest = {
     id: randomUUID(),
     createdAt: new Date().toISOString(),
-    runtimeVersion:
-      runtimeVersionOverride ??
-      configuredRuntimeVersion ??
-      runtimeVersion(
-        platform,
-        apiBaseUrl,
-        channel,
-        distributionChannel,
-        applicationId,
-      ),
+    runtimeVersion: resolvedRuntimeVersion,
     platform,
     channel,
     extra: {
@@ -225,38 +256,6 @@ try {
 } finally {
   rmSync(exportDir, { recursive: true, force: true });
   rmSync(packageDir, { recursive: true, force: true });
-}
-
-function runtimeVersion(
-  targetPlatform,
-  targetApiBaseUrl,
-  targetChannel,
-  targetDistributionChannel,
-  targetApplicationId,
-) {
-  const output = execFileSync(
-    "pnpm",
-    [
-      "exec",
-      "expo-updates",
-      "fingerprint:generate",
-      "--platform",
-      targetPlatform,
-    ],
-    {
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        EXPO_PUBLIC_API_BASE_URL: targetApiBaseUrl,
-        EXPO_PUBLIC_DISTRIBUTION_CHANNEL: targetDistributionChannel,
-        EXPO_PUBLIC_OTA_CHANNEL: targetChannel,
-        EXPO_PUBLIC_APPLICATION_ID: targetApplicationId,
-      },
-    },
-  ).trim();
-  const parsed = JSON.parse(output);
-  if (!parsed.hash) fail("无法从 Expo Fingerprint 获取 Runtime Version");
-  return parsed.hash;
 }
 
 function cpFile(source, target) {
