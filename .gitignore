@@ -26,3 +26,7 @@ assets/tenants/
 !assets/tenants/
 !assets/tenants/*/
 !assets/tenants/*/*.png
+
+# ota:build 的产物。不忽略的话它会把工作区弄脏，而构建脚本拒绝脏树——
+# 结果是第二次构建被上一次的产物挡住。
+ota-*-*.zip
