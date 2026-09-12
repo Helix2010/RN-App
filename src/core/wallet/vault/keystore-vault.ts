@@ -3,6 +3,7 @@ import { hkdf } from "@noble/hashes/hkdf.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { randomBytes } from "ethers";
 import type { KeyValueStorage } from "../../gateways/types";
+import { fromBase64, toBase64 } from "./base64";
 import {
   accountFromPrivateKey,
   deriveAccount,
@@ -140,20 +141,6 @@ export class WalletVaultKeyMissingError extends WalletVaultError {
     );
     this.name = "WalletVaultKeyMissingError";
   }
-}
-
-function toBase64(bytes: Uint8Array): string {
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return globalThis.btoa(binary);
-}
-
-function fromBase64(value: string): Uint8Array {
-  const binary = globalThis.atob(value);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1)
-    bytes[index] = binary.charCodeAt(index);
-  return bytes;
 }
 
 function wipe(bytes: Uint8Array): void {
