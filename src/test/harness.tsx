@@ -156,6 +156,7 @@ export function fakeNavigation<T extends object = object>(overrides?: T) {
   return {
     navigate: jest.fn(),
     goBack: jest.fn(),
+    canGoBack: jest.fn(() => true),
     popToTop: jest.fn(),
     push: jest.fn(),
     setOptions: jest.fn(),

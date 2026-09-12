@@ -28,6 +28,20 @@ export function useWalletAccounts() {
   });
 }
 
+/**
+ * 这个金库有没有开口令保护（安全评审 N6）。
+ *
+ * 只在安全中心和开通流程用来决定"要不要引导用户去设一个"。它不参与任何放行判定
+ * ——真正的门在金库里，界面知不知道都不影响那道门。
+ */
+export function useWalletPassphraseState() {
+  const { wallet } = useGateways();
+  return useQuery({
+    queryKey: ["wallet-passphrase-state"],
+    queryFn: () => wallet.isPassphraseProtected(),
+  });
+}
+
 export function useWalletBalances(
   address: string | undefined,
   chain?: ChainId,

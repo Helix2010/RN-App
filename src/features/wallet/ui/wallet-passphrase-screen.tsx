@@ -1,4 +1,5 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
@@ -39,7 +40,14 @@ export function WalletPassphraseScreen({
   const { t } = useFoundationRuntime();
   const theme = useTheme();
   const { wallet } = useGateways();
+  const queryClient = useQueryClient();
   const [passphrase, setPassphrase] = useState("");
+  /**
+   * 开通流程里上一页被 replace 掉了，返回就是回首页；从安全中心进来则回安全中心。
+   * 两边都用 goBack，不要写死 popToTop——那会把从安全中心进来的人甩回首页。
+   */
+  const leave = () =>
+    navigation.canGoBack() ? navigation.goBack() : navigation.popToTop();
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
 
@@ -50,8 +58,11 @@ export function WalletPassphraseScreen({
   const { run: enable, pending } = useAsyncAction(
     async () => {
       await wallet.enablePassphrase(passphrase, "wallet.passphrase.authReason");
+      await queryClient.invalidateQueries({
+        queryKey: ["wallet-passphrase-state"],
+      });
       toast(t("wallet.passphrase.enabled"), "success");
-      navigation.popToTop();
+      leave();
     },
     {
       failureMessage: t("wallet.passphrase.failed"),
@@ -68,7 +79,7 @@ export function WalletPassphraseScreen({
       <Content paddingTop={insets.top + 8} paddingBottom={0}>
         <ScreenHeader
           title={t("wallet.passphrase.title")}
-          onBack={() => navigation.popToTop()}
+          onBack={leave}
           backLabel={t("action.back")}
         />
       </Content>
@@ -162,7 +173,7 @@ export function WalletPassphraseScreen({
             fontSize={13}
             accessibilityRole="button"
             testID="wallet-passphrase-skip"
-            onPress={() => navigation.popToTop()}
+            onPress={leave}
           >
             {t("wallet.passphrase.skip")}
           </Body>

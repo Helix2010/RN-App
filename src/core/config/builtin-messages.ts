@@ -908,6 +908,10 @@ const zhCN = {
     "这是自托管钱包：助记词只保存在你的设备上，我们无法替你找回。",
   "wallet.setup.create": "创建新钱包",
   "wallet.setup.createHint": "生成助记词，并立即完成备份",
+  "security.passphrase": "钱包口令",
+  "security.passphrase.hint": "多一道只有你知道的口令，拿到设备密钥也拿不走助记词",
+  "security.passphrase.on": "已启用",
+  "security.passphrase.off": "未设置",
   "wallet.passphrase.title": "设置钱包口令",
   "wallet.passphrase.heading": "再加一道只有你知道的口令",
   "wallet.passphrase.hint":
@@ -2175,6 +2179,11 @@ const enUS: Record<keyof typeof zhCN, string> = {
     "This is a self-custodial wallet: the recovery phrase stays on your device and we cannot recover it for you.",
   "wallet.setup.create": "Create a new wallet",
   "wallet.setup.createHint": "Generate a recovery phrase and back it up now",
+  "security.passphrase": "Wallet password",
+  "security.passphrase.hint":
+    "One more secret only you know, so device keys alone cannot take your recovery phrase",
+  "security.passphrase.on": "On",
+  "security.passphrase.off": "Not set",
   "wallet.passphrase.title": "Set a wallet password",
   "wallet.passphrase.heading": "Add a password only you know",
   "wallet.passphrase.hint":

@@ -9,7 +9,10 @@ import { WalletPassphraseScreen } from "./wallet-passphrase-screen";
 async function renderScreen(
   enablePassphrase = jest.fn(async () => undefined),
 ) {
-  const navigation = fakeNavigation({ popToTop: jest.fn() });
+  const navigation = fakeNavigation({
+    goBack: jest.fn(),
+    popToTop: jest.fn(),
+  });
   const wallet = createTestGateways().wallet;
   wallet.enablePassphrase = enablePassphrase;
   return {
@@ -76,8 +79,30 @@ describe("WalletPassphraseScreen", () => {
   });
 
   // 这是加固引导，不是门禁。做成必填只会让一部分用户随手输一串记不住的东西
-  it("可以跳过", async () => {
+  it("可以跳过，而且回到进来的那个地方", async () => {
     const { navigation } = await renderScreen();
+
+    void fireEvent.press(await screen.findByTestId("wallet-passphrase-skip"));
+
+    // 从安全中心进来要回安全中心；写死 popToTop 会把人甩回首页
+    expect(navigation.goBack).toHaveBeenCalled();
+    expect(navigation.popToTop).not.toHaveBeenCalled();
+  });
+
+  it("退不回去时才 popToTop", async () => {
+    const navigation = fakeNavigation({
+      goBack: jest.fn(),
+      popToTop: jest.fn(),
+      canGoBack: jest.fn(() => false),
+    });
+    const wallet = createTestGateways().wallet;
+    await renderWithProviders(
+      <WalletPassphraseScreen
+        navigation={navigation}
+        route={fakeNavigation()}
+      />,
+      { gateways: { wallet } },
+    );
 
     void fireEvent.press(await screen.findByTestId("wallet-passphrase-skip"));
 

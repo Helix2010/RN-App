@@ -29,7 +29,10 @@ import {
   useTxVerificationLabel,
 } from "../security/tx-verification-sheet";
 import { useSession, useSignOut } from "../session/hooks/use-session";
-import { useWalletAccounts } from "../wallet/hooks/use-wallet";
+import {
+  useWalletAccounts,
+  useWalletPassphraseState,
+} from "../wallet/hooks/use-wallet";
 
 /** S-08 安全中心（钱包身份）：安全等级由本机可判定项计算；应用保护 / 钱包与会话 / 资金安全 三组；断开所有会话。 */
 export function SecurityCenterScreen({
@@ -42,6 +45,7 @@ export function SecurityCenterScreen({
   const session = useSession();
   const address = session.data?.address;
   const accounts = useWalletAccounts();
+  const passphrase = useWalletPassphraseState();
   const approvals = useApprovals(config.modules.dex ? address : undefined);
   const signOut = useSignOut();
   const { enrolled, toggle: toggleAppLock } = useAppLockToggle();
@@ -193,6 +197,31 @@ export function SecurityCenterScreen({
               onPress={() => navigation.navigate("Wallets")}
               testID="sec-wallets"
             />
+            {embedded ? (
+              <SRow
+                title={t("security.passphrase")}
+                subtitle={t("security.passphrase.hint")}
+                // 没设的时候标出来：开通流程里可以跳过，跳过之后这里是唯一的入口
+                pill={
+                  passphrase.data === false
+                    ? t("security.passphrase.off")
+                    : undefined
+                }
+                value={
+                  passphrase.data === true
+                    ? t("security.passphrase.on")
+                    : undefined
+                }
+                // 已经开了就不给入口：换口令要把信封整个换掉，做错一步就是钱包
+                // 打不开。真要支持改口令，那是一条独立的、带确认与回滚的流程。
+                onPress={
+                  passphrase.data === false
+                    ? () => navigation.navigate("WalletPassphrase")
+                    : undefined
+                }
+                testID="sec-passphrase"
+              />
+            ) : null}
             {embedded ? (
               <SRow
                 title={t("security.backup")}

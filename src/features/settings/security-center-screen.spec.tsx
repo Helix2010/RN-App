@@ -136,4 +136,52 @@ describe("SecurityCenterScreen", () => {
     );
     expect(useAppLock.getState().locked).toBe(false);
   });
+
+  // 开通流程里口令可以跳过，跳过之后这里是唯一的入口（安全评审 N6）
+  describe("钱包口令", () => {
+    async function renderWithPassphrase(enabled: boolean) {
+      const gateways = createTestGateways();
+      // 口令只对本机保管的钱包有意义，所以要先有一个内置账户
+      await gateways.wallet.createWallet();
+      await signIn(gateways);
+      gateways.wallet.isPassphraseProtected = jest.fn(async () => enabled);
+      const navigation = fakeNavigation();
+      return {
+        navigation,
+        ...(await renderWithProviders(
+          <SecurityCenterScreen
+            navigation={navigation}
+            route={fakeNavigation()}
+          />,
+          { gateways },
+        )),
+      };
+    }
+
+    it("没设过就标出来，点进去能设", async () => {
+      const { navigation, runtime } = await renderWithPassphrase(false);
+
+      const row = await screen.findByTestId("sec-passphrase");
+      expect(
+        await screen.findByText(runtime.t("security.passphrase.off")),
+      ).toBeTruthy();
+
+      void fireEvent.press(row);
+
+      expect(navigation.navigate).toHaveBeenCalledWith("WalletPassphrase");
+    });
+
+    // 换口令要把信封整个换掉，做错一步就是钱包打不开；那是一条独立的流程
+    it("已经开了就只显示状态，不给再点一次的入口", async () => {
+      const { navigation, runtime } = await renderWithPassphrase(true);
+
+      expect(
+        await screen.findByText(runtime.t("security.passphrase.on")),
+      ).toBeTruthy();
+
+      void fireEvent.press(screen.getByTestId("sec-passphrase"));
+
+      expect(navigation.navigate).not.toHaveBeenCalledWith("WalletPassphrase");
+    });
+  });
 });
