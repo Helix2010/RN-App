@@ -16,7 +16,18 @@ import {
   authenticateOverrideAllowed,
   platformAuthenticate,
 } from "./platform-authenticate";
-import type { AuthenticatePort, SecureStorePort } from "./ports";
+import type {
+  AuthenticatePort,
+  AuthenticatedSecureStorePort,
+  SecureStorePort,
+} from "./ports";
+import {
+  newDeviceKey,
+  openWrapKey,
+  sealWrapKey,
+  type WrapKeyEnvelope,
+} from "./wrap-key-envelope";
+import { assertPassphraseAcceptable } from "./passphrase";
 
 /**
  * 自托管密钥的静止态保管。分层与 Robinhood 一致（逆向 E-011）：
@@ -42,6 +53,16 @@ import type { AuthenticatePort, SecureStorePort } from "./ports";
  */
 
 const WRAP_KEY_STORE_KEY = "foundation.wallet.wrap-key.v1";
+/**
+ * 开了口令保护之后 WK 的两份封装（安全评审 N6 / 方案 §3.5）。
+ *
+ * A 路 = 认证绑定的 SecureStore 条目（读它会弹系统验证，JS 绕不开）。
+ * B 路 = 普通存储里的信封 + 未认证 SecureStore 里的设备密钥。
+ *
+ * 不变量：**两份永远是同一把 WK**，任何铸造或轮换都必须同时写两份。
+ */
+const WRAP_KEY_ENVELOPE_STORAGE_KEY = "foundation.wallet.wrap-key-envelope.v1";
+const ENVELOPE_DEVICE_KEY_STORE_KEY = "foundation.wallet.envelope-key.v1";
 /**
  * vault 文件：`{ version: 1, entries, wkCheck? }`。
  * `wkCheck` = HKDF-SHA256(WK, salt="foundation.wallet.wk-check.v1") 前 8 字节的
@@ -132,6 +153,17 @@ export class WalletVaultCorruptedError extends WalletVaultError {
 }
 
 /** vault 里有条目，但密钥库里没有能解开它们的 WK。必须从备份恢复，不会铸新。 */
+/**
+ * 需要口令才能继续，但当前没有可用的输入渠道（没接 `requestPassphrase`，或用户
+ * 取消了输入）。**不是**"口令错了"——那是 `WalletPassphraseError`。
+ */
+export class WalletPassphraseRequiredError extends WalletVaultError {
+  constructor() {
+    super("wallet passphrase is required to unlock this vault");
+    this.name = "WalletPassphraseRequiredError";
+  }
+}
+
 export class WalletVaultKeyMissingError extends WalletVaultError {
   constructor(readonly kind: "missing" | "mismatch") {
     super(
@@ -155,9 +187,20 @@ type KeystoreVaultDeps = {
    * 认证是**不可注入**的能力（安全评审 N6）。
    */
   authenticate?: AuthenticatePort;
+  /**
+   * 认证绑定的安全存储（方案 §3.5 的 A 路）。不传 = 这台设备上不开 A 路，
+   * WK 只走 B 路（口令）。**不传不是错误**：设备没录入生物识别时本来就只有 B 路。
+   */
+  authenticatedStore?: AuthenticatedSecureStorePort;
+  /** 向用户要口令。返回 null = 用户取消。不接 = 开不了口令保护，也解不开已开的。 */
+  requestPassphrase?: RequestPassphrasePort;
   unlockTtlMs?: number;
   now?: () => number;
 };
+
+export type RequestPassphrasePort = (
+  purpose: "unlock" | "enable",
+) => Promise<string | null>;
 
 export class KeystoreVault {
   private cachedWrapKey: Uint8Array | null = null;
@@ -547,7 +590,11 @@ export class KeystoreVault {
    * - 文件登记了 `wkCheck` 且与取到的 WK 不符：抛 `KeyMissing`。
    */
   private async loadWrapKey(file: VaultFile): Promise<Uint8Array> {
-    const existing = await this.deps.secureStore.get(WRAP_KEY_STORE_KEY);
+    const envelope = await this.readEnvelope();
+    const existing =
+      envelope === null
+        ? await this.deps.secureStore.get(WRAP_KEY_STORE_KEY)
+        : await this.readProtectedWrapKey(envelope);
     if (existing === null) {
       if (file.entries.length > 0)
         throw new WalletVaultKeyMissingError("missing");
@@ -561,6 +608,118 @@ export class KeystoreVault {
       throw new WalletVaultKeyMissingError("mismatch");
     }
     return wrapKey;
+  }
+
+  // ---- 口令保护（安全评审 N6 / 方案 §3.5）----
+
+  private async readEnvelope(): Promise<WrapKeyEnvelope | null> {
+    const raw = await this.deps.storage.getItem(WRAP_KEY_ENVELOPE_STORAGE_KEY);
+    if (raw === null) return null;
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (
+        typeof parsed === "object" &&
+        parsed !== null &&
+        "ciphertext" in parsed
+      )
+        return parsed as WrapKeyEnvelope;
+    } catch {
+      // 落到下面：信封坏了就是金库坏了，不能当成"没开口令"静默退回旧路径——
+      // 那条路径上的 WK 已经删掉了，退回去只会报一个误导性的 KeyMissing
+    }
+    throw new WalletVaultCorruptedError();
+  }
+
+  /** 这个金库有没有开口令保护。 */
+  async isPassphraseProtected(): Promise<boolean> {
+    return (await this.readEnvelope()) !== null;
+  }
+
+  /**
+   * 取 WK：先走 A 路（系统验证），A 路不可用或已被系统作废就退到 B 路（口令），
+   * 成功后立刻把 A 路重建起来。
+   */
+  private async readProtectedWrapKey(
+    envelope: WrapKeyEnvelope,
+  ): Promise<string> {
+    const authenticated = this.deps.authenticatedStore;
+    if (authenticated?.available()) {
+      try {
+        const value = await authenticated.get(WRAP_KEY_STORE_KEY);
+        if (value !== null) return value;
+      } catch {
+        // 系统把这把密钥作废了（用户新录指纹、换了锁屏）。这**不是**错误路径，
+        // 是设计里预期会发生的事——B 路就是为此存在的。
+      }
+    }
+    const passphrase = await this.deps.requestPassphrase?.("unlock");
+    if (!passphrase) throw new WalletPassphraseRequiredError();
+    const deviceKey = await this.readDeviceKey();
+    const wrapKey = await openWrapKey({ envelope, deviceKey, passphrase });
+    const encoded = toBase64(wrapKey);
+    wipe(wrapKey);
+    wipe(deviceKey);
+    // 重建 A 路：下一次就不用再输口令了。失败不影响本次解锁。
+    if (authenticated?.available())
+      await authenticated.set(WRAP_KEY_STORE_KEY, encoded).catch(() => {});
+    return encoded;
+  }
+
+  private async readDeviceKey(): Promise<Uint8Array> {
+    const stored = await this.deps.secureStore.get(
+      ENVELOPE_DEVICE_KEY_STORE_KEY,
+    );
+    if (stored === null)
+      throw new WalletVaultKeyMissingError("missing");
+    return fromBase64(stored);
+  }
+
+  /**
+   * 开启口令保护。
+   *
+   * 顺序是有讲究的：封好 → 写信封 → **立刻用同一个口令读回来核对** → 建 A 路 →
+   * 最后才删掉那条谁都能读的旧 WK。核对这一步不能省：删旧 WK 是不可逆的，读不回来
+   * 就等于把钱包锁死了。
+   */
+  async enablePassphrase(passphrase: string, reason: string): Promise<void> {
+    assertPassphraseAcceptable(passphrase);
+    await this.serialized(async () => {
+      if (await this.readEnvelope())
+        throw new WalletVaultError("passphrase protection is already enabled");
+      const file = await this.read();
+      await this.authenticateFresh(reason);
+      const wrapKey = await this.loadWrapKey(file);
+      try {
+        const deviceKey = newDeviceKey();
+        await this.deps.secureStore.set(
+          ENVELOPE_DEVICE_KEY_STORE_KEY,
+          toBase64(deviceKey),
+        );
+        const envelope = await sealWrapKey({ wrapKey, passphrase, deviceKey });
+        await this.deps.storage.setItem(
+          WRAP_KEY_ENVELOPE_STORAGE_KEY,
+          JSON.stringify(envelope),
+        );
+        // 读回来核对：封装写错了要在删旧 WK **之前**发现
+        const reopened = await openWrapKey({ envelope, deviceKey, passphrase });
+        const matches = toBase64(reopened) === toBase64(wrapKey);
+        wipe(reopened);
+        wipe(deviceKey);
+        if (!matches)
+          throw new WalletVaultError(
+            "the sealed wrap key did not read back; passphrase not enabled",
+          );
+        if (this.deps.authenticatedStore?.available())
+          await this.deps.authenticatedStore
+            .set(WRAP_KEY_STORE_KEY, toBase64(wrapKey))
+            .catch(() => {});
+        // 最后一步：那条不需要任何系统验证就能读的 WK 必须消失，否则这一整套
+        // 等于没做——N6 说的就是"JS 能直接读出包裹密钥"。
+        await this.deps.secureStore.remove(WRAP_KEY_STORE_KEY);
+      } finally {
+        if (wrapKey !== this.cachedWrapKey) wipe(wrapKey);
+      }
+    });
   }
 
   /** 老文件没有 `wkCheck`：在一次 GCM 认证通过（证明 WK 正确）之后补写，幂等。 */
