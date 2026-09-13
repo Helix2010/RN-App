@@ -198,6 +198,26 @@ try {
     });
   }
 
+  // 原生面指纹：只看自动链接的原生模块、原生配置和 expo config，不看 JS 源码——
+  // 正是"要不要重新编译原生"这个问题的定义。服务端拿它和基线安装包记录的那个比：
+  // 不一致就说明这次改动动了原生，不能走热更新（设备会去调一个 APK 里不存在的原生
+  // 模块，表现是所有装了那一版的设备启动即崩）。
+  //
+  // 算不出来就直接失败，不留空：留空等于把这道闸悄悄关掉，而它防的是一次全量崩溃。
+  const fingerprint = (() => {
+    const raw = execFileSync("pnpm", ["exec", "fingerprint", "."], {
+      encoding: "utf8",
+      cwd: process.cwd(),
+      env: { ...process.env, EXPO_PUBLIC_API_BASE_URL: apiBaseUrl },
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    const value = JSON.parse(raw)?.hash;
+    if (typeof value !== "string" || value.trim() === "") {
+      fail("@expo/fingerprint 没有算出指纹；服务端会拒绝没有指纹的热更新包");
+    }
+    return value.trim();
+  })();
+
   const bundleContent = readFileSync(bundleSource);
   const manifest = {
     id: randomUUID(),
@@ -214,6 +234,7 @@ try {
       distributionChannel,
       otaChannel: channel,
       applicationId,
+      nativeFingerprint: fingerprint,
       appVersion: resolvedExpoConfig.version,
       buildNumber:
         platform === "ios"
@@ -253,6 +274,7 @@ try {
   console.log(`bundle: ${bundlePath}`);
   console.log(`assets: ${assets.length}`);
   console.log(`applyStrategy: ${applyStrategy}`);
+  console.log(`nativeFingerprint: ${fingerprint}`);
 } finally {
   rmSync(exportDir, { recursive: true, force: true });
   rmSync(packageDir, { recursive: true, force: true });
