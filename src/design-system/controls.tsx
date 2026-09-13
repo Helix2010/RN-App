@@ -63,7 +63,7 @@ export function Switch({
             width: 20,
             height: 20,
             borderRadius: 10,
-            backgroundColor: "#FFFFFF",
+            backgroundColor: theme.surface.val,
             elevation: 2,
           },
           thumb,

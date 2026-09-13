@@ -19,6 +19,7 @@ import {
   Stack,
   useTheme,
 } from "../../design-system";
+import type { SemanticPalette } from "../../core/config/bootstrap.schema";
 import type { RootStackParamList } from "../../navigation/types";
 
 /** S-04 外观：主题三选一（迷你屏幕预览）+ 涨跌颜色（只交换 up/down token，Yes/No 不跟随）。 */
@@ -29,6 +30,15 @@ export function AppearanceSettingsScreen({
   const { config, themePreference, setTheme, t } = useFoundationRuntime();
   const colorScheme = usePreferencesStore((state) => state.colorScheme);
   const setColorScheme = usePreferencesStore((state) => state.setColorScheme);
+  const theme = useTheme();
+  const basePositive =
+    colorScheme === "red-up"
+      ? theme.priceNegative.val
+      : theme.pricePositive.val;
+  const baseNegative =
+    colorScheme === "red-up"
+      ? theme.pricePositive.val
+      : theme.priceNegative.val;
   const themes: ThemePreference[] = config.theme.allowUserOverride
     ? ["system", "light", "dark"]
     : ["system"];
@@ -52,6 +62,8 @@ export function AppearanceSettingsScreen({
                   value={value}
                   selected={themePreference === value}
                   label={t(`theme.${value}`)}
+                  lightPalette={config.theme.light}
+                  darkPalette={config.theme.dark}
                   onPress={() => setTheme(value)}
                 />
               ))}
@@ -78,13 +90,19 @@ export function AppearanceSettingsScreen({
                     <Row gap="$2" marginRight="$2">
                       <InlineText
                         fontWeight="800"
-                        color={value === "green-up" ? "#0E8A5F" : "#D03C45"}
+                        style={{
+                          color:
+                            value === "green-up" ? basePositive : baseNegative,
+                        }}
                       >
                         ▲ +2.4%
                       </InlineText>
                       <InlineText
                         fontWeight="800"
-                        color={value === "green-up" ? "#D03C45" : "#0E8A5F"}
+                        style={{
+                          color:
+                            value === "green-up" ? baseNegative : basePositive,
+                        }}
                       >
                         ▼ −1.2%
                       </InlineText>
@@ -105,33 +123,43 @@ function ThemeOption({
   value,
   selected,
   label,
+  lightPalette,
+  darkPalette,
   onPress,
 }: {
   value: ThemePreference;
   selected: boolean;
   label: string;
+  lightPalette: SemanticPalette;
+  darkPalette: SemanticPalette;
   onPress: () => void;
 }) {
   const theme = useTheme();
-  const light = { bg: "#F4F7FB", card: "#FFFFFF" };
-  const dark = { bg: "#0B1220", card: "#1D2A3E" };
-  const panel = (scheme: typeof light) => (
-    <Stack flex={1} padding={6} gap={4} style={{ backgroundColor: scheme.bg }}>
+  const light = lightPalette;
+  const dark = darkPalette;
+  const panel = (scheme: typeof light, testID: string) => (
+    <Stack
+      flex={1}
+      padding={6}
+      gap={4}
+      testID={testID}
+      style={{ backgroundColor: scheme.background }}
+    >
       <Stack
         height={8}
         borderRadius={3}
-        style={{ backgroundColor: scheme.card }}
+        style={{ backgroundColor: scheme.surface }}
       />
       <Stack
         height={16}
         borderRadius={3}
-        style={{ backgroundColor: scheme.card }}
+        style={{ backgroundColor: scheme.surfaceVariant }}
       />
       <Stack
         height={8}
         borderRadius={3}
         width="60%"
-        style={{ backgroundColor: scheme.card }}
+        style={{ backgroundColor: scheme.primary }}
       />
     </Stack>
   );
@@ -158,13 +186,13 @@ function ThemeOption({
       >
         {value === "system" ? (
           <>
-            {panel(light)}
-            {panel(dark)}
+            {panel(light, "theme-system-light-preview")}
+            {panel(dark, "theme-system-dark-preview")}
           </>
         ) : value === "light" ? (
-          panel(light)
+          panel(light, "theme-light-preview")
         ) : (
-          panel(dark)
+          panel(dark, "theme-dark-preview")
         )}
       </Row>
       <InlineText

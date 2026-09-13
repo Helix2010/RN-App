@@ -8,6 +8,7 @@ import {
   signIn,
 } from "../../test/harness";
 import { SettingsScreen } from "./settings-screen";
+import { AppearanceSettingsScreen } from "./appearance-settings-screen";
 
 async function renderSettings(
   options: Parameters<typeof renderWithProviders>[1] = {},
@@ -76,6 +77,46 @@ describe("SettingsScreen", () => {
       }),
     });
     expect(screen.getByText(runtime.t("settings.upToDate"))).toBeTruthy();
+  });
+
+  it("uses the delivered palette in the appearance previews", async () => {
+    const gateways = createTestGateways();
+    await signIn(gateways);
+    await renderWithProviders(
+      <AppearanceSettingsScreen
+        navigation={fakeNavigation()}
+        route={fakeNavigation()}
+      />,
+      {
+        gateways,
+        config: (config) => ({
+          ...config,
+          theme: {
+            ...config.theme,
+            light: {
+              ...config.theme.light,
+              background: "#123456",
+              surface: "#234567",
+              surfaceVariant: "#345678",
+              primary: "#456789",
+            },
+            dark: {
+              ...config.theme.dark,
+              background: "#654321",
+              surface: "#765432",
+              surfaceVariant: "#876543",
+              primary: "#987654",
+            },
+          },
+        }),
+      },
+    );
+    expect(screen.getByTestId("theme-system-light-preview")).toHaveStyle({
+      backgroundColor: "#123456",
+    });
+    expect(screen.getByTestId("theme-system-dark-preview")).toHaveStyle({
+      backgroundColor: "#654321",
+    });
   });
 
   it("checks updates in place without navigating to another screen", async () => {
