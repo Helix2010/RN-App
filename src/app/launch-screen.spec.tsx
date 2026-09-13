@@ -1,4 +1,4 @@
-import { fireEvent, screen } from "@testing-library/react-native";
+import { fireEvent, screen, within } from "@testing-library/react-native";
 import { StyleSheet } from "react-native";
 import { renderWithProviders } from "../test/harness";
 import { LaunchScreen } from "./launch-screen";
@@ -77,5 +77,39 @@ describe("LaunchScreen animation start", () => {
     );
     expect(screen.queryByTestId("launch-logo")).toBeNull();
     expect(screen.getByTestId("launch-background")).toBeTruthy();
+  });
+
+  it("keeps the status line at the bottom instead of under the logo", async () => {
+    await renderWithProviders(
+      <LaunchScreen
+        message="正在同步应用配置"
+        title="T"
+        animationType="none"
+        logo={
+          { assetId: "logo1", fileUrl: "https://cdn.test/logo.png" } as never
+        }
+      />,
+    );
+
+    // 文案不在淡入的那一块里：它说的是程序在干什么，不是品牌的一部分
+    expect(
+      within(screen.getByTestId("launch-content")).queryByText(
+        "正在同步应用配置",
+      ),
+    ).toBeNull();
+    const footer = screen.getByTestId("launch-message");
+    expect(within(footer).getByText("正在同步应用配置")).toBeTruthy();
+    expect(StyleSheet.flatten(footer.props.style).position).toBe("absolute");
+  });
+
+  it("puts the status line in the same place before the branding is known", async () => {
+    // pending 那一帧和拿到配置之后位置必须一致，否则文字会跳一下
+    await renderWithProviders(<LaunchScreen pending message="m" title="T" />);
+    expect(
+      within(screen.getByTestId("launch-pending")).queryByText("m"),
+    ).toBeNull();
+    expect(
+      within(screen.getByTestId("launch-message")).getByText("m"),
+    ).toBeTruthy();
   });
 });

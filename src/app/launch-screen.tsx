@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { Animated, Image } from "react-native";
+import { SafeAreaInsetsContext } from "react-native-safe-area-context";
 import type { BrandingAsset } from "../core/config/bootstrap.schema";
 import { brandingAssetUrl } from "../core/config/branding-assets";
 import { Body, Page, Spinner, Stack } from "../design-system";
@@ -12,6 +13,10 @@ import { Body, Page, Spinner, Stack } from "../design-system";
  *   租户 logo，用户看到的就是启动图加载了两次；
  * - 配置的图片加载失败只留痕，不换别的图；
  * - 背景图与 logo 二选一：背景图可用时只画背景图，否则画 logo + 标题（见 backgroundVisible）。
+ *
+ * 状态文案固定在底部（见 LaunchMessage），不跟着 logo 一起淡入：它说的是"程序在干
+ * 什么"，不是品牌的一部分。压在 logo 底下会把两件事读成一句话，而且 pending 那一帧
+ * 和拿到配置之后的那一帧位置不同，文字会跳一下。
  */
 export function LaunchScreen({
   pending = false,
@@ -90,8 +95,8 @@ export function LaunchScreen({
       >
         <Stack alignItems="center" gap="$3" testID="launch-pending">
           <Spinner size="large" color="$primary" />
-          <Body fontSize={13}>{message}</Body>
         </Stack>
+        <LaunchMessage message={message} />
       </Page>
     );
 
@@ -145,16 +150,43 @@ export function LaunchScreen({
               testID="launch-logo"
             />
           ) : null}
-          <Stack alignItems="center" gap="$1">
-            {!backgroundVisible ? (
-              <Body fontSize={18} color="$color" fontWeight="800">
-                {title}
-              </Body>
-            ) : null}
-            <Body fontSize={13}>{message}</Body>
-          </Stack>
+          {!backgroundVisible ? (
+            <Body fontSize={18} color="$color" fontWeight="800">
+              {title}
+            </Body>
+          ) : null}
         </Stack>
       </Animated.View>
+      <LaunchMessage message={message} />
     </Page>
+  );
+}
+
+/**
+ * 启动页底部那一行状态文案。
+ *
+ * 贴着安全区往上留一段：底部手势条那一条区域在不同机型上高度不同，写死一个
+ * bottom 会在有些机器上压到指示条、在另一些上飘得太高。
+ *
+ * 读 context 而不是 useSafeAreaInsets()：后者在没有 Provider 时直接抛异常。启动页
+ * 是屏幕上出现的第一个东西，它绝不能成为让应用白屏的那一个——拿不到就当 0，文案
+ * 只是离底边近一点。
+ */
+function LaunchMessage({ message }: { message: string }) {
+  const insets = useContext(SafeAreaInsetsContext);
+  return (
+    <Stack
+      position="absolute"
+      left={0}
+      right={0}
+      bottom={(insets?.bottom ?? 0) + 48}
+      alignItems="center"
+      paddingHorizontal="$4"
+      testID="launch-message"
+    >
+      <Body fontSize={13} textAlign="center">
+        {message}
+      </Body>
+    </Stack>
   );
 }
