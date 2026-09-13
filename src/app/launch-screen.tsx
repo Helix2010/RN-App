@@ -12,7 +12,7 @@ import { Body, Page, Spinner, Stack } from "../design-system";
  * - 配置里没有 logo / 背景图就不画，没有"内置几何标"这种替身——先画替身再换成
  *   租户 logo，用户看到的就是启动图加载了两次；
  * - 配置的图片加载失败只留痕，不换别的图；
- * - 背景图与 logo 二选一：背景图可用时只画背景图，否则画 logo + 标题（见 backgroundVisible）。
+ * - 背景图是底层，logo、标题和状态文案是上层；背景图不再和品牌内容互斥。
  *
  * 状态文案固定在底部（见 LaunchMessage），不跟着 logo 一起淡入：它说的是"程序在干
  * 什么"，不是品牌的一部分。压在 logo 底下会把两件事读成一句话，而且 pending 那一帧
@@ -46,8 +46,7 @@ export function LaunchScreen({
   const [backgroundLoadedId, setBackgroundLoadedId] = useState<string | null>(
     null,
   );
-  // 背景图和 logo 二选一：背景图已在本地（缓存过）或刚加载完就只画背景图；
-  // 还没下完、或加载失败，就画 logo + 标题。两个叠着画曾经出现过 logo 盖在背景图上。
+  // 本地缓存可以直接显示；远程背景图在 onLoad 前保持透明，避免半张图闪现。
   const backgroundUsable =
     backgroundImage !== undefined &&
     backgroundFailedId !== backgroundImage.assetId;
@@ -132,12 +131,22 @@ export function LaunchScreen({
           accessibilityIgnoresInvertColors
         />
       ) : null}
+      {backgroundUsable ? (
+        <Stack
+          position="absolute"
+          inset={0}
+          backgroundColor="$background"
+          opacity={0.24}
+          pointerEvents="none"
+          testID="launch-scrim"
+        />
+      ) : null}
       <Animated.View
         style={{ opacity, transform: [{ scale }] }}
         testID="launch-content"
       >
         <Stack alignItems="center" gap="$4">
-          {!backgroundVisible && logo && logoFailedId !== logo.assetId ? (
+          {logo && logoFailedId !== logo.assetId ? (
             <Image
               source={{ uri: logo.localFileUrl ?? brandingAssetUrl(logo) }}
               resizeMode="contain"
@@ -150,11 +159,11 @@ export function LaunchScreen({
               testID="launch-logo"
             />
           ) : null}
-          {!backgroundVisible ? (
+          <Stack alignItems="center" gap="$1">
             <Body fontSize={18} color="$color" fontWeight="800">
               {title}
             </Body>
-          ) : null}
+          </Stack>
         </Stack>
       </Animated.View>
       <LaunchMessage message={message} />
