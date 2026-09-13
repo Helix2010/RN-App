@@ -290,7 +290,7 @@
           "500": {
             "description": "RELEASE_METADATA_INVALID (base release file_metadata is invalid)"
           },
-          "502": {
+          "424": {
             "description": "OTA_BASE_RELEASE_UNREADABLE (base APK unreadable, oversized, or without stored sha256/size), OTA_BASE_RELEASE_CHANGED (stored base APK no longer matches its verified sha256/size), OTA_RESOURCE_SAVE_FAILED, OTA_OBJECT_ETAG_MISSING (object storage returned no ETag for a resource)"
           },
           "503": {
@@ -418,6 +418,17 @@
         }
       }
     },
+    "/v1/admin/release-storage/cors": {
+      "get": {
+        "summary": "The bucket CORS rule this platform needs",
+        "description": "The bucket CORS rule a `direct` upload deployment would need, with the origins derived from the tenant_domain table so that adding a tenant does not mean editing a config file. Only relevant when ARTIFACT_UPLOAD_MODE=direct, where the browser PUTs straight to object storage and the bucket must allow the console origins itself. Under `proxy` (the default for deployments whose storage key has no bucket-configuration permission) uploads are streamed through the server and the bucket needs no CORS rule at all. The server never writes the rule.",
+        "responses": {
+          "200": {
+            "description": "The rule to configure on the bucket"
+          }
+        }
+      }
+    },
     "/v1/admin/release-storage/test": {
       "post": {
         "responses": {
@@ -449,7 +460,7 @@
           "500": {
             "description": "RELEASE_IDENTITY_CONFIG_INVALID (stored release.android pin is invalid), RELEASE_CREATE_FAILED"
           },
-          "502": {
+          "424": {
             "description": "RELEASE_READ_FAILED, RELEASE_OBJECT_ETAG_MISSING (object storage returned no ETag; the release cannot be pinned)"
           },
           "503": {
@@ -831,7 +842,7 @@
           "500": {
             "description": "OTA_OBJECT_METADATA_INVALID: stored object metadata is not valid; OTA_OBJECT_METADATA_INVALID (object_metadata invalid, or a recorded entry without an ETag)"
           },
-          "502": {
+          "424": {
             "description": "OTA_ASSET_UNAVAILABLE (storage unreadable) or OTA_OBJECT_CHANGED (object in storage no longer matches the verified package)"
           },
           "503": {
@@ -952,7 +963,7 @@
           "404": {
             "description": "Published release not found; a canary release is 404 for every device outside its audience, so knowing the release id is not enough"
           },
-          "502": {
+          "424": {
             "description": "RELEASE_DOWNLOAD_FAILED (storage unreadable) or RELEASE_OBJECT_CHANGED (object in storage no longer matches the verified artifact)"
           },
           "503": {
@@ -1004,7 +1015,7 @@
           "400": {
             "description": "INVALID_TOKEN_REQUEST (chain, address, displayDecimals, reason or expectedVersion invalid), TOKEN_NOT_A_CONTRACT (no code at the address), TOKEN_CHAIN_MISMATCH (platform endpoint reports another chain) or TOKEN_METADATA_INVALID (symbol/decimals on chain are not acceptable)"
           },
-          "502": {
+          "424": {
             "description": "TOKEN_CHAIN_UNAVAILABLE: the platform endpoint timed out or failed"
           },
           "409": {
@@ -1032,7 +1043,7 @@
           "400": {
             "description": "chain 不受支持、contractAddress 不是合法地址、地址上没有合约代码（TOKEN_NOT_A_CONTRACT）、端点链 ID 不符（TOKEN_CHAIN_MISMATCH）或链上元数据不合法（TOKEN_METADATA_INVALID）"
           },
-          "502": {
+          "424": {
             "description": "TOKEN_CHAIN_UNAVAILABLE: the platform endpoint timed out or failed"
           }
         }
@@ -1147,7 +1158,7 @@
           "409": {
             "description": "CONFIG_VERSION_CONFLICT: expectedVersion does not match metadata.databaseVersion"
           },
-          "502": {
+          "424": {
             "description": "TOKEN_CHAIN_UNAVAILABLE"
           }
         }
@@ -1191,7 +1202,7 @@
           "400": {
             "description": "INVALID_SERVICES_CONFIG"
           },
-          "502": {
+          "424": {
             "description": "PREDICT_PROBE_FAILED: gamma-api.{domain} unreachable, non-200 or not JSON"
           }
         }
@@ -1823,7 +1834,7 @@
     "/v1/admin/builds": {
       "get": {
         "summary": "List build jobs for this tenant",
-        "description": "Newest first. Each item carries status, the resolved commit, the artifact sha256 and a bounded log tail.",
+        "description": "Newest first. Each item carries status, the resolved commit, the artifact sha256 and a bounded log tail. Also returns `next` — the version and build number to default the queue form to, per platform, worked out from both app_releases and the build jobs still queued or running; a tenant with no packages yet gets 1.0.0/1, otherwise the highest used version gets a patch bump and the build number is incremented. `gitRef` is the branch every build is pinned to; the console shows it read-only because the queue endpoint ignores whatever the request carries.",
         "responses": {
           "200": {
             "description": "Build jobs"
@@ -1835,7 +1846,7 @@
       },
       "post": {
         "summary": "Queue a build",
-        "description": "Queues a build for this tenant. The job carries parameters only (tenant, git ref, version, build number) and never a command: the server must not be able to execute anything on the machine that holds the Android signing keystore. buildNumber must be strictly greater than every build number already used by this tenant and platform, across both app_releases and build_jobs.",
+        "description": "Queues a build for this tenant. The job carries parameters only (tenant, version, build number) and never a command: the server must not be able to execute anything on the machine that holds the Android signing keystore. gitRef in the request body is ignored — every build is pinned to the branch reported by GET /v1/admin/builds, because being able to pick a branch would mean being able to ship a production-signed package built from anywhere. Both version and buildNumber must be strictly greater than the highest already used by this tenant and platform, counting app_releases as well as build jobs that are still queued or running (failed and canceled jobs free their numbers again). Checking the version here rather than at upload time matters: otherwise a doomed build occupies the build machine for minutes and is only rejected once it is finished.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1857,7 +1868,7 @@
             "description": "Admin authentication required"
           },
           "409": {
-            "description": "BUILD_NUMBER_NOT_INCREASING: this build number is not greater than the highest already used"
+            "description": "BUILD_NUMBER_NOT_INCREASING: this build number is not greater than the highest already used. BUILD_VERSION_NOT_INCREASING: this version is not greater than the latest release for this platform, so the upload would be rejected after a full build BUILD_KEYSTORE_UNUSABLE: the build machine has already reported that it cannot open this tenant's sealed signing keystore, so the build would fail at unseal time after occupying the machine; the verdict is tied to the current keystore version and clears as soon as the keystore is replaced."
           }
         }
       }
@@ -1954,7 +1965,7 @@
     "/v1/admin/build-keystore": {
       "get": {
         "summary": "Android signing keystore status (metadata only)",
-        "description": "Returns {configured, keyAlias, keystoreSha256, version, updatedBy, updatedAt}. The sealed bundle itself is never returned to admin readers; only the build-agent channel receives it. The server cannot open the bundle in any case: it is sealed with an operator passphrase the server does not have, and the server only wraps it with the storage master key on top.",
+        "description": "Never returns the sealed box itself — that goes only to the build agent. Alongside the key alias and keystore sha256 it returns `check` (pending | ok | failed: whether the build machine could actually open the box, since the server holds no passphrase and cannot tell on its own) `sealedTenantCount` (how many tenants platform-wide already have a keystore), and `agentKey` (whether a build machine has registered a public key, and its fingerprint — not a secret, and the tenant needs it to know whether a keystore can be created at all; the pending/accept workflow stays on the platform-only routes). The count is what lets the console tell the truth about the sealing passphrase: there is exactly one BUILD_KEYSTORE_PASSPHRASE per build machine, shared by every tenant, so from the second tenant onward the operator must enter the existing passphrase rather than invent one — pointing the machine at a new tenant's passphrase locks every earlier tenant out of its own signing key.",
         "responses": {
           "200": {
             "description": "Keystore status"
@@ -1992,6 +2003,35 @@
           },
           "500": {
             "description": "BUILD_KEYSTORE_SAVE_FAILED"
+          }
+        }
+      }
+    },
+    "/v1/build-agent/keystore-checks": {
+      "get": {
+        "summary": "Sealed keystores this build machine has not verified yet",
+        "description": "The sealing passphrase exists only on the build machine, which is what makes storing signing keys in the database acceptable — and it also means the server cannot tell whether a freshly stored box was sealed with the right passphrase. Storing looks fine, the fingerprint is registered, the console shows it configured, and the first sign of trouble is a build failing at unseal time minutes later. So the one party that holds the passphrase verifies instead: this returns the sealed boxes whose current version has no verification result yet. Same credential and same payload as claiming a build, so the agent sees nothing new.",
+        "responses": {
+          "200": {
+            "description": "Boxes to verify"
+          },
+          "401": {
+            "description": "BUILD_AGENT_AUTH_REQUIRED"
+          }
+        }
+      },
+      "post": {
+        "summary": "Report whether the build machine can open a sealed keystore",
+        "description": "Stores the result against the app_configs version of the keystore that was checked, so rewriting the keystore invalidates the verdict rather than letting a stale green one vouch for a new box. A result for a version that is no longer current is accepted and discarded (stored:false). The reported reason is shown in the console: it is trimmed to 300 characters, newlines removed, and never contains the passphrase.",
+        "responses": {
+          "200": {
+            "description": "Result stored, or discarded because the keystore changed meanwhile"
+          },
+          "400": {
+            "description": "INVALID_KEYSTORE_CHECK"
+          },
+          "401": {
+            "description": "BUILD_AGENT_AUTH_REQUIRED"
           }
         }
       }
@@ -2172,6 +2212,10 @@
                 "properties": {
                   "artifactToken": {
                     "type": "string"
+                  },
+                  "sbomToken": {
+                    "type": "string",
+                    "description": "Upload token for the CycloneDX SBOM the build agent produced for this artifact. Recorded on the release as file_metadata.sbom. Optional: a manually uploaded package has none."
                   }
                 }
               }
@@ -2200,7 +2244,7 @@
     "/v1/admin/build-keystore/generate": {
       "post": {
         "summary": "Generate the Android signing keystore on the server",
-        "description": "Generates an RSA key and a self-signed certificate, seals them with the caller's passphrase, stores the sealed box, and pins packageName plus the certificate SHA-256 as release.android — all in one transaction. Returns the plaintext keystore and its generated store password once so the operator can back them up; they cannot be retrieved again. Both optimistic locks are checked before the key is generated, because generating one takes seconds and reporting the conflict afterwards only makes the operator repeat it.",
+        "description": "Generates an Android signing key on the server and encrypts it to the build machine's registered public key, in the same transaction that pins the certificate fingerprint as the tenant's release identity. No sealing passphrase is involved: the server holds only the public key, so it cannot open what it just stored, and nobody has to type a secret. Fails with 424 NO_BUILD_AGENT_KEY when no build agent has registered a key yet — there would be nothing to encrypt to. The plaintext keystore and its store password are returned exactly once and are never logged or audited.",
         "requestBody": {
           "required": true,
           "content": {
@@ -2226,6 +2270,146 @@
           },
           "500": {
             "description": "BUILD_KEYSTORE_SAVE_FAILED"
+          },
+          "424": {
+            "description": "NO_BUILD_AGENT_KEY: no build agent has registered a public key"
+          }
+        }
+      }
+    },
+    "/v1/build-agent/public-key": {
+      "post": {
+        "summary": "Register this build machine's public key",
+        "description": "The build agent generates an X25519 keypair on first start; the private key never leaves that machine. Signing keystores are encrypted to this public key, so nobody has to type a sealing passphrase — the previous design asked whoever was at the console for a platform-wide secret that protects every tenant's key, which a tenant cannot know and which even the platform operator mistyped three times. The key is pinned: the first registration is accepted, a later registration of a different key is only recorded as pending and needs a platform admin to accept it after checking the fingerprint. Without pinning, anyone holding the agent token could register their own public key and every keystore created afterwards would be encrypted to them.",
+        "responses": {
+          "200": {
+            "description": "registered | unchanged | pending_acceptance"
+          },
+          "400": {
+            "description": "INVALID_AGENT_KEY"
+          },
+          "401": {
+            "description": "BUILD_AGENT_AUTH_REQUIRED"
+          }
+        }
+      }
+    },
+    "/v1/admin/platform/build-agent/public-key": {
+      "get": {
+        "summary": "Which build machine key signing keystores are encrypted to",
+        "description": "Returns the pinned public key fingerprint and, when a build agent has reported a different one, the pending fingerprint waiting to be accepted. Platform admin only: the build machine is one per platform, not per tenant.",
+        "responses": {
+          "200": {
+            "description": "Current and pending build agent keys"
+          },
+          "403": {
+            "description": "Platform admin required"
+          }
+        }
+      }
+    },
+    "/v1/admin/platform/build-agent/public-key/accept": {
+      "post": {
+        "summary": "Accept a new build machine public key",
+        "description": "Requires the pending fingerprint to be typed back, which is the only evidence that someone actually checked it on the machine itself. Accepting does NOT re-encrypt existing keystores — the server has no plaintext and cannot — so every tenant's verification result is cleared, the agent re-checks each box with its new private key, and tenants whose keystore is now unopenable show up immediately instead of at their next build.",
+        "responses": {
+          "200": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "INVALID_AGENT_KEY_ACCEPT"
+          },
+          "409": {
+            "description": "NO_PENDING_AGENT_KEY, AGENT_KEY_FINGERPRINT_MISMATCH"
+          }
+        }
+      }
+    },
+    "/v1/admin/build-icons": {
+      "get": {
+        "summary": "Launcher icons this tenant has configured",
+        "description": "Returns {icons, required, maxBytes}. The image bytes are not in this response — the console only needs \"is it set, what size\"; previews come from GET /v1/admin/build-icons/{name}. maxBytes is the per-icon PNG limit the console enforces when the operator picks a file.",
+        "responses": {
+          "200": {
+            "description": "Icon status"
+          },
+          "401": {
+            "description": "Admin authentication required"
+          }
+        }
+      }
+    },
+    "/v1/admin/build-icons/{name}": {
+      "get": {
+        "summary": "One launcher icon as a PNG",
+        "description": "Returns image/png for console previews.",
+        "responses": {
+          "200": {
+            "description": "The icon"
+          },
+          "404": {
+            "description": "BUILD_ICON_NOT_FOUND"
+          }
+        }
+      },
+      "put": {
+        "summary": "Set one launcher icon",
+        "description": "Read-modify-write of the single build.icons row under a row lock: the four icons live in one row and the console sends them one after another, so an unlocked read-modify-write would let the later write drop the earlier one.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BuildIconWrite"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved; the body is the same shape as GET /v1/admin/build-icons"
+          },
+          "401": {
+            "description": "Admin authentication required"
+          },
+          "404": {
+            "description": "UNKNOWN_BUILD_ICON"
+          },
+          "400": {
+            "description": "INVALID_BUILD_ICONS"
+          },
+          "413": {
+            "description": "BUILD_ICON_TOO_LARGE — the request body exceeded the limit derived from the per-icon PNG limit"
+          },
+          "422": {
+            "description": "INVALID_BUILD_ICONS — not a PNG, not square, or outside 256-2048 px"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Remove one launcher icon",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BuildIconDelete"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved; the body is the same shape as GET /v1/admin/build-icons"
+          },
+          "401": {
+            "description": "Admin authentication required"
+          },
+          "404": {
+            "description": "UNKNOWN_BUILD_ICON"
+          },
+          "400": {
+            "description": "INVALID_BUILD_ICONS"
           }
         }
       }
@@ -3067,7 +3251,6 @@
         "type": "object",
         "required": [
           "platform",
-          "gitRef",
           "version",
           "buildNumber",
           "reason",
@@ -3084,7 +3267,8 @@
           "gitRef": {
             "type": "string",
             "maxLength": 200,
-            "description": "Branch name or commit sha to build"
+            "deprecated": true,
+            "description": "Ignored. Every build is pinned to one branch; see GET /v1/admin/builds. Still accepted so that older callers do not start failing, but sending it changes nothing."
           },
           "version": {
             "type": "string",
@@ -3463,6 +3647,46 @@
           "iconBackgroundColor": {
             "type": "string",
             "pattern": "^#[0-9A-Fa-f]{6}$"
+          }
+        }
+      },
+      "BuildIconWrite": {
+        "type": "object",
+        "description": "One icon per request. Sending all four in one body would require a request-body limit sized for four maxed-out icons (~33 MB of JSON), and that limit would then exist on an endpoint that usually carries one 600 KB image. Before 2026-09-13 this was a bulk PUT and it hit the 1 MiB body limit every JSON endpoint shares: the per-icon validation limit had been raised to 6 MiB while the body limit had not, so an icon the validator accepted could never arrive — and the failure was reported as a generic \"payload is invalid\".",
+        "required": [
+          "data",
+          "reason",
+          "confirm"
+        ],
+        "properties": {
+          "data": {
+            "type": "string",
+            "format": "byte",
+            "description": "base64 of the PNG. Square, 256-2048 px a side, at most 6 MiB. Over the body limit the server answers 413 BUILD_ICON_TOO_LARGE naming the PNG limit, not the body limit — the operator is holding a png, not a request."
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 3
+          },
+          "confirm": {
+            "type": "boolean"
+          }
+        }
+      },
+      "BuildIconDelete": {
+        "type": "object",
+        "description": "Removes one icon so it falls back to another source — the adaptive background falls back to a solid PNG generated from iconBackgroundColor.",
+        "required": [
+          "reason",
+          "confirm"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 3
+          },
+          "confirm": {
+            "type": "boolean"
           }
         }
       }
