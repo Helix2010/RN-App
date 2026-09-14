@@ -1,8 +1,25 @@
 export type AppTab =
-  "home" | "predict" | "positions" | "dex" | "market" | "swap" | "assets";
+  | "home"
+  | "predict"
+  | "positions"
+  | "dex"
+  | "market"
+  | "swap"
+  | "assets"
+  // 只在 Wallet-only（00）时作为底部页签出现；其它组合里它们是栈内页面
+  | "records"
+  | "profile";
 
-export function resolveAppShellBack(tab: AppTab): "home" | "consume" {
-  return tab === "home" ? "consume" : "home";
+/**
+ * 壳层里的返回：在主页签上消费掉（Android 再按一次才退出），其它页签回主页签。
+ *
+ * 主页签由 `defaultAppTab` 按模块组合决定，不写死 `"home"`——`00` 下没有 home。
+ */
+export function resolveAppShellBack(
+  tab: AppTab,
+  mainTab: AppTab,
+): AppTab | "consume" {
+  return tab === mainTab ? "consume" : mainTab;
 }
 
 /** 连续两次返回（边缘滑动 / 返回键）之间的最长间隔：超过就当作新的第一次 */

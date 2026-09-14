@@ -228,6 +228,8 @@
     "nav.market": "Markets",
     "nav.positions": "Positions",
     "nav.predict": "Predict",
+    "nav.profile": "Me",
+    "nav.records": "Records",
     "nav.swap": "Swap",
     "notif.dnd": "Do not disturb",
     "notif.enable": "Enable notifications",

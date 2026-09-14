@@ -25,10 +25,13 @@ import {
 } from "./app-shell-back";
 import {
   buildAppTabs,
+  defaultAppTab,
   isAppContentAvailable,
   resolveBottomTab,
 } from "./app-tabs";
 import { ModuleOverviewScreen } from "./module-overview-screen";
+import { RecordsScreen } from "../assets/ui/records-screen";
+import { ProfileScreen } from "../profile/profile-screen";
 import { useEdgeBackGesture } from "../../navigation/edge-back-gesture";
 
 type Props = NativeStackScreenProps<RootStackParamList, "AppShell">;
@@ -37,7 +40,8 @@ export function AppShellScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
   const { config, t } = useFoundationRuntime();
-  const [tab, setTab] = useState<AppTab>("home");
+  const mainTab = defaultAppTab(config.modules);
+  const [tab, setTab] = useState<AppTab | null>(null);
   const tabs = useMemo(
     () =>
       buildAppTabs(config.modules).map((item) => ({
@@ -46,9 +50,9 @@ export function AppShellScreen({ navigation }: Props) {
       })),
     [config.modules, t],
   );
-  const effectiveTab = isAppContentAvailable(tab, config.modules)
-    ? tab
-    : "home";
+  // tab 为 null 表示还没手动切过：跟着模块组合走，而不是停在一个可能不存在的页签
+  const effectiveTab =
+    tab !== null && isAppContentAvailable(tab, config.modules) ? tab : mainTab;
   const selectedBottomTab = resolveBottomTab(effectiveTab, config.modules);
   /**
    * 首页上的返回（边缘滑动 / 返回键）：第一次提示，2 秒内再来一次退出应用。
@@ -66,13 +70,13 @@ export function AppShellScreen({ navigation }: Props) {
     toast(t("app.exitHint"), "info");
   }, [t]);
   const handleShellBack = useCallback(() => {
-    const action = resolveAppShellBack(effectiveTab);
-    if (action === "home") {
-      setTab("home");
+    const action = resolveAppShellBack(effectiveTab, mainTab);
+    if (action !== "consume") {
+      setTab(action);
       return;
     }
     attemptExit();
-  }, [attemptExit, effectiveTab]);
+  }, [attemptExit, effectiveTab, mainTab]);
   const edgeBack = useEdgeBackGesture(handleShellBack);
   useEffect(() => {
     const subscription = BackHandler.addEventListener(
@@ -116,6 +120,10 @@ export function AppShellScreen({ navigation }: Props) {
               onOpenPredictEnable={() => navigation.navigate("PredictEnable")}
               onOpenRecords={() => navigation.navigate("Records")}
             />
+          ) : effectiveTab === "records" ? (
+            <RecordsScreen />
+          ) : effectiveTab === "profile" ? (
+            <ProfileScreen />
           ) : effectiveTab === "predict" ||
             effectiveTab === "positions" ||
             effectiveTab === "dex" ||

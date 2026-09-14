@@ -104,10 +104,38 @@ describe("bootstrapSchema", () => {
     }
   });
 
-  it("requires at least one tenant business module", () => {
+  /**
+   * 四态全部合法，`00` 是正式的 Wallet-only 形态：底栏只剩资产/记录/我的，
+   * 两个平台都不出网。这条替换了历史上的"至少开启一个模块"限制——
+   * 那条限制让纯钱包租户根本无法表达。
+   */
+  it.each([
+    [true, true],
+    [true, false],
+    [false, true],
+    [false, false],
+  ])("accepts modules predict=%s dex=%s", (predict, dex) => {
     const config = createFallbackConfig("zh-CN");
-    config.modules = { predict: false, dex: false };
-    expect(bootstrapSchema.safeParse(config).success).toBe(false);
+    config.modules = { predict, dex };
+    expect(bootstrapSchema.safeParse(config).success).toBe(true);
+  });
+
+  it("rejects a delivery that omits the module switches", () => {
+    // 没有 default：漏发会静默变成"按双模块开启"，把配置事故伪装成正常状态
+    const config = createFallbackConfig("zh-CN");
+    const without: Record<string, unknown> = { ...config };
+    delete without.modules;
+    expect(bootstrapSchema.safeParse(without).success).toBe(false);
+  });
+
+  it("rejects an unknown module switch instead of silently dropping it", () => {
+    const config = createFallbackConfig("zh-CN");
+    expect(
+      bootstrapSchema.safeParse({
+        ...config,
+        modules: { ...config.modules, futures: true },
+      }).success,
+    ).toBe(false);
   });
 
   it("accepts a full update response when no OTA apply strategy is active", () => {

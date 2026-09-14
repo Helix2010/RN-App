@@ -228,6 +228,8 @@
     "nav.market": "行情",
     "nav.positions": "持仓",
     "nav.predict": "预测",
+    "nav.profile": "我的",
+    "nav.records": "记录",
     "nav.swap": "兑换",
     "notif.dnd": "免打扰时段",
     "notif.enable": "开启通知",
