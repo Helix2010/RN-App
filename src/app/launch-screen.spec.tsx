@@ -60,7 +60,7 @@ describe("LaunchScreen animation start", () => {
     await fireEvent(screen.getByTestId("launch-background"), "load");
     expect(screen.queryByTestId("launch-logo")).toBeNull();
     expect(screen.queryByText("T")).toBeNull();
-    expect(screen.getByTestId("launch-scrim")).toBeTruthy();
+    expect(screen.queryByTestId("launch-scrim")).toBeNull();
   });
 
   it("does not render the separate logo when the background image is already cached locally", async () => {
@@ -145,7 +145,7 @@ describe("LaunchScreen animation start", () => {
 
     await fireEvent(screen.getByTestId("launch-background"), "error");
     await waitFor(() =>
-      expect(screen.queryByTestId("launch-scrim")).toBeNull(),
+      expect(screen.queryByTestId("launch-background")).toBeNull(),
     );
     expect(screen.getByText("T")).toBeTruthy();
   });

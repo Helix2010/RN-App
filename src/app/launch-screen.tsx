@@ -132,16 +132,6 @@ export function LaunchScreen({
           accessibilityIgnoresInvertColors
         />
       ) : null}
-      {backgroundUsable ? (
-        <Stack
-          position="absolute"
-          inset={0}
-          backgroundColor="$background"
-          opacity={0.24}
-          pointerEvents="none"
-          testID="launch-scrim"
-        />
-      ) : null}
       <Animated.View
         style={{ opacity, transform: [{ scale }] }}
         testID="launch-content"
