@@ -410,7 +410,8 @@ export function RecordsScreen({
   onBack,
 }: {
   initialTab?: RecordsTab;
-  onBack: () => void;
+  /** 栈内打开时有返回；Wallet-only 下它是底部页签，没有返回 */
+  onBack?: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const { config, t } = useFoundationRuntime();

@@ -294,6 +294,12 @@ export function AssetsScreen({
           onPress={onOpenSend}
           testID="assets-send"
         />
+        {/*
+          第三格按模块组合走，三种可能而不是两种：有预测账户就划转，没有预测但有
+          DEX 就兑换，两个都没有（Wallet-only）就是交易记录。
+          这里原来是个二选一的三元，只判断了 predict——于是 `00` 下显示"兑换"，
+          点进去被 ModuleGate 拦回首页，是一个通向死路的入口。
+        */}
         {config.modules.predict ? (
           <ActionTile
             label={t("assets.transferAction")}
@@ -301,12 +307,19 @@ export function AssetsScreen({
             onPress={() => transfer.current?.present()}
             testID="assets-transfer"
           />
-        ) : (
+        ) : config.modules.dex ? (
           <ActionTile
             label={t("assets.swap")}
             icon="swap-horizontal"
             onPress={onOpenSwap}
             testID="assets-swap"
+          />
+        ) : (
+          <ActionTile
+            label={t("records.title")}
+            icon="history"
+            onPress={() => onOpenRecords()}
+            testID="assets-records-action"
           />
         )}
       </Row>

@@ -53,6 +53,24 @@ describe("AssetsScreen", () => {
     expect(screen.queryByTestId("assets-transfer")).toBeNull();
   });
 
+  /**
+   * Wallet-only（00）：第三格既不能是划转（没有预测账户），也不能是兑换
+   * ——兑换会跳到 Swap，被 ModuleGate 拦回首页，是一个通向死路的入口。
+   * 原来的三元只判断了 predict，把"不是划转就是兑换"当成了全部可能。
+   */
+  it("offers records as the third action when neither module is enabled", async () => {
+    const gateways = createTestGateways();
+    await signIn(gateways);
+    await renderAssets({ gateways, modules: { predict: false, dex: false } });
+    await waitFor(() =>
+      expect(screen.getByTestId("assets-wallet")).toBeTruthy(),
+    );
+    expect(screen.getByTestId("assets-records-action")).toBeTruthy();
+    expect(screen.queryByTestId("assets-swap")).toBeNull();
+    expect(screen.queryByTestId("assets-transfer")).toBeNull();
+    expect(screen.queryByTestId("assets-predict")).toBeNull();
+  });
+
   it("formats amounts as currency rather than raw minor units", async () => {
     const gateways = createTestGateways();
     await signIn(gateways);

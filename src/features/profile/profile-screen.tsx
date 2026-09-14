@@ -4,7 +4,8 @@ import {
   usePredictProfile,
 } from "../predict/hooks/use-predict-account";
 import { NicknameSheet } from "../predict/ui/nickname-sheet";
-import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import {
   fill,
   formatDate,
@@ -43,9 +44,13 @@ import { requestAuth } from "../session/model/auth-sheet-store";
 import { useWalletAccounts } from "../wallet/hooks/use-wallet";
 
 /** S-01 个人中心（钱包身份）：头部身份卡、快捷格、钱包 / 我的 / 更多 三组、断开连接并退出。 */
-export function ProfileScreen({
-  navigation,
-}: NativeStackScreenProps<RootStackParamList, "Profile">) {
+/**
+ * 个人中心。导航从 `useNavigation` 取而不是走 props：它既是栈内页面，
+ * 在 Wallet-only（00）下又是底部页签，两种挂法共用同一个组件。
+ */
+export function ProfileScreen() {
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const insets = useSafeAreaInsets();
   const { config, t } = useFoundationRuntime();
   const locale = config.localization.selectedLocale;
@@ -73,7 +78,8 @@ export function ProfileScreen({
   useEffect(() => {
     if (!session.isLoading && !address) {
       requestAuth();
-      navigation.goBack();
+      // 作为底部页签时没有上一页，goBack 会把壳层弹掉
+      if (navigation.canGoBack()) navigation.goBack();
     }
   }, [address, navigation, session.isLoading]);
 
@@ -249,8 +255,13 @@ export function ProfileScreen({
               icon="history"
               title={t("profile.history")}
               onPress={() => {
+                // 三种可能而不是两种：有 DEX 看兑换记录，只有预测看预测账户，
+                // 两个都没有（Wallet-only）看钱包交易记录。
+                // 原来的二选一在 `00` 下会跳预测账户详情，被 ModuleGate 拦回首页。
                 if (config.modules.dex) navigation.navigate("SwapHistory");
-                else navigation.navigate("AccountDetail", { kind: "predict" });
+                else if (config.modules.predict)
+                  navigation.navigate("AccountDetail", { kind: "predict" });
+                else navigation.navigate("Records", { tab: "wallet" });
               }}
               testID="profile-history"
             />

@@ -199,15 +199,15 @@ export const bootstrapSchema = z.object({
     light: semanticPaletteSchema,
     dark: semanticPaletteSchema,
   }),
-  modules: z
-    .object({
-      predict: z.boolean(),
-      dex: z.boolean(),
-    })
-    .default({ predict: true, dex: true })
-    .refine((value) => value.predict || value.dex, {
-      message: "At least one business module must be enabled",
-    }),
+  /**
+   * 业务模块四态。`predict` 与 `dex` 是两个独立开关，四种组合都是正式形态——
+   * 包括 `00`（Wallet-only）：那是一个可独立售卖的纯钱包产品，不是异常或空页面。
+   *
+   * 两项都必须显式下发。这里刻意没有 `.default()`：默认值会把"服务端漏发"变成
+   * "静默按双模块开启"，把一个配置事故伪装成正常状态。缺失即整份无效，
+   * 运行时继续用上一次成功的快照。
+   */
+  modules: z.object({ predict: z.boolean(), dex: z.boolean() }).strict(),
   /**
    * 服务端下发的钱包参数：projectId 是客户端标识（非密钥），按租户下发免重打包。
    * 全部必填、逐条严格：这段和服务端同步发布，任何一项不符都是整份 bootstrap

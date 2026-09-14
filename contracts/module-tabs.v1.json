@@ -1,0 +1,10 @@
+{
+  "$comment": "模块四态 → App 底栏的契约向量。RN-App 的 buildAppTabs 与 RN-Admin 的 moduleNavigationItems 各自跑同一组向量；两端不共享代码，只共享这份数据。改动必须同批改两个仓库。",
+  "schemaVersion": 1,
+  "vectors": [
+    { "modules": { "predict": true, "dex": true }, "tabs": ["首页", "预测", "DEX", "资产"] },
+    { "modules": { "predict": true, "dex": false }, "tabs": ["首页", "预测", "持仓", "资产"] },
+    { "modules": { "predict": false, "dex": true }, "tabs": ["首页", "行情", "兑换", "资产"] },
+    { "modules": { "predict": false, "dex": false }, "tabs": ["资产", "记录", "我的"] }
+  ]
+}
