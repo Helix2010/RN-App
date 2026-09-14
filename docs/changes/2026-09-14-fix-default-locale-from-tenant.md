@@ -36,9 +36,20 @@
 - 语言设置页、设置页语言行、`prompt-text.ts`。
 - 新增文案 `settings.defaultLanguage`（1206 键），i18n seed 已同步到 RN-Server。
 
-## 服务端
+## 服务端（RN-Server `fix/default-locale-fallback`）
 
-不需要改：`GET /v1/mobile/bootstrap` 不带 `locale` 或带未开启的语言时本来就返回回退语言。
+生产实测发现服务端也不对：不带 `locale` 时，服务端先落到应用配置里旧的
+`localization.fallbackLocale`（种子里是 zh-CN），而不是管理端「多语言管理」里的回退语言
+（anyfun 设的是 en-US，返回的却是 zh-CN）；只有请求的语言没开启时才用到管理端的设置。
+更新说明也在语言定下来之前就按 zh-CN 取了。
+
+修复：先解析租户的语言设置，`locale` = 请求的语言（开启时）否则管理端回退语言，再往下走。
+回归测试 `TestDBBootstrapDefaultsToTenantFallbackLanguage`（不带 / 开启 / 未开启三种），
+撤掉修复时该测试失败（拿到 zh-CN）。
+
+**上线顺序：先服务端后 App**。App 先上而服务端没上时，默认语言的用户拿到的是旧的 zh-CN
+默认，和改动前一样，不会出错，只是还不生效。
+
 未做：`en-GB` 这类只差地区的设备语言不会匹配到租户开启的 `en-US`，会走回退语言。
 
 ## 验证
