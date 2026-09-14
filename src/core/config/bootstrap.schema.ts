@@ -235,6 +235,11 @@ export const bootstrapSchema = z.object({
     otaEnabled: z.boolean(),
     directUpdateEnabled: z.boolean(),
     diagnosticsEnabled: z.boolean(),
+    /**
+     * 崩溃后下次启动自动上报（设计 diagnostic-report-2026-09-14 §4.6）。它会在用户不操作的
+     * 情况下上传日志，所以是远程开关：不发版就能关。服务端缺键按 false 下发。
+     */
+    crashAutoReport: z.boolean(),
   }),
   /** 外部服务的接入配置。服务端只在 predict 模块开着时下发 predict 一项 */
   services: z.object({ predict: predictServiceSchema.optional() }),

@@ -79,6 +79,24 @@ function contextOf(entries: readonly LogEntry[]): PreparedReport["context"] {
   };
 }
 
+/** 此刻在跑的这一版。崩溃快照在崩溃时记它，手动上报在准备时取它。 */
+export function currentBuild(): NonNullable<
+  Parameters<typeof prepareReport>[0]["app"]
+> {
+  const bundle = runningBundle();
+  return {
+    version: appRuntime.version,
+    buildNumber: appRuntime.buildNumber,
+    runtimeVersion: appRuntime.runtimeVersion,
+    otaChannel: appRuntime.otaChannel,
+    distributionChannel: appRuntime.distributionChannel,
+    launchSource: bundle.launchSource,
+    ...(bundle.runningUpdateId
+      ? { runningUpdateId: bundle.runningUpdateId }
+      : {}),
+  };
+}
+
 export function prepareReport(input: {
   kind: ReportKind;
   locale: string;
@@ -86,27 +104,28 @@ export function prepareReport(input: {
   /** 崩溃快照带着崩溃那一刻的日志尾巴；手动上报取当前缓冲 */
   entries?: readonly LogEntry[];
   occurredAt?: number;
+  /**
+   * 崩溃时的版本。下次启动才上报时必须用它：重启可能恰好应用了新 OTA，
+   * 此刻在跑的已经不是出事的那一版
+   */
+  app?: {
+    version: string;
+    buildNumber: string;
+    runtimeVersion: string;
+    otaChannel: string;
+    distributionChannel: string;
+    launchSource: "embedded" | "ota";
+    runningUpdateId?: string;
+  };
 }): PreparedReport {
   const entries = input.entries ?? snapshotLogs();
-  const bundle = runningBundle();
+  const build = input.app ?? currentBuild();
   return {
     reportId: `rpt_${Crypto.randomUUID().replaceAll("-", "")}`,
     kind: input.kind,
     occurredAt: new Date(input.occurredAt ?? now()).toISOString(),
     ...(input.crash ? { crash: input.crash } : {}),
-    app: {
-      version: appRuntime.version,
-      buildNumber: appRuntime.buildNumber,
-      runtimeVersion: appRuntime.runtimeVersion,
-      otaChannel: appRuntime.otaChannel,
-      distributionChannel: appRuntime.distributionChannel,
-      launchSource: bundle.launchSource,
-      ...(bundle.runningUpdateId
-        ? { runningUpdateId: bundle.runningUpdateId }
-        : {}),
-      locale: input.locale,
-      ...deviceDescriptor(),
-    },
+    app: { ...build, locale: input.locale, ...deviceDescriptor() },
     context: contextOf(entries),
     entries,
   };

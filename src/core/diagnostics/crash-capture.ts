@@ -1,4 +1,7 @@
+import { now } from "../time/clock";
+import { buildCrashSnapshot, writeCrashSnapshot } from "./crash-snapshot";
 import { logEvent } from "./log-buffer";
+import { currentBuild } from "./report-service";
 
 /**
  * 崩溃进诊断日志的唯一入口（设计 diagnostic-report-2026-09-14 §4.2 / §4.5）。
@@ -35,6 +38,20 @@ export function recordCrash(
     ...(options.fatal !== undefined ? { fatal: options.fatal } : {}),
     ...(component ? { component } : {}),
   });
+  // 只有渲染崩溃和致命错误留快照给下次启动（设计 §4.5）。非致命的未捕获异常只进日志：
+  // 它们不会让用户看到崩溃，给每一个都留快照等于让下次启动为一个小异常自动上报一次
+  if (source === "render" || options.fatal === true) {
+    const stack = error instanceof Error ? error.stack : undefined;
+    void writeCrashSnapshot(
+      buildCrashSnapshot({
+        at: now(),
+        source,
+        error,
+        stack: stack ?? options.componentStack,
+        app: currentBuild(),
+      }),
+    );
+  }
 }
 
 let installed = false;

@@ -111,6 +111,7 @@ export function createFallbackConfig(locale: SupportedLocale): BootstrapConfig {
       otaEnabled: false,
       directUpdateEnabled: appRuntime.platform === "android",
       diagnosticsEnabled: true,
+      crashAutoReport: false,
     },
     app: {
       version: appRuntime.version,

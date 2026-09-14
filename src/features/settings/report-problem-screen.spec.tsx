@@ -37,9 +37,25 @@ jest.mock("../../core/diagnostics/report-service", () => ({
   submitReport: (...args: unknown[]) => mockSubmit(...args),
 }));
 
+const mockPreparePending = jest.fn();
+const mockCompleteCrash = jest.fn(async () => undefined);
+jest.mock("../../core/diagnostics/crash-reporter", () => ({
+  preparePendingCrashReport: (...args: unknown[]) =>
+    mockPreparePending(...args),
+  completeManualCrashReport: (...args: unknown[]) =>
+    mockCompleteCrash(...(args as [])),
+}));
+const mockResume = jest.fn(async () => undefined);
+jest.mock("../../core/diagnostics/crash-gates", () => ({
+  resumeAutoReports: () => mockResume(),
+}));
+
 beforeEach(() => {
   mockPrepare.mockClear();
   mockSubmit.mockReset();
+  mockPreparePending.mockReset();
+  mockCompleteCrash.mockClear();
+  mockResume.mockClear();
 });
 
 async function open() {
@@ -123,5 +139,75 @@ describe("ReportProblemScreen", () => {
     // 重试发的是同一份（同一个 reportId）：若第一次其实已到达服务端，拿回的是同一个参考号
     expect(mockSubmit.mock.calls[1]?.[0]).toBe(mockSubmit.mock.calls[0]?.[0]);
     expect(mockPrepare).toHaveBeenCalledTimes(1);
+  });
+
+  it("lifts the crash-loop suspension after a manual report goes through", async () => {
+    mockSubmit.mockResolvedValue({
+      status: "submitted",
+      reference: "R7KQ3M2X",
+      logStored: true,
+    });
+    await open();
+    await fireEvent.press(screen.getByTestId("report-problem-submit"));
+    await waitFor(() =>
+      expect(screen.getByTestId("report-problem-reference")).toBeTruthy(),
+    );
+    expect(mockResume).toHaveBeenCalled();
+    expect(mockCompleteCrash).toHaveBeenCalledWith(
+      prepared,
+      expect.objectContaining({ status: "submitted" }),
+    );
+  });
+
+  it("reports the crash snapshot when opened from the last-crash prompt", async () => {
+    const crashReport = {
+      ...prepared,
+      kind: "crash" as const,
+      crash: { fingerprint: "a1b2c3d4e5f60718", errorName: "TypeError" },
+    };
+    mockPreparePending.mockResolvedValue({
+      prepared: crashReport,
+      fingerprint: "a1b2c3d4e5f60718",
+    });
+    mockSubmit.mockResolvedValue({
+      status: "submitted",
+      reference: "R7KQ3M2X",
+      logStored: true,
+    });
+    await renderWithProviders(
+      <ReportProblemScreen
+        navigation={fakeNavigation()}
+        route={{ params: { source: "crash" } } as never}
+      />,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("report-problem-submit")).toBeTruthy(),
+    );
+    expect(mockPrepare).not.toHaveBeenCalled();
+    expect(screen.getByText("上报异常退出")).toBeTruthy();
+
+    await fireEvent.press(screen.getByTestId("report-problem-submit"));
+    await waitFor(() =>
+      expect(screen.getByTestId("report-problem-reference")).toBeTruthy(),
+    );
+    expect(mockSubmit).toHaveBeenCalledWith(crashReport, "");
+    expect(mockCompleteCrash).toHaveBeenCalledWith(
+      crashReport,
+      expect.objectContaining({ status: "submitted" }),
+    );
+  });
+
+  it("says the crash is gone when its snapshot was already sent", async () => {
+    mockPreparePending.mockResolvedValue(null);
+    await renderWithProviders(
+      <ReportProblemScreen
+        navigation={fakeNavigation()}
+        route={{ params: { source: "crash" } } as never}
+      />,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("report-problem-crash-gone")).toBeTruthy(),
+    );
+    expect(screen.queryByTestId("report-problem-submit")).toBeNull();
   });
 });

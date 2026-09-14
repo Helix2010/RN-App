@@ -1,7 +1,9 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { fill } from "../../core/i18n/format";
 import * as Clipboard from "expo-clipboard";
-import { useRef } from "react";
+import { useCallback, useRef, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
+import { readCrashSnapshot } from "../../core/diagnostics/crash-snapshot";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../app/runtime-context";
 import {
@@ -60,6 +62,19 @@ export function SettingsScreen({
   const account = useAccountPrefs(address);
   const patchAccount = useAccountPreferences((state) => state.patch);
   const clearCache = useRef<SheetHandle>(null);
+  // 上次异常退出留下的快照：回到这一页时重读，上报完从上报页回来就不再显示
+  const [pendingCrash, setPendingCrash] = useState(false);
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      void readCrashSnapshot().then((snapshot) => {
+        if (active) setPendingCrash(snapshot !== null);
+      });
+      return () => {
+        active = false;
+      };
+    }, []),
+  );
   const txVerification = useRef<SheetHandle>(null);
   const txVerificationLabel = useTxVerificationLabel();
   const notificationsOn = Object.entries(account.notifications).filter(
@@ -256,6 +271,34 @@ export function SettingsScreen({
           </Group>
 
           <Group title={t("settings.section.about")}>
+            {config.features.diagnosticsEnabled && pendingCrash ? (
+              <SRow
+                title={t("diagnostics.pendingCrash")}
+                subtitle={t("diagnostics.pendingCrashHint")}
+                dot
+                onPress={() =>
+                  navigation.navigate("ReportProblem", { source: "crash" })
+                }
+                testID="settings-pending-crash"
+              />
+            ) : null}
+            {config.features.diagnosticsEnabled &&
+            config.features.crashAutoReport ? (
+              <SRow
+                title={t("diagnostics.autoCrashReport")}
+                subtitle={t("diagnostics.autoCrashReportHint")}
+                trailing={
+                  <Switch
+                    value={prefs.crashAutoReport !== false}
+                    onValueChange={(next) =>
+                      prefs.update({ crashAutoReport: next })
+                    }
+                    accessibilityLabel={t("diagnostics.autoCrashReport")}
+                    testID="settings-auto-crash-report"
+                  />
+                }
+              />
+            ) : null}
             <SRow
               title={t("settings.checkUpdate")}
               value={updateCheckRowValue({

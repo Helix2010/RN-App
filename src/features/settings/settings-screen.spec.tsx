@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { usePreferencesStore } from "../../core/preferences/preferences-store";
 import { createFallbackConfig } from "../../core/config/fallback-config";
 import {
@@ -12,11 +13,12 @@ import { AppearanceSettingsScreen } from "./appearance-settings-screen";
 
 async function renderSettings(
   options: Parameters<typeof renderWithProviders>[1] = {},
+  navigation = fakeNavigation(),
 ) {
   const gateways = createTestGateways(options.gateways);
   await signIn(gateways);
   return renderWithProviders(
-    <SettingsScreen navigation={fakeNavigation()} route={fakeNavigation()} />,
+    <SettingsScreen navigation={navigation} route={fakeNavigation()} />,
     { ...options, gateways },
   );
 }
@@ -29,6 +31,67 @@ describe("SettingsScreen", () => {
       colorScheme: "green-up",
       appLockEnabled: true,
       txVerification: "smart",
+    });
+  });
+
+  describe("crash reports", () => {
+    beforeEach(async () => {
+      await AsyncStorage.removeItem("foundation.diagnostics.pending-crash.v1");
+      usePreferencesStore.setState({ crashAutoReport: null });
+    });
+
+    it("offers the automatic crash report switch only when the tenant turned it on", async () => {
+      const off = createFallbackConfig("zh-CN");
+      off.features.crashAutoReport = false;
+      await renderSettings({ config: () => off });
+      await screen.findByTestId("settings-check-update");
+      expect(screen.queryByTestId("settings-auto-crash-report")).toBeNull();
+    });
+
+    it("follows the tenant until the user switches it off", async () => {
+      const on = createFallbackConfig("zh-CN");
+      on.features.crashAutoReport = true;
+      await renderSettings({ config: () => on });
+      const toggle = await screen.findByTestId("settings-auto-crash-report");
+      expect(toggle.props.accessibilityState).toMatchObject({ checked: true });
+      await fireEvent.press(toggle);
+      expect(usePreferencesStore.getState().crashAutoReport).toBe(false);
+    });
+
+    it("asks to report the last crash when one was left behind", async () => {
+      await AsyncStorage.setItem(
+        "foundation.diagnostics.pending-crash.v1",
+        JSON.stringify({
+          version: 1,
+          at: 1,
+          source: "global",
+          errorName: "TypeError",
+          frame: "renderRow",
+          app: {
+            version: "1.2.3",
+            buildNumber: "45",
+            runtimeVersion: "1.2.0",
+            otaChannel: "production",
+            distributionChannel: "direct",
+            launchSource: "embedded",
+          },
+          tail: [],
+        }),
+      );
+      const navigation = fakeNavigation();
+      await renderSettings({}, navigation);
+      await fireEvent.press(
+        await screen.findByTestId("settings-pending-crash"),
+      );
+      expect(navigation.navigate).toHaveBeenCalledWith("ReportProblem", {
+        source: "crash",
+      });
+    });
+
+    it("says nothing when there is no crash to report", async () => {
+      await renderSettings();
+      await screen.findByTestId("settings-check-update");
+      expect(screen.queryByTestId("settings-pending-crash")).toBeNull();
     });
   });
 

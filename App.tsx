@@ -14,9 +14,12 @@ import { FoundationNavigator } from "./src/navigation/foundation-navigator";
 import { UpdateModal } from "./src/features/updates/update-modal";
 import { RootErrorBoundary } from "./src/app/root-error-boundary";
 import { installGlobalCrashCapture } from "./src/core/diagnostics/crash-capture";
+import { beginLaunch } from "./src/core/diagnostics/crash-reporter";
 
 // 模块顶层装：要赶在第一次渲染之前，否则启动期的异常记不到（设计 diagnostic-report §4.2）
 installGlobalCrashCapture();
+// 记下这次启动，活过 60 秒标记健康：崩溃循环熔断靠它判断（设计 §4.6 第 5 道闸）
+beginLaunch();
 
 const queryClient = new QueryClient({
   defaultOptions: {

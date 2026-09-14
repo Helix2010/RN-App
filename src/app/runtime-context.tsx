@@ -22,6 +22,7 @@ import { createFallbackConfig } from "../core/config/fallback-config";
 import { translateMessage } from "../core/config/localization";
 import { bootstrapQueryFn, useBootstrap } from "../core/config/use-bootstrap";
 import { changeLocalePreference } from "../core/config/locale-change";
+import { processPendingCrash } from "../core/diagnostics/crash-reporter";
 import { systemLocale } from "../core/config/system-locale";
 import {
   usePreferencesStore,
@@ -104,6 +105,9 @@ export type UpdateCheckResult =
 /** 导出仅供测试壳（src/test/harness.tsx）注入假运行时；业务代码请用 useFoundationRuntime。 */
 export const RuntimeContext = createContext<RuntimeValue | null>(null);
 export type { RuntimeValue };
+
+/** 启动后多久处理上次留下的崩溃快照：让出启动路径，也给心跳先把安装凭证准备好 */
+const PENDING_CRASH_DELAY_MS = 10_000;
 
 export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   const localePreference = usePreferencesStore((state) => state.locale);
@@ -413,6 +417,23 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   const deliveryReady =
     snapshot !== undefined && snapshot.source !== "fallback";
   if (!entered && deliveryReady && launchMinimumElapsed) setEntered(true);
+  // 崩溃自动上报：拿到一份真实下发的配置、启动满 10 秒后，处理上次异常退出留下的快照
+  // （设计 diagnostic-report-2026-09-14 §4.6）。不在启动路径上等它，也不在崩溃现场发。
+  // 远程闸要求总闸也开着：总闸关了服务端回 404，快照会被当成"服务端拒收"丢掉
+  const pendingCrashHandled = useRef(false);
+  useEffect(() => {
+    if (!deliveryReady || pendingCrashHandled.current) return;
+    const timer = setTimeout(() => {
+      pendingCrashHandled.current = true;
+      void processPendingCrash({
+        remoteEnabled:
+          config.features.diagnosticsEnabled && config.features.crashAutoReport,
+        userEnabled: usePreferencesStore.getState().crashAutoReport !== false,
+        locale: config.localization.selectedLocale,
+      });
+    }, PENDING_CRASH_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [config, deliveryReady]);
   useEffect(
     () =>
       subscribeToUpdateSignals((signal) => {

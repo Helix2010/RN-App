@@ -36,6 +36,7 @@ export type RootStackParamList = {
   Send: { chain?: ChainId } | undefined;
   NotificationSettings: undefined;
   About: undefined;
-  ReportProblem: undefined;
+  /** source=crash：上报上次异常退出留下的崩溃快照 */
+  ReportProblem: { source?: "crash" } | undefined;
   SecurityCenter: undefined;
 };

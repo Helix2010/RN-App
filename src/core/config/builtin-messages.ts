@@ -1186,6 +1186,13 @@ const zhCN = {
   "diagnostics.failed.network": "网络不稳定，请检查网络后重试",
   "diagnostics.failed.disabled": "当前暂不支持上报",
   "diagnostics.failed.unavailable": "上报服务暂时不可用，请稍后再试",
+  "diagnostics.autoCrashReport": "自动上报崩溃",
+  "diagnostics.autoCrashReportHint":
+    "应用异常退出后，下次打开时自动上传崩溃日志",
+  "diagnostics.pendingCrash": "上次异常退出，是否上报",
+  "diagnostics.pendingCrashHint": "上报后会给出参考号，方便客服查找",
+  "diagnostics.crashReportTitle": "上报异常退出",
+  "diagnostics.crashGone": "这次异常退出的记录已经不在了",
   "security.unlock.with.fingerprint": "使用指纹解锁",
   "security.unlock.with.face": "使用面容解锁",
   "security.unlock.with.iris": "使用虹膜解锁",
@@ -2538,6 +2545,13 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "diagnostics.failed.disabled": "Reporting is not available right now",
   "diagnostics.failed.unavailable":
     "The report service is unavailable. Try again later",
+  "diagnostics.autoCrashReport": "Report crashes automatically",
+  "diagnostics.autoCrashReportHint":
+    "After the app quits unexpectedly, upload the crash log the next time it opens",
+  "diagnostics.pendingCrash": "The app quit unexpectedly last time. Report it?",
+  "diagnostics.pendingCrashHint": "You will get a reference to give to support",
+  "diagnostics.crashReportTitle": "Report a crash",
+  "diagnostics.crashGone": "The record of that crash is no longer available",
   "security.unlock.with.fingerprint": "Unlock with fingerprint",
   "security.unlock.with.face": "Unlock with face",
   "security.unlock.with.iris": "Unlock with iris",

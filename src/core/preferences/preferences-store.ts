@@ -39,6 +39,11 @@ type PreferencesState = {
   txVerification: TxVerificationPolicy;
   largeAmountThresholdUsd: number;
   sendWhitelistOnly: boolean;
+  /**
+   * 崩溃后自动上报（设计 diagnostic-report-2026-09-14 §4.6 第 2 道闸）。null = 没改过，
+   * 跟随租户的 features.crashAutoReport；改过之后以用户的为准，关了就是关了。
+   */
+  crashAutoReport: boolean | null;
   setTheme: (theme: ThemePreference) => void;
   setLocale: (locale: LocalePreference) => void;
   setColorScheme: (scheme: ColorSchemePreference) => void;
@@ -67,6 +72,7 @@ export const usePreferencesStore = create<PreferencesState>()(
       txVerification: "smart",
       largeAmountThresholdUsd: 1000,
       sendWhitelistOnly: false,
+      crashAutoReport: null,
       setTheme: (theme) => set({ theme }),
       setLocale: (locale) => set({ locale }),
       setColorScheme: (colorScheme) => set({ colorScheme }),
@@ -96,6 +102,7 @@ export const usePreferencesStore = create<PreferencesState>()(
         txVerification,
         largeAmountThresholdUsd,
         sendWhitelistOnly,
+        crashAutoReport,
       }) => ({
         theme,
         locale,
@@ -106,6 +113,7 @@ export const usePreferencesStore = create<PreferencesState>()(
         txVerification,
         largeAmountThresholdUsd,
         sendWhitelistOnly,
+        crashAutoReport,
       }),
     },
   ),

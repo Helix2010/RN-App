@@ -21,6 +21,7 @@ import { createFallbackConfig } from "../core/config/fallback-config";
 import { enabledChains } from "../core/wallet/config/wallet-runtime-config";
 import { withWallet } from "../test/wallet-config";
 import { FoundationRuntimeProvider } from "./runtime-context";
+import { usePreferencesStore } from "../core/preferences/preferences-store";
 
 jest.mock("../core/config/bootstrap-repository", () => ({
   loadBootstrap: jest.fn(),
@@ -53,6 +54,11 @@ jest.mock("../core/config/branding-assets", () => ({
 }));
 jest.mock("expo-localization", () => ({
   getLocales: () => [{ languageCode: "zh" }],
+}));
+const mockProcessPendingCrash = jest.fn(async () => "none");
+jest.mock("../core/diagnostics/crash-reporter", () => ({
+  processPendingCrash: (...args: unknown[]) =>
+    mockProcessPendingCrash(...(args as [])),
 }));
 
 const loadBootstrapMock = loadBootstrap as jest.MockedFunction<
@@ -312,4 +318,74 @@ describe("FoundationRuntimeProvider startup gate", () => {
     expect(screen.getByTestId("probe").props.children).toBe("eth");
     expect(screen.queryByText("暂时无法启动应用")).toBeNull();
   });
+});
+
+describe("pending crash report after launch", () => {
+  afterEach(() => {
+    jest.useRealTimers();
+    usePreferencesStore.setState({ crashAutoReport: null });
+  });
+
+  it.each([
+    [
+      "everything on",
+      { diagnostics: true, auto: true },
+      null,
+      { remoteEnabled: true, userEnabled: true },
+    ],
+    [
+      "tenant turned automatic reports off",
+      { diagnostics: true, auto: false },
+      null,
+      { remoteEnabled: false, userEnabled: true },
+    ],
+    // 总闸关着时服务端回 404，快照会被当成"服务端拒收"丢掉，所以远程闸必须两个都开
+    [
+      "tenant turned diagnostics off entirely",
+      { diagnostics: false, auto: true },
+      null,
+      { remoteEnabled: false, userEnabled: true },
+    ],
+    [
+      "user switched automatic reports off",
+      { diagnostics: true, auto: true },
+      false,
+      { remoteEnabled: true, userEnabled: false },
+    ],
+  ] as const)(
+    "handles the last crash ten seconds after entering, with %s",
+    async (_name, features, preference, expected) => {
+      jest.useFakeTimers({ advanceTimers: true });
+      mockProcessPendingCrash.mockClear();
+      usePreferencesStore.setState({ crashAutoReport: preference });
+      const config = withWallet(createFallbackConfig("zh-CN"), {
+        chains: ["eth"],
+      });
+      config.features.diagnosticsEnabled = features.diagnostics;
+      config.features.crashAutoReport = features.auto;
+      loadBootstrapMock.mockResolvedValue(remote(config));
+
+      await renderProvider();
+      await waitFor(() => expect(screen.getByTestId("probe")).toBeTruthy(), {
+        timeout: 3000,
+      });
+      // 不在启动路径上做
+      expect(mockProcessPendingCrash).not.toHaveBeenCalled();
+
+      await act(async () => {
+        jest.advanceTimersByTime(10_000);
+      });
+      expect(mockProcessPendingCrash).toHaveBeenCalledTimes(1);
+      expect(mockProcessPendingCrash).toHaveBeenCalledWith({
+        ...expected,
+        locale: "zh-CN",
+      });
+
+      // 一次启动只处理一次
+      await act(async () => {
+        jest.advanceTimersByTime(60_000);
+      });
+      expect(mockProcessPendingCrash).toHaveBeenCalledTimes(1);
+    },
+  );
 });
