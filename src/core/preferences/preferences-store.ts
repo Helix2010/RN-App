@@ -4,7 +4,13 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import type { SupportedLocale } from "../config/bootstrap.schema";
 
 export type ThemePreference = "system" | "light" | "dark";
-export type LocalePreference = "system" | SupportedLocale;
+/**
+ * 语言偏好：
+ * - `default`（默认）：不带语言请求 bootstrap，由服务端给租户在管理端设的回退语言；
+ * - `system`：把设备语言交给服务端，租户没开这种语言时服务端同样退回回退语言；
+ * - 具体语言码：用户在语言设置里选定的。
+ */
+export type LocalePreference = "default" | "system" | SupportedLocale;
 /** 涨跌颜色：绿涨红跌（默认）/ 红涨绿跌。只交换 pricePositive / priceNegative，Yes/No 语义色不跟随。 */
 export type ColorSchemePreference = "green-up" | "red-up";
 export type AppLockMethod = "biometric" | "pin";
@@ -59,11 +65,31 @@ type PreferencesState = {
 
 type PersistedV1 = { txConfirm?: boolean } & Record<string, unknown>;
 
+/**
+ * 持久化偏好的版本迁移。
+ * - v2：布尔 `txConfirm` 升成三态——开（老默认值）= 智能，关 = 关闭；"每次双重验证"只由用户主动选。
+ * - v3：语言默认值从"跟随系统"改为"默认语言"（租户在管理端设的回退语言）。以前存下的
+ *   "system" 分不清是默认值还是用户主动选的，统一按默认值迁走。
+ */
+export function migratePreferences(
+  persisted: unknown,
+  version: number,
+): Record<string, unknown> {
+  let state = (persisted ?? {}) as PersistedV1;
+  if (version < 2) {
+    const { txConfirm, ...rest } = state;
+    state = { ...rest, txVerification: txConfirm === false ? "off" : "smart" };
+  }
+  if (version < 3 && state.locale === "system")
+    state = { ...state, locale: "default" };
+  return state;
+}
+
 export const usePreferencesStore = create<PreferencesState>()(
   persist(
     (set) => ({
       theme: "system",
-      locale: "system",
+      locale: "default",
       colorScheme: "green-up",
       appLockEnabled: true,
       appLockMethod: "biometric",
@@ -80,18 +106,10 @@ export const usePreferencesStore = create<PreferencesState>()(
     }),
     {
       name: "foundation.preferences.v1",
-      version: 2,
+      version: 3,
       storage: createJSONStorage(() => AsyncStorage),
-      // v1 的布尔开关：开（老默认值）= 智能，关 = 关闭；"每次双重验证"只由用户主动选
-      migrate: (persisted, version) => {
-        const state = (persisted ?? {}) as PersistedV1;
-        if (version >= 2) return state as unknown as PreferencesState;
-        const { txConfirm, ...rest } = state;
-        return {
-          ...rest,
-          txVerification: txConfirm === false ? "off" : "smart",
-        } as unknown as PreferencesState;
-      },
+      migrate: (persisted, version) =>
+        migratePreferences(persisted, version) as unknown as PreferencesState,
       partialize: ({
         theme,
         locale,

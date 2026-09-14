@@ -1116,6 +1116,7 @@ const zhCN = {
   "settings.privacy": "隐私政策",
   "settings.clearCache": "清除缓存",
   "settings.followSystemLanguage": "跟随系统语言",
+  "settings.defaultLanguage": "默认语言",
   "settings.languageSwitchRetry": "语言未切换，检查网络后可再次点击重试。",
   "swap.status.success": "成功",
   "notif.title": "推送通知",
@@ -2464,6 +2465,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "settings.privacy": "Privacy policy",
   "settings.clearCache": "Clear cache",
   "settings.followSystemLanguage": "Follow system language",
+  "settings.defaultLanguage": "Default language",
   "settings.languageSwitchRetry":
     "The language was not changed. Check your connection and try again.",
   "predict.buyYes": "Buy Yes",
@@ -2662,4 +2664,11 @@ export function builtinMessages(
   const messages = normalizeMessages(locale === "en-US" ? enUS : zhCN);
   normalized.set(locale, messages);
   return messages;
+}
+
+/** 这种语言有没有内置字典。没有的（租户开了中英之外的语言）由调用方换回退语言那份垫底 */
+export function hasBuiltinMessages(
+  locale: SupportedLocale | null,
+): locale is SupportedLocale {
+  return locale === "zh-CN" || locale === "en-US";
 }

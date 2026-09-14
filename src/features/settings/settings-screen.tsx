@@ -84,9 +84,11 @@ export function SettingsScreen({
   const showTrading =
     Boolean(address) && (config.modules.predict || config.modules.dex);
   const languageLabel =
-    localePreference === "system"
-      ? t("settings.followSystemLanguage")
-      : (LANGUAGE_NAMES[localePreference]?.native ?? localePreference);
+    localePreference === "default"
+      ? t("settings.defaultLanguage")
+      : localePreference === "system"
+        ? t("settings.followSystemLanguage")
+        : (LANGUAGE_NAMES[localePreference]?.native ?? localePreference);
   const themeLabel = t(`theme.${themePreference}`);
 
   return (

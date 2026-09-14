@@ -1,7 +1,4 @@
-import {
-  changeLocalePreference,
-  resolveLocalePreference,
-} from "./locale-change";
+import { changeLocalePreference, requestLocale } from "./locale-change";
 
 describe("language preference transaction", () => {
   it("stages and validates the target Bootstrap before committing", async () => {
@@ -10,9 +7,9 @@ describe("language preference transaction", () => {
     await changeLocalePreference({
       preference: "en-US",
       currentPreference: "zh-CN",
-      systemLocale: "zh-CN",
+      deviceLocale: "zh-CN",
       stage: async (locale) => {
-        calls.push(`stage:${locale}`);
+        calls.push(`stage:${locale ?? "default"}`);
       },
       commit: (preference) => calls.push(`commit:${preference}`),
     });
@@ -27,7 +24,7 @@ describe("language preference transaction", () => {
       changeLocalePreference({
         preference: "en-US",
         currentPreference: "zh-CN",
-        systemLocale: "zh-CN",
+        deviceLocale: "zh-CN",
         stage: async () => {
           throw new Error("remote Bootstrap unavailable");
         },
@@ -38,7 +35,34 @@ describe("language preference transaction", () => {
     expect(commit).not.toHaveBeenCalled();
   });
 
-  it("resolves system preference without persisting a guessed language", () => {
-    expect(resolveLocalePreference("system", "ja-JP")).toBe("ja-JP");
+  it("stages the tenant default without a language when switching back to it", async () => {
+    const calls: string[] = [];
+
+    await changeLocalePreference({
+      preference: "default",
+      currentPreference: "en-US",
+      deviceLocale: "en-US",
+      stage: async (locale) => {
+        calls.push(`stage:${locale ?? "default"}`);
+      },
+      commit: (preference) => calls.push(`commit:${preference}`),
+    });
+
+    expect(calls).toEqual(["stage:default", "commit:default"]);
+  });
+});
+
+describe("requestLocale", () => {
+  it("leaves the default language to the tenant's fallback language on the server", () => {
+    expect(requestLocale("default", "ja-JP")).toBeNull();
+  });
+
+  it("hands the device language to the server when following the system", () => {
+    expect(requestLocale("system", "ja-JP")).toBe("ja-JP");
+    expect(requestLocale("system", null)).toBeNull();
+  });
+
+  it("uses a language the user picked", () => {
+    expect(requestLocale("en-US", "zh-CN")).toBe("en-US");
   });
 });

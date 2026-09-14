@@ -11,10 +11,11 @@ import {
   type BootstrapConfig,
   type SupportedLocale,
 } from "./bootstrap.schema";
-import { createFallbackConfig } from "./fallback-config";
+import { builtinMessages, hasBuiltinMessages } from "./builtin-messages";
 import { logEvent } from "../diagnostics/log-buffer";
 import { normalizeMessages } from "./localization";
 import { hydrateCachedBranding } from "./branding-assets";
+import { systemLocale } from "./system-locale";
 
 /** bootstrap 请求超时：比通用 8 秒宽，启动门禁与手动检查共用 */
 const BOOTSTRAP_TIMEOUT_MS = 15_000;
@@ -53,14 +54,18 @@ export type BootstrapSnapshot = {
   source: "remote" | "cache" | "fallback";
 };
 
-function cacheKey(locale: SupportedLocale): string {
-  return `foundation.bootstrap.v3.${encodeURIComponent(appRuntime.apiBaseUrl)}.${appRuntime.applicationId}.${locale}`;
+/** locale 为 null = 默认语言（服务端给租户的回退语言），缓存单独放在 "default" 这一格 */
+function cacheKey(locale: SupportedLocale | null): string {
+  return `foundation.bootstrap.v3.${encodeURIComponent(appRuntime.apiBaseUrl)}.${appRuntime.applicationId}.${locale ?? "default"}`;
 }
 
 function normalizeConfig(config: BootstrapConfig): BootstrapConfig {
-  const embeddedMessages = createFallbackConfig(
-    config.localization.selectedLocale,
-  ).localization.messages;
+  const { selectedLocale, fallbackLocale } = config.localization;
+  // 内置文案垫底，服务端下发的文案、再是远程语言包依次覆盖。选中的语言没有内置字典
+  // （租户开了中英之外的语言）时拿回退语言那份垫底，而不是一律中文
+  const embeddedMessages = builtinMessages(
+    hasBuiltinMessages(selectedLocale) ? selectedLocale : fallbackLocale,
+  );
   return {
     ...config,
     localization: {
@@ -100,7 +105,7 @@ async function discardInvalidCache(key: string): Promise<void> {
 }
 
 async function readCache(
-  locale: SupportedLocale,
+  locale: SupportedLocale | null,
   maxAgeMs = MAX_CACHE_AGE_MS,
 ): Promise<BootstrapConfig | null> {
   const key = cacheKey(locale);
@@ -130,10 +135,14 @@ async function readCache(
  * 放行业务页**的调用方必须传 `MAX_CACHE_ENTRY_AGE_MS`。
  */
 export async function loadCachedBootstrap(
-  locale: SupportedLocale,
+  locale: SupportedLocale | null,
   maxAgeMs?: number,
 ): Promise<BootstrapConfig | null> {
-  return readCache(locale, maxAgeMs);
+  const cached = await readCache(locale, maxAgeMs);
+  if (cached || locale !== null) return cached;
+  // 升级上来的第一次启动：默认语言这一格还没有缓存，以前是按设备语言（zh-CN / en-US）存的。
+  // 同一个租户的配置，画启动页、断网兜底都够用
+  return readCache(systemLocale(), maxAgeMs);
 }
 
 function languagePackageKey(locale: SupportedLocale): string {
@@ -336,7 +345,7 @@ type BootstrapStage =
   "fetch" | "signature" | "parse" | "replay" | "language" | "cache-write";
 
 export async function loadBootstrap(
-  locale: SupportedLocale,
+  locale: SupportedLocale | null,
   signal?: AbortSignal,
 ): Promise<BootstrapSnapshot> {
   const progress: { stage: BootstrapStage } = { stage: "fetch" };
@@ -356,7 +365,7 @@ export async function loadBootstrap(
 }
 
 async function fetchVerifiedBootstrap(
-  locale: SupportedLocale,
+  locale: SupportedLocale | null,
   progress: { stage: BootstrapStage },
   signal?: AbortSignal,
 ): Promise<BootstrapSnapshot> {
@@ -367,7 +376,10 @@ async function fetchVerifiedBootstrap(
   // 用 getText 而不是 get：验签验的是**收到的那串原始字节**，必须在 JSON.parse
   // 之前拿到手。先解析再验等于给自己留一个"解析过程改写了什么"的缺口。
   const response = await apiClient.getText(
-    `/v1/mobile/bootstrap?locale=${encodeURIComponent(locale)}`,
+    // 不带 locale：服务端按租户在管理端设的回退语言下发，这就是默认语言
+    locale === null
+      ? "/v1/mobile/bootstrap"
+      : `/v1/mobile/bootstrap?locale=${encodeURIComponent(locale)}`,
     // 60 KB 的下发在弱网下 8 秒会误判超时（真机实测过一次"暂时无法获取远程配置"）
     {
       signal,

@@ -1,5 +1,8 @@
 import type { SupportedLocale } from "../config/bootstrap.schema";
-import { builtinMessages } from "../config/builtin-messages";
+import {
+  builtinMessages,
+  hasBuiltinMessages,
+} from "../config/builtin-messages";
 import { normalizeMessageKey } from "../config/localization";
 import { systemLocale } from "../config/system-locale";
 import { usePreferencesStore } from "../preferences/preferences-store";
@@ -12,12 +15,24 @@ import { usePreferencesStore } from "../preferences/preferences-store";
  * key 不存在是编码错误：直接抛错，不把裸 key、远程字符串或"通用文案"放进弹窗。
  */
 
-/** 应用内语言偏好优先，"跟随系统"时取设备语言（`deviceLocale` 可注入，便于单测）。 */
+let appLocale: SupportedLocale | null = null;
+
+/** 应用当前实际显示的语言（服务端选定的 selectedLocale），运行时在每份下发生效后登记 */
+export function setPromptAppLocale(locale: SupportedLocale | null): void {
+  appLocale = locale;
+}
+
+/**
+ * 用户选定了语言就用它；默认语言 / 跟随系统时跟应用当前显示的语言走——那是服务端选的，
+ * 可能是租户的回退语言。那种语言没有内置字典、或还没拿到下发时，取设备语言
+ * （`deviceLocale` 可注入，便于单测）。
+ */
 export function promptLocale(
   deviceLocale: () => SupportedLocale = systemLocale,
 ): SupportedLocale {
   const preference = usePreferencesStore.getState().locale;
-  return preference === "system" ? deviceLocale() : preference;
+  if (preference !== "default" && preference !== "system") return preference;
+  return hasBuiltinMessages(appLocale) ? appLocale : deviceLocale();
 }
 
 export function builtinPromptText(

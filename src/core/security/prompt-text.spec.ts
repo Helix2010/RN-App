@@ -5,14 +5,19 @@ import { builtinMessages } from "../config/builtin-messages";
 import { normalizeMessageKey } from "../config/localization";
 import { usePreferencesStore } from "../preferences/preferences-store";
 import { authenticate } from "./app-lock";
-import { builtinPromptText, promptLocale } from "./prompt-text";
+import {
+  builtinPromptText,
+  promptLocale,
+  setPromptAppLocale,
+} from "./prompt-text";
 
 const authenticateAsync = jest.mocked(LocalAuthentication.authenticateAsync);
 const enrolledLevel = jest.mocked(LocalAuthentication.getEnrolledLevelAsync);
 
 describe("biometric prompt text", () => {
   afterEach(() => {
-    usePreferencesStore.getState().setLocale("system");
+    usePreferencesStore.getState().setLocale("default");
+    setPromptAppLocale(null);
   });
 
   it("resolves prompt keys from the built-in dictionary for the selected locale", () => {
@@ -92,9 +97,18 @@ describe("biometric prompt text", () => {
     expect(violations).toEqual([]);
   });
 
-  it("follows the in-app language preference, then the device language", () => {
+  it("follows a picked language, then the language the app shows, then the device", () => {
+    // 默认语言、还没拿到下发：设备语言
     expect(promptLocale(() => "zh-CN")).toBe("zh-CN");
     expect(promptLocale(() => "en-US")).toBe("en-US");
+    // 默认语言：跟服务端选的语言走（租户的回退语言）
+    setPromptAppLocale("en-US");
+    expect(promptLocale(() => "zh-CN")).toBe("en-US");
+    // 服务端选的语言没有内置字典：回到设备语言
+    setPromptAppLocale("ja-JP");
+    expect(promptLocale(() => "zh-CN")).toBe("zh-CN");
+    // 用户选定的语言优先
+    setPromptAppLocale("en-US");
     usePreferencesStore.getState().setLocale("zh-CN");
     expect(promptLocale(() => "en-US")).toBe("zh-CN");
   });

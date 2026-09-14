@@ -21,7 +21,7 @@ const RETRY_MAX_MS = 4_000;
  * 在这里随数据一起应用，业务界面就不可能在它应用之前拿到 query.data 而先渲染一帧。
  */
 export async function bootstrapQueryFn(
-  locale: SupportedLocale,
+  locale: SupportedLocale | null,
   signal?: AbortSignal,
 ): Promise<BootstrapSnapshot> {
   const snapshot = await loadBootstrap(locale, signal).catch(
@@ -67,9 +67,14 @@ export function bootstrapRetryDelay(count: number): number {
   return Math.min(RETRY_BASE_MS * 2 ** count, RETRY_MAX_MS);
 }
 
-export function useBootstrap(locale: SupportedLocale) {
+/** locale 为 null（默认语言，由服务端给回退语言）时用固定的 "default" 作键 */
+export function bootstrapQueryKey(locale: SupportedLocale | null) {
+  return ["mobile-bootstrap", locale ?? "default"] as const;
+}
+
+export function useBootstrap(locale: SupportedLocale | null) {
   return useQuery({
-    queryKey: ["mobile-bootstrap", locale],
+    queryKey: bootstrapQueryKey(locale),
     queryFn: ({ signal }) => bootstrapQueryFn(locale, signal),
     // Keep the last verified tenant configuration visible while a new locale
     // is being staged. A failed language request must not replace the whole

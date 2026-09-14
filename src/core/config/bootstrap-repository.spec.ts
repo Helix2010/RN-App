@@ -236,6 +236,51 @@ describe("loadBootstrap", () => {
     );
   });
 
+  it("asks for the tenant default language by leaving the locale out, and caches it under default", async () => {
+    getBootstrap.mockResolvedValue(createFallbackConfig("en-US"));
+
+    await loadBootstrap(null);
+
+    expect(getText).toHaveBeenCalledWith("/v1/mobile/bootstrap", {
+      signal: undefined,
+      timeoutMs: 15_000,
+      headers: {},
+    });
+    expect(storage.setItem).toHaveBeenCalledWith(
+      "foundation.bootstrap.v3.https%3A%2F%2Ftenant-a.example.com.dex-mobile.default",
+      expect.any(String),
+    );
+  });
+
+  it("lays the fallback language's built-in text under a language without a built-in dictionary", async () => {
+    const config = createFallbackConfig("en-US");
+    config.localization.selectedLocale = "ja-JP";
+    config.localization.fallbackLocale = "en-US";
+    config.localization.messages = { "home.title": "ホーム" };
+    getBootstrap.mockResolvedValue(config);
+
+    const snapshot = await loadBootstrap("ja-JP");
+
+    // 服务端下发的在上面，内置的垫底——垫的是回退语言那份，不是一律中文
+    expect(snapshot.config.localization.messages["home.title"]).toBe("ホーム");
+    expect(snapshot.config.localization.messages["settings.language"]).toBe(
+      "Language",
+    );
+  });
+
+  it("reads the old per-device-language cache while the default language has none yet", async () => {
+    storage.getItem.mockImplementation(async (key: string) =>
+      /\.(zh-CN|en-US)$/.test(key)
+        ? JSON.stringify({
+            savedAt: Date.now() - 60_000,
+            config: createFallbackConfig("zh-CN"),
+          })
+        : null,
+    );
+
+    await expect(loadCachedBootstrap(null)).resolves.not.toBeNull();
+  });
+
   it("uses a validated remote language package when one is published", async () => {
     const Crypto = jest.requireMock("expo-crypto") as {
       digestStringAsync: jest.Mock;

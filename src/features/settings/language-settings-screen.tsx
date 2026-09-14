@@ -39,7 +39,13 @@ export function LanguageSettingsScreen({
           ? LANGUAGE_NAMES[code]?.zh
           : LANGUAGE_NAMES[code]?.en) ?? code,
     }));
+  // 默认语言 = 租户在管理端设的回退语言，名字从服务端下发的语言目录里取
+  const fallbackLocale = config.localization.fallbackLocale;
+  const fallbackName =
+    languageCatalog.find((item) => item.code === fallbackLocale)?.label ??
+    fallbackLocale;
   const items: LocalePreference[] = [
+    "default",
     "system",
     ...languageCatalog.map((item) => item.code),
   ];
@@ -68,17 +74,23 @@ export function LanguageSettingsScreen({
           ) : null}
           <Card padding={0} gap={0} shadowOpacity={0}>
             {items.map((item, index) => {
-              const language =
-                item === "system"
-                  ? undefined
-                  : languageCatalog.find(
-                      (candidate) => candidate.code === item,
-                    );
-              const label = language?.label ?? item;
+              const language = languageCatalog.find(
+                (candidate) => candidate.code === item,
+              );
+              const label =
+                item === "default"
+                  ? t("settings.defaultLanguage")
+                  : item === "system"
+                    ? t("theme.system")
+                    : (language?.label ?? item);
               const secondary =
-                language?.nativeName && language.nativeName !== label
-                  ? language.nativeName
-                  : undefined;
+                item === "default"
+                  ? fallbackName
+                  : item === "system"
+                    ? t("settings.followSystemLanguage")
+                    : language?.nativeName && language.nativeName !== label
+                      ? language.nativeName
+                      : undefined;
               return (
                 <Row
                   key={item}
@@ -97,19 +109,14 @@ export function LanguageSettingsScreen({
                       .finally(() => setPendingLocale(null));
                   }}
                   accessibilityRole="radio"
-                  accessibilityLabel={
-                    item === "system" ? t("theme.system") : label
-                  }
+                  accessibilityLabel={label}
                   accessibilityState={{ selected: localePreference === item }}
+                  testID={`language-option-${item}`}
                 >
                   <SectionTitle flex={1} fontSize={15}>
-                    {item === "system" ? t("theme.system") : label}
+                    {label}
                   </SectionTitle>
-                  {item === "system" ? (
-                    <Body>{t("settings.followSystemLanguage")}</Body>
-                  ) : secondary ? (
-                    <Body>{secondary}</Body>
-                  ) : null}
+                  {secondary ? <Body>{secondary}</Body> : null}
                   {pendingLocale === item ? (
                     <Body color="$textMuted" fontSize={12}>
                       …

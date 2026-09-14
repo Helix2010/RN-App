@@ -20,10 +20,19 @@ import type {
 } from "../core/config/bootstrap.schema";
 import { createFallbackConfig } from "../core/config/fallback-config";
 import { translateMessage } from "../core/config/localization";
-import { bootstrapQueryFn, useBootstrap } from "../core/config/use-bootstrap";
-import { changeLocalePreference } from "../core/config/locale-change";
+import {
+  bootstrapQueryFn,
+  useBootstrap,
+  bootstrapQueryKey,
+} from "../core/config/use-bootstrap";
+import {
+  changeLocalePreference,
+  requestLocale,
+} from "../core/config/locale-change";
 import { processPendingCrash } from "../core/diagnostics/crash-reporter";
-import { systemLocale } from "../core/config/system-locale";
+import { deviceLanguageTag, systemLocale } from "../core/config/system-locale";
+import { hasBuiltinMessages } from "../core/config/builtin-messages";
+import { setPromptAppLocale } from "../core/security/prompt-text";
 import {
   usePreferencesStore,
   type LocalePreference,
@@ -116,10 +125,17 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   const persistLocale = usePreferencesStore((state) => state.setLocale);
   const queryClient = useQueryClient();
   const setTheme = usePreferencesStore((state) => state.setTheme);
-  const locale =
-    localePreference === "system" ? systemLocale() : localePreference;
+  // 请求带哪种语言由偏好决定；默认语言不带，由服务端给租户的回退语言（见 requestLocale）
+  const locale = requestLocale(localePreference, deviceLanguageTag());
   const query = useBootstrap(locale);
-  const fallback = useMemo(() => createFallbackConfig(locale), [locale]);
+  // 下发到达前的启动门禁只能用内置字典：请求的语言有内置字典就用它，否则按设备语言
+  const fallback = useMemo(
+    () =>
+      createFallbackConfig(
+        hasBuiltinMessages(locale) ? locale : systemLocale(),
+      ),
+    [locale],
+  );
   const snapshot = query.data;
   // 拿到远程下发之前 config 是内置配置：它只用来渲染启动门禁（启动页 / 重试屏 /
   // 强制 OTA 弹层）。业务界面（children）只在 entered 之后挂载，永远不会跑在它上面。
@@ -183,15 +199,19 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
     (key: string) => translateMessage(config.localization.messages, key),
     [config.localization.messages],
   );
+  // 系统验证弹窗跟应用当前显示的语言走（它只能用内置字典，见 prompt-text.ts）
+  useEffect(() => {
+    setPromptAppLocale(config.localization.selectedLocale);
+  }, [config.localization.selectedLocale]);
   const setLocale = useCallback(
     async (nextPreference: LocalePreference): Promise<void> => {
       await changeLocalePreference({
         preference: nextPreference,
         currentPreference: localePreference,
-        systemLocale: systemLocale(),
+        deviceLocale: deviceLanguageTag(),
         stage: async (targetLocale) => {
           await queryClient.fetchQuery({
-            queryKey: ["mobile-bootstrap", targetLocale],
+            queryKey: bootstrapQueryKey(targetLocale),
             queryFn: ({ signal }) => bootstrapQueryFn(targetLocale, signal),
             staleTime: 5 * 60 * 1_000,
             gcTime: 24 * 60 * 60 * 1_000,
@@ -582,7 +602,8 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
           children
         ) : query.isError && !snapshot ? (
           <BootstrapUnavailableScreen
-            locale={locale}
+            // 下发没到手：只能用内置字典那种语言
+            locale={fallback.localization.selectedLocale}
             retrying={query.isFetching}
             onRetry={() => void query.refetch()}
           />
