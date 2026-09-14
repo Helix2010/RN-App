@@ -12,6 +12,7 @@ import {
   type SupportedLocale,
 } from "./bootstrap.schema";
 import { createFallbackConfig } from "./fallback-config";
+import { logEvent } from "../diagnostics/log-buffer";
 import { normalizeMessages } from "./localization";
 import { hydrateCachedBranding } from "./branding-assets";
 
@@ -330,8 +331,33 @@ async function assertAuthentic(body: string, header: string): Promise<void> {
   verifyBootstrapSignature({ body, header, signerAddress });
 }
 
+/** bootstrap 走到了哪一步。失败时记它，而不是记错误消息（设计 diagnostic-report §4.2）。 */
+type BootstrapStage =
+  "fetch" | "signature" | "parse" | "replay" | "language" | "cache-write";
+
 export async function loadBootstrap(
   locale: SupportedLocale,
+  signal?: AbortSignal,
+): Promise<BootstrapSnapshot> {
+  const progress: { stage: BootstrapStage } = { stage: "fetch" };
+  try {
+    return await fetchVerifiedBootstrap(locale, progress, signal);
+  } catch (error) {
+    // 只记阶段与错误类型。消息不记：签名错误的消息里有签名者地址，
+    // 网络错误的 cause 里可能有完整 URL
+    if (!signal?.aborted)
+      logEvent("error", "config", "bootstrap failed", {
+        stage: progress.stage,
+        error: error instanceof Error ? error.name : "unknown",
+        ...(error instanceof AppError ? { kind: error.kind } : {}),
+      });
+    throw error;
+  }
+}
+
+async function fetchVerifiedBootstrap(
+  locale: SupportedLocale,
+  progress: { stage: BootstrapStage },
   signal?: AbortSignal,
 ): Promise<BootstrapSnapshot> {
   // 可选携带安装身份：服务端验明凭证后才让这台设备参与灰度匹配（设计
@@ -349,10 +375,12 @@ export async function loadBootstrap(
       headers: await installationAuthorization(),
     },
   );
+  progress.stage = "signature";
   await assertAuthentic(
     response.text,
     response.headers.get("x-bootstrap-signature") ?? "",
   );
+  progress.stage = "parse";
   const parsed = bootstrapSchema.safeParse(JSON.parse(response.text));
   if (!parsed.success) {
     throw new AppError(
@@ -365,6 +393,7 @@ export async function loadBootstrap(
     );
   }
   const config = parsed.data;
+  progress.stage = "replay";
   if (config.issuedAt !== undefined) {
     if (isReplayed(config.issuedAt, await highestIssuedAt()))
       throw new AppError(
@@ -378,9 +407,11 @@ export async function loadBootstrap(
   // 不 await：setExtraParamAsync 走 expo-updates 自己的执行器，更新正在下载时
   // 会排在它后面。灰度是附加能力，不该让启动门禁等它（函数内部已吞掉所有失败）
   void rememberCanaryToken(config.update.canary?.otaToken ?? null);
+  progress.stage = "language";
   const enriched = await hydrateCachedBranding(
     await applyRemoteLanguagePackage(normalizeConfig(config), signal),
   );
+  progress.stage = "cache-write";
   await AsyncStorage.setItem(
     cacheKey(locale),
     JSON.stringify({

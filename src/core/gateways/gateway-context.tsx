@@ -16,6 +16,7 @@ import type { SessionGateway } from "../../features/session/api/gateway";
 import { HttpSessionGateway } from "../../features/session/api/http-session-gateway";
 import type { WalletGateway } from "../../features/wallet/api/gateway";
 import { EmbeddedWalletGateway } from "../../features/wallet/api/embedded-wallet-gateway";
+import { withWalletDiagnostics } from "../../features/wallet/api/wallet-diagnostics";
 import { HttpWalletIndex } from "../../features/wallet/api/http-wallet-index";
 import {
   createWalletConnectConnector,
@@ -106,16 +107,20 @@ function createGateways(storage: KeyValueStorage): Gateways {
   setSessionStateProbe(async () =>
     (await session.get()) ? "signed_in" : "signed_out",
   );
-  const wallet = new EmbeddedWalletGateway({
-    vault,
-    chainData,
-    storage,
-    external,
-    onchain,
-    // 链上收款与转出记录来自平台扫链索引，按会话地址查询
-    index: new HttpWalletIndex({ session }),
-    seedDemoBalances: (address) => chainData.seedDemoBalances(address),
-  });
+  // 套一层失败记录再往下传：预测账户和 DEX 里发生的钱包操作失败也要进诊断日志
+  // （只记操作名、错误类名、链 ID，设计 diagnostic-report-2026-09-14 §4.2）
+  const wallet = withWalletDiagnostics(
+    new EmbeddedWalletGateway({
+      vault,
+      chainData,
+      storage,
+      external,
+      onchain,
+      // 链上收款与转出记录来自平台扫链索引，按会话地址查询
+      index: new HttpWalletIndex({ session }),
+      seedDemoBalances: (address) => chainData.seedDemoBalances(address),
+    }),
+  );
   // 预测账户接真实平台：没有 services.predict 下发时账户功能如实不可用
   const predictAccount = new HttpPredictAccountGateway({
     wallet,

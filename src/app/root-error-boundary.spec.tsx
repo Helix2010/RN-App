@@ -2,6 +2,12 @@ import { fireEvent, render, screen } from "@testing-library/react-native";
 import * as Clipboard from "expo-clipboard";
 import { Text } from "react-native";
 import { RootErrorBoundary } from "./root-error-boundary";
+import {
+  clearLogs,
+  secretLeakCount,
+  resetSecretLeakCount,
+  snapshotLogs,
+} from "../core/diagnostics/log-buffer";
 
 jest.mock("expo-localization", () => ({
   getLocales: () => [{ languageCode: "zh" }],
@@ -23,6 +29,8 @@ describe("RootErrorBoundary", () => {
   beforeEach(() => {
     explode = true;
     crashMessage = "render exploded";
+    clearLogs();
+    resetSecretLeakCount();
     jest.spyOn(console, "error").mockImplementation(() => {});
   });
   afterEach(() => jest.restoreAllMocks());
@@ -36,6 +44,17 @@ describe("RootErrorBoundary", () => {
 
     expect(screen.getByTestId("root-error-boundary")).toBeTruthy();
     expect(screen.getByText(/render exploded/)).toBeTruthy();
+    // 崩溃也进诊断日志——那是「上报问题」会带走的内容
+    expect(snapshotLogs()).toContainEqual(
+      expect.objectContaining({
+        tag: "crash",
+        message: "Error: render exploded",
+        fields: expect.objectContaining({
+          source: "render",
+          component: "Child",
+        }) as unknown,
+      }),
+    );
     expect(
       screen.getByTestId("root-error-diagnostic-id").props.children.join(""),
     ).toMatch(/诊断 ID: [0-9a-z]+-[0-9a-z]+/);
@@ -84,5 +103,12 @@ describe("RootErrorBoundary", () => {
       .join(" ");
     expect(ours).not.toContain("sausage");
     expect(ours).toContain("[redacted:secret]");
+
+    // 第三个出口：诊断日志缓冲，「上报问题」会把它传给服务端
+    const uploaded = JSON.stringify(snapshotLogs());
+    expect(uploaded).not.toContain("sausage");
+    expect(uploaded).toContain("[redacted:secret]");
+    // 命中即缺陷：出口扫描计了数，说明上游把秘密拼进了异常 message
+    expect(secretLeakCount()).toBeGreaterThan(0);
   });
 });

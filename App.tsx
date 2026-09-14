@@ -13,6 +13,10 @@ import { AppLockGate } from "./src/features/security/app-lock-gate";
 import { FoundationNavigator } from "./src/navigation/foundation-navigator";
 import { UpdateModal } from "./src/features/updates/update-modal";
 import { RootErrorBoundary } from "./src/app/root-error-boundary";
+import { installGlobalCrashCapture } from "./src/core/diagnostics/crash-capture";
+
+// 模块顶层装：要赶在第一次渲染之前，否则启动期的异常记不到（设计 diagnostic-report §4.2）
+installGlobalCrashCapture();
 
 const queryClient = new QueryClient({
   defaultOptions: {

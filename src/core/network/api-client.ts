@@ -4,6 +4,9 @@ import * as Updates from "expo-updates";
 import { Platform } from "react-native";
 import type { z } from "zod";
 import { AppError } from "./app-error";
+import { logEvent } from "../diagnostics/log-buffer";
+import { pathTemplate } from "../diagnostics/path-template";
+import { now } from "../time/clock";
 import { resolveApiBaseUrl, resolveRuntimeVersion } from "./runtime-config";
 
 const DEFAULT_TIMEOUT_MS = 8_000;
@@ -59,6 +62,36 @@ export const appRuntime = {
   bootstrapSignerAddress: publicExtra("bootstrapSignerAddress", ""),
 } as const;
 
+/**
+ * 请求失败进诊断日志（设计 diagnostic-report-2026-09-14 §4.2）。
+ *
+ * 只记接口模板、失败类型、状态码、业务码、requestId、耗时。**不记**请求头、请求体、
+ * 响应体——安装凭证、会话令牌、地址都在那里面。取消不记：那是调用方主动放弃，不是故障。
+ */
+function recordFailure(
+  method: "GET" | "POST",
+  path: string,
+  error: AppError,
+  startedAt: number,
+): AppError {
+  if (error.kind === "cancelled") return error;
+  const clientError =
+    error.kind === "server" &&
+    error.status !== undefined &&
+    error.status < 500 &&
+    error.status !== 429;
+  logEvent(clientError ? "warn" : "error", "net", "request failed", {
+    method,
+    path: pathTemplate(path),
+    kind: error.kind,
+    ...(error.status !== undefined ? { status: error.status } : {}),
+    ...(error.code ? { code: error.code } : {}),
+    ...(error.requestId ? { requestId: error.requestId } : {}),
+    ms: now() - startedAt,
+  });
+  return error;
+}
+
 class ApiClient {
   private async response(
     path: string,
@@ -71,6 +104,8 @@ class ApiClient {
       timeoutMs?: number;
     },
   ): Promise<Response> {
+    const startedAt = now();
+    const method = options?.method ?? "GET";
     const apiBaseUrl = baseUrl();
     if (!apiBaseUrl) {
       throw new AppError(
@@ -88,7 +123,7 @@ class ApiClient {
     options?.signal?.addEventListener("abort", abortFromCaller, { once: true });
     try {
       const response = await globalThis.fetch(`${apiBaseUrl}${path}`, {
-        method: options?.method ?? "GET",
+        method,
         body: options?.body,
         signal: controller.signal,
         headers: {
@@ -104,13 +139,18 @@ class ApiClient {
       });
       const requestId = response.headers.get("x-request-id") ?? undefined;
       if (!response.ok) {
-        throw new AppError(
-          "server",
-          `Request failed with status ${response.status}`,
-          response.status >= 500 || response.status === 429,
-          requestId,
-          response.status,
-          { code: await problemCode(response) },
+        throw recordFailure(
+          method,
+          path,
+          new AppError(
+            "server",
+            `Request failed with status ${response.status}`,
+            response.status >= 500 || response.status === 429,
+            requestId,
+            response.status,
+            { code: await problemCode(response) },
+          ),
+          startedAt,
         );
       }
       return response;
@@ -118,22 +158,32 @@ class ApiClient {
       if (error instanceof AppError) throw error;
       if (controller.signal.aborted) {
         const timedOut = controller.signal.reason === "timeout";
-        throw new AppError(
-          timedOut ? "timeout" : "cancelled",
-          timedOut ? "The request timed out" : "The request was cancelled",
-          timedOut,
+        throw recordFailure(
+          method,
+          path,
+          new AppError(
+            timedOut ? "timeout" : "cancelled",
+            timedOut ? "The request timed out" : "The request was cancelled",
+            timedOut,
+            undefined,
+            undefined,
+            { cause: error },
+          ),
+          startedAt,
+        );
+      }
+      throw recordFailure(
+        method,
+        path,
+        new AppError(
+          "network",
+          "The service is unreachable",
+          true,
           undefined,
           undefined,
           { cause: error },
-        );
-      }
-      throw new AppError(
-        "network",
-        "The service is unreachable",
-        true,
-        undefined,
-        undefined,
-        { cause: error },
+        ),
+        startedAt,
       );
     } finally {
       clearTimeout(timeout);
@@ -150,30 +200,41 @@ class ApiClient {
       timeoutMs?: number;
     },
   ): Promise<T> {
+    const startedAt = now();
     const response = await this.response(path, options);
     const requestId = response.headers.get("x-request-id") ?? undefined;
     try {
       const parsed = schema.safeParse(await response.json());
       if (!parsed.success) {
-        throw new AppError(
-          "incompatible_response",
-          "The server response does not match the mobile contract",
-          false,
-          requestId,
-          undefined,
-          { cause: parsed.error },
+        throw recordFailure(
+          "GET",
+          path,
+          new AppError(
+            "incompatible_response",
+            "The server response does not match the mobile contract",
+            false,
+            requestId,
+            undefined,
+            { cause: parsed.error },
+          ),
+          startedAt,
         );
       }
       return parsed.data;
     } catch (error) {
       if (error instanceof AppError) throw error;
-      throw new AppError(
-        "incompatible_response",
-        "The server response is not valid JSON",
-        false,
-        requestId,
-        undefined,
-        { cause: error },
+      throw recordFailure(
+        "GET",
+        path,
+        new AppError(
+          "incompatible_response",
+          "The server response is not valid JSON",
+          false,
+          requestId,
+          undefined,
+          { cause: error },
+        ),
+        startedAt,
       );
     }
   }
@@ -196,6 +257,7 @@ class ApiClient {
     schema: z.ZodType<T>,
     options?: { signal?: AbortSignal; headers?: Record<string, string> },
   ): Promise<T> {
+    const startedAt = now();
     const response = await this.response(path, {
       ...options,
       headers: { "content-type": "application/json", ...options?.headers },
@@ -206,24 +268,34 @@ class ApiClient {
     try {
       const parsed = schema.safeParse(await response.json());
       if (!parsed.success)
-        throw new AppError(
-          "incompatible_response",
-          "The server response does not match the mobile contract",
-          false,
-          requestId,
-          undefined,
-          { cause: parsed.error },
+        throw recordFailure(
+          "POST",
+          path,
+          new AppError(
+            "incompatible_response",
+            "The server response does not match the mobile contract",
+            false,
+            requestId,
+            undefined,
+            { cause: parsed.error },
+          ),
+          startedAt,
         );
       return parsed.data;
     } catch (error) {
       if (error instanceof AppError) throw error;
-      throw new AppError(
-        "incompatible_response",
-        "The server response is not valid JSON",
-        false,
-        requestId,
-        undefined,
-        { cause: error },
+      throw recordFailure(
+        "POST",
+        path,
+        new AppError(
+          "incompatible_response",
+          "The server response is not valid JSON",
+          false,
+          requestId,
+          undefined,
+          { cause: error },
+        ),
+        startedAt,
       );
     }
   }

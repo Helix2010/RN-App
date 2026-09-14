@@ -6,6 +6,7 @@ import {
 import { loadBootstrap, loadCachedBootstrap } from "./bootstrap-repository";
 import { createFallbackConfig } from "./fallback-config";
 import { AppError } from "../network/app-error";
+import { clearLogs, snapshotLogs } from "../diagnostics/log-buffer";
 
 jest.mock("./bootstrap-repository", () => ({
   loadBootstrap: jest.fn(),
@@ -32,6 +33,7 @@ const offline = (): AppError =>
 
 beforeEach(() => {
   jest.clearAllMocks();
+  clearLogs();
 });
 
 describe("bootstrapQueryFn", () => {
@@ -44,6 +46,33 @@ describe("bootstrapQueryFn", () => {
     expect(snapshot.source).toBe("cache");
     // 缓存这条路同样要把钱包运行时配置应用上，否则业务页会跑在内置配置上
     expect(applyDeliveredWalletConfig).toHaveBeenCalledWith(config.wallet);
+  });
+
+  it("用了缓存要进诊断日志：用户看到的是旧配置，排查时得知道", async () => {
+    load.mockRejectedValue(offline());
+    cached.mockResolvedValue(config);
+
+    await bootstrapQueryFn("zh-CN");
+
+    expect(snapshotLogs()).toEqual([
+      expect.objectContaining({
+        level: "warn",
+        tag: "config",
+        message: "using cached bootstrap",
+        fields: { configVersion: config.configVersion },
+      }),
+    ]);
+  });
+
+  it("连缓存都没有也记下来", async () => {
+    load.mockRejectedValue(offline());
+    cached.mockResolvedValue(null);
+
+    await expect(bootstrapQueryFn("zh-CN")).rejects.toThrow(AppError);
+    expect(snapshotLogs()[0]).toMatchObject({
+      level: "error",
+      message: "no usable bootstrap cache",
+    });
   });
 
   it("没有缓存就照实抛错——这时确实没有任何可用配置", async () => {

@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { HDNodeWallet, encodeBase64, getBytes, toUtf8Bytes } from "ethers";
 import { apiClient, appRuntime } from "../network/api-client";
 import { BOOTSTRAP_SIGNATURE_ALGORITHM } from "./bootstrap-signature";
+import { clearLogs, snapshotLogs } from "../diagnostics/log-buffer";
 import {
   loadBootstrap,
   loadCachedBootstrap,
@@ -474,6 +475,30 @@ describe("bootstrap 响应验签（N3）", () => {
     await expect(loadBootstrap("zh-CN")).rejects.toThrow(/signed by/);
   });
 
+  it("验签失败进诊断日志：只记卡在哪一步，不记带着地址的错误消息", async () => {
+    clearLogs();
+    const body = JSON.stringify(createFallbackConfig("zh-CN"));
+    const attacker = HDNodeWallet.createRandom();
+    const signature = await attacker.signMessage(toUtf8Bytes(body));
+    bootstrapReturns(body, {
+      "x-bootstrap-signature": `sig="${encodeBase64(getBytes(signature))}", keyid="main", alg="${BOOTSTRAP_SIGNATURE_ALGORITHM}"`,
+    });
+
+    await expect(loadBootstrap("zh-CN")).rejects.toThrow(/signed by/);
+
+    expect(snapshotLogs()).toEqual([
+      expect.objectContaining({
+        level: "error",
+        tag: "config",
+        message: "bootstrap failed",
+        fields: { stage: "signature", error: "BootstrapSignatureError" },
+      }),
+    ]);
+    const logged = JSON.stringify(snapshotLogs());
+    expect(logged).not.toContain(attacker.address);
+    expect(logged).not.toContain(wallet.address);
+  });
+
   // 2026-09-12 起强制：配了签名者地址的租户，没有签名就不启动
   it("配了签名者地址却收到没签名的下发，拒绝", async () => {
     bootstrapReturns(createFallbackConfig("zh-CN"));
@@ -501,6 +526,25 @@ describe("bootstrap 响应验签（N3）", () => {
     bootstrapReturns(body, await signed(body));
 
     await expect(loadBootstrap("zh-CN")).rejects.toThrow(/replayed/);
+  });
+
+  it("重放被拒记在 replay 阶段，和验签失败区分开", async () => {
+    clearLogs();
+    storage.getItem.mockImplementation(async (key: string) =>
+      key.includes("issued-at") ? String(1_700_000_000_000) : null,
+    );
+    const body = JSON.stringify({
+      ...createFallbackConfig("zh-CN"),
+      issuedAt: 1_600_000_000_000,
+    });
+    bootstrapReturns(body, await signed(body));
+
+    await expect(loadBootstrap("zh-CN")).rejects.toThrow(/replayed/);
+    expect(snapshotLogs()[0]?.fields).toEqual({
+      stage: "replay",
+      error: "AppError",
+      kind: "incompatible_response",
+    });
   });
 
   it("记住见过的最大 issuedAt", async () => {

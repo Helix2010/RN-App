@@ -4,6 +4,7 @@ import {
   type Theme as NavigationTheme,
 } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { useState } from "react";
 import { useTheme } from "tamagui";
 import { useFoundationRuntime } from "../app/runtime-context";
 import { AppShellScreen } from "../features/foundation/app-shell-screen";
@@ -42,6 +43,7 @@ import { TOKENS } from "../features/wallet/fixtures/wallet";
 import type { TokenRef } from "../core/gateways/types";
 import type { RootStackParamList } from "./types";
 import { useSystemBackHandler } from "./use-system-back";
+import { createRouteLogger } from "../core/diagnostics/crash-capture";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -49,6 +51,8 @@ export function FoundationNavigator() {
   const theme = useTheme();
   const { config } = useFoundationRuntime();
   const navigationRef = useNavigationContainerRef<RootStackParamList>();
+  // 复现路径：只记路由名，不记 params——参数里有事件 ID、金额、收款地址
+  const [logRoute] = useState(createRouteLogger);
   const navigationTheme: NavigationTheme = {
     dark: theme.background.val === config.theme.dark.background,
     colors: {
@@ -78,7 +82,12 @@ export function FoundationNavigator() {
   });
 
   return (
-    <NavigationContainer ref={navigationRef} theme={navigationTheme}>
+    <NavigationContainer
+      ref={navigationRef}
+      theme={navigationTheme}
+      onReady={() => logRoute(navigationRef.getCurrentRoute()?.name)}
+      onStateChange={() => logRoute(navigationRef.getCurrentRoute()?.name)}
+    >
       <Stack.Navigator
         screenOptions={{
           headerShown: false,

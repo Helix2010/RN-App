@@ -4,6 +4,7 @@ import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { appRuntime } from "../core/network/api-client";
 import { redactSecrets } from "../core/security/secret-scan";
 import { systemLocale } from "../core/config/system-locale";
+import { recordCrash } from "../core/diagnostics/crash-capture";
 
 /**
  * 根级错误边界。任何渲染期异常到这里都变成一个能操作的界面，而不是白屏：
@@ -59,6 +60,9 @@ export class RootErrorBoundary extends Component<
 
   override componentDidCatch(error: Error, info: ErrorInfo): void {
     this.setState({ info: info.componentStack ?? "" });
+    recordCrash("render", error, {
+      componentStack: info.componentStack ?? undefined,
+    });
     // 异常的 message 可能带着助记词（导入失败、解密失败都会把输入拼进去）。
     // 这里不能直接把 error 交给 console.error——它会打印完整对象（安全评审 §12.2）
     console.error(

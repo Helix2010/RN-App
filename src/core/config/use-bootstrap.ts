@@ -8,6 +8,7 @@ import {
 import { applyDeliveredWalletConfig } from "../wallet/config/wallet-runtime-config";
 import { applyDeliveredServices } from "../predict-platform/config";
 import { AppError } from "../network/app-error";
+import { logEvent } from "../diagnostics/log-buffer";
 import type { SupportedLocale } from "./bootstrap.schema";
 
 /** 请求失败后还要再试几次；每次之间等多久（指数退避，封顶 4 秒）。 */
@@ -38,7 +39,13 @@ export async function bootstrapQueryFn(
         locale,
         MAX_CACHE_ENTRY_AGE_MS,
       ).catch(() => null);
-      if (!cached) throw error;
+      if (!cached) {
+        logEvent("error", "config", "no usable bootstrap cache");
+        throw error;
+      }
+      logEvent("warn", "config", "using cached bootstrap", {
+        configVersion: cached.configVersion,
+      });
       return { config: cached, source: "cache" } as const;
     },
   );

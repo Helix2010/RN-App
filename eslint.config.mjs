@@ -42,6 +42,12 @@ const restrictedSyntax = [
   },
   {
     selector:
+      "CallExpression[callee.name='logEvent'] MemberExpression[property.name=/^(phrase|mnemonic|privateKey|params)$/]",
+    message:
+      "Never log route params or key material; log an identifier instead.",
+  },
+  {
+    selector:
       "CallExpression[callee.name='logEvent'] CallExpression[callee.object.name='JSON'][callee.property.name='stringify']",
     message:
       "logEvent takes scalars only; serialising an object drags tokens, addresses and balances into the upload.",
