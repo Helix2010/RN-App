@@ -71,6 +71,35 @@ describe("AssetsScreen", () => {
     expect(screen.queryByTestId("assets-predict")).toBeNull();
   });
 
+  /**
+   * Wallet-only 下记录已经有底部页签和操作块两条路，头部小图标是第三条，
+   * 反而让人以为是三个不同的地方。有业务模块时它是资产页唯一的记录入口
+   * （第三格被划转或兑换占着），所以只在 `00` 撤掉。
+   */
+  it("drops the header records icon only in wallet-only", async () => {
+    const gateways = createTestGateways();
+    await signIn(gateways);
+    await renderAssets({ gateways, modules: { predict: false, dex: false } });
+    await waitFor(() =>
+      expect(screen.getByTestId("assets-wallet")).toBeTruthy(),
+    );
+    expect(screen.queryByTestId("assets-records")).toBeNull();
+  });
+
+  it.each([
+    ["both modules", { predict: true, dex: true }],
+    ["predict only", { predict: true, dex: false }],
+    ["dex only", { predict: false, dex: true }],
+  ])("keeps the header records icon with %s", async (_name, modules) => {
+    const gateways = createTestGateways();
+    await signIn(gateways);
+    await renderAssets({ gateways, modules });
+    await waitFor(() =>
+      expect(screen.getByTestId("assets-wallet")).toBeTruthy(),
+    );
+    expect(screen.getByTestId("assets-records")).toBeTruthy();
+  });
+
   it("formats amounts as currency rather than raw minor units", async () => {
     const gateways = createTestGateways();
     await signIn(gateways);
