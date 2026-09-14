@@ -33,6 +33,9 @@ for (const [path, method] of [
   ["/v1/admin/localization/languages", "put"],
   ["/v1/admin/localization/documents", "put"],
   ["/v1/admin/localization/publish", "post"],
+  // 一键上报：元数据拿参考号，再传日志（设计 diagnostic-report-2026-09-14）
+  ["/v1/mobile/diagnostics/reports", "post"],
+  ["/v1/mobile/diagnostics/reports/{reportId}/log", "put"],
 ]) {
   if (!contract.paths?.[path]?.[method]) {
     console.error(

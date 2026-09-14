@@ -135,6 +135,199 @@
         }
       }
     },
+    "/v1/admin/diagnostics/reports": {
+      "get": {
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "logStatus",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "fingerprint",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "installationId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "redacted",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tenant diagnostic reports, newest first. Body: {items, nextCursor, hasMore, budget:{reportsLast24h, reportLimit, bytesLast24h, byteLimit, exhausted}}. q matches a reference, an installation id or a wallet address exactly. logStatus=missing selects reports whose log never arrived within 30 minutes (shown as missing, stored as awaiting). Wallet addresses are joined from wallet_user, not stored on the report."
+          }
+        }
+      }
+    },
+    "/v1/admin/diagnostics/reports/bulk-delete": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Reports and their stored logs deleted. Body {ids:[...], reason, confirm:true}; at most 200 explicit ids, no filter-based deletion. Body: {deleted: references, failed: ids}."
+          },
+          "207": {
+            "description": "Some logs could not be removed from storage; those reports are kept so the delete can be retried."
+          }
+        }
+      }
+    },
+    "/v1/admin/diagnostics/reports/{id}": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "One diagnostic report: {report}."
+          }
+        }
+      },
+      "delete": {
+        "responses": {
+          "200": {
+            "description": "Report and its stored log deleted. Body {reason, confirm:true}. The log object is removed before the row; the row delete and the audit event share one transaction."
+          },
+          "207": {
+            "description": "The stored log could not be removed; the report is kept."
+          }
+        }
+      }
+    },
+    "/v1/admin/diagnostics/reports/{id}/log": {
+      "get": {
+        "parameters": [
+          {
+            "name": "level",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Parsed log lines served through the admin API (never a presigned URL). Body: {items, total, offset, limit}; limit at most 500."
+          },
+          "404": {
+            "description": "The report has no stored log."
+          }
+        }
+      }
+    },
+    "/v1/admin/diagnostics/reports/{id}/log/raw": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "The stored NDJSON as a download: Content-Type text/plain; charset=utf-8, Content-Disposition attachment, X-Content-Type-Options nosniff."
+          }
+        }
+      }
+    },
+    "/v1/admin/diagnostics/reports/{id}/status": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Status changed to new|triaged|closed and audited. Body {status, note?}."
+          }
+        }
+      }
+    },
     "/v1/admin/installations": {
       "get": {
         "responses": {
@@ -256,7 +449,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Verified APK releases available as OTA bases"
+            "description": "Verified APK releases available as OTA bases. Each item carries nativeFingerprint: the @expo/fingerprint digest the build machine recorded for that APK, or null for releases built before that was recorded. A null fingerprint means the release cannot be used as an OTA base - POST /v1/admin/builds rejects it with 422."
           }
         }
       }
@@ -775,6 +968,228 @@
           },
           "404": {
             "description": "Branding asset not found"
+          }
+        }
+      }
+    },
+    "/v1/mobile/diagnostics/reports": {
+      "post": {
+        "parameters": [
+          {
+            "name": "X-Installation-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Installation id; must match the installation credential sent as 'Authorization: Installation <credential>'."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "reportId",
+                  "kind",
+                  "occurredAt",
+                  "app"
+                ],
+                "properties": {
+                  "reportId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{16,80}$",
+                    "description": "Client-generated idempotency key. Resubmitting the same id from the same installation returns the same reference with 200."
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "user",
+                      "crash",
+                      "crash_auto"
+                    ]
+                  },
+                  "note": {
+                    "type": "string",
+                    "description": "What the user saw; clipped to 200 characters. Not allowed for crash_auto."
+                  },
+                  "occurredAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "crash": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "fingerprint",
+                      "errorName"
+                    ],
+                    "properties": {
+                      "fingerprint": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{16}$"
+                      },
+                      "errorName": {
+                        "type": "string"
+                      }
+                    },
+                    "description": "Required for crash and crash_auto, forbidden for user."
+                  },
+                  "app": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "version",
+                      "buildNumber",
+                      "runtimeVersion",
+                      "otaChannel",
+                      "distributionChannel"
+                    ],
+                    "properties": {
+                      "version": {
+                        "type": "string"
+                      },
+                      "buildNumber": {
+                        "type": "string"
+                      },
+                      "runtimeVersion": {
+                        "type": "string"
+                      },
+                      "otaChannel": {
+                        "type": "string"
+                      },
+                      "distributionChannel": {
+                        "type": "string"
+                      },
+                      "launchSource": {
+                        "type": "string",
+                        "enum": [
+                          "embedded",
+                          "ota"
+                        ]
+                      },
+                      "runningUpdateId": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "locale": {
+                        "type": "string"
+                      },
+                      "osVersion": {
+                        "type": "string"
+                      },
+                      "deviceClass": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "context": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "screen": {
+                        "type": "string"
+                      },
+                      "lastRequestId": {
+                        "type": "string"
+                      },
+                      "networkType": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Report recorded. Body: {reportId, reference, logUpload:{required, maxBytes?, expiresAt?}}. reference is 8 Crockford base32 characters for the user to read out to support. The report exists from this point on; the log is optional. logUpload.required is false when the tenant has no usable log storage."
+          },
+          "200": {
+            "description": "Same reportId resubmitted from the same installation: the original reference is returned and nothing new is recorded."
+          },
+          "400": {
+            "description": "Malformed body, including any unknown field. Identity (tenant, user, address, installation) is never accepted from the body; the server derives it from the host, the installation credential and the installation's active session."
+          },
+          "401": {
+            "description": "Installation credential missing, invalid, expired or revoked."
+          },
+          "403": {
+            "description": "DIAGNOSTIC_NOT_ELIGIBLE: the installation has never completed a heartbeat."
+          },
+          "404": {
+            "description": "Diagnostic reports are switched off for this tenant (features.diagnosticsEnabled=false)."
+          },
+          "413": {
+            "description": "Metadata larger than 8 KB."
+          },
+          "422": {
+            "description": "Body parsed but a field is invalid."
+          },
+          "429": {
+            "description": "DIAGNOSTIC_QUOTA_EXCEEDED (per installation: user+crash 5/hour and 20/day, crash_auto 3/day; per source IP 20/hour) or DIAGNOSTIC_TENANT_QUOTA_EXCEEDED (per tenant 2000 reports or 200 MB per 24 hours)."
+          }
+        }
+      }
+    },
+    "/v1/mobile/diagnostics/reports/{reportId}/log": {
+      "put": {
+        "parameters": [
+          {
+            "name": "reportId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Installation-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Installation id; must match the installation credential sent as 'Authorization: Installation <credential>'."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-ndjson": {
+              "schema": {
+                "type": "string",
+                "description": "Uncompressed NDJSON, one {at, level, tag, message, fields?} per line; at most 512 KB. level is info|warn|error, tag is net|config|ota|wallet|nav|crash, fields values are scalars. The server re-serialises every line: invalid lines, lines over 8 KB, lines past 2000, unknown keys and non-scalar field values are dropped; messages and string fields are redacted again before storage."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Log stored. Body: {reportId, reference, entryCount, droppedLines}."
+          },
+          "404": {
+            "description": "No such report for this installation (another installation's report is indistinguishable from a missing one), or the feature is switched off."
+          },
+          "409": {
+            "description": "DIAGNOSTIC_LOG_NOT_ACCEPTED: the report already has a log, has no log storage, or the 30-minute upload window has passed."
+          },
+          "413": {
+            "description": "Log larger than 512 KB."
+          },
+          "415": {
+            "description": "A Content-Encoding other than identity was sent. Compressed uploads are refused."
+          },
+          "429": {
+            "description": "Tenant byte budget exhausted."
+          },
+          "503": {
+            "description": "Log storage is unavailable."
           }
         }
       }
@@ -1834,7 +2249,16 @@
     "/v1/admin/builds": {
       "get": {
         "summary": "List build jobs for this tenant",
-        "description": "Newest first. Each item carries status, the resolved commit, the artifact sha256 and a bounded log tail. Also returns `next` — the version and build number to default the queue form to, per platform, worked out from both app_releases and the build jobs still queued or running; a tenant with no packages yet gets 1.0.0/1, otherwise the highest used version gets a patch bump and the build number is incremented. `gitRef` is the branch every build is pinned to; the console shows it read-only because the queue endpoint ignores whatever the request carries.",
+        "description": "Newest first, with server-side filtering and cursor pagination. Each item carries status, the resolved commit, the artifact sha256 and a bounded log tail. Filters include kind (apk/ota), platform, status, exact version and q (job id, version, commit, branch or builder). Also returns `next` — the version and build number to default the queue form to, per platform, worked out from both app_releases and the build jobs still queued or running; a tenant with no packages yet gets 1.0.0/1, otherwise the highest used version gets a patch bump and the build number is incremented. `gitRef` is the branch every build is pinned to; the console shows it read-only because the queue endpoint ignores whatever the request carries.",
+        "parameters": [
+          { "name": "kind", "in": "query", "schema": { "type": "string", "enum": ["apk", "ota"] } },
+          { "name": "platform", "in": "query", "schema": { "type": "string", "enum": ["android", "ios"] } },
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["queued", "claimed", "running", "succeeded", "failed", "canceled"] } },
+          { "name": "version", "in": "query", "schema": { "type": "string" } },
+          { "name": "q", "in": "query", "schema": { "type": "string" } },
+          { "name": "cursor", "in": "query", "schema": { "type": "string" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 } }
+        ],
         "responses": {
           "200": {
             "description": "Build jobs"
@@ -1846,7 +2270,7 @@
       },
       "post": {
         "summary": "Queue a build",
-        "description": "Queues a build for this tenant. The job carries parameters only (tenant, version, build number) and never a command: the server must not be able to execute anything on the machine that holds the Android signing keystore. gitRef in the request body is ignored — every build is pinned to the branch reported by GET /v1/admin/builds, because being able to pick a branch would mean being able to ship a production-signed package built from anywhere. Both version and buildNumber must be strictly greater than the highest already used by this tenant and platform, counting app_releases as well as build jobs that are still queued or running (failed and canceled jobs free their numbers again). Checking the version here rather than at upload time matters: otherwise a doomed build occupies the build machine for minutes and is only rejected once it is finished.",
+        "description": "kind defaults to \"apk\" (compile an installable package). kind=\"ota\" queues a hot-update build instead: it takes baseReleaseId and applyStrategy rather than version and buildNumber, needs no signing key on the build machine (OTA manifests are signed by the server when they are served), and produces a verified OTA revision that still has to be published by hand. An OTA job is refused when the tenant has no OTA signing key, when the base release carries no runtimeVersion, or when another OTA job for the same tenant and platform is still in flight (OTA_BUILD_ALREADY_QUEUED) - the queue is shared across tenants and OTA jobs have no build-number monotonicity to limit them. channel is never taken from the request: it is compiled into the base APK, so it comes from the tenant's composed identity.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1869,6 +2293,9 @@
           },
           "409": {
             "description": "BUILD_NUMBER_NOT_INCREASING: this build number is not greater than the highest already used. BUILD_VERSION_NOT_INCREASING: this version is not greater than the latest release for this platform, so the upload would be rejected after a full build BUILD_KEYSTORE_UNUSABLE: the build machine has already reported that it cannot open this tenant's sealed signing keystore, so the build would fail at unseal time after occupying the machine; the verdict is tied to the current keystore version and clears as soon as the keystore is replaced."
+          },
+          "422": {
+            "description": "OTA_BASE_RELEASE_INVALID: this release cannot be used as an OTA base - it is not verified/active, it has no runtimeVersion, or it has no recorded native fingerprint (built before the fingerprint was recorded, so there is no way to tell whether the update is JS-only). INVALID_OTA_APPLY_STRATEGY: applyStrategy must be next_launch or immediate."
           }
         }
       }
@@ -2039,7 +2466,7 @@
     "/v1/build-agent/claim": {
       "post": {
         "summary": "Claim the next queued build",
-        "description": "Atomically claims the oldest queued job for the requested platforms (FOR UPDATE SKIP LOCKED, so two agents never get the same job) and returns its parameters together with the tenant slug and the tenant OTA code signing certificate. The private key is never returned. Shipping the certificate with the job is what keeps the certificate compiled into the app in sync with the key the server signs with. Returns 204 when the queue is empty. Authenticated with x-build-agent-token, a credential kept separate from the admin key: a compromised build machine should yield the build queue, not the whole admin surface.",
+        "description": "Atomically claims the oldest queued job for the requested platforms (FOR UPDATE SKIP LOCKED, so two agents never get the same job) and returns its parameters together with the tenant slug and the tenant OTA code signing certificate. The private key is never returned. icons is a list of file NAMES, not image bytes: the agent fetches each one from GET /v1/build-agent/jobs/{id}/icons/{name}. They were inlined as base64 until 2026-09-13, when real 2048x2048 icons made this response 5.1 MB, past the agent 1 MiB read cap - the truncated JSON could not be parsed, and because the row is marked claimed before the response is written, the job was stranded forever. Claiming also reaps jobs whose agent stopped reporting for longer than the heartbeat timeout, which is what releases their build numbers. Shipping the certificate with the job is what keeps the certificate compiled into the app in sync with the key the server signs with. Returns 204 when the queue is empty. Authenticated with x-build-agent-token, a credential kept separate from the admin key: a compromised build machine should yield the build queue, not the whole admin surface.",
         "requestBody": {
           "required": true,
           "content": {
@@ -2196,6 +2623,60 @@
         }
       }
     },
+    "/v1/build-agent/jobs/{id}/icons/{name}": {
+      "get": {
+        "summary": "Download one launcher icon for this build",
+        "description": "Returns the raw PNG for one of icon.png, android-icon-foreground.png, android-icon-background.png, android-icon-monochrome.png - the names the claim response lists in icons, which are also the paths app.config.ts reads. An unset background layer is generated here as a solid fill from identity.iconBackgroundColor, so a tenant only has to upload three. Any other name is 404, so the name cannot be used to read arbitrary files. Authenticated with x-build-agent-token; the job id scopes the request to that job's tenant.",
+        "responses": {
+          "200": {
+            "description": "image/png"
+          },
+          "401": {
+            "description": "BUILD_AGENT_AUTH_REQUIRED"
+          },
+          "404": {
+            "description": "BUILD_ICON_NOT_FOUND"
+          }
+        }
+      }
+    },
+    "/v1/build-agent/jobs/{id}/ota-uploads": {
+      "post": {
+        "summary": "Upload ticket for an OTA build job",
+        "description": "Same ticket as the console OTA upload, but baseReleaseId and channel come from the build job row rather than the request: they decide which devices get this package. The agent only sends fileName and size. Authenticated with x-build-agent-token; the job id scopes the request to that job's tenant. 409 BUILD_JOB_NOT_OTA when the job is an APK build.",
+        "responses": {
+          "201": {
+            "description": "Temporary OTA upload ticket"
+          },
+          "401": {
+            "description": "BUILD_AGENT_AUTH_REQUIRED"
+          },
+          "409": {
+            "description": "BUILD_JOB_NOT_OTA or BUILD_JOB_NOT_RUNNING"
+          }
+        }
+      }
+    },
+    "/v1/build-agent/jobs/{id}/ota-release": {
+      "post": {
+        "summary": "Create the OTA revision for a build job",
+        "description": "Base release, channel, apply strategy and release notes are all taken from the build job row; the agent sends only the artifact token and the commit it built. Runs the same validation as the console upload path: manifest/runtime/applicationId binding, identity pinning (OTA_IDENTITY_MISMATCH) and the native fingerprint gate (OTA_NATIVE_CHANGED). The revision lands as verified - publishing stays a separate console action with its own reason and confirmation.",
+        "responses": {
+          "201": {
+            "description": "Verified OTA revision created"
+          },
+          "401": {
+            "description": "BUILD_AGENT_AUTH_REQUIRED"
+          },
+          "409": {
+            "description": "BUILD_JOB_NOT_OTA or BUILD_JOB_NOT_RUNNING"
+          },
+          "422": {
+            "description": "OTA_IDENTITY_MISMATCH, OTA_NATIVE_CHANGED, OTA_BASE_FINGERPRINT_MISSING or the existing manifest errors"
+          }
+        }
+      }
+    },
     "/v1/build-agent/jobs/{id}/release": {
       "post": {
         "summary": "Turn the uploaded artifact into a release record",
@@ -2321,6 +2802,20 @@
           },
           "409": {
             "description": "NO_PENDING_AGENT_KEY, AGENT_KEY_FINGERPRINT_MISMATCH"
+          }
+        }
+      }
+    },
+    "/v1/admin/app-identity": {
+      "get": {
+        "summary": "The tenant app identity the server composes",
+        "description": "Returns the same synthesized tenant.json that build jobs carry to the build machine, bound to the version and build number of the currently active Android release. OTA packages bake this identity into their manifest extra (apiBaseUrl, scopeKey, appVersion, buildNumber) and the app reads that copy after applying an update, so an OTA must be built from exactly the identity the running APK has. The repository copy under tenants/<slug>/tenant.json stopped being authoritative on 2026-09-12 and drifts (anyfun sat at 1.3.7 while 1.3.14 was shipping). Public identity only - package name, signer fingerprint and bootstrap signer address are compiled into every APK; no private keys.",
+        "responses": {
+          "200": {
+            "description": "{tenantDirectory, release:{id,version,buildNumber}, manifest}"
+          },
+          "409": {
+            "description": "APP_IDENTITY_NO_ACTIVE_RELEASE or APP_IDENTITY_INCOMPLETE"
           }
         }
       }
