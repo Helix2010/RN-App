@@ -3,6 +3,7 @@ import {
   installGlobalCrashCapture,
   recordCrash,
   resetCrashCaptureForTest,
+  setFatalErrorPresenter,
 } from "./crash-capture";
 import {
   clearLogs,
@@ -89,6 +90,64 @@ describe("installGlobalCrashCapture", () => {
     });
     // RN 自己的红屏与崩溃行为必须照旧
     expect(previous).toHaveBeenCalledWith(error, true);
+  });
+
+  describe("in a release build", () => {
+    const dev = __DEV__;
+    const setDev = (value: boolean) => {
+      (globalThis as unknown as { __DEV__: boolean }).__DEV__ = value;
+    };
+    beforeEach(() => setDev(false));
+    afterEach(() => setDev(dev));
+
+    // RN 的默认处理器遇到致命错误会销毁 React 实例：进程还在，界面只剩白屏
+    it("hands a fatal error to the registered presenter instead of the default handler", () => {
+      const previous = jest.fn();
+      ErrorUtils.setGlobalHandler(previous);
+      installGlobalCrashCapture();
+      const presenter = jest.fn();
+      setFatalErrorPresenter(presenter);
+
+      const error = new Error("fatal");
+      ErrorUtils.getGlobalHandler()(error, true);
+
+      expect(presenter).toHaveBeenCalledWith(error);
+      expect(previous).not.toHaveBeenCalled();
+      expect(snapshotLogs()[0]?.fields).toMatchObject({
+        source: "global",
+        fatal: true,
+      });
+    });
+
+    it("falls back to the default handler when nothing is registered or the presenter throws", () => {
+      const previous = jest.fn();
+      ErrorUtils.setGlobalHandler(previous);
+      installGlobalCrashCapture();
+
+      const unregistered = new Error("before the boundary mounted");
+      ErrorUtils.getGlobalHandler()(unregistered, true);
+      expect(previous).toHaveBeenLastCalledWith(unregistered, true);
+
+      setFatalErrorPresenter(() => {
+        throw new Error("crash page broke");
+      });
+      const broken = new Error("fatal");
+      ErrorUtils.getGlobalHandler()(broken, true);
+      expect(previous).toHaveBeenLastCalledWith(broken, true);
+    });
+
+    it("leaves non-fatal errors to the default handler", () => {
+      const previous = jest.fn();
+      ErrorUtils.setGlobalHandler(previous);
+      installGlobalCrashCapture();
+      const presenter = jest.fn();
+      setFatalErrorPresenter(presenter);
+
+      const error = new Error("minor");
+      ErrorUtils.getGlobalHandler()(error, false);
+      expect(presenter).not.toHaveBeenCalled();
+      expect(previous).toHaveBeenCalledWith(error, false);
+    });
   });
 
   it("installs once even when called again after a hot reload", () => {

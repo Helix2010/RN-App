@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -6,6 +7,10 @@ import {
 } from "@testing-library/react-native";
 import { Text } from "react-native";
 import { RootErrorBoundary } from "./root-error-boundary";
+import {
+  installGlobalCrashCapture,
+  resetCrashCaptureForTest,
+} from "../core/diagnostics/crash-capture";
 import {
   clearLogs,
   resetSecretLeakCount,
@@ -20,6 +25,11 @@ jest.mock("expo-crypto", () => ({
   CryptoDigestAlgorithm: { SHA256: "SHA-256" },
   digestStringAsync: async () => "a1b2c3d4e5f60718".repeat(4),
   randomUUID: () => "0123456789ab4def8123456789abcdef",
+}));
+const mockReload = jest.fn();
+jest.mock("expo-updates", () => ({
+  ...jest.requireActual("expo-updates"),
+  reloadAsync: (...args: unknown[]) => mockReload(...args),
 }));
 const mockSubmit = jest.fn();
 jest.mock("../core/diagnostics/report-service", () => ({
@@ -90,6 +100,41 @@ describe("RootErrorBoundary", () => {
     explode = false;
     await fireEvent.press(screen.getByTestId("root-error-retry"));
     expect(screen.getByTestId("child")).toBeTruthy();
+  });
+
+  // 发布构建里致命全局异常不再交给 RN 的默认处理器（那会销毁 React 实例、留下白屏）
+  it("shows a restartable crash page for a fatal global error in a release build", async () => {
+    const dev = __DEV__;
+    const original = ErrorUtils.getGlobalHandler();
+    const previous = jest.fn();
+    (globalThis as unknown as { __DEV__: boolean }).__DEV__ = false;
+    ErrorUtils.setGlobalHandler(previous);
+    installGlobalCrashCapture();
+    mockReload.mockResolvedValue(undefined);
+    explode = false;
+    try {
+      await render(
+        <RootErrorBoundary>
+          <Child />
+        </RootErrorBoundary>,
+      );
+      expect(screen.getByTestId("child")).toBeTruthy();
+
+      await act(async () => {
+        ErrorUtils.getGlobalHandler()(new Error("timer exploded"), true);
+      });
+      expect(screen.getByTestId("root-error-boundary")).toBeTruthy();
+      expect(screen.getByText(/timer exploded/)).toBeTruthy();
+      expect(previous).not.toHaveBeenCalled();
+      // 模块级状态可能已经坏了：只给重启，不给重挂载
+      expect(screen.queryByTestId("root-error-retry")).toBeNull();
+      await fireEvent.press(screen.getByTestId("root-error-restart"));
+      expect(mockReload).toHaveBeenCalledTimes(1);
+    } finally {
+      (globalThis as unknown as { __DEV__: boolean }).__DEV__ = dev;
+      ErrorUtils.setGlobalHandler(original);
+      resetCrashCaptureForTest();
+    }
   });
 
   it("says so when the report fails, and does not crash itself", async () => {

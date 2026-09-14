@@ -53,3 +53,15 @@ describe("ConnectWalletSheet recovery panel", () => {
     );
   });
 });
+
+describe("ConnectWalletSheet footer", () => {
+  // 未登录也要能进关于页：协议、隐私、版本信息和「上报问题」都在那里
+  it("offers the About page to a guest and closes the sheet on the way", async () => {
+    useAuthSheet.getState().requestAuth();
+    await renderWithProviders(<ConnectWalletSheet />);
+    await waitFor(() => expect(screen.getByTestId("login-about")).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId("login-about"));
+    expect(useAuthSheet.getState().open).toBe(false);
+  });
+});

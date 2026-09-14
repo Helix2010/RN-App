@@ -79,7 +79,7 @@ export function ConnectWalletSheet() {
   const hasEmbedded = (accounts.data ?? []).some(
     (account) => account.connector === "embedded",
   );
-  const goToWallet = (screen: "WalletSetup" | "WalletImport") => {
+  const goTo = (screen: "WalletSetup" | "WalletImport" | "About") => {
     close();
     login.reset();
     navigation.navigate(screen);
@@ -113,7 +113,7 @@ export function ConnectWalletSheet() {
       const result = await wallet.recoverStorage("wallet.recovery.authReason");
       void queryClient.invalidateQueries({ queryKey: ["wallet-accounts"] });
       if (result.vaultArchived) {
-        goToWallet("WalletImport");
+        goTo("WalletImport");
         return;
       }
       if (result.registryArchived) {
@@ -144,7 +144,7 @@ export function ConnectWalletSheet() {
 
   // 没有钱包时不要停在一个点不动的 sheet 上，直接把用户带到创建 / 导入
   useEffect(() => {
-    if (login.state.step === "needs-wallet") goToWallet("WalletSetup");
+    if (login.state.step === "needs-wallet") goTo("WalletSetup");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [login.state.step]);
 
@@ -213,9 +213,26 @@ export function ConnectWalletSheet() {
       testID="login-sheet"
       footer={
         picking ? (
-          <Body fontSize={11} textAlign="center">
-            {t("login.terms")}
-          </Body>
+          <Row
+            justifyContent="center"
+            alignItems="center"
+            flexWrap="wrap"
+            gap="$2"
+          >
+            <Body fontSize={11} textAlign="center">
+              {t("login.terms")}
+            </Body>
+            {/* 未登录也能进关于页：协议、隐私、版本信息和「上报问题」都在那里 */}
+            <InlineText
+              fontSize={11}
+              color="$primary"
+              onPress={() => goTo("About")}
+              accessibilityRole="link"
+              testID="login-about"
+            >
+              {t("profile.about")}
+            </InlineText>
+          </Row>
         ) : undefined
       }
     >
@@ -238,8 +255,8 @@ export function ConnectWalletSheet() {
           }
           onPick={(id) => void login.connect(id)}
           hasEmbedded={hasEmbedded}
-          onCreate={() => goToWallet("WalletSetup")}
-          onImport={() => goToWallet("WalletImport")}
+          onCreate={() => goTo("WalletSetup")}
+          onImport={() => goTo("WalletImport")}
           t={t}
         />
       ) : (

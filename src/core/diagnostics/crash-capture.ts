@@ -57,10 +57,27 @@ export function recordCrash(
 }
 
 let installed = false;
+let fatalPresenter: ((error: unknown) => void) | null = null;
 
 /**
- * 接管全局未捕获异常。**串联**原来的处理器：RN 自己的红屏与致命崩溃行为必须照旧，
- * 这里只是在它之前记一笔。重复调用无副作用（热重载会让模块顶层再跑一遍）。
+ * 根错误边界登记"致命错误由它来显示"，卸载时传 null 注销。
+ *
+ * 发布构建里 RN 的默认处理器遇到致命错误会销毁 React 实例：进程还活着，界面只剩白屏，
+ * 用户只能自己把 App 划掉。有人登记时改由根错误边界显示崩溃页（重启 / 上报）。
+ */
+export function setFatalErrorPresenter(
+  presenter: ((error: unknown) => void) | null,
+): void {
+  fatalPresenter = presenter;
+}
+
+/**
+ * 接管全局未捕获异常：先记一笔，再决定交给谁显示。
+ * - 开发构建：照旧交给原处理器（红屏）；
+ * - 发布构建的致命错误：交给根错误边界登记的显示函数；没登记（边界还没挂上）或显示失败，
+ *   退回原处理器；
+ * - 非致命错误：照旧交给原处理器。
+ * 重复调用无副作用（热重载会让模块顶层再跑一遍）。
  */
 export function installGlobalCrashCapture(): void {
   if (installed || typeof ErrorUtils === "undefined") return;
@@ -70,15 +87,24 @@ export function installGlobalCrashCapture(): void {
     try {
       recordCrash("global", error, { fatal: isFatal === true });
     } catch {
-      // 记录失败绝不能挡住原处理器
+      // 记录失败绝不能挡住后面的显示
+    }
+    if (isFatal === true && !__DEV__ && fatalPresenter) {
+      try {
+        fatalPresenter(error);
+        return;
+      } catch {
+        // 崩溃页自己出错：退回 RN 的默认处理
+      }
     }
     previous(error, isFatal);
   });
 }
 
-/** 仅测试用：让下一次 install 重新接管。 */
+/** 仅测试用：让下一次 install 重新接管，并清掉登记的显示函数。 */
 export function resetCrashCaptureForTest(): void {
   installed = false;
+  fatalPresenter = null;
 }
 
 /**

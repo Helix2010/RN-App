@@ -89,8 +89,6 @@ export const Sheet = forwardRef<
     [locked, theme.backdrop.val],
   );
 
-  const Body = scroll ? BottomSheetScrollView : BottomSheetView;
-
   return (
     <BottomSheetModal
       ref={modal}
@@ -119,7 +117,7 @@ export const Sheet = forwardRef<
       }}
       accessibilityViewIsModal
     >
-      <Body style={{ paddingBottom: insets.bottom + 16 }} testID={testID}>
+      <SheetBody scroll={scroll} bottomInset={insets.bottom} testID={testID}>
         {title || !locked ? (
           <XStack
             alignItems="center"
@@ -162,7 +160,33 @@ export const Sheet = forwardRef<
             {footer}
           </YStack>
         ) : null}
-      </Body>
+      </SheetBody>
     </BottomSheetModal>
   );
 });
+
+/**
+ * 底部留白要落在**内容**上：ScrollView 的 style 内边距不作用于滚动内容，
+ * 可滚动的 sheet 以前把最后一块（通常是 footer 按钮）压在系统手势条下面。
+ */
+function SheetBody({
+  scroll,
+  bottomInset,
+  testID,
+  children,
+}: PropsWithChildren<{
+  scroll: boolean;
+  bottomInset: number;
+  testID?: string;
+}>) {
+  const padding = { paddingBottom: bottomInset + 16 };
+  return scroll ? (
+    <BottomSheetScrollView contentContainerStyle={padding} testID={testID}>
+      {children}
+    </BottomSheetScrollView>
+  ) : (
+    <BottomSheetView style={padding} testID={testID}>
+      {children}
+    </BottomSheetView>
+  );
+}

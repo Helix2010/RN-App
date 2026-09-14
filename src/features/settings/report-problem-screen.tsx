@@ -32,6 +32,7 @@ import {
   TextField,
 } from "../../design-system";
 import type { RootStackParamList } from "../../navigation/types";
+import { platformLabel } from "./version-info";
 
 /**
  * 上报问题（设计 diagnostic-report-2026-09-14 §7.2）。
@@ -229,7 +230,10 @@ export function ReportProblemScreen({
                 />
                 <DetailRow
                   label={t("update.platform")}
-                  value={`${prepared.app.deviceClass} ${prepared.app.osVersion}`}
+                  value={platformLabel(
+                    prepared.app.deviceClass,
+                    prepared.app.osVersion,
+                  )}
                 />
                 {prepared.context.screen ? (
                   <DetailRow

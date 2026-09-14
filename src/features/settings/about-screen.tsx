@@ -30,7 +30,7 @@ import { updateCheckRowValue } from "../updates/update-check-row";
 import { useManualUpdateCheck } from "../updates/use-manual-update-check";
 import { useApkDownloadStore } from "../../core/updates/apk-download-manager";
 import { getCurrentUpdateMetadata } from "../../core/updates/update-service";
-import { otaRevisionState } from "./version-info";
+import { otaRevisionState, platformLabel } from "./version-info";
 
 /** S-06 关于：租户品牌、当前版本、版本检查和只读版本信息。 */
 export function AboutScreen({
@@ -189,12 +189,7 @@ export function AboutScreen({
           />
           <DetailRow
             label={t("update.platform")}
-            // Android 上 Platform.Version 是 API 级别（35 = Android 15），不能写成"Android 35"
-            value={
-              config.app.platform === "ios"
-                ? `iOS ${String(Platform.Version)}`
-                : `Android API ${String(Platform.Version)}`
-            }
+            value={platformLabel(config.app.platform, Platform.Version)}
           />
         </VersionInfoGroup>
         <VersionInfoGroup title={t("update.groupOta")}>

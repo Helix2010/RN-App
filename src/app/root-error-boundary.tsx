@@ -1,8 +1,13 @@
+import { StatusBar } from "expo-status-bar";
+import * as Updates from "expo-updates";
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { redactSecrets } from "../core/security/secret-scan";
 import { systemLocale } from "../core/config/system-locale";
-import { recordCrash } from "../core/diagnostics/crash-capture";
+import {
+  recordCrash,
+  setFatalErrorPresenter,
+} from "../core/diagnostics/crash-capture";
 import {
   completeManualCrashReport,
   crashFingerprint,
@@ -19,8 +24,10 @@ import {
 } from "../core/diagnostics/report-service";
 
 /**
- * 根级错误边界。任何渲染期异常到这里都变成一个能操作的界面，而不是白屏：
- * - 重试：重新挂载整棵树（导航状态一起重置，等价于"回到首页"）；
+ * 根级错误边界。渲染期异常和发布构建里的致命全局异常到这里都变成一个能操作的界面，
+ * 而不是白屏：
+ * - 重试（渲染崩溃）：重新挂载整棵树（导航状态一起重置，等价于"回到首页"）；
+ * - 重启应用（致命全局异常）：模块级状态可能已经坏了，重挂载不够，重新加载 JS；
  * - 上报问题：发一份崩溃报告，原地显示参考号（设计 diagnostic-report-2026-09-14 §7.4）。
  *   以前是"复制诊断信息"，让用户自己把一大段文本发给客服；现在念一个参考号就够了。
  *
@@ -31,13 +38,21 @@ import {
  * 组件和一份内置的中英文案。
  */
 
-type State = { error: Error | null; diagnosticId: string; info: string };
+type State = {
+  error: Error | null;
+  diagnosticId: string;
+  info: string;
+  /** render = 渲染崩溃（可重试）；global = 致命全局异常（只能重启） */
+  source: "render" | "global";
+};
 
 const COPY = {
   zh: {
     title: "应用遇到了问题",
     body: "这一页没能正常显示。你可以重试；如果反复出现，请上报给我们。",
+    globalBody: "应用运行出错了。请重启应用；如果反复出现，请上报给我们。",
     retry: "重试",
+    restart: "重启应用",
     report: "上报问题",
     sending: "正在上报…",
     reference: "参考号",
@@ -47,7 +62,10 @@ const COPY = {
   en: {
     title: "Something went wrong",
     body: "This screen could not be shown. You can retry; if it keeps happening, report it to us.",
+    globalBody:
+      "The app ran into an error. Restart it; if it keeps happening, report it to us.",
     retry: "Retry",
+    restart: "Restart app",
     report: "Report problem",
     sending: "Sending…",
     reference: "Reference",
@@ -76,13 +94,35 @@ export class RootErrorBoundary extends Component<
     error: null,
     diagnosticId: "",
     info: "",
+    source: "render",
     report: { kind: "idle" },
     generation: 0,
   };
 
   static getDerivedStateFromError(error: Error): Partial<State> {
-    return { error, diagnosticId: newDiagnosticId() };
+    return { error, diagnosticId: newDiagnosticId(), source: "render" };
   }
+
+  override componentDidMount(): void {
+    setFatalErrorPresenter(this.presentFatal);
+  }
+
+  override componentWillUnmount(): void {
+    setFatalErrorPresenter(null);
+  }
+
+  /** 致命全局异常：已经由全局处理器记过日志和快照，这里只负责显示 */
+  private presentFatal = (thrown: unknown): void => {
+    const error =
+      thrown instanceof Error ? thrown : new Error("Non-error thrown");
+    this.setState({
+      error,
+      diagnosticId: newDiagnosticId(),
+      info: "",
+      source: "global",
+      report: { kind: "idle" },
+    });
+  };
 
   override componentDidCatch(error: Error, info: ErrorInfo): void {
     this.setState({ info: info.componentStack ?? "" });
@@ -104,9 +144,15 @@ export class RootErrorBoundary extends Component<
       error: null,
       diagnosticId: "",
       info: "",
+      source: "render",
       report: { kind: "idle" },
       generation: state.generation + 1,
     }));
+  };
+
+  /** 重新加载 JS；加载不了（开发构建、未启用 expo-updates）就退回重新挂载 */
+  private restart = (): void => {
+    Updates.reloadAsync().catch(() => this.retry());
   };
 
   /**
@@ -143,7 +189,7 @@ export class RootErrorBoundary extends Component<
   };
 
   override render(): ReactNode {
-    const { error, generation, report } = this.state;
+    const { error, generation, report, source } = this.state;
     if (!error)
       return (
         <View key={generation} style={styles.fill}>
@@ -153,19 +199,34 @@ export class RootErrorBoundary extends Component<
     const copy = systemLocale() === "en-US" ? COPY.en : COPY.zh;
     return (
       <View style={styles.screen} testID="root-error-boundary">
+        {/* 崩溃页固定浅底：状态栏图标跟着用深色，不跟系统深色模式变白 */}
+        <StatusBar style="dark" />
         <Text style={styles.title}>{copy.title}</Text>
-        <Text style={styles.body}>{copy.body}</Text>
+        <Text style={styles.body}>
+          {source === "global" ? copy.globalBody : copy.body}
+        </Text>
         <Text style={styles.mono} numberOfLines={3}>
           {error.name}: {error.message}
         </Text>
-        <Pressable
-          style={styles.primary}
-          onPress={this.retry}
-          accessibilityRole="button"
-          testID="root-error-retry"
-        >
-          <Text style={styles.primaryText}>{copy.retry}</Text>
-        </Pressable>
+        {source === "global" ? (
+          <Pressable
+            style={styles.primary}
+            onPress={this.restart}
+            accessibilityRole="button"
+            testID="root-error-restart"
+          >
+            <Text style={styles.primaryText}>{copy.restart}</Text>
+          </Pressable>
+        ) : (
+          <Pressable
+            style={styles.primary}
+            onPress={this.retry}
+            accessibilityRole="button"
+            testID="root-error-retry"
+          >
+            <Text style={styles.primaryText}>{copy.retry}</Text>
+          </Pressable>
+        )}
         {report.kind === "done" ? (
           <View style={styles.referenceBox} testID="root-error-reported">
             <Text style={styles.body}>{copy.reference}</Text>

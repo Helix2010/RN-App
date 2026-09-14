@@ -1,4 +1,4 @@
-import { otaRevisionState } from "./version-info";
+import { otaRevisionState, platformLabel } from "./version-info";
 
 const RUNNING = "7c5c1363-8685-42b2-864e-38b6790471ca";
 const OTHER = "0f1e2d3c-4b5a-4968-8776-655443322110";
@@ -37,5 +37,16 @@ describe("otaRevisionState", () => {
     ],
   ])("%s", (_name, running, delivered, expected) => {
     expect(otaRevisionState(running, delivered)).toEqual(expected);
+  });
+});
+
+describe("platformLabel", () => {
+  it.each([
+    ["android", 35, "Android API 35"],
+    ["android-phone", "36", "Android API 36"],
+    ["ios", "18.2", "iOS 18.2"],
+    ["ios-device", "17.5", "iOS 17.5"],
+  ])("%s %s → %s", (platform, osVersion, expected) => {
+    expect(platformLabel(platform, osVersion)).toBe(expected);
   });
 });

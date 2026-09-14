@@ -5,6 +5,20 @@
  * 而修订号 `rev N` 两边都认。bootstrap 已经下发了服务端最新那条 OTA 的修订号和 update id，
  * 只有两者对得上，才能说"本机正在跑的就是 rev N"。
  */
+/**
+ * 「平台」一行，版本信息与上报预览共用。Android 上报的是 API 级别（35 = Android 15），
+ * 不能写成"Android 35"。`platform` 认 config 里的 android / ios，也认设备描述里的
+ * android-phone / ios-device。
+ */
+export function platformLabel(
+  platform: string,
+  osVersion: string | number,
+): string {
+  return platform.startsWith("ios")
+    ? `iOS ${String(osVersion)}`
+    : `Android API ${String(osVersion)}`;
+}
+
 export type OtaRevisionState =
   | { kind: "embedded" }
   | { kind: "revision"; revision: number }
