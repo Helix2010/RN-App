@@ -80,7 +80,7 @@ type InstallationReport = {
  * 正在运行的 bundle 来源。expo-updates 关闭（开发构建）时跑的就是打包进去的 bundle，按内置算；
  * 开着且不是内置启动却拿不到 update id 是不可能的状态，原样上报让服务端 422 暴露出来，不猜。
  */
-function runningBundle(): Pick<
+export function runningBundle(): Pick<
   InstallationReport,
   "launchSource" | "runningUpdateId"
 > {
@@ -109,9 +109,19 @@ async function installationReport(
     brandingVersion: config.branding?.version ?? null,
     locale: config.localization.selectedLocale,
     theme,
+    ...deviceDescriptor(),
+    ...(await integritySignals()),
+  };
+}
+
+/** 系统版本与设备类别。心跳与诊断上报共用，两边对同一台设备必须报出同一个值。 */
+export function deviceDescriptor(): Pick<
+  InstallationReport,
+  "osVersion" | "deviceClass"
+> {
+  return {
     osVersion: String(Platform.Version),
     deviceClass: Platform.OS === "android" ? "android-phone" : "ios-device",
-    ...(await integritySignals()),
   };
 }
 

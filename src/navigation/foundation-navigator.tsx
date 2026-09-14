@@ -11,6 +11,7 @@ import { AppShellScreen } from "../features/foundation/app-shell-screen";
 import { ModuleGate } from "../features/foundation/module-gate";
 import { SeriesScreen } from "../features/predict/ui/series-screen";
 import { SettingsScreen } from "../features/settings/settings-screen";
+import { ReportProblemScreen } from "../features/settings/report-problem-screen";
 import { LanguageSettingsScreen } from "../features/settings/language-settings-screen";
 import { AppearanceSettingsScreen } from "../features/settings/appearance-settings-screen";
 import { NotificationSettingsScreen } from "../features/settings/notification-settings-screen";
@@ -341,6 +342,7 @@ export function FoundationNavigator() {
           component={NotificationSettingsScreen}
         />
         <Stack.Screen name="About" component={AboutScreen} />
+        <Stack.Screen name="ReportProblem" component={ReportProblemScreen} />
         <Stack.Screen name="SecurityCenter" component={SecurityCenterScreen} />
       </Stack.Navigator>
       <SessionRevalidator />

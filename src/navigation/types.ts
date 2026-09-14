@@ -36,5 +36,6 @@ export type RootStackParamList = {
   Send: { chain?: ChainId } | undefined;
   NotificationSettings: undefined;
   About: undefined;
+  ReportProblem: undefined;
   SecurityCenter: undefined;
 };

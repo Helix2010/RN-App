@@ -26,8 +26,34 @@ describe("AboutScreen", () => {
 
     await fireEvent.press(screen.getByTestId("about-changelog"));
     expect(screen.getAllByText("版本信息").length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText("1.2.2 (16)")).toBeTruthy();
+    expect(screen.getByText("1.2.2（Build 16）")).toBeTruthy();
     expect(screen.getByText("0.9.0")).toBeTruthy();
+    // 那串 update id 不再出现：换成两边都认的修订号（或内置 / 未知）
+    expect(screen.getByText("OTA 修订")).toBeTruthy();
+  });
+
+  it("offers a problem report from the version information when the tenant allows it", async () => {
+    const navigation = fakeNavigation();
+    const config = createFallbackConfig("zh-CN");
+    config.features.diagnosticsEnabled = true;
+    await renderWithProviders(
+      <AboutScreen navigation={navigation} route={undefined as never} />,
+      { config: () => config },
+    );
+    await fireEvent.press(screen.getByTestId("about-changelog"));
+    await fireEvent.press(screen.getByTestId("version-info-report"));
+    expect(navigation.navigate).toHaveBeenCalledWith("ReportProblem");
+  });
+
+  it("hides the report entry when diagnostics are switched off for the tenant", async () => {
+    const config = createFallbackConfig("zh-CN");
+    config.features.diagnosticsEnabled = false;
+    await renderWithProviders(
+      <AboutScreen navigation={fakeNavigation()} route={undefined as never} />,
+      { config: () => config },
+    );
+    await fireEvent.press(screen.getByTestId("about-changelog"));
+    expect(screen.queryByTestId("version-info-report")).toBeNull();
   });
 
   // 关于页这一行以前把标题写死成"已是最新版本"，检查结果是"已下载待重启"时也没有文案，

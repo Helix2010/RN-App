@@ -68,8 +68,10 @@ export const appRuntime = {
  * 只记接口模板、失败类型、状态码、业务码、requestId、耗时。**不记**请求头、请求体、
  * 响应体——安装凭证、会话令牌、地址都在那里面。取消不记：那是调用方主动放弃，不是故障。
  */
+type HttpMethod = "GET" | "POST" | "PUT";
+
 function recordFailure(
-  method: "GET" | "POST",
+  method: HttpMethod,
   path: string,
   error: AppError,
   startedAt: number,
@@ -98,7 +100,7 @@ class ApiClient {
     options?: {
       signal?: AbortSignal;
       headers?: Record<string, string>;
-      method?: "GET" | "POST";
+      method?: HttpMethod;
       body?: string;
       /** 单次请求的超时；大响应（bootstrap）在弱网下需要比默认 8 秒更宽 */
       timeoutMs?: number;
@@ -191,23 +193,22 @@ class ApiClient {
     }
   }
 
-  async get<T>(
-    path: string,
+  /**
+   * 按移动端契约解析响应体。三个带 schema 的方法共用：契约不符与非 JSON 都记进诊断日志。
+   */
+  private async parse<T>(
+    response: Response,
     schema: z.ZodType<T>,
-    options?: {
-      signal?: AbortSignal;
-      headers?: Record<string, string>;
-      timeoutMs?: number;
-    },
+    method: HttpMethod,
+    path: string,
+    startedAt: number,
   ): Promise<T> {
-    const startedAt = now();
-    const response = await this.response(path, options);
     const requestId = response.headers.get("x-request-id") ?? undefined;
     try {
       const parsed = schema.safeParse(await response.json());
-      if (!parsed.success) {
+      if (!parsed.success)
         throw recordFailure(
-          "GET",
+          method,
           path,
           new AppError(
             "incompatible_response",
@@ -219,12 +220,11 @@ class ApiClient {
           ),
           startedAt,
         );
-      }
       return parsed.data;
     } catch (error) {
       if (error instanceof AppError) throw error;
       throw recordFailure(
-        "GET",
+        method,
         path,
         new AppError(
           "incompatible_response",
@@ -237,6 +237,20 @@ class ApiClient {
         startedAt,
       );
     }
+  }
+
+  async get<T>(
+    path: string,
+    schema: z.ZodType<T>,
+    options?: {
+      signal?: AbortSignal;
+      headers?: Record<string, string>;
+      timeoutMs?: number;
+    },
+  ): Promise<T> {
+    const startedAt = now();
+    const response = await this.response(path, options);
+    return this.parse(response, schema, "GET", path, startedAt);
   }
 
   async getText(
@@ -264,40 +278,29 @@ class ApiClient {
       method: "POST",
       body: JSON.stringify(body),
     });
-    const requestId = response.headers.get("x-request-id") ?? undefined;
-    try {
-      const parsed = schema.safeParse(await response.json());
-      if (!parsed.success)
-        throw recordFailure(
-          "POST",
-          path,
-          new AppError(
-            "incompatible_response",
-            "The server response does not match the mobile contract",
-            false,
-            requestId,
-            undefined,
-            { cause: parsed.error },
-          ),
-          startedAt,
-        );
-      return parsed.data;
-    } catch (error) {
-      if (error instanceof AppError) throw error;
-      throw recordFailure(
-        "POST",
-        path,
-        new AppError(
-          "incompatible_response",
-          "The server response is not valid JSON",
-          false,
-          requestId,
-          undefined,
-          { cause: error },
-        ),
-        startedAt,
-      );
-    }
+    return this.parse(response, schema, "POST", path, startedAt);
+  }
+
+  /** 原样发送一段文本（诊断日志的 NDJSON 用它；不做 JSON 编码）。 */
+  async put<T>(
+    path: string,
+    body: string,
+    contentType: string,
+    schema: z.ZodType<T>,
+    options?: {
+      signal?: AbortSignal;
+      headers?: Record<string, string>;
+      timeoutMs?: number;
+    },
+  ): Promise<T> {
+    const startedAt = now();
+    const response = await this.response(path, {
+      ...options,
+      headers: { "content-type": contentType, ...options?.headers },
+      method: "PUT",
+      body,
+    });
+    return this.parse(response, schema, "PUT", path, startedAt);
   }
 }
 

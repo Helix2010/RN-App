@@ -1,17 +1,21 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { fill } from "../../core/i18n/format";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRef } from "react";
+import { useRef, type ReactNode } from "react";
+import { Platform } from "react-native";
 import { useFoundationRuntime } from "../../app/runtime-context";
 import {
   Body,
   BrandMark,
   Content,
+  DetailRow,
   InlineText,
+  Label,
   Page,
   PageScroll,
   Row,
   ScreenHeader,
+  SecondaryButton,
   SectionTitle,
   Stack,
   Sheet,
@@ -26,6 +30,7 @@ import { updateCheckRowValue } from "../updates/update-check-row";
 import { useManualUpdateCheck } from "../updates/use-manual-update-check";
 import { useApkDownloadStore } from "../../core/updates/apk-download-manager";
 import { getCurrentUpdateMetadata } from "../../core/updates/update-service";
+import { otaRevisionState } from "./version-info";
 
 /** S-06 关于：租户品牌、当前版本、版本检查和只读版本信息。 */
 export function AboutScreen({
@@ -39,6 +44,20 @@ export function AboutScreen({
   const versionInfo = useRef<SheetHandle>(null);
   const hasUpdate = config.update.decision !== "none";
   const logoUri = useTenantLogoUri();
+  const revision = otaRevisionState(
+    getCurrentUpdateMetadata(),
+    config.update.ota,
+  );
+  const otaRevisionText =
+    revision.kind === "embedded"
+      ? t("update.embedded")
+      : revision.kind === "revision"
+        ? fill(t("update.otaRevisionValue"), { revision: revision.revision })
+        : revision.kind === "pending"
+          ? fill(t("update.otaRevisionPending"), {
+              revision: revision.revision,
+            })
+          : t("update.otaRevisionUnknown");
   const size = config.update.full.size
     ? `${(config.update.full.size / 1024 / 1024).toFixed(1)} MB`
     : "";
@@ -142,56 +161,84 @@ export function AboutScreen({
         closeLabel={t("action.close")}
         scroll
         testID="version-info-sheet"
+        footer={
+          config.features.diagnosticsEnabled ? (
+            <SecondaryButton
+              onPress={() => {
+                versionInfo.current?.dismiss();
+                navigation.navigate("ReportProblem");
+              }}
+              testID="version-info-report"
+            >
+              {t("diagnostics.report")}
+            </SecondaryButton>
+          ) : undefined
+        }
       >
-        <VersionInfoRow
-          label={t("update.currentVersion")}
-          value={`${config.app.version} (${config.app.buildNumber})`}
-        />
-        <VersionInfoRow
-          label={t("update.minimumVersion")}
-          value={config.update.minSupportedVersion}
-        />
-        <VersionInfoRow
-          label={t("update.latestVersion")}
-          value={config.update.latestVersion}
-        />
-        <VersionInfoRow
-          label={t("update.channel")}
-          value={config.update.full.channel}
-        />
-        <VersionInfoRow
-          label={t("update.requestId")}
-          value={config.support.diagnosticId}
-        />
-        <VersionInfoRow
-          label={t("update.release")}
-          value={config.update.full.releaseId ?? t("update.notConfigured")}
-        />
-        <VersionInfoRow
-          label={t("update.runtime")}
-          value={config.app.runtimeVersion}
-        />
-        <VersionInfoRow
-          label={t("update.otaTitle")}
-          value={
-            getCurrentUpdateMetadata().isEmbedded
-              ? t("update.embedded")
-              : (getCurrentUpdateMetadata().updateId ??
-                t("update.notConfigured"))
-          }
-        />
+        <VersionInfoGroup title={t("update.groupApp")}>
+          <DetailRow
+            label={t("update.currentVersion")}
+            value={fill(t("update.versionValue"), {
+              version: config.app.version,
+              build: config.app.buildNumber,
+            })}
+          />
+          <DetailRow
+            label={t("update.channel")}
+            value={t(`update.distribution.${config.app.distribution}`)}
+          />
+          <DetailRow
+            label={t("update.platform")}
+            value={`${config.app.platform === "ios" ? "iOS" : "Android"} ${String(Platform.Version)}`}
+          />
+        </VersionInfoGroup>
+        <VersionInfoGroup title={t("update.groupOta")}>
+          <DetailRow label={t("update.otaRevision")} value={otaRevisionText} />
+          <DetailRow
+            label={t("update.runtime")}
+            value={config.app.runtimeVersion}
+          />
+          <DetailRow
+            label={t("update.otaChannel")}
+            value={config.update.ota.channel}
+          />
+          {config.update.canary?.enrolled ? (
+            <DetailRow
+              label={t("update.canary")}
+              value={t("update.canaryEnrolled")}
+            />
+          ) : null}
+        </VersionInfoGroup>
+        <VersionInfoGroup title={t("update.groupDiagnostics")}>
+          <DetailRow
+            label={t("update.latestVersion")}
+            value={config.update.latestVersion}
+          />
+          <DetailRow
+            label={t("update.minimumVersion")}
+            value={config.update.minSupportedVersion}
+          />
+          <DetailRow
+            label={t("update.requestId")}
+            value={config.support.diagnosticId}
+          />
+        </VersionInfoGroup>
       </Sheet>
     </Page>
   );
 }
 
-function VersionInfoRow({ label, value }: { label: string; value: string }) {
+function VersionInfoGroup({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
   return (
-    <Row justifyContent="space-between" alignItems="flex-start" gap="$3">
-      <Body flex={1}>{label}</Body>
-      <Body flex={1} textAlign="right" color="$color">
-        {value}
-      </Body>
-    </Row>
+    <Stack gap="$1" marginBottom="$3">
+      <Label>{title}</Label>
+      {children}
+    </Stack>
   );
 }

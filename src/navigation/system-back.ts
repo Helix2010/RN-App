@@ -25,6 +25,7 @@ export type RootRouteName =
   | "Send"
   | "NotificationSettings"
   | "About"
+  | "ReportProblem"
   | "SecurityCenter";
 
 export function resolveSystemBack(
