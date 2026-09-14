@@ -12,7 +12,8 @@ import { Body, Page, Spinner, Stack } from "../design-system";
  * - 配置里没有 logo / 背景图就不画，没有"内置几何标"这种替身——先画替身再换成
  *   租户 logo，用户看到的就是启动图加载了两次；
  * - 配置的图片加载失败只留痕，不换别的图；
- * - 背景图是底层，logo、标题和状态文案是上层；背景图不再和品牌内容互斥。
+ * - 背景图与独立 logo / 标题互斥：背景图成功显示时不重复绘制品牌内容；背景图
+ *   缺失或加载失败时才显示独立 logo / 标题。
  *
  * 状态文案固定在底部（见 LaunchMessage），不跟着 logo 一起淡入：它说的是"程序在干
  * 什么"，不是品牌的一部分。压在 logo 底下会把两件事读成一句话，而且 pending 那一帧
@@ -146,7 +147,7 @@ export function LaunchScreen({
         testID="launch-content"
       >
         <Stack alignItems="center" gap="$4">
-          {logo && logoFailedId !== logo.assetId ? (
+          {!backgroundVisible && logo && logoFailedId !== logo.assetId ? (
             <Image
               source={{ uri: logo.localFileUrl ?? brandingAssetUrl(logo) }}
               resizeMode="contain"
@@ -159,11 +160,13 @@ export function LaunchScreen({
               testID="launch-logo"
             />
           ) : null}
-          <Stack alignItems="center" gap="$1">
-            <Body fontSize={18} color="$color" fontWeight="800">
-              {title}
-            </Body>
-          </Stack>
+          {!backgroundVisible ? (
+            <Stack alignItems="center" gap="$1">
+              <Body fontSize={18} color="$color" fontWeight="800">
+                {title}
+              </Body>
+            </Stack>
+          ) : null}
         </Stack>
       </Animated.View>
       <LaunchMessage message={message} />

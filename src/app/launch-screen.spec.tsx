@@ -39,7 +39,7 @@ describe("LaunchScreen animation start", () => {
     expect(contentStyle().transform[0]?.scale).toBe(1);
   });
 
-  it("keeps the logo and title above the background after the image loads", async () => {
+  it("hides the separate logo and title once the background image loads", async () => {
     const asset = {
       assetId: "bg1",
       fileUrl: "https://cdn.test/bg.png",
@@ -58,12 +58,12 @@ describe("LaunchScreen animation start", () => {
     expect(screen.getByTestId("launch-logo")).toBeTruthy();
     expect(screen.getByText("T")).toBeTruthy();
     await fireEvent(screen.getByTestId("launch-background"), "load");
-    expect(screen.getByTestId("launch-logo")).toBeTruthy();
-    expect(screen.getByText("T")).toBeTruthy();
+    expect(screen.queryByTestId("launch-logo")).toBeNull();
+    expect(screen.queryByText("T")).toBeNull();
     expect(screen.getByTestId("launch-scrim")).toBeTruthy();
   });
 
-  it("keeps the logo visible when the background image is already cached locally", async () => {
+  it("does not render the separate logo when the background image is already cached locally", async () => {
     await renderWithProviders(
       <LaunchScreen
         message="m"
@@ -81,8 +81,8 @@ describe("LaunchScreen animation start", () => {
         }
       />,
     );
-    expect(screen.getByTestId("launch-logo")).toBeTruthy();
-    expect(screen.getByText("T")).toBeTruthy();
+    expect(screen.queryByTestId("launch-logo")).toBeNull();
+    expect(screen.queryByText("T")).toBeNull();
     expect(screen.getByTestId("launch-background")).toBeTruthy();
   });
 
