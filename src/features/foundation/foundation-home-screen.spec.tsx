@@ -105,4 +105,39 @@ describe("FoundationHomeScreen", () => {
     await waitFor(() => expect(screen.getByText("PEPE")).toBeTruthy());
     expect(listEvents).not.toHaveBeenCalled();
   });
+
+  /**
+   * 对称的那一半：DEX 关掉时首页同样不能去要代币行情。
+   *
+   * 这里原本是漏的——`useDexTokens` 没有任何开关，首页无条件调用它，DEX 关闭的租户
+   * 每 15 秒仍然向平台要一次热门代币。只隐藏卡片不算关掉模块。
+   */
+  it("never asks the platform for DEX tokens while DEX is off", async () => {
+    const gateways = createTestGateways();
+    const listTokens = jest.spyOn(gateways.dex, "listTokens");
+    await renderWithProviders(<FoundationHomeScreen {...props()} />, {
+      gateways,
+      modules: { dex: false },
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("home-quick-actions")).toBeTruthy(),
+    );
+    expect(listTokens).not.toHaveBeenCalled();
+  });
+
+  it("stops the DEX token feed when both modules are off", async () => {
+    // Wallet-only（00）是正式形态：首页只剩钱包能力，两个平台都不该被问到
+    const gateways = createTestGateways();
+    const listTokens = jest.spyOn(gateways.dex, "listTokens");
+    const listEvents = jest.spyOn(gateways.predict, "listEvents");
+    await renderWithProviders(<FoundationHomeScreen {...props()} />, {
+      gateways,
+      modules: { predict: false, dex: false },
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("home-quick-actions")).toBeTruthy(),
+    );
+    expect(listTokens).not.toHaveBeenCalled();
+    expect(listEvents).not.toHaveBeenCalled();
+  });
 });

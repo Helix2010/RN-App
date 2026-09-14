@@ -1,13 +1,32 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useFoundationRuntime } from "../../../app/runtime-context";
 import { useGateways } from "../../../core/gateways/gateway-context";
 import type { ChainId, TokenRef } from "../../../core/gateways/types";
 import type { CandleInterval, QuoteRequest, TokenQuery } from "../model/dex";
 
+/**
+ * DEX 模块开关。这个 feature 里每一条 Query 的 `enabled` 都与它相与。
+ *
+ * 门放在这里而不是各个调用点：靠"每个页面记得传 enabled"守不住——首页的
+ * `useDexTokens` 就漏了整整一个版本，DEX 关闭的租户仍在每 15 秒向平台要一次热门代币。
+ * 隐藏入口只是视觉，模块关闭必须意味着这条链路不出网。
+ */
+function useDexEnabled(): boolean {
+  return useFoundationRuntime().config.modules.dex;
+}
+
+/** 模块关闭时调用写操作是调用方的错，直接抛——不静默吞掉，也不假装成功。 */
+function assertDexEnabled(enabled: boolean): void {
+  if (!enabled) throw new Error("The DEX module is disabled for this tenant");
+}
+
 export function useDexTokens(query: TokenQuery) {
   const { dex } = useGateways();
+  const enabled = useDexEnabled();
   return useQuery({
     queryKey: ["dex-tokens", query],
     queryFn: () => dex.listTokens(query),
+    enabled,
     staleTime: 10_000,
     refetchInterval: 15_000,
   });
@@ -18,10 +37,11 @@ export function useDexToken(
   address: string | undefined,
 ) {
   const { dex } = useGateways();
+  const enabled = useDexEnabled();
   return useQuery({
     queryKey: ["dex-token", chain, address],
     queryFn: () => dex.getToken(chain as ChainId, address as string),
-    enabled: Boolean(chain && address),
+    enabled: enabled && Boolean(chain && address),
     staleTime: 10_000,
   });
 }
@@ -32,11 +52,12 @@ export function useCandles(
   interval: CandleInterval,
 ) {
   const { dex } = useGateways();
+  const enabled = useDexEnabled();
   return useQuery({
     queryKey: ["dex-candles", chain, address, interval],
     queryFn: () =>
       dex.getCandles(chain as ChainId, address as string, interval),
-    enabled: Boolean(chain && address),
+    enabled: enabled && Boolean(chain && address),
     staleTime: 30_000,
   });
 }
@@ -46,10 +67,11 @@ export function useDexTrades(
   address: string | undefined,
 ) {
   const { dex } = useGateways();
+  const enabled = useDexEnabled();
   return useQuery({
     queryKey: ["dex-trades", chain, address],
     queryFn: () => dex.listTrades(chain as ChainId, address as string),
-    enabled: Boolean(chain && address),
+    enabled: enabled && Boolean(chain && address),
     refetchInterval: 8_000,
   });
 }
@@ -57,29 +79,33 @@ export function useDexTrades(
 /** 报价：每 12s 过期，由页面按 expiresAt 倒计时并 refetch。 */
 export function useQuote(request: QuoteRequest | null) {
   const { dex } = useGateways();
+  const enabled = useDexEnabled();
   return useQuery({
     queryKey: ["dex-quote", request],
     queryFn: () => dex.quote(request as QuoteRequest),
-    enabled: Boolean(request && BigInt(request.amountIn.raw) > 0n),
+    enabled: enabled && Boolean(request && BigInt(request.amountIn.raw) > 0n),
     staleTime: 12_000,
   });
 }
 
 export function useApprove(address: string | undefined) {
   const { dex } = useGateways();
+  const enabled = useDexEnabled();
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: {
       token: TokenRef;
       spender: string;
       unlimited: boolean;
-    }) =>
+    }) => (
+      assertDexEnabled(enabled),
       dex.approve(
         address as string,
         input.token,
         input.spender,
         input.unlimited,
-      ),
+      )
+    ),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["dex-quote"] });
       void queryClient.invalidateQueries({ queryKey: ["dex-approvals"] });
@@ -89,9 +115,13 @@ export function useApprove(address: string | undefined) {
 
 export function useSwap(address: string | undefined) {
   const { dex } = useGateways();
+  const enabled = useDexEnabled();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (quoteId: string) => dex.swap(address as string, quoteId),
+    mutationFn: (quoteId: string) => (
+      assertDexEnabled(enabled),
+      dex.swap(address as string, quoteId)
+    ),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["dex-swaps"] });
       void queryClient.invalidateQueries({ queryKey: ["wallet-balances"] });
@@ -102,6 +132,7 @@ export function useSwap(address: string | undefined) {
 
 export function useSwapRecord(id: string | undefined) {
   const { dex } = useGateways();
+  const enabled = useDexEnabled();
   const queryClient = useQueryClient();
   return useQuery({
     queryKey: ["dex-swap", id],
@@ -116,7 +147,7 @@ export function useSwapRecord(id: string | undefined) {
       }
       return record;
     },
-    enabled: Boolean(id),
+    enabled: enabled && Boolean(id),
     refetchInterval: (query) =>
       query.state.data &&
       (query.state.data.status === "confirmed" ||
@@ -131,29 +162,34 @@ export function useSwaps(
   filter?: { status?: "pending" | "confirmed" | "failed"; chain?: ChainId },
 ) {
   const { dex } = useGateways();
+  const enabled = useDexEnabled();
   return useQuery({
     queryKey: ["dex-swaps", address, filter],
     queryFn: () => dex.listSwaps(address as string, filter),
-    enabled: Boolean(address),
+    enabled: enabled && Boolean(address),
     refetchInterval: 3_000,
   });
 }
 
 export function useApprovals(address: string | undefined, chain?: ChainId) {
   const { dex } = useGateways();
+  const enabled = useDexEnabled();
   return useQuery({
     queryKey: ["dex-approvals", address, chain ?? "all"],
     queryFn: () => dex.listApprovals(address as string, chain),
-    enabled: Boolean(address),
+    enabled: enabled && Boolean(address),
   });
 }
 
 export function useRevoke(address: string | undefined) {
   const { dex } = useGateways();
+  const enabled = useDexEnabled();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (approvalId: string) =>
-      dex.revoke(address as string, approvalId),
+    mutationFn: (approvalId: string) => (
+      assertDexEnabled(enabled),
+      dex.revoke(address as string, approvalId)
+    ),
     onSuccess: () =>
       void queryClient.invalidateQueries({ queryKey: ["dex-approvals"] }),
   });
