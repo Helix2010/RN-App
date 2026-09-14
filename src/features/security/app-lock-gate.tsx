@@ -175,12 +175,22 @@ export function AppLockGate() {
 
   if (!locked) return null;
 
+  /*
+   * 覆盖层而不是独立窗口。`transparent={false}` 在 Android 上会新建一个 Dialog +
+   * Window，窗口尺寸要等系统派发 WindowInsets 才能定；带了 statusBarTranslucent
+   * 却没带 navigationBarTranslucent 时，首次测量会把导航栏那条高度扣掉，insets
+   * 到达后再重新测一次铺满——表现就是"高度不够，闪一下又合适了"。
+   * 冷启动时 insets 最不稳定，而这个页面恰好是冷启动第一个出现的全屏 Modal。
+   * `Page` 自带 `$background` 且 flex:1，透明覆盖层在视觉上仍是不透明满屏。
+   */
   return (
     <Modal
       visible
       animationType="fade"
-      transparent={false}
+      transparent
+      presentationStyle="overFullScreen"
       statusBarTranslucent
+      navigationBarTranslucent
       onRequestClose={() => undefined}
       testID="app-lock-gate"
     >

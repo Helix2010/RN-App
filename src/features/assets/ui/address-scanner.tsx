@@ -38,12 +38,17 @@ export function AddressScanner({
   /** 返回 true 表示已接受并会关闭扫码；false 表示码里不是地址，继续扫 */
   onScanned: (data: string) => boolean;
 }) {
+  // 和应用锁同一个理由：不新建窗口就没有窗口尺寸协商那一帧。
+  // ScannerBody 的根节点自带 `#000` 底，透明覆盖层照样满屏不透明。
   return (
     <Modal
       visible={visible}
       animationType="slide"
+      transparent
+      presentationStyle="overFullScreen"
       onRequestClose={onClose}
       statusBarTranslucent
+      navigationBarTranslucent
     >
       {/* 主体只在可见时挂载：关掉再打开就是一次全新的扫描（手电筒、拒绝提示都复位） */}
       {visible ? <ScannerBody onClose={onClose} onScanned={onScanned} /> : null}
