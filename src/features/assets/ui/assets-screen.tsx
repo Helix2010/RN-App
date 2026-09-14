@@ -14,6 +14,7 @@ import {
 } from "../../../core/i18n/format";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFoundationRuntime } from "../../../app/runtime-context";
+import { isWalletOnly } from "../../../core/config/modules";
 import { toApproxNumber } from "../../../core/money/money";
 import {
   ActionTile,
@@ -81,6 +82,7 @@ export function AssetsScreen({
 }) {
   const insets = useSafeAreaInsets();
   const { config, t } = useFoundationRuntime();
+  const walletOnly = isWalletOnly(config.modules);
   const locale = config.localization.selectedLocale;
   const session = useSession();
   const address = session.data?.address;
@@ -228,15 +230,22 @@ export function AssetsScreen({
               colorToken="textMuted"
             />
           </Stack>
-          <Stack
-            onPress={onOpenRecords}
-            accessibilityRole="button"
-            accessibilityLabel={t("records.title")}
-            hitSlop={8}
-            testID="assets-records"
-          >
-            <AppIcon name="history" size={20} colorToken="textMuted" />
-          </Stack>
+          {/*
+            Wallet-only 下记录已经有两条路——底部页签和下面的操作块——这里的小图标
+            是第三条，反而让人以为是三个不同的地方。有业务模块时它是资产页唯一的
+            记录入口（第三格被划转或兑换占着），所以只在 `00` 撤掉。
+          */}
+          {walletOnly ? null : (
+            <Stack
+              onPress={onOpenRecords}
+              accessibilityRole="button"
+              accessibilityLabel={t("records.title")}
+              hitSlop={8}
+              testID="assets-records"
+            >
+              <AppIcon name="history" size={20} colorToken="textMuted" />
+            </Stack>
+          )}
         </Row>
       </Row>
 

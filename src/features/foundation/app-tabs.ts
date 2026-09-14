@@ -1,18 +1,15 @@
 import type { AppTab } from "./app-shell-back";
 import type { AppIconName } from "../../design-system";
+import { isWalletOnly, type AppModules } from "../../core/config/modules";
+
+export { isWalletOnly };
+export type { AppModules };
 
 export type AppTabDefinition = {
   key: AppTab;
   labelKey: string;
   icon: AppIconName;
 };
-
-export type AppModules = { predict: boolean; dex: boolean };
-
-/** Wallet-only：两个业务模块都没开 */
-export function isWalletOnly(modules: AppModules): boolean {
-  return !modules.predict && !modules.dex;
-}
 
 /**
  * 底部导航。四种模块组合各有一套，`00`（Wallet-only）是其中一种正式形态。
