@@ -6,6 +6,7 @@ import {
   isCrashLoop,
   readCrashGates,
   recordCrashSent,
+  recordLaunchCrashed,
   recordLaunchHealthy,
   recordLaunchStart,
   sentRecently,
@@ -43,7 +44,7 @@ import {
  * 操作一次"，而手动上报这一条恰好就是那一次操作。
  */
 
-export const LAUNCH_HEALTHY_AFTER_MS = 60_000;
+const LAUNCH_HEALTHY_AFTER_MS = 60_000;
 
 /** error.name 与栈顶帧名的哈希前 16 位：同一个崩溃在不同设备上得到同一个指纹，管理端按它聚合。 */
 export async function crashFingerprint(
@@ -68,6 +69,11 @@ export function beginLaunch(): void {
   const at = now();
   launch = { at, previous: recordLaunchStart(at) };
   setTimeout(() => void recordLaunchHealthy(at), LAUNCH_HEALTHY_AFTER_MS);
+}
+
+/** 这次启动留下了崩溃快照：崩溃循环判定要靠它区分"崩了"和"只是很快关掉了"。 */
+export function markCurrentLaunchCrashed(): void {
+  if (launch) void recordLaunchCrashed(launch.at);
 }
 
 /** 仅测试用。 */

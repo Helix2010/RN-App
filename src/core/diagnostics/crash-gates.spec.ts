@@ -6,6 +6,7 @@ import {
   isCrashLoop,
   readCrashGates,
   recordCrashSent,
+  recordLaunchCrashed,
   recordLaunchHealthy,
   recordLaunchStart,
   resumeAutoReports,
@@ -44,13 +45,28 @@ describe("launch history", () => {
     ]);
   });
 
-  it("calls three unhealthy launches in a row a crash loop, and nothing less", () => {
-    const bad = { at: 1, healthy: false };
-    const good = { at: 1, healthy: true };
-    expect(isCrashLoop([bad, bad, bad])).toBe(true);
-    expect(isCrashLoop([good, bad, bad, bad])).toBe(true);
-    expect(isCrashLoop([bad, bad])).toBe(false);
-    expect(isCrashLoop([bad, good, bad])).toBe(false);
+  it("calls three crashed, short launches in a row a crash loop, and nothing less", () => {
+    const crashed = { at: 1, healthy: false, crashed: true };
+    const quickExit = { at: 1, healthy: false };
+    const crashedLate = { at: 1, healthy: true, crashed: true };
+    expect(isCrashLoop([crashed, crashed, crashed])).toBe(true);
+    expect(isCrashLoop([quickExit, crashed, crashed, crashed])).toBe(true);
+    expect(isCrashLoop([crashed, crashed])).toBe(false);
+    // 打开看一眼余额就关，连着三次：不是崩溃循环
+    expect(isCrashLoop([quickExit, quickExit, quickExit])).toBe(false);
+    expect(isCrashLoop([crashed, quickExit, crashed])).toBe(false);
+    // 活过 60 秒以后才崩的，不是启动即崩
+    expect(isCrashLoop([crashed, crashedLate, crashed])).toBe(false);
+  });
+
+  it("marks only the matching launch as crashed", async () => {
+    await recordLaunchStart(T0);
+    await recordLaunchStart(T0 + 1);
+    await recordLaunchCrashed(T0 + 1);
+    expect((await readCrashGates()).launches).toEqual([
+      { at: T0, healthy: false },
+      { at: T0 + 1, healthy: false, crashed: true },
+    ]);
   });
 
   // 启动标记、健康标记、上报结果会在同一次启动里先后写同一条记录

@@ -189,7 +189,12 @@ export function AboutScreen({
           />
           <DetailRow
             label={t("update.platform")}
-            value={`${config.app.platform === "ios" ? "iOS" : "Android"} ${String(Platform.Version)}`}
+            // Android 上 Platform.Version 是 API 级别（35 = Android 15），不能写成"Android 35"
+            value={
+              config.app.platform === "ios"
+                ? `iOS ${String(Platform.Version)}`
+                : `Android API ${String(Platform.Version)}`
+            }
           />
         </VersionInfoGroup>
         <VersionInfoGroup title={t("update.groupOta")}>

@@ -3,7 +3,7 @@ import { z } from "zod";
 
 /**
  * 崩溃自动上报的闸门状态（设计 diagnostic-report-2026-09-14 §4.6）。一条记录装四样：
- * 最近几次启动是否"活过 60 秒"、已经发过的崩溃指纹、当天自动上报的条数、熔断标记。
+ * 最近几次启动是否崩溃过、是否"活过 60 秒"，已经发过的崩溃指纹，当天自动上报的条数，熔断标记。
  *
  * 放在一条记录里、并且所有读写排成队：启动标记、健康标记、上报结果三处会在同一次启动里
  * 先后写它，各读各写就会互相覆盖。
@@ -13,13 +13,20 @@ const KEY = "foundation.diagnostics.crash-gates.v1";
 /** 当前这次 + 之前 3 次 */
 const LAUNCH_HISTORY = 4;
 const SENT_HISTORY = 20;
-export const CRASH_LOOP_LAUNCHES = 3;
+const CRASH_LOOP_LAUNCHES = 3;
 export const AUTO_REPORTS_PER_DAY = 3;
 export const FINGERPRINT_DEDUPE_MS = 24 * 60 * 60 * 1000;
 
 const gatesSchema = z.object({
   version: z.literal(1),
-  launches: z.array(z.object({ at: z.number(), healthy: z.boolean() })),
+  launches: z.array(
+    z.object({
+      at: z.number(),
+      healthy: z.boolean(),
+      // 这次启动留下过崩溃快照。旧记录没有这个键，按没崩溃算
+      crashed: z.boolean().optional(),
+    }),
+  ),
   sent: z.array(z.object({ fingerprint: z.string(), at: z.number() })),
   autoDay: z.string(),
   autoCount: z.number().int().nonnegative(),
@@ -51,7 +58,7 @@ async function read(): Promise<CrashGates> {
 }
 
 /** 串行地读—改—写。失败时返回读到的旧值：闸门状态丢一次，最坏是少发或多等一次，不是崩溃。 */
-export function updateCrashGates(
+function updateCrashGates(
   change: (gates: CrashGates) => CrashGates,
 ): Promise<CrashGates> {
   const next = queue.then(async () => {
@@ -72,7 +79,7 @@ export function readCrashGates(): Promise<CrashGates> {
   return updateCrashGates((gates) => gates);
 }
 
-export function dayOf(at: number): string {
+function dayOf(at: number): string {
   return new Date(at).toISOString().slice(0, 10);
 }
 
@@ -103,12 +110,28 @@ export function recordLaunchHealthy(at: number): Promise<CrashGates> {
   }));
 }
 
-/** 之前连续 3 次启动都没活过 60 秒，就当作崩溃循环。 */
+/** 这次启动崩了（留下了崩溃快照）。 */
+export function recordLaunchCrashed(at: number): Promise<CrashGates> {
+  return updateCrashGates((gates) => ({
+    ...gates,
+    launches: gates.launches.map((launch) =>
+      launch.at === at ? { ...launch, crashed: true } : launch,
+    ),
+  }));
+}
+
+/**
+ * 之前连续 3 次启动都**崩了、并且没活过 60 秒**，才算崩溃循环。
+ *
+ * 只看"没活过 60 秒"是错的：打开钱包看一眼余额就关，是再正常不过的用法，连着三次这样
+ * 用就会被当成崩溃循环——快照被丢、自动上报被熔断，而熔断要等用户手动上报一次才解除，
+ * 对大多数人等于永久关掉。
+ */
 export function isCrashLoop(previous: CrashGates["launches"]): boolean {
   const recent = previous.slice(-CRASH_LOOP_LAUNCHES);
   return (
     recent.length === CRASH_LOOP_LAUNCHES &&
-    recent.every((launch) => !launch.healthy)
+    recent.every((launch) => launch.crashed === true && !launch.healthy)
   );
 }
 

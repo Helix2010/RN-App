@@ -11,6 +11,8 @@ import {
 } from "./crash-snapshot";
 import { clearLogs, logEvent } from "./log-buffer";
 import { recordCrash } from "./crash-capture";
+import { beginLaunch, resetLaunchForTest } from "./crash-reporter";
+import { readCrashGates } from "./crash-gates";
 
 const APP = {
   version: "1.2.3",
@@ -135,5 +137,25 @@ describe("persisted snapshot", () => {
     recordCrash("global", new Error("minor"), { fatal: false });
     await new Promise((resolve) => setTimeout(resolve, 0));
     await expect(readCrashSnapshot()).resolves.toBeNull();
+  });
+
+  // 崩溃循环判定靠这个标记区分"崩了"和"只是很快关掉了"
+  it("marks this launch as crashed when a crash leaves a snapshot, and only then", async () => {
+    jest.useFakeTimers({ advanceTimers: true });
+    resetLaunchForTest();
+    beginLaunch();
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+    await settle();
+
+    recordCrash("global", new Error("minor"), { fatal: false });
+    await settle();
+    expect((await readCrashGates()).launches.at(-1)?.crashed).toBeUndefined();
+
+    recordCrash("global", new Error("fatal"), { fatal: true });
+    await settle();
+    expect((await readCrashGates()).launches.at(-1)?.crashed).toBe(true);
+
+    resetLaunchForTest();
+    jest.useRealTimers();
   });
 });

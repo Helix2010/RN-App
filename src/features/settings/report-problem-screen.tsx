@@ -220,9 +220,11 @@ export function ReportProblemScreen({
                   value={prepared.app.distributionChannel}
                 />
                 <DetailRow
-                  label={t("update.otaTitle")}
+                  label={t("diagnostics.previewRunningUpdate")}
                   value={
-                    prepared.app.runningUpdateId ?? prepared.app.launchSource
+                    prepared.app.launchSource === "ota"
+                      ? (prepared.app.runningUpdateId ?? "")
+                      : t("update.embedded")
                   }
                 />
                 <DetailRow

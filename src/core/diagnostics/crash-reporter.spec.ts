@@ -10,6 +10,7 @@ import {
 import {
   readCrashGates,
   recordCrashSent,
+  recordLaunchCrashed,
   recordLaunchStart,
   suspendAutoReports,
 } from "./crash-gates";
@@ -130,7 +131,11 @@ describe("processPendingCrash", () => {
   );
 
   it("stops automatic reports in a crash loop instead of uploading every launch", async () => {
-    for (let i = 0; i < 3; i += 1) await recordLaunchStart(1_000 + i); // 三次都没活过 60 秒
+    // 三次启动都崩了、都没活过 60 秒
+    for (let i = 0; i < 3; i += 1) {
+      await recordLaunchStart(1_000 + i);
+      await recordLaunchCrashed(1_000 + i);
+    }
     beginLaunch();
     await crash();
 
@@ -138,6 +143,17 @@ describe("processPendingCrash", () => {
     expect(mockSubmit).not.toHaveBeenCalled();
     await expect(readCrashSnapshot()).resolves.toBeNull();
     expect((await readCrashGates()).suspended).toBe(true);
+  });
+
+  // 打开钱包看一眼余额就关是常态：连着三次这样用不能让自动上报被熔断
+  it("does not mistake three quick sessions for a crash loop", async () => {
+    for (let i = 0; i < 3; i += 1) await recordLaunchStart(1_000 + i);
+    beginLaunch();
+    await crash();
+    mockSubmit.mockResolvedValue(submitted);
+
+    await expect(processPendingCrash(ENABLED)).resolves.toBe("sent");
+    expect((await readCrashGates()).suspended).toBe(false);
   });
 
   it("keeps a new snapshot for the user while automatic reports are suspended", async () => {

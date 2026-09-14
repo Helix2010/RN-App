@@ -1,4 +1,5 @@
 import { now } from "../time/clock";
+import { markCurrentLaunchCrashed } from "./crash-reporter";
 import { buildCrashSnapshot, writeCrashSnapshot } from "./crash-snapshot";
 import { logEvent } from "./log-buffer";
 import { currentBuild } from "./report-service";
@@ -51,6 +52,7 @@ export function recordCrash(
         app: currentBuild(),
       }),
     );
+    markCurrentLaunchCrashed();
   }
 }
 

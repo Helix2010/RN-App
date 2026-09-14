@@ -139,11 +139,7 @@ export function resetSecretLeakCount(): void {
   leaks = 0;
 }
 
-/** 一条日志的 NDJSON 行（上传格式，设计 §4.3）。 */
-export function toNdjsonLine(entry: LogEntry): string {
-  return JSON.stringify(entry);
-}
-
+/** 上传格式：一行一条 JSON（NDJSON，设计 §4.3）。 */
 export function toNdjson(entries: LogEntry[]): string {
-  return entries.map(toNdjsonLine).join("\n");
+  return entries.map((entry) => JSON.stringify(entry)).join("\n");
 }
