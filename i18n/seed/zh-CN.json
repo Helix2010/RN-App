@@ -776,6 +776,7 @@
     "referral.inviter": "我的邀请人",
     "referral.inviterBound": "邀请码 {code} · {time} 绑定",
     "referral.inviterBoundAt": "绑定时间",
+    "referral.inviterCode": "邀请人的邀请码",
     "referral.inviterImmutable": "邀请人一经绑定不可更改",
     "referral.loadMore": "加载更多",
     "referral.myCode": "我的邀请码",

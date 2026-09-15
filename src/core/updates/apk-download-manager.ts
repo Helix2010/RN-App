@@ -263,6 +263,19 @@ export class ApkDownloadManager {
   async install(): Promise<void> {
     const state = this.getState();
     if (state.phase !== "ready" && state.phase !== "installing") return;
+    // 安装包放在 cacheDirectory 里，**Android 随时可以把它清掉**（存储紧张时系统
+    // 自己就会清，用户在系统设置里点"清除缓存"也会）。内存里的 ready 只说明
+    // 下载过，不代表文件还在——不复查就会把一个不存在的路径交给系统安装器，
+    // 用户看到的是「解析软件包时出现问题」，而正确行为是重新下一遍。
+    // 模拟器上实测过这条路径（把文件删掉再点安装）。
+    const onDisk = await this.deps.fileInfo(state.fileUri).catch(() => null);
+    if (!onDisk?.exists) {
+      this.setState({ phase: "idle" });
+      this.restartedAfterMismatch = false;
+      this.attempts = 0;
+      this.launch();
+      return;
+    }
     this.setState({ ...state, phase: "installing" });
     try {
       await this.deps.openInstaller(state.fileUri);

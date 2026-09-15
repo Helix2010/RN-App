@@ -320,8 +320,10 @@ export function ReferralScreen({
               // 两个事实用本仓标准的 DetailRow 摊开（13px 灰标签 + 加粗值），
               // 原先是一句把码和时间揉在一起的裸文字，和账号详情、记录详情都不像
               <Stack testID="referral-inviter">
+                {/* 标签必须是「邀请人的邀请码」。用 referral.myCode 的话，
+                    这一行会和上面那张卡的「我的邀请码」同屏打架——值还是不同的码 */}
                 <DetailRow
-                  label={t("referral.myCode")}
+                  label={t("referral.inviterCode")}
                   value={formatInviteCode(data.inviter.inviteCode)}
                 />
                 <DetailRow

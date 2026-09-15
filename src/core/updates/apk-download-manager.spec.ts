@@ -208,6 +208,33 @@ describe("ApkDownloadManager", () => {
     expect(h.state()).toMatchObject({ phase: "ready", size: 1_000 });
   });
 
+  /**
+   * 安装包放在 cacheDirectory 里，Android 随时可以清掉它（存储紧张时系统自己清，
+   * 用户在系统设置里点「清除缓存」也会）。内存里的 ready 只说明下载过，
+   * 不代表文件还在——不复查就会把一个不存在的路径交给系统安装器，
+   * 用户看到的是「解析软件包时出现问题」。模拟器上实测过这条路径。
+   */
+  it("点安装时文件已被系统清掉：不拉安装器，回到未下载并重新下", async () => {
+    const h = makeDeps(1_000);
+    await h.manager.configure(h.target);
+    h.manager.start();
+    await flush();
+    h.files.set(h.fileUri, 1_000);
+    h.tasks[0]!.resolve(h.fileUri);
+    await flush();
+    expect(h.state().phase).toBe("ready");
+
+    // 系统把缓存清了
+    h.files.delete(h.fileUri);
+    const tasksBefore = h.tasks.length;
+    await h.manager.install();
+    await flush();
+
+    expect(h.installs).toEqual([]);
+    expect(h.tasks.length).toBe(tasksBefore + 1);
+    expect(h.state().phase).toBe("downloading");
+  });
+
   it("resumes from the bytes already on disk after a network error: fast backoff, then slow polling, never a dead end", async () => {
     const h = makeDeps(1_000);
     await h.manager.configure(h.target);

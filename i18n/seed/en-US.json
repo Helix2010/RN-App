@@ -776,6 +776,7 @@
     "referral.inviter": "Your inviter",
     "referral.inviterBound": "Code {code} · bound {time}",
     "referral.inviterBoundAt": "Bound at",
+    "referral.inviterCode": "Inviter's code",
     "referral.inviterImmutable": "An inviter cannot be changed once set",
     "referral.loadMore": "Load more",
     "referral.myCode": "Your invite code",

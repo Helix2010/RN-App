@@ -14,6 +14,13 @@ jest.mock("expo-file-system/legacy", () => ({
   readAsStringAsync: jest.fn(),
   createDownloadResumable: jest.fn(),
 }));
+// 新 API：File.open() 给一个同步读原始字节的句柄。
+// 变量名必须以 mock 开头，否则 jest 不允许 mock 工厂引用它
+const mockOpenHandle = jest.fn();
+jest.mock("expo-file-system", () => ({
+  FileMode: { ReadOnly: "r" },
+  File: jest.fn().mockImplementation(() => ({ open: mockOpenHandle })),
+}));
 jest.mock("expo-intent-launcher", () => ({ startActivityAsync: jest.fn() }));
 jest.mock("../device/installation-service", () => ({
   installationTransportHeaders: jest.fn(async () => ({
@@ -26,26 +33,26 @@ const { installationTransportHeaders } = jest.requireMock(
   "../device/installation-service",
 ) as { installationTransportHeaders: jest.Mock };
 
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return globalThis.btoa(binary);
-}
-
-/** 假文件：按 position/length 分片返回 base64，和 expo-file-system 的分片读语义一致 */
+/** 假文件句柄：按游标顺序吐原始字节，和 FileHandle.readBytes 的语义一致 */
 function serveFile(bytes: Uint8Array) {
   jest.mocked(FileSystem.getInfoAsync).mockResolvedValue({
     exists: true,
     isDirectory: false,
     size: bytes.length,
   } as Awaited<ReturnType<typeof FileSystem.getInfoAsync>>);
-  jest
-    .mocked(FileSystem.readAsStringAsync)
-    .mockImplementation(async (_uri, options) => {
-      const position = options?.position ?? 0;
-      const length = options?.length ?? bytes.length;
-      return bytesToBase64(bytes.subarray(position, position + length));
-    });
+  const reads: number[] = [];
+  let cursor = 0;
+  const close = jest.fn();
+  mockOpenHandle.mockReturnValue({
+    readBytes: (length: number) => {
+      reads.push(length);
+      const chunk = bytes.subarray(cursor, cursor + length);
+      cursor += chunk.length;
+      return chunk;
+    },
+    close,
+  });
+  return { reads, close };
 }
 
 describe("hashFileSha256", () => {
@@ -56,16 +63,13 @@ describe("hashFileSha256", () => {
     const bytes = new Uint8Array(HASH_CHUNK_BYTES * 2 + tail);
     for (let index = 0; index < bytes.length; index += 1)
       bytes[index] = (index * 31 + 7) & 0xff;
-    serveFile(bytes);
+    const file = serveFile(bytes);
     await expect(hashFileSha256("file:///cache/x.apk")).resolves.toBe(
       bytesToHex(sha256(bytes)),
     );
-    const calls = jest.mocked(FileSystem.readAsStringAsync).mock.calls;
-    expect(calls.map((call) => call[1]?.length)).toEqual([
-      HASH_CHUNK_BYTES,
-      HASH_CHUNK_BYTES,
-      tail,
-    ]);
+    expect(file.reads).toEqual([HASH_CHUNK_BYTES, HASH_CHUNK_BYTES, tail]);
+    // 句柄持着文件描述符，必须关掉
+    expect(file.close).toHaveBeenCalled();
   });
 
   it("hashes an empty file and refuses a missing one", async () => {

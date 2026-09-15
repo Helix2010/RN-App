@@ -1,5 +1,6 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
+import { File, FileMode } from "expo-file-system";
 import * as FileSystem from "expo-file-system/legacy";
 import * as IntentLauncher from "expo-intent-launcher";
 import { AppState } from "react-native";
@@ -13,42 +14,48 @@ import {
 /**
  * 每次读 4 MiB。
  *
- * 不整包读：安装包几十 MB，一次读进 JS 堆会把低端机拖垮。
- * 也不读太小：每个分片都是一次 expo-file-system 的跨桥调用，返回的还是
- * base64（比原始字节大 4/3）。1 MiB 的分片对一个 39 MB 的包就是 39 次往返、
- * 约 52 MB 的 base64 字符串要跨桥搬运并在 JS 堆上分配——这是「下载到 100% 之后
- * 还要等好几秒」的主要开销。4 MiB 把往返次数降到 10 次，单次瞬时占用约 13 MB
- * （base64 串 + 解码出的串 + 字节数组），仍然有界。
- *
- * 真正的解法是让原生一侧直接算摘要或吐原始字节（expo-file-system 的新 File API
- * 有 readableStream，但本仓没有流 polyfill，release 包里未验证），那是另一件事。
+ * 不整包读：安装包几十 MB，一次读进 JS 堆会把低端机拖垮。分片大小只影响
+ * readBytes 的调用次数与瞬时占用，不影响结果。
  */
 export const HASH_CHUNK_BYTES = 4 * 1024 * 1024;
 
-function base64ToBytes(value: string): Uint8Array {
-  const binary = globalThis.atob(value);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1)
-    bytes[index] = binary.charCodeAt(index);
-  return bytes;
-}
-
-/** 分块计算文件 SHA-256（安全评审 N2：安装前必须与 bootstrap 下发的摘要一致） */
+/**
+ * 分块计算文件 SHA-256（安全评审 N2：安装前必须与 bootstrap 下发的摘要一致）。
+ *
+ * 走 `File.open()` 拿到的句柄按**原始字节**读。原先的写法是
+ * `readAsStringAsync(..., Base64)`：每片跨一次桥、返回一个比原始字节大 4/3 的
+ * base64 字符串，再 `atob()` 出一个同长度的 JS 字符串，再用 `charCodeAt` 逐字节
+ * 填进 `Uint8Array`。一个 39 MB 的包就是约 52 MB 的字符串跨桥搬运、
+ * 约 4100 万次 `charCodeAt`——**模拟器上实测这一步要 59 秒**，用户看到的就是
+ * 「下载 100% 之后卡住不动」。`readBytes` 是同步的 JSI 调用，直接给
+ * `Uint8Array`，那三层全部省掉。
+ *
+ * 句柄一定要 close：它持着一个文件描述符。
+ */
 export async function hashFileSha256(uri: string): Promise<string> {
   const info = await FileSystem.getInfoAsync(uri);
   if (!info.exists || info.isDirectory)
     throw new ApkIntegrityError("file to hash is missing");
-  const hasher = sha256.create();
-  for (let position = 0; position < info.size; position += HASH_CHUNK_BYTES) {
-    const length = Math.min(HASH_CHUNK_BYTES, info.size - position);
-    const chunk = await FileSystem.readAsStringAsync(uri, {
-      encoding: FileSystem.EncodingType.Base64,
-      position,
-      length,
-    });
-    hasher.update(base64ToBytes(chunk));
+  const handle = new File(uri).open(FileMode.ReadOnly);
+  try {
+    const hasher = sha256.create();
+    for (let read = 0; read < info.size;) {
+      const chunk = handle.readBytes(
+        Math.min(HASH_CHUNK_BYTES, info.size - read),
+      );
+      // 读不出字节却还没到末尾：文件在校验途中被截断或换掉了，
+      // 继续循环会空转。按完整性问题处理，重试无济于事
+      if (chunk.length === 0)
+        throw new ApkIntegrityError(
+          `file to hash ended early at ${read} of ${info.size} bytes`,
+        );
+      hasher.update(chunk);
+      read += chunk.length;
+    }
+    return bytesToHex(hasher.digest());
+  } finally {
+    handle.close();
   }
-  return bytesToHex(hasher.digest());
 }
 
 /** 生产接线：expo-file-system（断点续传按 Android 语义 = 已写字节数）、系统安装器、前后台 */
