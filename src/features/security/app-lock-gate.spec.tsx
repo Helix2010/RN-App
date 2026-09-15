@@ -155,6 +155,64 @@ describe("AppLockGate", () => {
     expect(authenticateAsync.mock.calls.length).toBeGreaterThan(before);
   });
 
+  // "点了指纹没弹出验证"：Android 上一个弹窗还在收起时再拉起，系统会秒回一个取消
+  it("retries when the system swallows the prompt and returns an instant cancel", async () => {
+    authenticateAsync
+      .mockResolvedValueOnce({ success: false, error: "user_cancel" })
+      .mockResolvedValueOnce({ success: true });
+
+    await renderGate();
+
+    await waitFor(() => expect(useAppLock.getState().locked).toBe(false), {
+      timeout: 3000,
+    });
+    expect(authenticateAsync).toHaveBeenCalledTimes(2);
+  });
+
+  // 人点的取消（慢回来的）不重试，页面停在锁屏等用户自己动
+  it("leaves a real cancel alone", async () => {
+    authenticateAsync.mockImplementation(
+      async () =>
+        new Promise((resolve) =>
+          setTimeout(
+            () => resolve({ success: false, error: "user_cancel" }),
+            700,
+          ),
+        ),
+    );
+
+    await renderGate();
+
+    await waitFor(() =>
+      expect(screen.getByTestId("app-lock-gate")).toBeTruthy(),
+    );
+    await waitFor(() => expect(authenticateAsync).toHaveBeenCalledTimes(1));
+    expect(useAppLock.getState().locked).toBe(true);
+  });
+
+  // 验证失败后重入标记必须放开，否则这一页之后再也弹不出来
+  it("can prompt again after a failed attempt", async () => {
+    authenticateAsync.mockResolvedValue({
+      success: false,
+      error: "authentication_failed",
+    });
+    const { runtime } = await renderGate();
+    await waitFor(() =>
+      expect(
+        screen.getByText(runtime.t("security.unlock.failed")),
+      ).toBeTruthy(),
+    );
+
+    const before = authenticateAsync.mock.calls.length;
+    authenticateAsync.mockResolvedValue({ success: true });
+    await fireEvent.press(screen.getByTestId("app-lock-unlock"));
+
+    await waitFor(() => expect(useAppLock.getState().locked).toBe(false), {
+      timeout: 3000,
+    });
+    expect(authenticateAsync.mock.calls.length).toBeGreaterThan(before);
+  });
+
   // 必须排在最后：这个用例把 AppState.addEventListener 换成替身，替身在位期间
   // 挂载的 gate 不会注册真实监听器，而它触发的 zustand 更新会让 React 19 把
   // 未 flush 完的 act 工作（AggregateError）抛进后面的用例里。
@@ -177,6 +235,64 @@ describe("AppLockGate", () => {
     } finally {
       // 卸载交给 RNTL 的自动清理：在这里手动 cleanup 会让 React 19 把
       // 尚未 flush 的 act 工作抛到下一个用例里（AggregateError）
+      appState.restore();
+    }
+  });
+  it("prompts again when the app comes back while still locked", async () => {
+    // 先让它锁住并停在"用户取消"的状态
+    authenticateAsync.mockImplementation(
+      async () =>
+        new Promise((resolve) =>
+          setTimeout(
+            () => resolve({ success: false, error: "user_cancel" }),
+            700,
+          ),
+        ),
+    );
+    const gateways = createTestGateways();
+    await signIn(gateways);
+    const appState = captureAppState();
+    try {
+      await renderWithProviders(<AppLockGate />, { gateways });
+      await waitFor(() => expect(useAppLock.getState().locked).toBe(true));
+      await waitFor(() => expect(authenticateAsync).toHaveBeenCalledTimes(1));
+
+      authenticateAsync.mockResolvedValue({ success: true });
+      await act(async () => {
+        appState.emit("active");
+      });
+
+      await waitFor(() => expect(useAppLock.getState().locked).toBe(false), {
+        timeout: 3000,
+      });
+    } finally {
+      appState.restore();
+    }
+  });
+  // 用户路径：冷启动弹窗 → 取消 → 点图标再弹 → 取消 → 手机息屏 → 再点就不弹了。
+  // 息屏时系统收走了弹窗，而那个 Promise 不再返回，防重入标记会永远卡住
+  it("releases the prompt guard when the app is sent to the background", async () => {
+    // 永不 resolve：模拟被系统收走的那次弹窗
+    authenticateAsync.mockImplementation(
+      () => new Promise(() => undefined) as Promise<never>,
+    );
+    const gateways = createTestGateways();
+    await signIn(gateways);
+    const appState = captureAppState();
+    try {
+      await renderWithProviders(<AppLockGate />, { gateways });
+      await waitFor(() => expect(authenticateAsync).toHaveBeenCalledTimes(1));
+
+      await act(async () => {
+        appState.emit("background");
+      });
+      authenticateAsync.mockResolvedValue({ success: true });
+      await fireEvent.press(screen.getByTestId("app-lock-unlock"));
+
+      await waitFor(() => expect(useAppLock.getState().locked).toBe(false), {
+        timeout: 3000,
+      });
+    } finally {
       appState.restore();
     }
   });

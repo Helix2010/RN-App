@@ -35,6 +35,16 @@ const TAP_SIZE = 152;
 const HALO_OPACITY = { light: 0.62, dark: 0.68 } as const;
 /** 一圈涟漪走完的时长；两圈错开半个周期，看上去是连续往外扩 */
 const RIPPLE_MS = 2000;
+/**
+ * 两次系统弹窗之间至少留出的间隔。Android 的 BiometricPrompt 一次只认一个请求：
+ * 上一个还在收起时再拉起，系统直接回一个取消，界面上什么都不出现。
+ */
+const PROMPT_SETTLE_MS = 350;
+/** 这么快回来的"取消"不可能是人点的，是系统挡掉了这次请求 */
+const SYSTEM_CANCEL_MS = 500;
+
+const wait = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
 
 const KIND_ICON: Record<BiometricKind, AppIconName> = {
   fingerprint: "fingerprint",
@@ -71,6 +81,8 @@ export function AppLockGate() {
   const prompting = useRef(false);
   /** 冷启动只判定一次，避免会话/偏好刷新时反复上锁 */
   const coldStartHandled = useRef(false);
+  /** 上一次系统弹窗结束的时刻，用来给下一次留出收起时间 */
+  const lastPromptEndedAt = useRef(0);
   const [breath] = useState(() => new Animated.Value(0));
   const [halo] = useState(() => new Animated.Value(0));
   const [halo2] = useState(() => new Animated.Value(0));
@@ -175,10 +187,50 @@ export function AppLockGate() {
     useAppLock.getState().lock();
   }, [enabled, enrolled, lockKeys, signedIn]);
 
+  /**
+   * 拉起系统验证。三件事都是为了"点了没反应"这个现象：
+   * 1. 两次弹窗之间留出收起时间；
+   * 2. 秒回的取消当作系统挡掉（不是人点的），自动重试一次；
+   * 3. 重入标记在 finally 里清——卡住之后这一页就再也弹不出来了。
+   */
+  const unlock = useCallback(async () => {
+    if (prompting.current) return;
+    prompting.current = true;
+    try {
+      const settle =
+        PROMPT_SETTLE_MS - (Date.now() - lastPromptEndedAt.current);
+      if (settle > 0) await wait(settle);
+      const startedAt = Date.now();
+      let outcome = await authenticate("security.locked.subtitle");
+      if (
+        outcome === "cancelled" &&
+        Date.now() - startedAt < SYSTEM_CANCEL_MS
+      ) {
+        await wait(PROMPT_SETTLE_MS);
+        outcome = await authenticate("security.locked.subtitle");
+      }
+      if (outcome === "success" || outcome === "unavailable") {
+        useAppLock.getState().unlock();
+        return;
+      }
+      if (outcome === "failed") useAppLock.getState().noteAttemptFailed();
+    } finally {
+      lastPromptEndedAt.current = Date.now();
+      prompting.current = false;
+    }
+  }, []);
+
   useEffect(() => {
     const onChange = (next: AppStateStatus) => {
       const store = useAppLock.getState();
       if (next === "background" || next === "inactive") {
+        /*
+         * 息屏 / 切走时系统会把 BiometricPrompt 一起收掉，而 expo 那个 Promise
+         * 可能永远不 resolve（用户按电源键锁屏时踩到过）。防重入标记等它返回才清，
+         * 于是永远停在"正在弹"，之后每次点图标都被自己挡掉——表现就是再也弹不出来。
+         * 弹窗这时已经没了，直接把标记放开，回前台再补弹一次。
+         */
+        prompting.current = false;
         if (!store.locked) store.noteBackgrounded();
         // 进后台立刻把密钥锁上（阶段 0c-2）：解封窗口是"用户在场"的凭据，
         // 人一离开就不再成立。界面锁不锁仍按自动锁定时长决定，这里只管密钥——
@@ -197,23 +249,16 @@ export function AppLockGate() {
       if (shouldLock) {
         lockKeys();
         store.lock();
-      } else store.clearBackgrounded();
+        return;
+      }
+      store.clearBackgrounded();
+      // 回前台时锁还在（上一次弹窗被切走打断，或用户取消后切走）：再弹一次。
+      // 不补这一下，用户回来只看到一个图标，得自己去点
+      if (store.locked) void unlock();
     };
     const subscription = AppState.addEventListener("change", onChange);
     return () => subscription.remove();
-  }, [autoLockMinutes, lockKeys, signedIn]);
-
-  const unlock = useCallback(async () => {
-    if (prompting.current) return;
-    prompting.current = true;
-    const outcome = await authenticate("security.locked.subtitle");
-    prompting.current = false;
-    if (outcome === "success" || outcome === "unavailable") {
-      useAppLock.getState().unlock();
-      return;
-    }
-    if (outcome === "failed") useAppLock.getState().noteAttemptFailed();
-  }, []);
+  }, [autoLockMinutes, lockKeys, signedIn, unlock]);
 
   // 一进入锁定态就自动弹一次系统验证，用户取消后可轻触图标重试
   useEffect(() => {
