@@ -7,6 +7,7 @@ import {
 import * as Clipboard from "expo-clipboard";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Share } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import QRCode from "react-native-qrcode-svg";
 import { useFoundationRuntime } from "../../../app/runtime-context";
 import {
@@ -16,13 +17,18 @@ import {
 import { logEvent } from "../../../core/diagnostics/log-buffer";
 import { useGateways } from "../../../core/gateways/gateway-context";
 import { AppError } from "../../../core/network/app-error";
-import { fill, formatTimeUntil } from "../../../core/i18n/format";
+import {
+  fill,
+  formatDateTime,
+  formatTimeUntil,
+} from "../../../core/i18n/format";
 import { useNow } from "../../../core/time/use-now";
 import {
   AppIcon,
   Body,
   Card,
   Content,
+  DetailRow,
   Heading,
   InlineText,
   Page,
@@ -37,7 +43,6 @@ import {
   Stack,
   TextField,
   toast,
-  useTheme,
   type SheetHandle,
 } from "../../../design-system";
 import type { RootStackParamList } from "../../../navigation/types";
@@ -60,7 +65,7 @@ export function ReferralScreen({
   navigation,
 }: NativeStackScreenProps<RootStackParamList, "Referral">) {
   const { t, config } = useFoundationRuntime();
-  const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const { referral } = useGateways();
   const queryClient = useQueryClient();
   const confirmSheet = useRef<SheetHandle>(null);
@@ -233,32 +238,67 @@ export function ReferralScreen({
 
   return (
     <Page>
-      <ScreenHeader title={t("referral.title")} onBack={navigation.goBack} />
-      <PageScroll>
-        <Content gap="$3">
-          <Card gap="$3" alignItems="center" testID="referral-code-card">
+      {/* ScreenHeader 自己不处理安全区、也没有左右内边距：必须由调用方用 Content
+          包一层，否则标题会顶进状态栏、返回箭头贴着屏幕边（照 records-screen） */}
+      <Content paddingTop={insets.top + 8} paddingBottom={0}>
+        <ScreenHeader
+          title={t("referral.title")}
+          onBack={navigation.goBack}
+          backLabel={t("action.back")}
+        />
+      </Content>
+      <PageScroll
+        refresh={{
+          refreshing: overview.isRefetching,
+          onRefresh: () => {
+            void overview.refetch();
+            void invitees.refetch();
+          },
+          accessibilityLabel: t("action.refresh"),
+        }}
+      >
+        <Content paddingTop="$1" gap="$3">
+          <Card gap="$3" testID="referral-code-card">
             <SectionTitle>{t("referral.myCode")}</SectionTitle>
-            <Heading
-              fontSize={32}
-              letterSpacing={2}
-              testID="referral-code"
-              accessibilityLabel={data.inviteCode}
+            <Stack alignItems="center" gap="$3" paddingVertical="$1">
+              {/* 二维码必须自带白底托：主题色的底 + 主题色的码在深色模式下
+                  很多相机扫不出来，也和收款页的观感不一致（照 receive-sheet） */}
+              <Stack padding="$3" borderRadius="$4" backgroundColor="white">
+                <QRCode
+                  value={data.inviteLink}
+                  size={196}
+                  backgroundColor="white"
+                  color="#0B1220"
+                />
+              </Stack>
+              <Heading
+                fontSize={32}
+                letterSpacing={2}
+                selectable
+                testID="referral-code"
+                accessibilityLabel={data.inviteCode}
+              >
+                {formatInviteCode(data.inviteCode)}
+              </Heading>
+              <Body fontSize={12} color="$textMuted" textAlign="center">
+                {t("referral.qrHint")}
+              </Body>
+            </Stack>
+            {/* 分享是这一页的主操作，给它主按钮。复制退到次级——
+                三个次级按钮挤一行放不下，文字会被截成「Copy c...」，
+                而本仓的行范式就是每行两个带图标的次级按钮（receive-sheet） */}
+            <PrimaryButton
+              onPress={() => void Share.share({ message: data.inviteLink })}
+              icon={<AppIcon name="share-variant-outline" size={18} />}
+              testID="referral-share"
             >
-              {formatInviteCode(data.inviteCode)}
-            </Heading>
-            <QRCode
-              value={data.inviteLink}
-              size={160}
-              backgroundColor={theme.surface.val}
-              color={theme.text?.val ?? "#000000"}
-            />
-            <Body fontSize={13} color="$textMuted" textAlign="center">
-              {t("referral.qrHint")}
-            </Body>
+              {t("referral.share")}
+            </PrimaryButton>
             <Row gap="$2">
               <SecondaryButton
                 flex={1}
                 onPress={() => void copy(data.inviteCode)}
+                icon={<AppIcon name="content-copy" size={18} />}
                 testID="referral-copy-code"
               >
                 {t("referral.copyCode")}
@@ -266,16 +306,10 @@ export function ReferralScreen({
               <SecondaryButton
                 flex={1}
                 onPress={() => void copy(data.inviteLink)}
+                icon={<AppIcon name="link-variant" size={18} />}
                 testID="referral-copy-link"
               >
                 {t("referral.copyLink")}
-              </SecondaryButton>
-              <SecondaryButton
-                flex={1}
-                onPress={() => void Share.share({ message: data.inviteLink })}
-                testID="referral-share"
-              >
-                {t("referral.share")}
               </SecondaryButton>
             </Row>
           </Card>
@@ -283,12 +317,24 @@ export function ReferralScreen({
           <Card gap="$2" testID="referral-inviter-card">
             <SectionTitle>{t("referral.inviter")}</SectionTitle>
             {data.inviter ? (
-              <Body testID="referral-inviter">
-                {fill(t("referral.inviterBound"), {
-                  code: formatInviteCode(data.inviter.inviteCode),
-                  time: new Date(data.inviter.boundAt).toLocaleString(),
-                })}
-              </Body>
+              // 两个事实用本仓标准的 DetailRow 摊开（13px 灰标签 + 加粗值），
+              // 原先是一句把码和时间揉在一起的裸文字，和账号详情、记录详情都不像
+              <Stack testID="referral-inviter">
+                <DetailRow
+                  label={t("referral.myCode")}
+                  value={formatInviteCode(data.inviter.inviteCode)}
+                />
+                <DetailRow
+                  label={t("referral.inviterBoundAt")}
+                  value={formatDateTime(
+                    data.inviter.boundAt,
+                    config.localization.selectedLocale,
+                  )}
+                />
+                <Body fontSize={11} color="$textMuted">
+                  {t("referral.inviterImmutable")}
+                </Body>
+              </Stack>
             ) : data.bindWindow.open ? (
               <Stack gap="$2">
                 <Body fontSize={13} color="$textMuted">
@@ -315,7 +361,10 @@ export function ReferralScreen({
                         now,
                         config.localization.selectedLocale,
                       ) || t("referral.windowClosingSoon"),
-                    time: new Date(data.bindWindow.closesAt).toLocaleString(),
+                    time: formatDateTime(
+                      data.bindWindow.closesAt,
+                      config.localization.selectedLocale,
+                    ),
                   })}
                 </InlineText>
                 <PrimaryButton
@@ -364,19 +413,49 @@ export function ReferralScreen({
                 </SecondaryButton>
               </Stack>
             ) : inviteeRows.length > 0 ? (
-              <Stack gap="$2">
-                {inviteeRows.map((item) => (
-                  <Row key={item.alias} justifyContent="space-between">
-                    <InlineText>{item.alias}</InlineText>
-                    <InlineText fontSize={13} color="$textMuted">
-                      {fill(t("referral.inviteeJoined"), {
-                        time: new Date(item.joinedAt).toLocaleDateString(),
-                      })}
-                    </InlineText>
+              <Stack>
+                {/* 行的形状照 records-screen：36 圆图标 + 两行左块 + 下边框。
+                    原先是两列裸文字，和本仓其它任何列表都不像 */}
+                {inviteeRows.map((item, index) => (
+                  <Row
+                    key={item.alias}
+                    alignItems="center"
+                    gap="$3"
+                    paddingVertical="$2.5"
+                    borderBottomWidth={index === inviteeRows.length - 1 ? 0 : 1}
+                    borderColor="$borderColor"
+                    testID={`referral-invitee-${item.alias}`}
+                  >
+                    <Stack
+                      width={36}
+                      height={36}
+                      borderRadius={18}
+                      backgroundColor="$surfaceVariant"
+                      alignItems="center"
+                      justifyContent="center"
+                    >
+                      <AppIcon
+                        name="account-outline"
+                        size={20}
+                        colorToken="color"
+                      />
+                    </Stack>
+                    <Stack flex={1} gap="$0.5">
+                      <SectionTitle fontSize={14}>{item.alias}</SectionTitle>
+                      <Body fontSize={11}>
+                        {fill(t("referral.inviteeJoined"), {
+                          time: formatDateTime(
+                            item.joinedAt,
+                            config.localization.selectedLocale,
+                          ),
+                        })}
+                      </Body>
+                    </Stack>
                   </Row>
                 ))}
                 {invitees.hasNextPage ? (
                   <SecondaryButton
+                    marginTop="$2"
                     disabled={invitees.isFetchingNextPage}
                     onPress={() => void invitees.fetchNextPage()}
                     testID="referral-load-more"

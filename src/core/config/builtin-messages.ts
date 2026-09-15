@@ -750,6 +750,8 @@ const zhCN = {
   "referral.copied": "已复制",
   "referral.qrHint": "让对方扫一扫，或直接把链接发给他",
   "referral.inviter": "我的邀请人",
+  "referral.inviterBoundAt": "绑定时间",
+  "referral.inviterImmutable": "邀请人一经绑定不可更改",
   "referral.inviterBound": "邀请码 {code} · {time} 绑定",
   "referral.bindTitle": "填写邀请码",
   "referral.bindHint": "绑定后永久不可更改，请确认是你认识的人",
@@ -1126,6 +1128,7 @@ const zhCN = {
   "update.pausedStalled": "下载停滞，稍后自动重试",
   "update.pausedRetrying": "网络中断，稍后自动续传",
   "update.backgroundHint": "可关闭此窗口，下载会在后台继续",
+  "update.verifying": "正在校验安装包，马上就好…",
   "update.readyToInstall": "安装包已就绪",
   "update.installerOpened": "已打开系统安装页，未完成可再点“安装”",
   "update.downloadingRow": "下载中 {percent}%",
@@ -2104,6 +2107,8 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "referral.copied": "Copied",
   "referral.qrHint": "Let them scan it, or just send the link",
   "referral.inviter": "Your inviter",
+  "referral.inviterBoundAt": "Bound at",
+  "referral.inviterImmutable": "An inviter cannot be changed once set",
   "referral.inviterBound": "Code {code} · bound {time}",
   "referral.bindTitle": "Enter an invite code",
   "referral.bindHint":
@@ -2515,6 +2520,7 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "update.pausedRetrying": "Network interrupted, resuming shortly",
   "update.backgroundHint":
     "You can close this window; the download continues in the background",
+  "update.verifying": "Verifying the download…",
   "update.readyToInstall": "Package ready to install",
   "update.installerOpened":
     "System installer opened; tap Install again if it did not finish",
