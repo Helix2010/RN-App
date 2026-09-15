@@ -374,11 +374,15 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (snapshot && !query.isPending) runSilentOtaCheck(config);
   }, [config, query.isPending, runSilentOtaCheck, snapshot]);
-  // 配置重拉的节奏由服务端下发（管理端"刷新间隔"），不是客户端写死的数字：
-  // 运营改了链 / 币 / 端点后多久生效，得是管理端能看见并调整的值。
-  // 回到前台也会立刻重拉一次，所以这个间隔只决定"一直开着不动"时的上限
+  // 配置重拉的节奏由服务端下发（管理端「基础配置」的配置有效期 TTL），不是客户端
+  // 写死的数字：运营改了链 / 币 / 端点后多久生效，得是管理端能看见并调整的值。
+  // 回到前台也会立刻重拉一次，所以这个间隔只决定"一直开着不动"时的上限。
+  //
+  // 读 ttlSeconds 而不是 localization.refreshIntervalSeconds：同一件事只有一个来源。
+  // 后者是这个值的历史位置（藏在语言设置里，跟语言无关），服务端现在把它当别名下发，
+  // 值和 ttlSeconds 相同，留着只是为了让旧版本还能解析
   useEffect(() => {
-    const interval = config.localization.refreshIntervalSeconds * 1_000;
+    const interval = config.ttlSeconds * 1_000;
     const refreshAndCheck = (): void => {
       if (AppState.currentState !== "active") return;
       void query.refetch().then((result) => {
@@ -393,7 +397,7 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
       clearInterval(timer);
       subscription.remove();
     };
-  }, [config.localization.refreshIntervalSeconds, query, runSilentOtaCheck]);
+  }, [config.ttlSeconds, query, runSilentOtaCheck]);
   useEffect(() => {
     if (!snapshot) return;
     void registerPushTokenIfAuthorized(config, themePreference).then(
