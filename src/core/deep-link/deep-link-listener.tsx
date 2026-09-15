@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { Linking } from "react-native";
+import { logEvent } from "../diagnostics/log-buffer";
 import { parseDeepLink } from "./deep-link-router";
 import { usePendingInviteStore } from "./pending-invite-store";
 
@@ -23,16 +24,24 @@ export function DeepLinkListener() {
   const remember = usePendingInviteStore((state) => state.remember);
 
   useEffect(() => {
-    const handle = (url: string | null): void => {
+    const handle = (url: string | null, entry: "cold" | "warm"): void => {
       if (!url) return;
       const link = parseDeepLink(url);
+      // 暂存的写入记一条本地事件（设计 §5.3）。事后排查"我点了链接却没弹确认"
+      // 只能靠这条：到达时机跨了冷启动、解锁、登录三段，没有留痕就无从下手。
+      // **不记邀请码本身**，记形态就够定位了
+      logEvent("info", "nav", "deep link received", {
+        kind: link.kind,
+        entry,
+        codeLength: link.kind === "invite" ? link.code.length : 0,
+      });
       if (link.kind === "invite") remember(link.code);
     };
     // 冷启动：应用是被这条链接拉起来的
-    void Linking.getInitialURL().then(handle);
+    void Linking.getInitialURL().then((url) => handle(url, "cold"));
     // 热启动：应用已经在后台，系统把链接送进来
     const subscription = Linking.addEventListener("url", (event) =>
-      handle(event.url),
+      handle(event.url, "warm"),
     );
     return () => subscription.remove();
   }, [remember]);

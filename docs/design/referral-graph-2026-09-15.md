@@ -234,6 +234,8 @@ bootstrap 额外下发 `inviteLinkBase`（`https://<租户 API 域名>/app/invit
 
 1. 走 `decodeAdminAction`，**`confirm=true`** 且 `reason` ≥ 3 字符
 2. 带 `expectedInviteeState`：被邀请人当前 `inviter_user_id` 必须为 NULL，做乐观锁
+
+   > **实现改成了服务端无条件自查，没有这个请求字段。** 关系一次性且不可解绑，"未绑定"是它唯一可能的取值，恒为常量的字段不携带信息却要进公开契约。服务端的条件更新 `WHERE inviter_user_id IS NULL`（影响 0 行即返回 409）在并发下与乐观锁等价。记在 ADR 0018。
 3. **租户级日配额**（建议 20 条/天/租户，超出 429 + 告警），形态照 `diagnosticTenantPerDay`
 4. `x-admin-key` 通道（`server.go:507`，长期有效、不绑账号、仅 IP 白名单）对该路由直接 **403**——自动化没有补录需求
 
@@ -320,7 +322,9 @@ bootstrap 额外下发 `inviteLinkBase`（`https://<租户 API 域名>/app/invit
 两个必须注意的点：
 
 - **`pathPrefix` 写 `"/app/invite/"`（带尾斜杠）**。现有写法是 `pathPrefix`（`app.config.ts:227-240`），前缀匹配会把 `/app/invitexyz` 也吃进来。
-- 拆分后，**未配 WalletConnect 的租户会首次获得 `autoVerify` 的 intent filter**，系统安装时会去校验其 `assetlinks.json`。该文件依赖 `release.android` 发布身份（`release_identity.go:350-358`，未登记返回 404），任何能出 APK 的租户都已具备；但上线前要对每个目标租户实际 `curl` 确认。校验失败时 Android 退回选择框，此时任何声明了同 URL 的应用都会出现在列表里。
+- ~~拆分后，未配 WalletConnect 的租户会首次获得 `autoVerify` 的 intent filter~~ —— **这条预测是错的，实现后核对时发现**。拆出来的 `appLinkHost` 与 `walletConnectRedirectUrl` 判的是**同一个**条件 `apiBaseUrl.startsWith("https://")`，所以没有任何租户的 filter 集合发生变化：原本有 filter 的还是有，没有的（API 不是 https 的）还是没有。拆分是可读性收益，不带来新的 `assetlinks.json` 上线风险。**别去追一个不存在的风险。**
+
+  仍然成立的那一半：`assetlinks.json` 必须在位，否则 Android 在安装时校验失败、这一版装上去就是未校验状态（2026-09-11 踩过）。该文件依赖 `release.android` 发布身份（`release_identity.go:350-358`，未登记返回 404），任何能出 APK 的租户都已具备；上线前仍要对每个目标租户实际 `curl` 确认。校验失败时 Android 退回选择框，此时任何声明了同 URL 的应用都会出现在列表里。
 
 深链归属本身是可靠的：`assetlinks.json` 由租户登记的 `release.android` 直接生成，服务端拒绝登记 RN 公共 debug 指纹（`release_identity.go:75`），release 构建拒绝 debug keystore（`android/app/build.gradle:110-113`）。抢注不了。
 
@@ -352,6 +356,8 @@ bootstrap 额外下发 `inviteLinkBase`（`https://<租户 API 域名>/app/invit
 本期能做、也必须做的三件事：
 
 1. **绑定时把风控信号落进 `audit_events.summary`**：注册 IP / ASN、注册时间、installation 复用情况、双方注册时间间隔。关系不可改，但事实可以留证，这是唯一还来得及做的事——等返佣立项再想采集，这批数据已经永久缺失。
+
+   > **实现范围比这一条窄。** 落进 `summary` 的是本次绑定的来源 IP、双方注册时间与间隔、installation 复用情况；**双方的注册 IP 与 ASN 没有采集**。这个库里从没有任何一张表存过客户端 IP，补上它等于对每个账号永久采集一项个人数据，是需要合规判断的决策，不由实现方顺手决定。上面那句"永久缺失"因此对注册 IP 成立——要采集就得在本批迁移里加列。缺口与后果记在 ADR 0018「滥用」一节。
 2. **给 `installations/register` 与 `auth/nonce` 加限流**。这比限流 referral 接口重要得多：它是整条 Sybil 链路的入口。**这是本设计范围之外的改动，但必须与本设计同窗口上线**，否则本设计等于给一条免费的注册流水线配上了收益出口。
 3. **ADR 里写明"返佣上线前的存量处置"**：抑制名单由返佣模块持有，与关系表的优先级关系提前约定；不要等到那时才发现关系改不动。
 

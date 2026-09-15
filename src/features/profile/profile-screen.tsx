@@ -175,12 +175,16 @@ export function ProfileScreen() {
               onPress={() => navigation.navigate("SecurityCenter")}
               testID="profile-security-quick"
             />
-            <QuickCell
-              icon="gift-outline"
-              label={t("profile.referral")}
-              onPress={() => navigation.navigate("Referral")}
-              testID="profile-referral"
-            />
+            {/* 租户关掉邀请就不给入口，和首页快捷格一致：留着只会让人点进去
+                看一句"暂未开放"，那不是一个入口该有的结果 */}
+            {config.referral.enabled ? (
+              <QuickCell
+                icon="gift-outline"
+                label={t("profile.referral")}
+                onPress={() => navigation.navigate("Referral")}
+                testID="profile-referral"
+              />
+            ) : null}
             <QuickCell
               icon="headset"
               label={t("profile.support")}
@@ -271,19 +275,21 @@ export function ProfileScreen() {
           </Group>
 
           <Group title={t("profile.section.more")}>
-            <SRow
-              icon="gift-outline"
-              title={t("profile.referral")}
-              value={
-                referral.data
-                  ? fill(t("profile.referralCount"), {
-                      n: referral.data.inviteeCount,
-                    })
-                  : undefined
-              }
-              onPress={() => navigation.navigate("Referral")}
-              testID="profile-referral-row"
-            />
+            {config.referral.enabled ? (
+              <SRow
+                icon="gift-outline"
+                title={t("profile.referral")}
+                value={
+                  referral.data
+                    ? fill(t("profile.referralCount"), {
+                        n: referral.data.inviteeCount,
+                      })
+                    : undefined
+                }
+                onPress={() => navigation.navigate("Referral")}
+                testID="profile-referral-row"
+              />
+            ) : null}
             <SRow
               icon="help-circle-outline"
               title={t("home.support")}

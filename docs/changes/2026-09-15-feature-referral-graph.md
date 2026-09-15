@@ -42,18 +42,99 @@
 - 文案：`home.quick.invite` / `profile.referral` 改「邀请好友」，新增 `referral.*` 33 个键。
 - **原生变更**：`app.config.ts` 的 intentFilters 增加 `/app/invite/`，并从「WalletConnect 配置存在才生成」里拆出来挂到 https 上。
 
-## 实现里与设计不同的三处
+## 评审与修复（实现后的对抗评审）
+
+三仓实现完成后各跑了一轮 `code-reviewer` 对抗评审，加上自查。评审**先复现再定性**，
+修复也**先写出会失败的回归测试再改**。下面按严重度列出真实缺陷。
+
+### 会直接影响线上的四个
+
+1. **bootstrap 永远下发 `bindWindowHours: 168`，租户配的值被丢掉**（服务端）。
+   `appConfigView` 归一化时把数字变成 Go `int`，bootstrap 拿它的结果又归一化一遍，
+   而里面只断言 `float64`，静默落回默认值。App 显示 7 天窗口、服务端按真实的 24 小时判，
+   用户第 3 天点绑定拿到 409，而管理端显示的又是正确的 24。根因是同一段配置有两份解析
+   实现；已收敛成 `parseReferralSection`。
+
+2. **管理端「应用配置」页任何保存都返回 400**（服务端）。`appConfigView` 往
+   `config.referral` 注入了只读的 `inviteLinkBase`，而 `validateReferralSection` 对未知键
+   零容忍，RN-Admin 的 `looseObject` 原样把它 PATCH 回来。改主题色都会被拒，
+   且报错指向运营没碰过的字段。`inviteLinkBase` 已移出可编辑视图，只留在下发链路。
+
+3. **zustand persist 的 rehydrate 会盖掉刚存进去的深链邀请码**（App）。默认的 `merge`
+   是 `{...内存, ...磁盘}`——**磁盘覆盖内存**，方向正好相反。冷启动时
+   `Linking.getInitialURL()` 与 rehydrate 谁先返回是真竞态，深链先到就会被随后落地的
+   旧值（哪怕是 `null`）盖掉，整条主路径静默失败。用过一次之后才会发作：存储为空时
+   merge 是恒等，第一次装机看不出来。已改成"本次进程写过就以内存为准"。
+
+4. **手输的码提交后，深链暂存的那个立刻顶上来再弹一次确认**（App）。
+   `setManualCode(null)` 是同步的，而 `forgetPending()` 要等网络往返，中间那几帧
+   `shouldConfirmPending` 翻成 true。用户刚确认完一次**永久不可解除**的绑定，
+   马上被要求确认另一个，再点一下就是第二次提交。
+
+### 其余已修
+
+**服务端**：未命中的更严子配额此前只写日志不返回 429（契约承诺了 429），扫描器的有效
+配额是宽松的那条；关系列表的两个 LEFT JOIN 与地址筛选用 `LOWER(address)` 导致索引全失效，
+改回 `address_key`；释放绑定锁的 exec 补回超时；补录配额改成成功后才消耗（打错地址 20 次
+不该把当天额度吃光）；补录响应返回裸邀请码，与关系列表、账号详情一致；`assignInviteCode`
+显式断言影响一行；`/me` 的 `bindWindow.open` 计入租户开关；账号详情读到无码行改为报错。
+死代码与重复：`referralCodeAttempts` 两份合并进 `internal/referral`；两份配置解析合并；
+`platformWalletBlocked` 改为调用 `platformBlockedAddress`；补录复用 `validateAdminAction`；
+下级列表查询抽成 `referralInviteesPage`，handler 与库测共用（此前测试抄了一份，
+handler 漏掉 `invited_at IS NOT NULL` 测试照样绿）；落地页不再二次归一化。
+
+**App**：确认层用 ×／下滑／点遮罩关闭时状态全留着，下次进来又弹——已挂到 `onDismiss`；
+30 分钟暂存的过期判定只在渲染期成立（`useNow()` 取挂载时刻且此后不变，而 stack 页在
+后台一直挂着），提交那一刻现在会用 `Date.now()` 再判一次；下级列表请求失败被画成空态，
+与同卡片的"已邀请 N 人"自相矛盾，已拆成独立错误分支；`parseDeepLink` 丢掉三斜杠
+（`anyfun:///app/invite/X`，正是 `Linking.createURL` 的产出形态）与大写 host 的链接；
+深链邀请码零边界校验就落盘并进确认弹层，已加长度与控制字符的拒绝（**不是归一化**，
+归一化仍只在服务端）；邀请页与个人中心用了两个 queryKey 查同一份数据，已统一走
+`useReferralOverview`；`REFERRAL_DISABLED` 此前落在裸 toast 上，现在整页切成关闭态。
+死代码：全链路无人调用的 `checkCode` 已删（它返回 `boolean`，恰好把设计 §4.1 特意
+分开的"码输错"与"码无效"合并成一句含糊的话）；两个未被引用的文案键已删；
+Mock 网关改抛带 `code` 的 `AppError`，否则"服务端拒绝时显示对应原因"这类用例是假绿。
+
+**管理端**：邀请关系页首屏加载中直接画空态（管理端标准 §1.1 要求 loading/error/empty
+分别表达），已补 `ReferralPageSkeleton`。
+
+### 新增的回归测试
+
+服务端 limiter 单测 5 条、库测 4 条；App 深链解析 6 条、暂存竞态 3 条、邀请页 3 条；
+管理端首屏状态 2 条、日期筛选往返 1 条。**每一条都先在未修复的代码上验证过会失败**
+（配置双重归一化、管理端回存、rehydrate 竞态、二次确认四条逐个验过）。
+
+## 实现里与设计不同的地方
 
 1. **声明式默认写在 `REFERRAL_SCHEMA.md` 而不是 `docs/CONFIGURATION.md`**。后者在 §1 明确把"按租户变化的"划在范围外（"租户数据……不在这里，在库里按租户存"），把租户配置写进去会和它自己的分类打架。
 2. **一期不做 App 内扫码**（设计 D8 已记录）。二维码内容是链接，任何相机扫到都经 App Links 落回 App，能力不缺；而 `AddressScanner` 硬编码了 7 个 `send.*` 文案键，相机权限的系统提示也写死"scan wallet address QR codes"，通用化要动原生清单。
 3. **App Links 的两条路径写在同一个 intent filter 的 `data` 数组里**，共用一次域名核验，而不是两个 filter。
+4. **邀请页是三张卡不是设计 §5.1 的四块**：二维码并进了邀请码卡。二维码的内容就是邀请链接，
+   和邀请码同属"把我的邀请发出去"这一件事，分成两张卡会让用户以为是两样东西。
+5. **补录没有 `expectedInviteeState` 请求字段**（设计 §4.4 第 2 条 / ADR 0018）。关系一次性且
+   不可解绑，"未绑定"是它唯一可能的取值，恒为常量的字段不携带信息却要进公开契约；服务端的
+   条件更新 `WHERE inviter_user_id IS NULL`（影响 0 行即 409）在并发下与乐观锁等价。已记进 ADR。
+6. **双方注册 IP / ASN 没有采集**（设计 §6 第 1 条）。这个库从没有任何一张表存过客户端 IP，
+   补上它等于对每个账号永久采集一项个人数据，包括从不使用邀请功能的用户——这是需要运营与
+   合规判断的决策，不由实现方顺手决定。**后果要说清楚**：注册 IP 才是能把一棵 Sybil 树串起来
+   的字段，绑定 IP 换一下就绕开了；等返佣立项再想采集，这批历史数据已经永久缺失。要采集就得
+   在本批迁移里给 `wallet_user` 加列，**这个决定越早做越省事**。缺口与后果记在 ADR 0018「滥用」。
+7. **设计 §5.4 的一条预测被更正**：原文说"拆分后未配 WalletConnect 的租户会首次获得 autoVerify
+   的 intent filter"，实现后核对发现 `appLinkHost` 与 `walletConnectRedirectUrl` 判的是**同一个**
+   条件，没有任何租户的 filter 集合发生变化。设计已更正，免得有人去追一个不存在的上线风险。
 
 ## 验证
 
 - **RN-Server**：`gofmt` / `go vet` / `go test -race ./...` 全绿；`go build ./cmd/server` 通过。库测跑在本机 `rn-test-mysql`（MySQL 8.0）上，覆盖并发互绑不成环、并发绑定只成一次、三级链回绑成环、CHECK 约束拒绝三列不一致、键集分页不重不漏、注册碰撞重试不改他人行、三个迁移重复执行、回滚后旧 INSERT 仍可用、`invite_code` 仍可空。
-- **RN-Admin**：`pnpm check` 全绿（format / lint / typecheck / test / build）；新增 8 个用例。
-- **RN-App**：`pnpm check` 全绿（format / lint / typecheck / 全量 Jest / api:check / config:check / i18n:check）；新增 19 个用例（深链解析 9、邀请页 10）。
-- 契约：`contracts/rn-server.openapi.json` 与服务端同步，新增 6 条路径与 7 个 schema。
+  评审轮补上了此前零覆盖的那一层（HTTP handler、落地页、限流器）：limiter 单测 5 条、
+  未命中配额返回 429 与配置链路的库测 4 条。`go test -race -count=1 ./...` 带
+  `RN_TEST_MYSQL_DSN` 全量跑通。
+- **RN-Admin**：`pnpm check` 全绿（format / lint / typecheck / test / build），40 套 / 299 用例；
+  邀请关系页新增 11 个用例（评审轮 +3：首屏骨架、首屏错误、日期筛选随 URL 往返）。
+- **RN-App**：`pnpm check` 全绿（format / lint / typecheck / 全量 Jest / api:check / config:check / i18n:check），
+  166 套 / 1334 用例；邀请与深链相关共 34 个用例（评审轮 +12）。
+- 契约：`contracts/rn-server.openapi.json` 与服务端同步，新增 6 条路径与 7 个 schema；
+  评审轮补了三条注册接口的 429，并把补录响应的 `inviterCode` 说明改为裸码。
 
 全量 Jest 跑完会打一条「Jest did not exit one second after the test run has completed」。
 它**不是本次引入的**，已定性：本分支的基点 `adc5745` 在不含任何本次改动时同样出现
@@ -75,6 +156,21 @@ rebase 到最新 main 之后会自然消失。测试全过、`pnpm check` exit=0
 - 回滚：四个列留在库里不做反向迁移。因为 `invite_code` 永久可空，旧二进制回滚后登录不受影响。把 `referral.enabled` 改回 `false` 即可让功能对用户消失。
 - **存量用户上线即窗口已关**：回填只发码不建关系，所有存量账号注册都已超过 7 天，只能走管理端补录。这是设计 D2 的自然后果，运营需提前知道。
 
-## 同窗口必须一起上的事（本次未做）
+## 同窗口必须一起上的事（评审轮已补上）
 
-设计 §6：注册链路三步（`installations/register`、`auth/nonce`、`auth/verify`）目前免鉴权、零限流，3 个请求就能造一个账号。邀请关系上线后，这条链路等于给 Sybil 关系树配了收益出口，而关系不可解绑、事后无法追溯清理。**给这两个接口加限流必须与本次同窗口上线。** 本次已经做的是留证：每条绑定把双方注册时间与间隔、IP、installation 复用情况写进 `audit_events.summary`。
+设计 §6 / ADR 决策 D13：注册链路三步（`installations/register`、`auth/nonce`、`auth/verify`）
+免鉴权、零限流，3 个请求就能造一个账号。邀请关系上线后这条链路等于给 Sybil 关系树配了出口，
+而关系不可解绑、封禁也不清 `inviter_user_id`，事后无法结构化清理。
+
+**这条限流已随评审轮补进本分支**（`internal/api/registration_limit.go`）：三步各有每小时与
+每分钟两档按 IP 配额，超出返回 429 `REGISTRATION_RATE_LIMITED` 并告警。账号创建的真正瓶颈是
+`auth/verify`（`wallet_user` 在它这里创建），单 IP 的造号速度从"无上限"压到 60/小时。
+
+**阈值是有意取松的**：运营商级 NAT 与办公室出口会让几十个真人共用一个出口 IP，这条闸的目的
+是掐掉脚本化批量造号，不是精确风控，宁可放过也不误伤。要收紧等线上有了分布形状再调，
+别凭空拍一个更小的数。**上线后应当看一眼 `registration step throttled` 这条告警的量**——
+真人碰不到这条线，一旦有量，要么是脚本，要么是阈值定错了。
+
+留证方面本次做的是：每条绑定把双方注册时间与间隔、本次绑定 IP、installation 复用情况写进
+`audit_events.summary`。**双方的注册 IP 与 ASN 没有采集**，理由与后果见上面「实现里与设计
+不同的地方」第 6 条——那是本次交付里唯一还悬着的安全决策，需要运营与合规拍板。

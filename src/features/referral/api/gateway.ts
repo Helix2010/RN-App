@@ -54,9 +54,12 @@ export interface ReferralGateway {
   bind(code: string, source: ReferralSource): Promise<ReferralInviter>;
   /** 我的直接下级，键集分页 */
   invitees(cursor?: string): Promise<ReferralInviteePage>;
-  /**
-   * 校验一个邀请码是否有效。**免登录**——绑定前的确认发生在登录之前。
-   * 只回答有效与否，不返回邀请人的任何信息。
-   */
-  checkCode(code: string): Promise<boolean>;
 }
+
+/*
+ * 这里**没有** checkCode（免登录的 GET /v1/mobile/referral/codes/:code）。
+ * 接口在服务端是有的，落地页用它；App 侧一期不预校验：确认层只问"要不要绑"，
+ * 绑不绑得成由 bind 回答。预校验返回一个 boolean 会把设计 §4.1 特意分开的
+ * 条件 2（码输错了，提示重输）与条件 3（码无效，提示向邀请人核对）合并成一句
+ * 含糊的话，那正是设计不要的。将来真要接，返回值得能区分这两种。
+ */
