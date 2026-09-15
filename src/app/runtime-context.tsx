@@ -616,7 +616,7 @@ export function FoundationRuntimeProvider({ children }: PropsWithChildren) {
           <LaunchScreen
             pending={launchPending}
             message={activeBranding?.launch.subtitle || t("status.loading")}
-            title={activeBranding?.launch.title || t("app.name")}
+            title={activeBranding?.launch.title || appRuntime.appName}
             backgroundColor={launchVisual?.backgroundColor}
             logo={launchVisual?.logo}
             backgroundImage={launchVisual?.backgroundImage}

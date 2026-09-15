@@ -287,30 +287,35 @@ export function AppLockGate() {
       testID="app-lock-gate"
     >
       <Page
-        paddingTop={insets.top + 28}
+        paddingTop={insets.top + 16}
         paddingBottom={insets.bottom + 24}
         paddingHorizontal="$6"
       >
-        <Stack alignItems="center">
-          <BrandMark size={40} uri={logoUri} />
-        </Stack>
-        <Stack flex={1} alignItems="center" justifyContent="center" gap="$2">
-          <InlineText
-            fontSize={26}
-            fontWeight="800"
-            letterSpacing={-0.4}
-            textAlign="center"
-          >
-            {t("security.locked.title")}
-          </InlineText>
-          <Body
-            fontSize={15}
-            textAlign="center"
-            color="$textMuted"
-            maxWidth={280}
-          >
-            {t("security.locked.subtitle")}
-          </Body>
+        {/*
+         * logo 跟标题是一簇，居中——跟启动页（launch-screen.tsx）和关于页同一套构成。
+         * 以前 logo 单独钉在状态栏下面、和标题之间空掉大半屏，它在那儿是个孤立的
+         * 小方块，看上去就是"偏上"。
+         */}
+        <Stack flex={1} alignItems="center" justifyContent="center" gap="$5">
+          <BrandMark size={72} uri={logoUri} />
+          <Stack alignItems="center" gap="$2">
+            <InlineText
+              fontSize={26}
+              fontWeight="800"
+              letterSpacing={-0.4}
+              textAlign="center"
+            >
+              {t("security.locked.title")}
+            </InlineText>
+            <Body
+              fontSize={15}
+              textAlign="center"
+              color="$textMuted"
+              maxWidth={280}
+            >
+              {t("security.locked.subtitle")}
+            </Body>
+          </Stack>
         </Stack>
         {/* 解锁区：落在屏幕下三分之一（拇指区），横向居中 */}
         <Stack alignItems="center" gap="$2" paddingBottom="$6">

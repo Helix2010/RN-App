@@ -99,7 +99,7 @@ export function createFallbackConfig(locale: SupportedLocale): BootstrapConfig {
         enabled: true,
         minDisplayMs: 700,
         animation: { type: "fade_scale", durationMs: 360 },
-        title: locale === "en-US" ? "AnyFun" : "AnyFun",
+        title: appRuntime.appName,
         subtitle:
           locale === "en-US" ? "Syncing app configuration" : "正在同步应用配置",
         visuals: {

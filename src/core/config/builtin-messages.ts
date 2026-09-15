@@ -8,7 +8,6 @@ import { normalizeMessages } from "./localization";
  */
 
 const zhCN = {
-  "app.name": "AnyFun",
   "home.market": "市场行情",
   "home.predict": "热门预测",
   "home.viewAll": "查看全部",
@@ -1325,7 +1324,6 @@ const zhCN = {
 };
 
 const enUS: Record<keyof typeof zhCN, string> = {
-  "app.name": "AnyFun",
   "home.market": "Market",
   "home.predict": "Popular predictions",
   "home.viewAll": "View all",

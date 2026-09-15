@@ -186,7 +186,9 @@ const walletConnectRedirectUrl = apiBaseUrl.startsWith("https://")
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
-  name: tenant?.appName ?? "AnyFun",
+  // 非 dev 构建缺 EXPO_PUBLIC_TENANT 时上面已经抛错，所以这里只是本地开发的占位名；
+  // 平台自己的名字，不能写任何租户的名字
+  name: tenant?.appName ?? "RN App Foundation",
   slug: tenant ? `${tenant.slug}-app` : "anyfun-foundation",
   scheme: tenant?.scheme ?? "anyfun",
   version: appVersion,

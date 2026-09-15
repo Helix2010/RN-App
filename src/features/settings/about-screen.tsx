@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRef, type ReactNode } from "react";
 import { Platform } from "react-native";
 import { useFoundationRuntime } from "../../app/runtime-context";
+import { appRuntime } from "../../core/network/api-client";
 import {
   Body,
   BrandMark,
@@ -75,7 +76,7 @@ export function AboutScreen({
           <Stack alignItems="center" gap="$2" paddingVertical="$3">
             <BrandMark size={72} uri={logoUri} />
             <SectionTitle fontSize={20}>
-              {config.branding?.launch.title || t("app.name")}
+              {config.branding?.launch.title || appRuntime.appName}
             </SectionTitle>
             <Body fontSize={12}>
               {
@@ -151,7 +152,7 @@ export function AboutScreen({
           </Group>
           <Body fontSize={11} textAlign="center">
             Build {config.app.buildNumber} · {config.app.runtimeVersion} · ©
-            2026 {config.branding?.launch.title || t("app.name")}
+            2026 {config.branding?.launch.title || appRuntime.appName}
           </Body>
         </Content>
       </PageScroll>

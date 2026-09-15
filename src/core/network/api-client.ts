@@ -35,6 +35,17 @@ function appVersion(): string {
   );
 }
 
+/**
+ * 这个包自己的应用名。唯一来源是 `tenants/<slug>/tenant.json` 的 appName，
+ * 经 app.config.ts 写进原生应用标签和 manifest，所以它对每个包都必然是对的那个名字。
+ * 不走共用文案：那是平台级的一份，在多租户下写谁的名字都是错的。
+ */
+function appName(): string {
+  if (Application.applicationName) return Application.applicationName;
+  const configured = Constants.expoConfig?.name;
+  return typeof configured === "string" ? configured : "";
+}
+
 function buildNumber(): string {
   if (Application.nativeBuildVersion) return Application.nativeBuildVersion;
   const configured = Constants.expoConfig?.extra?.buildNumber;
@@ -47,6 +58,7 @@ function buildNumber(): string {
 
 export const appRuntime = {
   version: appVersion(),
+  appName: appName(),
   buildNumber: buildNumber(),
   platform: Platform.OS === "ios" ? "ios" : "android",
   distributionChannel: distributionChannel(),

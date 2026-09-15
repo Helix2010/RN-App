@@ -20,6 +20,7 @@ jest.mock("../network/api-client", () => ({
   apiClient: { get: jest.fn(), getText: jest.fn() },
   appRuntime: {
     version: "1.0.0",
+    appName: "Tenant A",
     buildNumber: "1",
     platform: "android",
     distributionChannel: "development",
