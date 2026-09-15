@@ -34,12 +34,28 @@ App 自己的名字只有一个来源：`tenants/<slug>/tenant.json` 的 `appNam
 服务端加迁移 **51 `tenant_neutral_platform_brand_copy`**：把 `tenant_id=0` 的
 `launch.title`、`app.name` 内容清成**空串**。
 
-**为什么清空而不是删行**：bootstrap 的 `branding.launch.title` 是
-`messages[titleKey]`，键不存在就下发 `null`，而 App 侧 schema 是 `z.string()` 非空——
-现网所有安装会直接解析失败。空串是合法 string，App 拿到空值后退到这个包自己的名字。
+**为什么不删行**：bootstrap 的 `branding.launch.title` 是 `messages[titleKey]`，
+键不存在就下发 `null`，而 App 侧 schema 是 `z.string()` 非空——现网所有安装会直接
+解析失败。
 
 **顺序上的坑**：启动种子在迁移之后跑，所以必须同时同步服务端内嵌种子（`app.name`
 已从中移除），否则种子会把刚清空的行又写回 `AnyFun`。
+
+### 清空之后引出的问题（线上出现过，已修）
+
+`compiledMessages` 对没有内容的键返回**键名本身**——那是管理端列表里的缺失标记。
+所以 51 部署之后线上一度下发 `branding.launch.title = "launch.title"`、
+`messages["app.name"] = "app.name"`，界面上就是一行字面量。这个分支我事先没查，
+是部署后核对 bootstrap 才发现的。两处分别修：
+
+- `resolveBranding` 加 `brandingCopy`：值等于键名、或键不存在时返回空串，字段仍然
+  下发。`launch.title` 的行保留——运营还要能在管理端编辑它。
+- 迁移 **52 `drop_platform_app_name_copy`** 删掉 `app.name` 的全局行。它已经没有
+  代码读了，而留着（哪怕是空的）会让**已装机的旧版本包**在 `t("app.name")` 上取到
+  键名。删掉之后服务端根本不下发这个键，旧包用自己内置的那份，对现有租户仍然是对的。
+
+迁移 51 已经在线上跑过并记账，所以它的内容恢复成实际跑过的那版，纠正动作放在 52
+——不改已应用的迁移。
 
 ## 防回归
 
@@ -47,8 +63,11 @@ App 自己的名字只有一个来源：`tenants/<slug>/tenant.json` 的 `appNam
   `appName`，断言没有一条内置文案的值等于其中任何一个；断言离线兜底的启动页标题
   取 `appRuntime.appName`。把 `app.name` 加回去时该测试失败（3 处命中）。
   用相等而非包含判定——将来可能有租户叫「钱包」这类通用词，包含判定会满屏误报。
-- `internal/store/platform_brand_copy_test.go`：迁移后全局行仍存在且为空串、
-  租户自己的覆盖不受影响、之后再跑启动种子也不会把品牌名写回来。
+- `internal/store/platform_brand_copy_test.go`：跑完 51+52 之后 `launch.title`
+  的全局行仍存在且为空串、`app.name` 的全局行已删除、租户自己的覆盖不受影响、
+  之后再跑启动种子也不会把品牌名写回来。
+- `internal/api/branding_brand_copy_test.go`：`resolveBranding` 对"有文案 / 值等于
+  键名 / 键不存在 / 空串"四种输入的输出，并断言 `title` 字段本身不会缺。
 
 ## 修这个时顺手暴露的一个问题
 
