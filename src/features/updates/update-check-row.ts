@@ -28,6 +28,8 @@ export function apkDownloadRowValue(
       );
     case "failed":
       return t("update.downloadFailed");
+    case "verifying":
+      return t("update.verifying");
     case "ready":
     case "installing":
       return t("update.readyToInstall");

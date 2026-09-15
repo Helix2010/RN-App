@@ -39,6 +39,16 @@ export type ApkDownloadState =
       total: number;
       error: string;
     }
+  | {
+      /**
+       * 下载完了、正在比对摘要。**必须是一个独立阶段**：整包 SHA-256 在 JS 里算，
+       * 几十 MB 的包要好几秒，而这期间如果状态还停在 downloading 100%，
+       * 用户看到的就是一个卡死的进度条（实测反馈：「下载显示 100% 隔了好一会才到安装界面」）。
+       */
+      phase: "verifying";
+      releaseId: string;
+      size: number;
+    }
   | { phase: "ready"; releaseId: string; fileUri: string; size: number }
   | { phase: "installing"; releaseId: string; fileUri: string; size: number };
 
@@ -235,7 +245,9 @@ export class ApkDownloadManager {
   /** 用户点"立即更新 / 继续下载 / 重试"：从磁盘上已有的字节接着下 */
   start(): void {
     const state = this.getState();
-    if (state.phase === "downloading") return;
+    // 下载中和校验中都没有可做的事。校验中靠 this.running 也能把 launch() 挡住，
+    // 但那是间接的——显式写出来，别让它依赖另一个字段的时序
+    if (state.phase === "downloading" || state.phase === "verifying") return;
     if (state.phase === "ready" || state.phase === "installing") {
       void this.install();
       return;
@@ -444,6 +456,12 @@ export class ApkDownloadManager {
           "downloaded size does not match the release",
         );
       }
+      // 进校验阶段：下面这一步要把整包读一遍算摘要，不是瞬时操作
+      this.setState({
+        phase: "verifying",
+        releaseId: target.releaseId,
+        size: done.size,
+      });
       if (!(await this.digestOk(target, result.uri))) {
         // 大小对但摘要不对：传输损坏或文件被换。给一次重下机会，再不对就是终态，不交给安装器
         await this.deps.deleteFile(result.uri);

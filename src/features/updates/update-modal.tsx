@@ -142,13 +142,15 @@ export function UpdateModal() {
 
   const primaryLabel = !update.full.actionUrl
     ? t("action.retry")
-    : phase === "ready" || phase === "installing"
-      ? t("update.install")
-      : phase === "paused"
-        ? t("update.resume")
-        : phase === "failed"
-          ? t("update.retryDownload")
-          : t("update.now");
+    : phase === "verifying"
+      ? t("update.verifying")
+      : phase === "ready" || phase === "installing"
+        ? t("update.install")
+        : phase === "paused"
+          ? t("update.resume")
+          : phase === "failed"
+            ? t("update.retryDownload")
+            : t("update.now");
   const statusLine =
     phase === "paused" && sameRelease && download.phase === "paused"
       ? download.retriesLeft > 0 && download.reason === "network"
@@ -160,11 +162,13 @@ export function UpdateModal() {
           )
       : phase === "failed"
         ? t("update.downloadFailed")
-        : phase === "ready"
-          ? t("update.readyToInstall")
-          : phase === "installing"
-            ? t("update.installerOpened")
-            : null;
+        : phase === "verifying"
+          ? t("update.verifying")
+          : phase === "ready"
+            ? t("update.readyToInstall")
+            : phase === "installing"
+              ? t("update.installerOpened")
+              : null;
 
   return (
     // 走应用级覆盖层而不是原生 Modal：下载失败等 toast 要能盖在弹窗上面
@@ -294,7 +298,7 @@ export function UpdateModal() {
               ) : null}
               <PrimaryButton
                 onPress={() => void onPrimary()}
-                disabled={busy}
+                disabled={busy || phase === "verifying"}
                 testID="update-modal-now"
               >
                 {primaryLabel}

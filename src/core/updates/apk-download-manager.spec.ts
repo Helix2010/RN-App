@@ -72,6 +72,9 @@ function makeDeps(size = 1_000) {
       installs.push(uri);
     },
     hashFile: async (uri) => {
+      // 摘要计算是真实耗时的一步（整包读一遍）。用例需要断言"正在校验"那一刻的
+      // 状态时，往 hashGate 放一个未完成的 promise 把它悬住
+      await harness.hashGate;
       const digest = digests.get(uri);
       return digest === undefined ? GOOD_SHA256 : digest;
     },
@@ -95,6 +98,10 @@ function makeDeps(size = 1_000) {
     () => state,
   );
   managers.push(manager);
+  // 可控的摘要闸门：默认不拦，用例需要时塞一个未完成的 promise
+  const harness: { hashGate: Promise<void> | undefined } = {
+    hashGate: undefined,
+  };
   const target = {
     releaseId: "rel_1",
     url: `${ORIGIN}/v1/public/releases/rel_1/download`,
@@ -107,6 +114,10 @@ function makeDeps(size = 1_000) {
     manager,
     target,
     fileUri,
+    /** 见 hashFile：设成未完成的 promise 就能把校验悬在中间 */
+    set hashGate(gate: Promise<void> | undefined) {
+      harness.hashGate = gate;
+    },
     files,
     tasks,
     installs,
@@ -158,6 +169,43 @@ describe("ApkDownloadManager", () => {
     await h.manager.install();
     expect(h.installs).toEqual([h.fileUri]);
     expect(h.state().phase).toBe("installing");
+  });
+
+  /**
+   * 校验必须有自己的阶段。整包 SHA-256 在 JS 里算，几十 MB 的包要好几秒；
+   * 这期间状态若还停在 downloading 100%，用户看到的就是一个卡死的进度条
+   * ——这正是「下载显示 100% 隔了好一会才到安装界面」那条反馈的成因。
+   */
+  it("下载完到就绪之间必须经过 verifying，且这期间挡住重复触发", async () => {
+    const h = makeDeps(1_000);
+    await h.manager.configure(h.target);
+    h.manager.start();
+    await flush();
+    h.tasks[0]!.progress(1_000, 1_000);
+    expect(h.state()).toMatchObject({ phase: "downloading", written: 1_000 });
+
+    // 让摘要计算悬在中间，好断言那一刻的状态
+    let releaseHash: (() => void) | undefined;
+    h.hashGate = new Promise<void>((resolve) => {
+      releaseHash = resolve;
+    });
+    h.files.set(h.fileUri, 1_000);
+    h.tasks[0]!.resolve(h.fileUri);
+    await flush();
+    expect(h.state()).toMatchObject({
+      phase: "verifying",
+      releaseId: h.target.releaseId,
+      size: 1_000,
+    });
+    // 校验中点「立即更新」不能再开一轮下载
+    const tasksBefore = h.tasks.length;
+    h.manager.start();
+    await flush();
+    expect(h.tasks.length).toBe(tasksBefore);
+
+    releaseHash?.();
+    await flush();
+    expect(h.state()).toMatchObject({ phase: "ready", size: 1_000 });
   });
 
   it("resumes from the bytes already on disk after a network error: fast backoff, then slow polling, never a dead end", async () => {

@@ -10,8 +10,20 @@ import {
   type ApkDownloadDeps,
 } from "./apk-download-manager";
 
-/** 每次读 1 MiB：安装包几十 MB，整包读进 JS 堆会把低端机拖垮 */
-const HASH_CHUNK_BYTES = 1024 * 1024;
+/**
+ * 每次读 4 MiB。
+ *
+ * 不整包读：安装包几十 MB，一次读进 JS 堆会把低端机拖垮。
+ * 也不读太小：每个分片都是一次 expo-file-system 的跨桥调用，返回的还是
+ * base64（比原始字节大 4/3）。1 MiB 的分片对一个 39 MB 的包就是 39 次往返、
+ * 约 52 MB 的 base64 字符串要跨桥搬运并在 JS 堆上分配——这是「下载到 100% 之后
+ * 还要等好几秒」的主要开销。4 MiB 把往返次数降到 10 次，单次瞬时占用约 13 MB
+ * （base64 串 + 解码出的串 + 字节数组），仍然有界。
+ *
+ * 真正的解法是让原生一侧直接算摘要或吐原始字节（expo-file-system 的新 File API
+ * 有 readableStream，但本仓没有流 polyfill，release 包里未验证），那是另一件事。
+ */
+export const HASH_CHUNK_BYTES = 4 * 1024 * 1024;
 
 function base64ToBytes(value: string): Uint8Array {
   const binary = globalThis.atob(value);

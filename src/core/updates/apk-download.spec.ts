@@ -1,7 +1,11 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 import * as FileSystem from "expo-file-system/legacy";
-import { createExpoApkDownloadDeps, hashFileSha256 } from "./apk-download";
+import {
+  HASH_CHUNK_BYTES,
+  createExpoApkDownloadDeps,
+  hashFileSha256,
+} from "./apk-download";
 
 jest.mock("expo-file-system/legacy", () => ({
   EncodingType: { Base64: "base64" },
@@ -46,20 +50,21 @@ function serveFile(bytes: Uint8Array) {
 
 describe("hashFileSha256", () => {
   it("hashes a file larger than one chunk, with a tail that is not chunk-aligned, exactly like a whole-buffer digest", async () => {
-    // 2.5 MiB + 13 字节：跨越三个 1 MiB 分片，最后一片不是整块
-    const bytes = new Uint8Array(2.5 * 1024 * 1024 + 13);
+    // 两个整分片 + 一个不足分片的尾巴。尺寸从 HASH_CHUNK_BYTES 派生：
+    // 分片大小是会被调的（它决定跨桥次数），写死数字的话一改就测不到跨分片
+    const tail = 13;
+    const bytes = new Uint8Array(HASH_CHUNK_BYTES * 2 + tail);
     for (let index = 0; index < bytes.length; index += 1)
       bytes[index] = (index * 31 + 7) & 0xff;
     serveFile(bytes);
     await expect(hashFileSha256("file:///cache/x.apk")).resolves.toBe(
       bytesToHex(sha256(bytes)),
     );
-    // 三次分片读：1 MiB、1 MiB、剩余
     const calls = jest.mocked(FileSystem.readAsStringAsync).mock.calls;
     expect(calls.map((call) => call[1]?.length)).toEqual([
-      1024 * 1024,
-      1024 * 1024,
-      0.5 * 1024 * 1024 + 13,
+      HASH_CHUNK_BYTES,
+      HASH_CHUNK_BYTES,
+      tail,
     ]);
   });
 

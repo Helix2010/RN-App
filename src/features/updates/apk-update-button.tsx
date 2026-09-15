@@ -31,11 +31,13 @@ export function ApkUpdateButton({
                 )
               : 0,
         })
-      : download.phase === "paused"
-        ? t("update.resume")
-        : download.phase === "failed"
-          ? t("update.retryDownload")
-          : t("update.install")
+      : download.phase === "verifying"
+        ? t("update.verifying")
+        : download.phase === "paused"
+          ? t("update.resume")
+          : download.phase === "failed"
+            ? t("update.retryDownload")
+            : t("update.install")
     : t("update.viewNow");
   return (
     <PrimaryButton
