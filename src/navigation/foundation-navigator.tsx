@@ -16,6 +16,7 @@ import { LanguageSettingsScreen } from "../features/settings/language-settings-s
 import { AppearanceSettingsScreen } from "../features/settings/appearance-settings-screen";
 import { NotificationSettingsScreen } from "../features/settings/notification-settings-screen";
 import { SecurityCenterScreen } from "../features/settings/security-center-screen";
+import { ReferralScreen } from "../features/referral/ui/referral-screen";
 import { AboutScreen } from "../features/settings/about-screen";
 import { WalletsScreen } from "../features/wallet/ui/wallets-screen";
 import { BackupScreen } from "../features/wallet/ui/backup-screen";
@@ -344,6 +345,7 @@ export function FoundationNavigator() {
         <Stack.Screen name="About" component={AboutScreen} />
         <Stack.Screen name="ReportProblem" component={ReportProblemScreen} />
         <Stack.Screen name="SecurityCenter" component={SecurityCenterScreen} />
+        <Stack.Screen name="Referral" component={ReferralScreen} />
       </Stack.Navigator>
       <SessionRevalidator />
       <ConnectWalletSheet />

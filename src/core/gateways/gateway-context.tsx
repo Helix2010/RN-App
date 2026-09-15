@@ -11,6 +11,8 @@ import { PredictCredentialStore } from "../predict-platform/credentials";
 import type { DexGateway } from "../../features/dex/api/gateway";
 import { MockDexGateway } from "../../features/dex/api/mock-dex-gateway";
 import type { PredictGateway } from "../../features/predict/api/gateway";
+import type { ReferralGateway } from "../../features/referral/api/gateway";
+import { HttpReferralGateway } from "../../features/referral/api/http-referral-gateway";
 import { HttpPredictGateway } from "../../features/predict/api/http-predict-gateway";
 import type { SessionGateway } from "../../features/session/api/gateway";
 import { HttpSessionGateway } from "../../features/session/api/http-session-gateway";
@@ -50,6 +52,8 @@ export type Gateways = {
   /** 预测账户：真实平台，没有 Mock 实现 */
   predictAccount: PredictAccountGateway;
   dex: DexGateway;
+  /** 邀请关系：一期只有关系，没有返佣 */
+  referral: ReferralGateway;
   /** 丢弃内存中的钱包解锁态；应用上锁 / 进后台时调用 */
   lockKeys: () => void;
 };
@@ -136,12 +140,15 @@ function createGateways(storage: KeyValueStorage): Gateways {
     onchain,
   });
   const dex = new MockDexGateway(storage, wallet);
+  // 邀请关系：除"校验邀请码"外都要会话令牌，所以它只依赖 session
+  const referral = new HttpReferralGateway({ session });
   return {
     session,
     wallet,
     predict,
     predictAccount,
     dex,
+    referral,
     lockKeys: () => vault.lock(),
   };
 }

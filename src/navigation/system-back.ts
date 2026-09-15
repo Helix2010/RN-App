@@ -26,7 +26,8 @@ export type RootRouteName =
   | "NotificationSettings"
   | "About"
   | "ReportProblem"
-  | "SecurityCenter";
+  | "SecurityCenter"
+  | "Referral";
 
 export function resolveSystemBack(
   routeName: RootRouteName | undefined,

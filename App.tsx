@@ -9,6 +9,7 @@ import { FoundationRuntimeProvider } from "./src/app/runtime-context";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { GatewayProvider } from "./src/core/gateways/gateway-context";
 import { OverlayLayer } from "./src/design-system";
+import { DeepLinkListener } from "./src/core/deep-link/deep-link-listener";
 import { AppLockGate } from "./src/features/security/app-lock-gate";
 import { FoundationNavigator } from "./src/navigation/foundation-navigator";
 import { UpdateModal } from "./src/features/updates/update-modal";
@@ -46,6 +47,9 @@ export default function App() {
                   <FoundationNavigator />
                   <UpdateModal />
                   <AppLockGate />
+                  {/* 入站深链只暂存，不导航：到达时可能还锁着屏、还没登录、
+                      bootstrap 还没就绪。由邀请页在这些都就绪之后取暂存 */}
+                  <DeepLinkListener />
                 </BottomSheetModalProvider>
                 {/* 覆盖层必须在 BottomSheetModalProvider 之外且之后：
                     弹层宿主渲染在 Provider 的 children 之后，放在里面的 toast / loading 会被弹层压住 */}

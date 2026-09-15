@@ -39,6 +39,7 @@ import {
 } from "../../design-system";
 import type { RootStackParamList } from "../../navigation/types";
 import { ReceiveSheet } from "../assets/ui/receive-sheet";
+import { useReferralOverview } from "../referral/hooks/use-referral";
 import { useSession, useSignOut } from "../session/hooks/use-session";
 import { requestAuth } from "../session/model/auth-sheet-store";
 import { useWalletAccounts } from "../wallet/hooks/use-wallet";
@@ -60,6 +61,8 @@ export function ProfileScreen() {
   const balance = usePredictAccountBalance(
     config.modules.predict ? address : undefined,
   );
+  // 邀请：只在租户开启且已登录时查（hook 内部把关）
+  const referral = useReferralOverview(address);
   const signOut = useSignOut();
   const appLock = usePreferencesStore((state) => state.appLockEnabled);
   const receive = useRef<SheetHandle>(null);
@@ -175,7 +178,7 @@ export function ProfileScreen() {
             <QuickCell
               icon="gift-outline"
               label={t("profile.referral")}
-              onPress={() => toast(t("state.empty"), "info")}
+              onPress={() => navigation.navigate("Referral")}
               testID="profile-referral"
             />
             <QuickCell
@@ -271,8 +274,14 @@ export function ProfileScreen() {
             <SRow
               icon="gift-outline"
               title={t("profile.referral")}
-              value={fill(t("profile.referralCount"), { n: 12 })}
-              onPress={() => toast(t("state.empty"), "info")}
+              value={
+                referral.data
+                  ? fill(t("profile.referralCount"), {
+                      n: referral.data.inviteeCount,
+                    })
+                  : undefined
+              }
+              onPress={() => navigation.navigate("Referral")}
               testID="profile-referral-row"
             />
             <SRow

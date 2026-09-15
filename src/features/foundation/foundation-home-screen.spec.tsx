@@ -15,6 +15,7 @@ function props() {
     onOpenPredict: jest.fn(),
     onOpenPredictPositions: jest.fn(),
     onOpenLeaderboard: jest.fn(),
+    onOpenReferral: jest.fn(),
     onOpenDex: jest.fn(),
     onOpenSwap: jest.fn(),
   };

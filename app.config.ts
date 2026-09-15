@@ -172,6 +172,14 @@ if (resolvedUpdatesUrl) {
  * http（本地开发）没有 App Link，返回 undefined，回跳退回自定义 scheme。
  */
 const APP_LINK_PATH = "/app/wc";
+/**
+ * 邀请链接的路径。**带尾斜杠**：pathPrefix 是前缀匹配，写成 "/app/invite"
+ * 会把 /app/invitexyz 也一并吃进来（设计 referral-graph-2026-09-15 §5.4）。
+ */
+const INVITE_LINK_PATH = "/app/invite/";
+const appLinkHost = apiBaseUrl.startsWith("https://")
+  ? new URL(apiBaseUrl).host
+  : undefined;
 const walletConnectRedirectUrl = apiBaseUrl.startsWith("https://")
   ? `${new URL(apiBaseUrl).origin}${APP_LINK_PATH}`
   : undefined;
@@ -222,7 +230,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ],
     // autoVerify 让系统开机时去拉 assetlinks.json 核验域名归属；核验通过后
     // 这条链接只会打开本应用，不会弹"用什么打开"的选择框
-    ...(walletConnectRedirectUrl
+    // 邀请链接不依赖 WalletConnect 是否配置，所以这一块挂在 https 上而不是
+    // 挂在 walletConnectRedirectUrl 上。两条路径写在同一个 filter 的 data 里，
+    // 共用一次域名核验。
+    ...(appLinkHost
       ? {
           intentFilters: [
             {
@@ -232,8 +243,13 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
               data: [
                 {
                   scheme: "https",
-                  host: new URL(apiBaseUrl).host,
+                  host: appLinkHost,
                   pathPrefix: APP_LINK_PATH,
+                },
+                {
+                  scheme: "https",
+                  host: appLinkHost,
+                  pathPrefix: INVITE_LINK_PATH,
                 },
               ],
             },

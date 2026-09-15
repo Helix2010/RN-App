@@ -58,6 +58,7 @@ export function FoundationHomeScreen({
   onOpenPredict,
   onOpenPredictPositions,
   onOpenLeaderboard,
+  onOpenReferral,
   onOpenDex,
   onOpenSwap,
 }: {
@@ -66,6 +67,7 @@ export function FoundationHomeScreen({
   onOpenPredict: () => void;
   onOpenPredictPositions: () => void;
   onOpenLeaderboard: () => void;
+  onOpenReferral: () => void;
   onOpenDex: () => void;
   onOpenSwap: () => void;
 }) {
@@ -324,7 +326,8 @@ export function FoundationHomeScreen({
         <QuickAction
           label={t("home.quick.invite")}
           icon="gift-outline"
-          enabled
+          enabled={config.referral.enabled}
+          onPress={onOpenReferral}
         />
         <QuickAction label={t("home.quick.more")} icon="dots-grid" enabled />
       </Row>

@@ -105,6 +105,7 @@ export function AppShellScreen({ navigation }: Props) {
                   : setTab("positions")
               }
               onOpenLeaderboard={() => navigation.navigate("Leaderboard")}
+              onOpenReferral={() => navigation.navigate("Referral")}
               onOpenDex={() =>
                 setTab(config.modules.predict ? "dex" : "market")
               }

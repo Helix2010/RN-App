@@ -75,6 +75,13 @@ export function createFallbackConfig(locale: SupportedLocale): BootstrapConfig {
     modules: { predict: true, dex: true },
     // 内置配置里没有租户，也就没有外部服务的关联
     services: {},
+    // 内置配置里没有租户，邀请自然是关的；链接基址用占位域名，enabled=false
+    // 时 App 不会用到它，但 schema 要求它是合法 URL（不允许空串蒙混过去）
+    referral: {
+      enabled: false,
+      bindWindowHours: 168,
+      inviteLinkBase: "https://invalid.invalid/app/invite/",
+    },
     // 内置配置里没有租户，也就没有链、没有目录：钱包界面在收到下发前是空态
     wallet: {
       walletConnectProjectId: "",

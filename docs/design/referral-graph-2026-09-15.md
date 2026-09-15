@@ -156,7 +156,9 @@ UPDATE wallet_user SET invite_code=? WHERE id=? AND invite_code IS NULL
 
 只有两个旋钮。写入时校验（非法值 400，说清哪个键、填了什么、期望什么），读路径不修复。`bindWindowHours` 取值 1–8760，越界拒绝——这不只是防呆，新版 App 的 schema 会校验取值，下发越界值会让新版 App 整份配置失效（§2.1）。
 
-声明式默认（未配置时 `enabled=false`、`168`）写进 `docs/CONFIGURATION.md`，管理端显示实际生效值。默认关闭是因为它会在 App 上多出一个入口，该由运营明确打开。
+声明式默认（未配置时 `enabled=false`、`168`）写进 `RN-Server/docs/database/REFERRAL_SCHEMA.md`，管理端显示实际生效值。默认关闭是因为它会在 App 上多出一个入口，该由运营明确打开。
+
+（原稿写的是 `docs/CONFIGURATION.md`。实施时改了：那份文档在 §1 明确把"按租户变化的"划在范围之外——"租户数据……**不在这里**，在库里按租户存"，租户配置落在表结构文档里才与它自己的分类一致。）
 
 bootstrap 额外下发 `inviteLinkBase`（`https://<租户 API 域名>/app/invite/`），由服务端算，App 不自己拼。
 
@@ -312,6 +314,8 @@ bootstrap 额外下发 `inviteLinkBase`（`https://<租户 API 域名>/app/invit
 ### 5.4 原生变更
 
 `app.config.ts` 的 Android intentFilters 增加邀请路径，并把整块从「`walletConnectRedirectUrl` 存在才生成」里拆出来——邀请路径不该依赖 WalletConnect 是否配置。
+
+两条路径写进**同一个** intent filter 的 `data` 数组，共用一次域名核验，而不是两个 filter。
 
 两个必须注意的点：
 

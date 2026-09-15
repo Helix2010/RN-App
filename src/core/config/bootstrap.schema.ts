@@ -243,6 +243,23 @@ export const bootstrapSchema = z.object({
   }),
   /** 外部服务的接入配置。服务端只在 predict 模块开着时下发 predict 一项 */
   services: z.object({ predict: predictServiceSchema.optional() }),
+  /**
+   * 邀请关系（设计 referral-graph-2026-09-15 §3.6）。
+   *
+   * 服务端恒下发这一段，越界值在写入管理端时就被拒了，所以这里按正式场景校验取值，
+   * 不做"值不合法就换一个"的归一化。inviteLinkBase 由服务端按请求 Host 算，
+   * 客户端不自己拼——落地页是服务端的，路径规则只该有一个来源。
+   *
+   * enabled=false 时 App 不显示邀请入口。后果是已绑用户也看不到自己的邀请人，
+   * 这是运营关闭功能的自然结果，不是缺陷。
+   */
+  referral: z.object({
+    enabled: z.boolean(),
+    /** 从首次登录起算的绑定窗口。服务端限定 1–8760 */
+    bindWindowHours: z.number().int().min(1).max(8760),
+    /** 形如 https://api.example.com/app/invite/ ，末尾带斜杠 */
+    inviteLinkBase: z.string().url(),
+  }),
   branding: brandingSchema.optional(),
   app: z.object({
     version: z.string().min(1),

@@ -39,4 +39,6 @@ export type RootStackParamList = {
   /** source=crash：上报上次异常退出留下的崩溃快照 */
   ReportProblem: { source?: "crash" } | undefined;
   SecurityCenter: undefined;
+  /** 邀请好友（设计 referral-graph-2026-09-15 §5.1）。一期只有关系，没有返佣 */
+  Referral: undefined;
 };

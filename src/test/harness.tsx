@@ -23,6 +23,7 @@ import { FoundationThemeProvider, OverlayLayer } from "../design-system";
 import { InMemoryPredictAccountGateway } from "./predict-account";
 import { MockDexGateway } from "../features/dex/api/mock-dex-gateway";
 import { MockPredictGateway } from "../features/predict/api/mock-predict-gateway";
+import { MockReferralGateway } from "../features/referral/api/mock-referral-gateway";
 import { MockSessionGateway } from "../features/session/api/mock-session-gateway";
 import { MockWalletGateway } from "../features/wallet/api/mock-wallet-gateway";
 
@@ -50,6 +51,7 @@ export function createTestGateways(overrides?: Partial<Gateways>): Gateways {
     predict,
     predictAccount,
     dex: new MockDexGateway(storage, wallet),
+    referral: new MockReferralGateway(),
     lockKeys: () => {},
     ...overrides,
   };
