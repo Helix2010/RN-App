@@ -22,7 +22,7 @@
 
 ### RN-Server
 
-- 迁移 47 / 48 / 49：`wallet_user` 加四列（`invite_code`、`inviter_user_id`、`invited_at`、`invite_source`）、三个索引、一条 CHECK。三版分开且每步幂等，**没有第四版**——`invite_code` 永久可空。
+- 迁移 48 / 49 / 50：`wallet_user` 加四列（`invite_code`、`inviter_user_id`、`invited_at`、`invite_source`）、三个索引、一条 CHECK。三版分开且每步幂等，**没有第四版**——`invite_code` 永久可空。
 - `internal/referral`：Crockford Base32 字母表、生成与归一化（全角、分隔符、大小写、`I L`→`1`、`O`→`0`，`U` 判非法）。迁移回填与接口共用同一份。
 - `internal/api/referral*.go`：移动端四个接口、管理端两个接口、落地页、限流、绑定与防环。
 - `wallet_auth.go`：注册事务里赋邀请码，候选码在 `BeginTx` 之前预抽。
