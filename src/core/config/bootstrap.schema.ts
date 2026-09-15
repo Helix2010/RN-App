@@ -170,7 +170,8 @@ export const bootstrapSchema = z.object({
   issuedAt: z.number().int().positive().optional(),
   configVersion: z.string().min(1),
   generatedAt: z.iso.datetime(),
-  ttlSeconds: z.number().int().positive().max(86_400),
+  /** 配置有效期：隔这么久重新拉一次 bootstrap。下限和服务端保存校验一致（300） */
+  ttlSeconds: z.number().int().min(300).max(86_400),
   requestId: z.string().min(1),
   localization: z.object({
     selectedLocale: languageCodeSchema,
@@ -178,6 +179,11 @@ export const bootstrapSchema = z.object({
     supportedLocales: z.array(languageCodeSchema).min(1),
     localeCatalog: z.array(localeCatalogItemSchema).min(1).optional(),
     messagesVersion: z.string().min(1),
+    /**
+     * 顶层 ttlSeconds 的别名，服务端下发同一个值。重拉节奏读 ttlSeconds，不要读这个：
+     * 它是那个值的历史位置（存在服务端的语言设置里，跟语言无关），留着只是为了让
+     * 旧版本还能解析这份下发。
+     */
     refreshIntervalSeconds: z.number().int().min(300).max(86400),
     messages: z.record(z.string(), z.string()),
     resource: z

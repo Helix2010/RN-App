@@ -51,7 +51,7 @@ export function createFallbackConfig(locale: SupportedLocale): BootstrapConfig {
     schemaVersion: 1,
     configVersion: "embedded-1",
     generatedAt: "2026-08-21T00:00:00.000Z",
-    ttlSeconds: 300,
+    ttlSeconds: 21_600,
     requestId: "offline",
     localization: {
       selectedLocale: locale,

@@ -80,7 +80,9 @@ export function useBootstrap(locale: SupportedLocale | null) {
     // is being staged. A failed language request must not replace the whole
     // app with the startup gate.
     placeholderData: (previous) => previous,
-    staleTime: 5 * 60 * 1_000,
+    // "这份配置还新鲜多久"只有一个答案：服务端下发的 TTL。写死 5 分钟的话，
+    // 重新挂载和回前台会按一个跟管理端设置无关的节奏重拉
+    staleTime: (query) => (query.state.data?.config.ttlSeconds ?? 300) * 1_000,
     gcTime: 24 * 60 * 60 * 1_000,
     retry: shouldRetryBootstrap,
     retryDelay: bootstrapRetryDelay,

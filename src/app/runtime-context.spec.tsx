@@ -7,7 +7,7 @@ import {
   waitFor,
 } from "@testing-library/react-native";
 import { useState } from "react";
-import { Text } from "react-native";
+import { AppState, Text } from "react-native";
 import type {
   BootstrapConfig,
   BrandingAsset,
@@ -220,6 +220,41 @@ describe("FoundationRuntimeProvider startup gate", () => {
     await waitFor(() => expect(screen.getByTestId("probe")).toBeTruthy(), {
       timeout: 3000,
     });
+  });
+
+  // 重拉节奏来自下发的 ttlSeconds。它以前来自 localization.refreshIntervalSeconds
+  // ——同一件事的第二个来源，而且那个字段藏在多语言设置里。两个值不一致时，必须
+  // 按 ttlSeconds 走，否则管理端「基础配置」里改的有效期永远不生效。
+  it("按下发的 ttlSeconds 重拉配置，不看 localization 里那个别名", async () => {
+    jest.useFakeTimers({ advanceTimers: true });
+    // 定时重拉只在前台做；测试环境里 currentState 是 undefined
+    Object.defineProperty(AppState, "currentState", {
+      value: "active",
+      configurable: true,
+    });
+    const config = withWallet(createFallbackConfig("zh-CN"), {
+      chains: ["eth"],
+    });
+    config.ttlSeconds = 900;
+    config.localization.refreshIntervalSeconds = 21_600;
+    loadBootstrapMock.mockResolvedValue(remote(config));
+
+    await renderProvider();
+    await waitFor(() => expect(screen.getByTestId("probe")).toBeTruthy(), {
+      timeout: 3000,
+    });
+    expect(loadBootstrapMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      jest.advanceTimersByTime(899_000);
+    });
+    expect(loadBootstrapMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      jest.advanceTimersByTime(2_000);
+    });
+    await waitFor(() => expect(loadBootstrapMock).toHaveBeenCalledTimes(2));
+    jest.useRealTimers();
   });
 
   it("stays entered when a later refresh fails", async () => {
