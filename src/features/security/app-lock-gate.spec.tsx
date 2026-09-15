@@ -1,4 +1,4 @@
-import { act, screen, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react-native";
 import { AppState } from "react-native";
 import * as LocalAuthentication from "expo-local-authentication";
 import { usePreferencesStore } from "../../core/preferences/preferences-store";
@@ -91,6 +91,8 @@ describe("AppLockGate", () => {
       ).toBeTruthy(),
     );
     expect(useAppLock.getState().locked).toBe(true);
+    // 失败后动画停下：呼吸和光环都不再提示"可以点"，交给红色 + 轻晃
+    expect(screen.queryByTestId("app-lock-halo")).toBeNull();
   });
 
   it("stays quiet when the user cancels, without the failure copy", async () => {
@@ -128,6 +130,31 @@ describe("AppLockGate", () => {
     await waitFor(() => expect(useAppLock.getState().enrolled).toBe(true));
     expect(screen.queryByTestId("app-lock-gate")).toBeNull();
   });
+  // 底部那颗"使用指纹解锁"按钮去掉了：图标本身就是那个按钮
+  it("retries from the icon after a cancel, with no separate unlock button", async () => {
+    authenticateAsync.mockResolvedValue({
+      success: false,
+      error: "user_cancel",
+    });
+    const { runtime } = await renderGate();
+    await waitFor(() =>
+      expect(screen.getByTestId("app-lock-unlock")).toBeTruthy(),
+    );
+    expect(screen.queryByTestId("app-lock-unlock-button")).toBeNull();
+    expect(screen.getByTestId("app-lock-halo")).toBeTruthy();
+    // 图标没有文字标签，下面那句说明它可以点
+    expect(
+      screen.getByText(runtime.t("security.unlock.with.fingerprint")),
+    ).toBeTruthy();
+
+    const before = authenticateAsync.mock.calls.length;
+    authenticateAsync.mockResolvedValue({ success: true });
+    await fireEvent.press(screen.getByTestId("app-lock-unlock"));
+
+    await waitFor(() => expect(useAppLock.getState().locked).toBe(false));
+    expect(authenticateAsync.mock.calls.length).toBeGreaterThan(before);
+  });
+
   // 必须排在最后：这个用例把 AppState.addEventListener 换成替身，替身在位期间
   // 挂载的 gate 不会注册真实监听器，而它触发的 zustand 更新会让 React 19 把
   // 未 flush 完的 act 工作（AggregateError）抛进后面的用例里。

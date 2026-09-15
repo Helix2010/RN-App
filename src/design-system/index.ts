@@ -8,4 +8,4 @@ export * from "./use-async-action";
 export * from "./charts";
 export * from "./collapsing-header";
 export * from "./filters";
-export { Spinner, useTheme } from "tamagui";
+export { Spinner, useTheme, useThemeName } from "tamagui";
