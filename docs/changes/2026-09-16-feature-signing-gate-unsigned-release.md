@@ -28,7 +28,7 @@
 
 ## 技术影响
 
-- API/OpenAPI：无。`contracts/rn-server.openapi.json` 里 `POST /v1/admin/build-keystore/generate` 的描述仍提到旧签名变量名，随 RN-Server 删除该接口后的契约同步消失，不手改。
+- API/OpenAPI：App 调用的接口无变化。`contracts/rn-server.openapi.json` 已同步 RN-Server 签名闸分支的定稿契约（2026.09.22）：只增删了管理端、构建机、签名闸接口（含删除 `POST /v1/admin/build-keystore/generate`，旧签名变量名随之消失）；`/v1/mobile/*`、`/v1/public/*`、`/v1/ota/*` 的操作与它们引用的 schema 逐项比对无差异。
 - 状态与本地数据：无。
 - 钱包/签名/链/金额精度：无运行时影响。
 - 权限、隐私与遥测：`ALLOWED_PERMISSIONS` 内容未改（签名闸内嵌同一份，改动须两边同一次变更）。
