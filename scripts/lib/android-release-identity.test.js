@@ -5,6 +5,7 @@ const { tmpdir } = require("node:os");
 const { join } = require("node:path");
 const {
   DEBUG_SIGNER_SHA256,
+  RETIRED_SIGNER_SHA256,
   assertApkUnsigned,
   assertReleaseIdentity,
   embeddedConfigProblems,
@@ -162,6 +163,42 @@ describe("android release identity", () => {
       signer: PROD_SIGNER,
       packageName: "com.anyfun.foundation",
     });
+  });
+
+  // 旧密钥无法证明没有泄露：带旧签名、versionCode 更高的包能让老用户原地升级保留钱包数据
+  it("permanently rejects APKs signed with a retired key, even when tenant.json still pins it", () => {
+    const badging = parseBadging(CLEAN_BADGING);
+    expect([...RETIRED_SIGNER_SHA256.keys()]).toEqual([
+      "1a5d9fb446e2f4c8e1aa464a02b14248a265ea9c554f83eb01ec94886329e694",
+      "9ab5fbe6e2052bbd8ce502a8d442b3e5d4769de8d5fa939cec480bc2d1ffcf37",
+    ]);
+    for (const retired of RETIRED_SIGNER_SHA256.keys()) {
+      expect(() =>
+        assertReleaseIdentity({
+          signers: [retired],
+          badging,
+          tenant: { ...tenant, signerSha256: retired },
+        }),
+      ).toThrow(
+        /signed with a retired signing key[\s\S]*tenant.json signerSha256 [0-9a-f]{64} is a retired key[\s\S]*replace it with the certificate SHA-256 registered after the key reset/,
+      );
+      // tenant.json 已换成新指纹，拿来复核的却是旧签名的包
+      expect(() =>
+        assertReleaseIdentity({ signers: [retired], badging, tenant }),
+      ).toThrow(/signed with a retired signing key/);
+    }
+  });
+
+  it("tells you to replace a retired signerSha256 in tenant.json even for a package signed with the new key", () => {
+    const retired =
+      "1a5d9fb446e2f4c8e1aa464a02b14248a265ea9c554f83eb01ec94886329e694";
+    expect(() =>
+      assertReleaseIdentity({
+        signers: [PROD_SIGNER],
+        badging: parseBadging(CLEAN_BADGING),
+        tenant: { ...tenant, signerSha256: retired },
+      }),
+    ).toThrow(/is a retired key \(anyfun/);
   });
 
   // 禁用列表只认得我们已经想到的那几个。真正危险的是**新冒出来**的权限：

@@ -267,6 +267,57 @@ describeWithRealTools(
       });
     }, 60000);
 
+    // 检查与签名之间原路径上的文件可能被换掉：脚本只对私有临时目录里的副本操作，
+    // 签完还要再核一次包名
+    test("works on a private copy and re-checks the package name after signing", () => {
+      withSandbox(({ root, project, keysDir }) => {
+        expect(devSigned({ project, keysDir }, ["keygen"]).status).toBe(0);
+        const apk = join(project, "app-release-unsigned.apk");
+        writeFileSync(apk, syntheticApk({ packageName: developmentPackage }));
+        const log = join(root, "aapt-calls");
+        const wrapped = (swapAfterFirstCall) =>
+          fakeSdk(join(root, swapAfterFirstCall ? "swap" : "log"), {
+            link: tools,
+            scripts: {
+              aapt: [
+                `echo "$3" >> '${log}'`,
+                ...(swapAfterFirstCall
+                  ? [
+                      `if [ "$(wc -l < '${log}')" -gt 1 ]; then echo "package: name='${tenantPackages[0]}' versionCode='1' versionName='0.0.0-dev'"; exit 0; fi`,
+                    ]
+                  : []),
+                `exec '${join(tools, "aapt")}' "$@"`,
+              ].join("\n"),
+            },
+          });
+
+        const ok = devSigned({ project, keysDir, sdkRoot: wrapped(false) }, [
+          "--apk",
+          apk,
+        ]);
+        expect(ok.stderr).toBe("");
+        expect(ok.status).toBe(0);
+        const inspected = readFileSync(log, "utf8").trim().split("\n");
+        expect(inspected).toHaveLength(2);
+        for (const path of inspected) {
+          expect(path).not.toBe(apk);
+          expect(path.startsWith(join(tmpdir(), "rn-dev-signed-"))).toBe(true);
+        }
+
+        rmSync(join(project, "artifacts"), { recursive: true, force: true });
+        rmSync(log);
+        const swapped = devSigned(
+          { project, keysDir, sdkRoot: wrapped(true) },
+          ["--apk", apk],
+        );
+        expect(swapped.status).not.toBe(0);
+        expect(swapped.stderr).toContain(
+          `Refusing to sign ${tenantPackages[0]}`,
+        );
+        expect(existsSync(join(project, "artifacts"))).toBe(false);
+      });
+    }, 60000);
+
     test("refuses to sign with a key directory other users can read", () => {
       withSandbox(({ root, project, keysDir }) => {
         expect(devSigned({ project, keysDir }, ["keygen"]).status).toBe(0);

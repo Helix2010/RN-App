@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import {
   chmodSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -217,22 +218,23 @@ function refuseFormalPackage(packageName) {
 }
 
 function signDevelopmentApk(apkPath, sdkRoot) {
-  // 输入必须是未签名包，包名必须是开发包名：两条都在碰密钥之前查
-  assertApkUnsigned({ apkPath, sdkRoot, env });
-  const badging = inspectBadging({ apkPath, sdkRoot, env });
-  refuseFormalPackage(badging.packageName);
-  requireTestKey();
-
-  const artifact = resolve(
-    projectRoot,
-    "artifacts",
-    `${badging.packageName}-${badging.versionName}-build${badging.versionCode}-test-signed.apk`,
-  );
+  // 先把输入复制进私有临时目录（mkdtemp 建出来就是 0700），之后的检查、对齐、签名、复核
+  // 全部对副本做：检查通过之后原路径上的文件再被换掉，也换不进签出来的包里。
   const work = mkdtempSync(join(tmpdir(), "rn-dev-signed-"));
   try {
+    assertPrivate(work, 0o700);
+    const input = join(work, "input.apk");
+    copyFileSync(apkPath, input);
+
+    // 输入必须是未签名包，包名必须是开发包名：两条都在碰密钥之前查
+    assertApkUnsigned({ apkPath: input, sdkRoot, env });
+    const badging = inspectBadging({ apkPath: input, sdkRoot, env });
+    refuseFormalPackage(badging.packageName);
+    requireTestKey();
+
     const aligned = join(work, "aligned.apk");
-    buildTool(sdkRoot, "zipalign", ["-f", "-P", "16", "4", apkPath, aligned]);
-    mkdirSync(dirname(artifact), { recursive: true });
+    const signed = join(work, "signed.apk");
+    buildTool(sdkRoot, "zipalign", ["-f", "-P", "16", "4", input, aligned]);
     buildTool(sdkRoot, "apksigner", [
       "sign",
       "--ks",
@@ -246,24 +248,33 @@ function signDevelopmentApk(apkPath, sdkRoot) {
       "--v4-signing-enabled",
       "false",
       "--out",
-      artifact,
+      signed,
       aligned,
     ]);
+
+    // 签完再复核一遍签出来的那个文件：只有本机测试密钥，包名仍是开发包名
+    const expected = certificateSha256();
+    const signers = inspectSigners({ apkPath: signed, sdkRoot, env });
+    if (signers.length !== 1 || signers[0] !== expected)
+      throw new Error(
+        `Signed APK carries ${signers.join(", ") || "no signer"}, expected only the local test key ${expected}`,
+      );
+    const signedBadging = inspectBadging({ apkPath: signed, sdkRoot, env });
+    refuseFormalPackage(signedBadging.packageName);
+
+    const artifact = resolve(
+      projectRoot,
+      "artifacts",
+      `${signedBadging.packageName}-${signedBadging.versionName}-build${signedBadging.versionCode}-test-signed.apk`,
+    );
+    mkdirSync(dirname(artifact), { recursive: true });
+    copyFileSync(signed, artifact);
+    console.log(
+      `Test-signed ${signedBadging.packageName} ${signedBadging.versionName} (${signedBadging.versionCode}) · signer ${expected}\n${artifact}`,
+    );
   } finally {
     rmSync(work, { recursive: true, force: true });
   }
-
-  const expected = certificateSha256();
-  const signers = inspectSigners({ apkPath: artifact, sdkRoot, env });
-  if (signers.length !== 1 || signers[0] !== expected) {
-    rmSync(artifact, { force: true });
-    throw new Error(
-      `Signed APK carries ${signers.join(", ") || "no signer"}, expected only the local test key ${expected}`,
-    );
-  }
-  console.log(
-    `Test-signed ${badging.packageName} ${badging.versionName} (${badging.versionCode}) · signer ${expected}\n${artifact}`,
-  );
 }
 
 function run(command, args, options = {}) {

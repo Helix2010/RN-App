@@ -115,7 +115,7 @@ artifacts/anyfun-1.3.16-build46-release-unsigned.apk
 pnpm android:verify <下载的 apk> <slug>
 ```
 
-要求签名者 = `tenant.json.signerSha256`，永远拒绝 RN 模板 debug 指纹 `fac61745…1033b9c`，包名 / 版本 / 权限同上。
+要求签名者 = `tenant.json.signerSha256`，永远拒绝 RN 模板 debug 指纹 `fac61745…1033b9c` 与 2026-09 重置作废的租户旧指纹（`RETIRED_SIGNER_SHA256`，与服务端常量同一份），包名 / 版本 / 权限同上。`tenant.json` 里的 `signerSha256` 本身还是作废指纹时也直接失败，提示换成重置后的新指纹。
 
 `EXPO_UPDATES_CODE_SIGNING_CERTIFICATE` 一旦设置，`app.config.ts` 会先确认那个路径真的存在（相对仓库根解析，与 expo-updates 一致）——拼错的路径原本会一路沉默到运行时才表现为"更新没有验签"。
 
@@ -210,15 +210,17 @@ pnpm ota:keygen --tenant <slug> --out /secure/keys/<slug>-ota --rebuild-body --e
 
 **所有非 development 渠道的构建强制执行，没有开关。** release 包由构建机产出，构建机执行几千个第三方依赖的代码；依赖校验是交给签名闸之前唯一挡得住"被顶替的依赖"的地方，不能留一个能关掉它的环境变量。Gradle 的依赖校验成功时一个字都不打，所以 `pnpm android:release` 在 prebuild 之后、Gradle 之前先确认清单在位、组件数不低于 1000，否则不构建。
 
+Gradle 的依赖校验有 `strict`、`lenient`、`off` 三档，可以用 `--dependency-verification` 或 gradle 属性 `org.gradle.dependency.verification` 切换。`pnpm android:release` 调 Gradle 时显式传 `--dependency-verification strict`（命令行参数优先于同名属性）；构建前还会检查 `android/gradle.properties`、`$GRADLE_USER_HOME/gradle.properties`（默认 `~/.gradle`）与 `GRADLE_OPTS` / `JAVA_OPTS`，任何一处把这个属性设成 strict 以外的值都直接失败。
+
 development 渠道（`expo run:android`、`pnpm android:dev-signed`）不装清单，并删掉工程里残留的旧清单：开发构建链接 expo-dev-client 一系，解析到的坐标和清单不是同一套，而开发包不分发。
 
-Gradle 的依赖校验靠"文件在不在"生效，没有 lenient 档：清单里少任何一条都会让 release 构建失败。升 Expo、加原生模块、AGP 换变体都会引入新坐标，改依赖就必须连带重新生成清单——这是预期行为，不要靠删清单绕过去：
+strict 下清单里少任何一条都会让 release 构建失败。升 Expo、加原生模块、AGP 换变体都会引入新坐标，改依赖就必须连带重新生成清单——这是预期行为，不要靠删清单绕过去：
 
 ```bash
 pnpm android:verification-metadata <slug>
 ```
 
-它跑一次**真实的 release 构建**并让 Gradle 记下全部解析结果——只有真实构建才覆盖得到所有配置（buildscript 类路径、各个 Expo 子工程、变体相关的依赖）；`:app:dependencies` 只解析依赖图，取不到 `.aar`。生成时脚本会先删掉 prebuild 装进去的旧清单，否则就是拿旧清单去校验、再把旧条目并进新清单。写出前校验组件数不低于 1000，一份残缺的清单比没有更坏——它会被强制执行，然后在别人手里炸成"依赖校验失败"。
+它跑一次**真实的 release 构建**并让 Gradle 记下全部解析结果——只有真实构建才覆盖得到所有配置（buildscript 类路径、各个 Expo 子工程、变体相关的依赖）；`:app:dependencies` 只解析依赖图，取不到 `.aar`。生成时脚本会先删掉 prebuild 装进去的旧清单，否则就是拿旧清单去校验、再把旧条目并进新清单。写出前校验组件数不低于 1000，一份残缺的清单比没有更坏——它会被强制执行，然后在别人手里炸成"依赖校验失败"。这次构建本身没有做依赖校验，所以写完清单就退出：删掉 Gradle 输出的 APK，不做产物检查，也不往 `artifacts/` 复制任何安装包。
 
 **脚本会自己建一个临时的 `GRADLE_USER_HOME`，在冷缓存下生成，完事删掉。** 这不是保险起见：暖缓存里 Gradle 用的是已解析的模块元数据，不会重读原始 `.pom` / `.module`，那些文件就不会被记进清单。2026-09-11 第一次用开发机缓存生成的清单，在冷缓存下差一条 `guava-parent-33.3.1-jre.pom` 就把构建打挂了。代价是重新生成要把依赖整套下一遍（约 1 GB / 十几分钟）。
 
@@ -258,7 +260,7 @@ EXPO_PUBLIC_TENANT=<slug> eas build --profile android-direct
 EXPO_PUBLIC_TENANT=<slug> eas build --profile production-store
 ```
 
-若使用 CI，租户 slug 作为 workflow 输入或环境变量，敏感信息使用 GitHub Secrets。**EAS 不是 Android 正式包的发布路径**：release buildType 没有 signingConfig，而 EAS 托管签名会绕开签名闸；Android 正式包只由签名闸产出（§3）。任何版本变更都必须同时更新 `version` 和对应平台递增的 Build。
+若使用 CI，租户 slug 作为 workflow 输入或环境变量，敏感信息使用 GitHub Secrets。**EAS 不是 Android 正式包的发布路径**：release buildType 没有 signingConfig，而 EAS 托管签名会拿它自己的凭据给租户包名签名，绕开签名闸；Android 正式包只由签名闸产出（§3）。`app.config.ts` 在 EAS 构建机上（`EAS_BUILD` + `EAS_BUILD_PLATFORM=android`）遇到非 development 渠道直接报错，`android-direct` 等 profile 因此跑不起来；iOS 与 development profile（dev client，开发包名）不受影响。任何版本变更都必须同时更新 `version` 和对应平台递增的 Build。
 
 ## 5. 版本和升级边界
 

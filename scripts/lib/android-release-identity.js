@@ -19,6 +19,24 @@ const { readZipDirectory, readZipEntry } = require("./apk-zip");
 /** React Native 模板 debug.keystore 的证书指纹：谁都有这把钥匙。 */
 const DEBUG_SIGNER_SHA256 =
   "fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c";
+
+/**
+ * 作废的租户签名证书指纹：**永久拒绝**，与 RN-Server 服务端常量同一份
+ * （签名闸设计 android-signing-gate-2026-09-16「现有租户的签名密钥重置」→「旧指纹永久拒绝」）。
+ * 旧密钥每次构建都以明文出现在构建目录里，无法证明没有泄露；一个带旧签名、versionCode
+ * 更高的包能让还没重装的老用户原地升级、保留钱包数据。所以没有“重新登记旧指纹”的回退。
+ * 服务端那份改了，这里必须同一次变更跟着改。
+ */
+const RETIRED_SIGNER_SHA256 = new Map([
+  [
+    "1a5d9fb446e2f4c8e1aa464a02b14248a265ea9c554f83eb01ec94886329e694",
+    "anyfun (2026-09 reset)",
+  ],
+  [
+    "9ab5fbe6e2052bbd8ce502a8d442b3e5d4769de8d5fa939cec480bc2d1ffcf37",
+    "predict-kim (2026-09 reset)",
+  ],
+]);
 const FORBIDDEN_PERMISSIONS = ["android.permission.SYSTEM_ALERT_WINDOW"];
 
 /**
@@ -170,12 +188,21 @@ function assertReleaseIdentity({ signers, badging, tenant }) {
     problems.push(
       "APK is signed with the public React Native debug keystore (fac61745…); release builds must use the tenant production key",
     );
+  for (const signer of signers)
+    if (RETIRED_SIGNER_SHA256.has(signer))
+      problems.push(
+        `APK is signed with a retired signing key ${signer} (${RETIRED_SIGNER_SHA256.get(signer)}); retired keys are rejected permanently`,
+      );
   if (
     typeof tenant.signerSha256 !== "string" ||
     !SHA256_HEX.test(tenant.signerSha256)
   )
     problems.push(
       "tenant.json signerSha256 must be the production certificate SHA-256 (64 lowercase hex chars)",
+    );
+  else if (RETIRED_SIGNER_SHA256.has(tenant.signerSha256))
+    problems.push(
+      `tenant.json signerSha256 ${tenant.signerSha256} is a retired key (${RETIRED_SIGNER_SHA256.get(tenant.signerSha256)}); replace it with the certificate SHA-256 registered after the key reset (docs/RELEASE_SIGNING_ROLLOUT.md)`,
     );
   else if (signers.length === 1 && signers[0] !== tenant.signerSha256)
     problems.push(
@@ -363,6 +390,7 @@ module.exports = {
   ALLOWED_PERMISSIONS,
   DEBUG_SIGNER_SHA256,
   DIRECT_ONLY_PERMISSIONS,
+  RETIRED_SIGNER_SHA256,
   FORBIDDEN_PERMISSIONS,
   allowedPermissionsFor,
   assertApkUnsigned,

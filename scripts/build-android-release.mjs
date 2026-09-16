@@ -6,7 +6,7 @@ import {
   readFileSync,
   rmSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { readTenantConfig, tenantEnvironment } from "./tenant-config.mjs";
@@ -14,6 +14,7 @@ import { verifyUnsignedReleaseApk } from "./lib/android-release-identity.js";
 import { loadMachineEnv } from "./lib/machine-env.js";
 import {
   TARGET_RELATIVE_PATH as VERIFICATION_METADATA_PATH,
+  dependencyVerificationOverrides,
   enforcementProblem,
 } from "../plugins/with-gradle-dependency-verification.js";
 
@@ -190,8 +191,27 @@ if (writingVerificationMetadata) {
     floor: MIN_VERIFIED_COMPONENTS,
   });
   if (problem) throw new Error(problem);
+  // 下面调 Gradle 时显式传 --dependency-verification strict（命令行优先于同名属性）；
+  // 仍然拒绝任何试图把它降成 lenient / off 的来源，让这种企图在日志里看得见
+  const propertyFiles = [
+    resolve(projectRoot, "android/gradle.properties"),
+    join(
+      env.GRADLE_USER_HOME ?? join(homedir(), ".gradle"),
+      "gradle.properties",
+    ),
+  ]
+    .filter((path) => existsSync(path))
+    .map((path) => ({ path, contents: readFileSync(path, "utf8") }));
+  const overrides = dependencyVerificationOverrides({
+    files: propertyFiles,
+    env,
+  });
+  if (overrides.length > 0)
+    throw new Error(
+      `Gradle dependency verification must stay strict for release builds:\n- ${overrides.join("\n- ")}`,
+    );
   console.log(
-    `Gradle dependency verification: enforcing ${components} pinned components`,
+    `Gradle dependency verification: enforcing ${components} pinned components (strict)`,
   );
 }
 
@@ -199,7 +219,7 @@ run(
   "./gradlew",
   writingVerificationMetadata
     ? ["--write-verification-metadata", "sha256", "assembleRelease"]
-    : ["assembleRelease"],
+    : ["--dependency-verification", "strict", "assembleRelease"],
   { cwd: resolve(projectRoot, "android") },
 );
 if (writingVerificationMetadata) {
@@ -224,6 +244,15 @@ if (writingVerificationMetadata) {
     `Gradle dependency verification metadata: ${components} components → ${target}`,
   );
   rmSync(env.GRADLE_USER_HOME, { recursive: true, force: true });
+  // 这次构建没有做依赖校验，产物不得流出去：删掉 Gradle 输出的 APK，不做产物检查、不复制到 artifacts/
+  rmSync(resolve(projectRoot, "android/app/build/outputs/apk"), {
+    recursive: true,
+    force: true,
+  });
+  console.log(
+    "No APK kept: a build that regenerates the manifest is not verified and must not be distributed.",
+  );
+  process.exit(0);
 }
 
 // release buildType 没有 signingConfig（plugins/with-release-signing.js），AGP 产出的就是这个文件名。

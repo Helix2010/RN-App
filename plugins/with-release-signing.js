@@ -18,8 +18,12 @@ const TEMPLATE_CAUTION = [
   "// Caution! In production, you need to generate your own keystore file.",
   "// see https://reactnative.dev/docs/signed-apk-android.",
 ];
-/** release buildType 里任何形式的签名配置：`signingConfig signingConfigs.x`、`signingConfig = …` */
-const SIGNING_CONFIG_LINE = /^\s*signingConfig\b.*$/;
+/**
+ * release buildType 里任何形式的签名配置：`signingConfig signingConfigs.x`、`signingConfig = …`、
+ * `signingConfigs.getByName('x')`。只删这一条语句，到行尾、`;` 或 `}` 为止，
+ * 同一行上的其他语句（单行写法 `release { signingConfig …; minifyEnabled true }`）保留。
+ */
+const SIGNING_CONFIG_STATEMENT = /\bsigningConfig\b[^\n;}]*;?/g;
 
 /** 从 `{` 的下标找到配对的 `}`；Gradle 这几个块里没有带花括号的字符串。 */
 function findMatchingBrace(text, openIndex) {
@@ -55,23 +59,37 @@ function releaseBuildTypeRange(contents) {
 
 function stripReleaseSigning(contents) {
   const release = releaseBuildTypeRange(contents);
-  const lines = contents.slice(release.open + 1, release.close).split("\n");
-  const kept = lines.filter((line) => {
-    const trimmed = line.trim();
-    return (
-      !SIGNING_CONFIG_LINE.test(line) &&
-      !TEMPLATE_CAUTION.includes(trimmed) &&
-      trimmed !== MARKER
-    );
-  });
-  const indent = /^(\s*)\S/.exec(kept.find((line) => line.trim()) ?? "")?.[1];
-  const body = [
-    kept[0],
-    `${indent ?? "            "}${MARKER}`,
-    ...kept.slice(1),
+  // 按 `release {` 所在行的缩进重排整个块：单行写法删掉签名语句之后，右花括号也要落在自己那一行
+  const lineStart = contents.lastIndexOf("\n", release.start) + 1;
+  const outerIndent = /^\s*/.exec(contents.slice(lineStart, release.start))[0];
+  const innerIndent = `${outerIndent}    `;
+  const lines = contents
+    .slice(release.open + 1, release.close)
+    .replace(SIGNING_CONFIG_STATEMENT, "")
+    .split("\n");
+  const kept = lines
+    // 和花括号同一行的内容没有自己的缩进，补上；中间的行保持原样
+    .map((line, index) =>
+      index === 0 || index === lines.length - 1
+        ? `${innerIndent}${line.trim()}`
+        : line,
+    )
+    .filter((line) => {
+      const trimmed = line.trim();
+      return (
+        trimmed !== "" &&
+        !TEMPLATE_CAUTION.includes(trimmed) &&
+        trimmed !== MARKER
+      );
+    });
+  const block = [
+    "{",
+    `${innerIndent}${MARKER}`,
+    ...kept,
+    `${outerIndent}}`,
   ].join("\n");
   const result =
-    contents.slice(0, release.open + 1) + body + contents.slice(release.close);
+    contents.slice(0, release.open) + block + contents.slice(release.close + 1);
   assertReleaseUnsigned(result);
   return result;
 }

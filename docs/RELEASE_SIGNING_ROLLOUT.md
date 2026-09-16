@@ -87,14 +87,17 @@ pnpm android:verify ~/Downloads/anyfun-1.3.17-build47.apk anyfun
 }
 ```
 
-对旧签名的包必然失败（签名者是作废的旧指纹）：
+对旧签名的包必然失败（签名者是作废的旧指纹，`scripts/lib/android-release-identity.js` 的 `RETIRED_SIGNER_SHA256` 与服务端常量同一份，永久拒绝）：
 
 ```bash
 pnpm android:verify ~/Downloads/anyfun-1.3.16-build46.apk anyfun
 # Release identity check failed:
+# - APK is signed with a retired signing key 1a5d9fb4… (anyfun (2026-09 reset)); retired keys are rejected permanently
 # - signer 1a5d9fb4… does not match tenant.json signerSha256 <新指纹>
 # - versionCode 46 does not match tenant androidVersionCode 47 ...
 ```
+
+第 2 步之前（`tenant.json` 里还是旧指纹）跑 `android:verify`，会直接提示 `signerSha256 … is a retired key … replace it with the certificate SHA-256 registered after the key reset`。
 
 ## 5. 设备验证（发布负责人）
 

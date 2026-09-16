@@ -18,9 +18,13 @@ const { dirname, join } = require("node:path");
  * development 渠道（`expo run:android`、开发包名自测）不装，并删掉工程里残留的清单：
  * 开发构建会链接 expo-dev-client 一系，解析到的坐标和清单不是同一套，而开发包不分发。
  *
- * Gradle 的依赖校验靠"文件在不在"生效，没有 lenient 档：清单里少任何一条都会让构建
- * 失败。改依赖（升 Expo、加原生模块、AGP 换变体）就必须连带重新生成清单，这是预期
- * 行为，不要靠删清单绕过去。
+ * 清单在位时 Gradle 默认按 strict 执行，但它有 `lenient` 与 `off` 两档，能经
+ * `--dependency-verification` 或 gradle 属性 `org.gradle.dependency.verification`
+ * 切换。所以 `pnpm android:release` 调 Gradle 时显式传 `--dependency-verification strict`
+ * （命令行参数优先于同名属性），并在构建前拒绝任何把这个属性设成别的值的来源
+ * （`dependencyVerificationOverrides`）。strict 下清单里少任何一条都会让构建失败：
+ * 改依赖（升 Expo、加原生模块、AGP 换变体）就必须连带重新生成清单，这是预期行为，
+ * 不要靠删清单或降档绕过去。
  *
  * ## 重新生成
  *
@@ -95,6 +99,39 @@ function enforcementProblem({ installed, components, floor }) {
   return null;
 }
 
+const VERIFICATION_PROPERTY = "org.gradle.dependency.verification";
+
+/**
+ * 能把依赖校验降成 lenient / off 的来源：gradle.properties 文件（工程、GRADLE_USER_HOME）
+ * 与 JVM 参数环境变量（`-Dorg.gradle.dependency.verification=…`）。命令行的
+ * `--dependency-verification strict` 本来就优先于它们；这里仍然把它们当错误报出来，
+ * 让“有人试图关掉校验”在日志里看得见，而不是被悄悄盖过去。
+ *
+ * @param files `{ path, contents }[]`，不存在的文件不传
+ * @param env   进程环境
+ * @returns 问题列表，空 = 没有来源把它设成 strict 以外的值
+ */
+function dependencyVerificationOverrides({ files, env }) {
+  const problems = [];
+  const offending = (value) => value.trim().toLowerCase() !== "strict";
+  for (const { path, contents } of files)
+    for (const line of contents.split(/\r?\n/)) {
+      const match =
+        /^\s*org\.gradle\.dependency\.verification\s*[=:]\s*(.*)$/.exec(line);
+      if (match && offending(match[1]))
+        problems.push(
+          `${path} sets ${VERIFICATION_PROPERTY}=${match[1].trim()}`,
+        );
+    }
+  for (const key of ["GRADLE_OPTS", "JAVA_OPTS"])
+    for (const match of (env[key] ?? "").matchAll(
+      /-Dorg\.gradle\.dependency\.verification=(\S*)/g,
+    ))
+      if (offending(match[1]))
+        problems.push(`${key} sets ${VERIFICATION_PROPERTY}=${match[1]}`);
+  return problems;
+}
+
 function applyVerificationAction(action, { source, target }) {
   if (action.kind === "fail") throw new Error(action.message);
   if (action.kind === "remove") {
@@ -133,5 +170,7 @@ module.exports = withGradleDependencyVerification;
 module.exports.SOURCE_RELATIVE_PATH = SOURCE_RELATIVE_PATH;
 module.exports.TARGET_RELATIVE_PATH = TARGET_RELATIVE_PATH;
 module.exports.applyVerificationAction = applyVerificationAction;
+module.exports.dependencyVerificationOverrides =
+  dependencyVerificationOverrides;
 module.exports.enforcementProblem = enforcementProblem;
 module.exports.verificationAction = verificationAction;

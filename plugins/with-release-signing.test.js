@@ -88,6 +88,7 @@ describe("release signing plugin: release APKs are unsigned", () => {
       "signingConfig signingConfigs.release",
       "signingConfig = signingConfigs.debug",
       "signingConfig signingConfigs.upload",
+      "signingConfig signingConfigs.getByName('debug')",
     ]) {
       const input = TEMPLATE.replace(
         "signingConfig signingConfigs.debug\n            shrink",
@@ -97,6 +98,57 @@ describe("release signing plugin: release APKs are unsigned", () => {
       const result = stripReleaseSigning(input);
       expect(releaseBuildType(result)).not.toMatch(/signingConfig/);
     }
+  });
+
+  // 单行写法：删掉签名语句之后右花括号不能被吞进标记注释那一行
+  it("handles a single-line release block without swallowing the closing brace", () => {
+    const singleLine = (body) =>
+      TEMPLATE.replace(
+        /        release \{[\s\S]*?\n        \}\n/,
+        `        release { ${body} }\n`,
+      );
+    const input = singleLine("signingConfig signingConfigs.debug");
+    expect(input).toContain("release { signingConfig signingConfigs.debug }");
+    const result = stripReleaseSigning(input);
+    expect(releaseBuildType(result)).toBe(
+      `release {\n            ${UNSIGNED_RELEASE_MARKER}\n        }`,
+    );
+    expect(result).toMatch(/\n        \}\n    \}\n\}\n$/);
+    expect(stripReleaseSigning(result)).toBe(result);
+
+    // 同一行上的其他语句保留
+    const mixed = stripReleaseSigning(
+      singleLine(
+        "signingConfig signingConfigs.debug; minifyEnabled enableMinifyInReleaseBuilds",
+      ),
+    );
+    expect(releaseBuildType(mixed)).toBe(
+      `release {\n            ${UNSIGNED_RELEASE_MARKER}\n            minifyEnabled enableMinifyInReleaseBuilds\n        }`,
+    );
+  });
+
+  it("keeps the Expo 57 release block intact apart from the signing line", () => {
+    const expo57 = TEMPLATE.replace(
+      "            shrinkResources false\n            minifyEnabled enableMinifyInReleaseBuilds\n",
+      [
+        "            def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'",
+        "            shrinkResources enableShrinkResources.toBoolean()",
+        "            minifyEnabled enableMinifyInReleaseBuilds",
+        '            proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"',
+        "",
+      ].join("\n"),
+    );
+    expect(releaseBuildType(stripReleaseSigning(expo57))).toBe(
+      [
+        "release {",
+        `            ${UNSIGNED_RELEASE_MARKER}`,
+        "            def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'",
+        "            shrinkResources enableShrinkResources.toBoolean()",
+        "            minifyEnabled enableMinifyInReleaseBuilds",
+        '            proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"',
+        "        }",
+      ].join("\n"),
+    );
   });
 
   it("is idempotent", () => {

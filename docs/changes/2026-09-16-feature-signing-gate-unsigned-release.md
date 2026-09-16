@@ -14,9 +14,12 @@
 1. Given 任意渠道 When `expo prebuild` Then release buildType 没有任何 signingConfig（模板的 `signingConfig signingConfigs.debug` 被删掉），插件不读任何签名环境变量；debug buildType 保持 debug 签名。
 2. Given 租户没有 `signerSha256`、环境里没有任何签名材料 When `pnpm android:release <slug>` Then 构建照常进行，产出 `artifacts/<slug>-<version>-build<code>-release-unsigned.apk`。
 3. Given Gradle 产出的包带 v1 签名文件、APK Signing Block，或 `apksigner verify` 通过，或 Gradle 写的是 `app-release.apk` When 复制前检查 Then 失败，不复制。`apksigner` 本身跑不起来不算“没有签名”的证据。
-4. Given 非 development 渠道 When prebuild Then 依赖校验清单一律装入；`pnpm android:release` 在 Gradle 之前确认清单在位且不少于 1000 个组件，否则失败；`GRADLE_DEPENDENCY_VERIFICATION` 不再有任何作用。
+4. Given 非 development 渠道 When prebuild Then 依赖校验清单一律装入；`pnpm android:release` 在 Gradle 之前确认清单在位且不少于 1000 个组件、没有任何来源（`android/gradle.properties`、`$GRADLE_USER_HOME/gradle.properties`、`GRADLE_OPTS`/`JAVA_OPTS`）把 `org.gradle.dependency.verification` 设成 strict 以外的值，否则失败；调 Gradle 时显式传 `--dependency-verification strict`；`GRADLE_DEPENDENCY_VERIFICATION` 不再有任何作用。
+4a. Given `--write-verification-metadata` When 清单写完 Then 删掉 Gradle 输出的 APK 并退出，不做产物检查、不复制到 `artifacts/`（这次构建没做依赖校验）。
 5. Given `--apk` 指向租户包，或 `EXPO_PUBLIC_TENANT` / 解析后的 Expo 配置是租户包名 When `pnpm android:dev-signed` Then 拒绝签名，并说明正式包只由签名闸产出。
-6. Given 开发包名的未签名包与本机测试密钥 When `pnpm android:dev-signed --apk` Then 输出只带本机测试密钥签名的包；口令不打印、不进命令行参数。
+6. Given 开发包名的未签名包与本机测试密钥 When `pnpm android:dev-signed --apk` Then 先把输入复制进 0700 临时目录，检查、对齐、签名、复核都对副本做；签完复核签名者只有本机测试密钥、包名仍是开发包名，才复制到 `artifacts/`；口令不打印、不进命令行参数。
+6a. Given 签名者或 `tenant.json.signerSha256` 是 2026-09 重置作废的旧指纹（anyfun `1a5d9fb4…`、predict-kim `9ab5fbe6…`，与服务端常量同一份）When `pnpm android:verify` Then 失败；后者提示换成重置后的新指纹。
+6b. Given EAS 构建机（`EAS_BUILD` + `EAS_BUILD_PLATFORM=android`）When 非 development 渠道读取 `app.config.ts` Then 报错；iOS 与 development profile 不受影响。
 7. Given `--apk` 指向带签名的包 When `pnpm sbom` Then 拒绝；绑定未签名包时 SBOM 属性写明 `rn-app:artifact-signing=unsigned`。
 
 ## UI 与交互状态
@@ -32,15 +35,24 @@
 - **全量更新**：构建配置变化，只影响之后产出的原生包；不能也不需要 OTA。
 - **发布链影响**：本地与 CI 再也签不出租户正式包；正式包只由签名闸产出。构建机（RN-Server `cmd/build-agent`）要按新文件名 `-release-unsigned.apk` 取产物，并不再注入签名环境变量。
 
+## 与设计的偏离
+
+- **development 渠道不强制 Gradle 依赖校验**。设计写的是“在 release 构建里强制开启”；这里的实现是所有非 development 渠道（`pnpm android:release`、构建机、EAS 各正式 profile）强制，development 渠道（`expo run:android`、`pnpm android:dev-signed` 的 assembleRelease）不装清单，并删掉残留的旧清单。理由：
+  - 清单是按租户 release 构建生成的；development 渠道会链接 expo-dev-client / dev-launcher / dev-menu（正式渠道由 `with-production-android-optimizations` 排除），解析到的坐标和清单不是同一套，强制执行会让开发构建直接失败，而重新生成清单又只能覆盖正式构建那一套。
+  - development 渠道的包用开发包名 `com.anyfun.foundation.dev`，服务端上传门禁天然拒收，只装在开发者自己的设备上，不分发。签名闸对正式包的保护不依赖开发构建。
+  - 判定依据是 `app.config.ts` 解析出的渠道，不是环境变量开关，没有“关掉校验”的入口。
+
 ## 改动文件
 
 | 文件 | 目的 |
 | --- | --- |
 | `plugins/with-release-signing.js`（+test） | 删掉 release buildType 的 signingConfig，不注入、不读环境 |
-| `plugins/with-gradle-dependency-verification.js`（+test） | 按渠道决定安装：非 development 一律装，删开关 |
-| `app.config.ts` | 签名插件对所有渠道生效；依赖校验插件传入渠道 |
+| `plugins/with-gradle-dependency-verification.js`（+test） | 按渠道决定安装：非 development 一律装，删开关；找出试图降档的属性来源 |
+| `app.config.ts` | 签名插件对所有渠道生效；依赖校验插件传入渠道；EAS 构建机上拒绝非 development 的 Android 构建 |
+| `scripts/check-build-profiles.test.js` | EAS Android 拒绝、iOS 与 dev client 放行 |
+| `scripts/generate-ota-signing-key.sh` | 保管说明去掉原备份方案的“离线加密备份” |
 | `scripts/build-android-release.mjs`（+test） | 读 `app-release-unsigned.apk`；去掉签名前置要求；依赖校验无条件要正向证据；内嵌配置从 APK 里读 |
-| `scripts/lib/android-release-identity.js`（+test） | 拆出“没有签名”断言、包名/版本/权限、内嵌配置检查；已签名包复核保留给 `android:verify` |
+| `scripts/lib/android-release-identity.js`（+test） | 拆出“没有签名”断言、包名/版本/权限、内嵌配置检查；已签名包复核保留给 `android:verify`，永久拒绝作废旧指纹 |
 | `scripts/lib/apk-zip.js` | 只读 ZIP 结构：中央目录、APK Signing Block、单条目内容 |
 | `scripts/lib/machine-env.js` | `.env.local` 机器配置加载（三个脚本共用） |
 | `scripts/android-dev-signed.mjs`（+test） | 开发包名自测出包与测试密钥生成 |

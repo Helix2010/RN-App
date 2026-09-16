@@ -9,7 +9,7 @@
 # 可以直接拷到运维机上跑。
 #
 # 产出：
-#   private-key.pem   机密。装进服务端（PUT /v1/admin/ota/signing-key）+ 离线备份
+#   private-key.pem   机密。装进服务端（PUT /v1/admin/ota/signing-key）后删除明文，不另留副本
 #   certificate.pem   公开。构建 APK 时作为 EXPO_UPDATES_CODE_SIGNING_CERTIFICATE
 #   signing-key.json  ready-to-PUT 的请求体（含私钥！用完 shred 掉）
 #
@@ -259,6 +259,6 @@ CURL
    b. 再出一个**故意用错证书**的包，拉 OTA 必须失败并停在内置版本。
       如果 b 也"成功"了，说明验签根本没生效，a 的成功是假的。
 
-保管：私钥与 Android keystore 同档——密钥管理服务 + 两份离线加密备份 + 一次恢复演练，
-然后删除本目录的明文。丢了就再也发不了 OTA（只能发原生新版换证书），被偷了对方就能签 OTA。
+保管：装进服务端之后删除本目录的明文，不另留副本——服务端签每一份清单时本来就持有它，
+丢了的代价等于主动轮换（发一个带新证书的原生版本）。被偷了对方就能签 OTA。
 SUMMARY

@@ -153,6 +153,7 @@ function inSandbox(
     apk = unsignedApk(),
     apkName = "app-release-unsigned.apk",
     installVerificationMetadata = true,
+    gradleProperties = "org.gradle.jvmargs=-Xmx4g\nnewArchEnabled=true\n",
     env = {},
     args = [],
   },
@@ -188,6 +189,7 @@ function inSandbox(
       join(root, "generated-metadata.xml"),
       verificationMetadata(1200),
     );
+    writeFileSync(join(root, "gradle.properties"), gradleProperties);
 
     executable(
       join(root, "gradlew"),
@@ -209,6 +211,7 @@ function inSandbox(
         '  "exec expo prebuild --platform android --clean")',
         "    rm -rf android && mkdir -p android/gradle",
         `    cp '${root}/gradlew' android/gradlew`,
+        `    cp '${root}/gradle.properties' android/gradle.properties`,
         `    if [ -f '${root}/installed-metadata.xml' ]; then cp '${root}/installed-metadata.xml' android/gradle/verification-metadata.xml; fi ;;`,
         '  *) echo "unexpected pnpm $*" >&2; exit 64 ;;',
         "esac",
@@ -236,10 +239,14 @@ function inSandbox(
       RN_ENV_ROOT: root,
       ANDROID_HOME: sdkRoot,
       GOOGLE_SERVICES_JSON: "",
+      // 不读开发者本机 ~/.gradle/gradle.properties
+      GRADLE_USER_HOME: join(root, "gradle-home"),
       ...env,
     };
     for (const key of [
       "ANDROID_SDK_ROOT",
+      "GRADLE_OPTS",
+      "JAVA_OPTS",
       "EXPO_PUBLIC_TENANT",
       "EXPO_REQUIRE_OTA_SIGNING",
       "EXPO_UPDATES_CODE_SIGNING_CERTIFICATE",
@@ -273,7 +280,7 @@ test("release build outputs the unsigned APK without signerSha256 or any signing
   inSandbox({}, ({ result, artifact, fixture, gradleArgs }) => {
     expect(result.stderr).toBe("");
     expect(result.status).toBe(0);
-    expect(gradleArgs).toBe("assembleRelease");
+    expect(gradleArgs).toBe("--dependency-verification strict assembleRelease");
     // 产物路径：AGP 的 app-release-unsigned.apk → artifacts/<slug>-<version>-build<code>-release-unsigned.apk
     expect(readFileSync(artifact)).toEqual(readFileSync(fixture));
     expect(result.stdout).toContain(
@@ -346,16 +353,41 @@ test("release build enforces Gradle dependency verification with no switch to tu
       expect(gradleArgs).toBeNull();
     },
   );
-  inSandbox({}, ({ result, metadataAtGradleTime }) => {
+  inSandbox({}, ({ result, metadataAtGradleTime, gradleArgs }) => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain(
-      "Gradle dependency verification: enforcing 1000 pinned components",
+      "Gradle dependency verification: enforcing 1000 pinned components (strict)",
     );
     expect(metadataAtGradleTime).toBe("present");
+    // Gradle 有 lenient / off 两档：显式要 strict，命令行优先于同名属性
+    expect(gradleArgs).toBe("--dependency-verification strict assembleRelease");
   });
 }, 60000);
 
-test("regenerating the verification metadata drops the installed manifest before Gradle runs", () => {
+test("release build refuses any source that tries to downgrade dependency verification", () => {
+  inSandbox(
+    { gradleProperties: "org.gradle.dependency.verification=lenient\n" },
+    ({ result, gradleArgs }) => {
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toMatch(
+        /must stay strict[\s\S]*android\/gradle.properties sets org.gradle.dependency.verification=lenient/,
+      );
+      expect(gradleArgs).toBeNull();
+    },
+  );
+  inSandbox(
+    { env: { GRADLE_OPTS: "-Dorg.gradle.dependency.verification=off" } },
+    ({ result, gradleArgs }) => {
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain(
+        "GRADLE_OPTS sets org.gradle.dependency.verification=off",
+      );
+      expect(gradleArgs).toBeNull();
+    },
+  );
+}, 60000);
+
+test("regenerating the verification metadata drops the installed manifest and keeps no APK", () => {
   inSandbox(
     { args: ["--write-verification-metadata"] },
     ({ result, project, gradleArgs, metadataAtGradleTime }) => {
@@ -368,6 +400,12 @@ test("regenerating the verification metadata drops the installed manifest before
       expect(
         readFileSync(join(project, "gradle/verification-metadata.xml"), "utf8"),
       ).toBe(verificationMetadata(1200));
+      // 这次构建没做依赖校验：不留任何可分发的安装包
+      expect(existsSync(join(project, "artifacts"))).toBe(false);
+      expect(existsSync(join(project, "android/app/build/outputs/apk"))).toBe(
+        false,
+      );
+      expect(result.stdout).toContain("No APK kept");
     },
   );
 }, 60000);

@@ -79,3 +79,53 @@ test("distinct tenants pass", () => {
   expect(result.status).toBe(0);
   expect(result.stdout).toContain("tenant build configs are valid");
 });
+
+// EAS 托管签名会绕开签名闸：EAS 构建机上的非 development Android 构建必须在读配置时就失败
+const expoCli = resolve(process.cwd(), "node_modules/expo/bin/cli");
+function expoConfig(env) {
+  // EXPO_NO_DOTENV：不读开发者本机的 .env.local
+  const childEnv = { ...process.env, EXPO_NO_DOTENV: "1", ...env };
+  for (const key of [
+    "EXPO_PUBLIC_TENANT",
+    "EXPO_PUBLIC_DISTRIBUTION_CHANNEL",
+    "EAS_BUILD",
+    "EAS_BUILD_PLATFORM",
+  ])
+    if (!(key in env)) delete childEnv[key];
+  return spawnSync(process.execPath, [expoCli, "config", "--json"], {
+    env: childEnv,
+    encoding: "utf8",
+  });
+}
+
+test("EAS refuses to build a non-development Android package", () => {
+  const result = expoConfig({
+    EAS_BUILD: "true",
+    EAS_BUILD_PLATFORM: "android",
+    EXPO_PUBLIC_TENANT: "anyfun",
+  });
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain(
+    "EAS cannot build Android direct packages: Android release APKs are signed only by the signing gate",
+  );
+}, 60000);
+
+test("EAS still builds iOS and the Android development client", () => {
+  const ios = expoConfig({
+    EAS_BUILD: "true",
+    EAS_BUILD_PLATFORM: "ios",
+    EXPO_PUBLIC_TENANT: "anyfun",
+  });
+  expect(ios.stderr).not.toContain("EAS cannot build");
+  expect(ios.status).toBe(0);
+
+  const devClient = expoConfig({
+    EAS_BUILD: "true",
+    EAS_BUILD_PLATFORM: "android",
+  });
+  expect(devClient.stderr).not.toContain("EAS cannot build");
+  expect(devClient.status).toBe(0);
+  expect(JSON.parse(devClient.stdout).android.package).toBe(
+    "com.anyfun.foundation.dev",
+  );
+}, 60000);

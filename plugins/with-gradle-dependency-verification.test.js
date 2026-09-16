@@ -11,6 +11,7 @@ const { tmpdir } = require("node:os");
 const { join } = require("node:path");
 const {
   applyVerificationAction,
+  dependencyVerificationOverrides,
   enforcementProblem,
   verificationAction,
 } = require("./with-gradle-dependency-verification");
@@ -93,8 +94,8 @@ describe("gradle dependency verification plugin", () => {
     });
   });
 
-  // Gradle 靠"文件在不在"决定要不要校验，没有 lenient 档：上一次正式构建装进去的
-  // 清单残留下来，会让开发构建拿一份不对应的清单去校验
+  // 清单在位 Gradle 就默认 strict 校验：上一次正式构建装进去的清单残留下来，
+  // 会让开发构建拿一份不对应的清单去校验
   it("removes a stale manifest from a development build", () => {
     withTempDir((dir) => {
       const source = join(dir, "verification-metadata.xml");
@@ -168,5 +169,50 @@ describe("proving the verification actually happens", () => {
     expect(
       enforcementProblem({ installed: true, components: 1313, floor: 1000 }),
     ).toBeNull();
+  });
+});
+
+// Gradle 有 lenient / off 两档；命令行 strict 优先，但任何想降档的来源都要当错误报出来
+describe("sources that try to downgrade dependency verification", () => {
+  it("reports gradle.properties and JVM options that set anything but strict", () => {
+    expect(
+      dependencyVerificationOverrides({
+        files: [
+          {
+            path: "android/gradle.properties",
+            contents:
+              "org.gradle.jvmargs=-Xmx4g\norg.gradle.dependency.verification=off\n",
+          },
+          {
+            path: "~/.gradle/gradle.properties",
+            contents: "org.gradle.dependency.verification : lenient\n",
+          },
+        ],
+        env: {
+          GRADLE_OPTS: "-Xmx2g -Dorg.gradle.dependency.verification=lenient",
+          JAVA_OPTS: "-Dorg.gradle.dependency.verification=off",
+        },
+      }),
+    ).toEqual([
+      "android/gradle.properties sets org.gradle.dependency.verification=off",
+      "~/.gradle/gradle.properties sets org.gradle.dependency.verification=lenient",
+      "GRADLE_OPTS sets org.gradle.dependency.verification=lenient",
+      "JAVA_OPTS sets org.gradle.dependency.verification=off",
+    ]);
+  });
+
+  it("accepts strict, comments and unrelated properties", () => {
+    expect(
+      dependencyVerificationOverrides({
+        files: [
+          {
+            path: "android/gradle.properties",
+            contents:
+              "# org.gradle.dependency.verification=off\norg.gradle.dependency.verification=strict\nnewArchEnabled=true\n",
+          },
+        ],
+        env: { GRADLE_OPTS: "-Dorg.gradle.dependency.verification=strict" },
+      }),
+    ).toEqual([]);
   });
 });

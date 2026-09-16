@@ -62,6 +62,18 @@ const otaChannel =
   (distributionChannel === "development" || distributionChannel === "staging"
     ? distributionChannel
     : "production");
+// EAS 不是 Android 正式包的发布路径（RN-Server docs/design/android-signing-gate-2026-09-16.md）：
+// release buildType 没有 signingConfig，EAS 托管签名会拿它自己的凭据给租户包名签名，
+// 绕开签名闸。所以 EAS 构建机上的非 development Android 构建直接失败；iOS 与
+// development（dev client，开发包名）不受影响。EAS 在构建机上设置 EAS_BUILD 与 EAS_BUILD_PLATFORM。
+if (
+  /^(1|true)$/i.test(process.env.EAS_BUILD ?? "") &&
+  process.env.EAS_BUILD_PLATFORM === "android" &&
+  distributionChannel !== "development"
+)
+  throw new Error(
+    `EAS cannot build Android ${distributionChannel} packages: Android release APKs are signed only by the signing gate; queue a build in the console instead (docs/SAAS_TENANT_BUILD_RUNBOOK.md §4)`,
+  );
 // An empty EXPO_UPDATES_URL (e.g. from a local .env file) must behave like
 // "unset", otherwise the tenant OTA manifest URL is skipped and release
 // builds ship with updates disabled.
