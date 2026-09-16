@@ -55,7 +55,7 @@ export function readTenantConfig(slug) {
       throw new Error(`tenant.json missing ${key}`);
     }
   }
-  // 生产签名证书指纹（安全评审 N1）：发布构建必填；这里只校验格式，缺失由 release 脚本报错
+  // 登记的签名证书指纹（安全评审 N1）：只给 `pnpm android:verify` 核对签名闸产出的包用，构建不需要它；这里只校验格式
   if (
     config.signerSha256 !== undefined &&
     (typeof config.signerSha256 !== "string" ||

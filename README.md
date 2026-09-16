@@ -18,7 +18,7 @@ pnpm start:go
 
 Expo Go 可预览 UI 和服务端配置；Logo、原生图标、版本号和真实发布行为必须使用 `pnpm prebuild` 后的 Development Build 验证。动画开屏和设置/主题切换可在 Expo Go 预览；Android 模拟器访问本机服务时可执行 `adb reverse tcp:3000 tcp:3000`。
 
-每个 SaaS 应用的构建输入集中在 `tenants/<slug>/tenant.json`，包含租户域名、应用身份、包名、渠道、版本、Build 和图标配置。Android 直装 Release 包请使用 `pnpm android:release anyfun`；构建脚本会从同一份租户配置生成 Expo/Gradle 环境并校验 APK 内嵌配置，禁止把其他租户或 `localhost:3000` 写入 Release APK。
+每个 SaaS 应用的构建输入集中在 `tenants/<slug>/tenant.json`，包含租户域名、应用身份、包名、渠道、版本、Build 和图标配置。Android 正式包只由签名闸产出（控制台排构建任务）；`pnpm android:release anyfun` 是构建机那一步，只出未签名包，脚本会从同一份租户配置生成 Expo/Gradle 环境、断言产物没有签名并校验 APK 内嵌配置，禁止把其他租户或 `localhost:3000` 写入 Release APK。本地自测要装得上设备的包用 `pnpm android:dev-signed`（只签开发包名），见 `docs/SAAS_TENANT_BUILD_RUNBOOK.md` §3。
 
 执行 `pnpm check` 可运行格式、Lint、类型、测试和 API 契约检查。
 

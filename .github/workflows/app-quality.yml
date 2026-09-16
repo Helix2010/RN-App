@@ -32,24 +32,15 @@ jobs:
       - run: node scripts/check-dependency-audit.mjs
 
 
-# 曾经这里还有一个 android-release-gate：在 GitHub runner 上用生产签名密钥完整构建
-# 一次 release APK。2026-09-12 移除。
+# 这里不构建 Android 包，也不持有任何签名材料。
 #
-# 不是因为它多余，是因为它和打包机那套设计直接冲突。`build-keystore seal` 的全部
-# 意义是：密钥被运维的口令封成一个盒子，服务端打不开，封装口令只在打包机本地。而
-# 那个 job 把**裸密钥库**（ANDROID_RELEASE_KEYSTORE_BASE64）连同 store 口令、alias、
-# key 口令一起放在 GitHub secrets 里，每次推 main 都还原到托管 runner 的磁盘上。
-# 拿到仓库写权限、或者供应链上任何一个 action 被投毒，就能把它取走——而 direct
-# 分发下密钥泄漏没有补救办法：对方能签一个同包名的 APK 原地覆盖安装，钱包数据
-# 原样留着，只能换包名让每个用户手动卸载重装。
+# 正式包只由签名闸产出（RN-Server docs/design/android-signing-gate-2026-09-16.md）：
+# amos 上的构建机用 `pnpm android:release` 出**未签名包**，签名闸检查后签名。仓库里
+# 没有正式签名模式，GitHub 上也不应该有任何签名 secret——曾经的 android-release-gate
+# 把裸密钥库和口令放在 secrets 里、每次推 main 都还原到托管 runner 的磁盘上，
+# 2026-09-12 已移除，那批密钥随 2026-09 的签名密钥重置一并作废。
 #
-# 现在正式包一律由 amos 上的打包机产出（租户在控制台发起任务）。
-#
-# 两件随之要做的事：
-#   1. GitHub 上那四个 secret 要删掉——删 workflow 不会删 secret，密钥还在那里躺着。
-#      ANDROID_RELEASE_KEYSTORE_BASE64 / ANDROID_RELEASE_STORE_PASSWORD /
-#      ANDROID_RELEASE_KEY_ALIAS / ANDROID_RELEASE_KEY_PASSWORD
-#   2. SBOM 已经挪到打包机（2026-09-12）：构建代理在 worktree 还在的时候调
-#      scripts/build-sbom.mjs，扫的是这次构建自己的依赖树，绑的是真正发出去的那个
-#      APK 的 sha256，随产物一起传回服务端，记在发布记录的 file_metadata.sbom 上。
-#      生成失败整个构建任务失败——它是发布门禁，不是可选步骤。
+# SBOM 也在构建机上生成：构建机在 worktree 还在的时候调 scripts/build-sbom.mjs，
+# 扫的是这次构建自己的依赖树，绑定的是**未签名包**的文件名与 sha256（签名闸签完后
+# sha256 会变，发布记录的 file_metadata.unsignedSha256 把两者连起来）。生成失败整个
+# 构建任务失败——它是发布门禁，不是可选步骤。

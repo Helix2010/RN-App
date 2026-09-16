@@ -22,7 +22,10 @@
 
 ## SaaS 租户构建
 
-- 生产构建 MUST 显式选择租户 slug；Android 直装包统一使用 `pnpm android:release <slug>`。
+- Android 正式包（装到用户设备上的包）MUST 只由签名闸产出：在控制台排构建任务。仓库里没有正式签名模式，MUST NOT 在本地、CI 或构建机上给租户包签名，也 MUST NOT 为此重新引入 release signingConfig 或签名环境变量。
+- 生产构建 MUST 显式选择租户 slug；构建机与本地复现统一使用 `pnpm android:release <slug>`，它只产出未签名包（`artifacts/<slug>-<version>-build<code>-release-unsigned.apk`），装不上设备。
+- 开发自测需要装得上设备的 release 包时 MUST 使用 `pnpm android:dev-signed`：只签开发包名 `com.anyfun.foundation.dev`，用本机生成、放在仓库外的测试密钥。需要验证正式包行为（热更新基线、App Links、覆盖升级）时 MUST 在控制台排构建任务，安装签名闸产出的包。
+- `scripts/lib/android-release-identity.js` 的 `ALLOWED_PERMISSIONS` 与签名闸内嵌的允许列表 MUST 在同一次变更里一起改。
 - `tenants/<slug>/tenant.json` MUST 是该租户构建信息的唯一事实源，集中维护域名、applicationId、应用名、scheme、Android 包名、iOS Bundle ID、发布渠道、OTA Channel、版本、Build 与图标配置。
 - `app.config.ts`、`eas.json`、CI 参数和本地命令 MUST NOT 再硬编码或复制租户 API、applicationId、包名、版本和 Build；环境变量只允许传递租户 slug 或密钥类配置。
 - Release 构建 MUST 在产物复制前读取 APK 内嵌 `app.config`，校验租户域名、渠道、应用身份、版本、Build、OTA 和 runtimeVersion；任一不一致必须失败。
@@ -44,9 +47,10 @@
 
 - 机密 MUST NOT 出现在对话、日志、提交信息、PR、工单、截图里。已经出现就 MUST 立刻
   轮换，并在交付说明里写清泄了什么、轮换了没有。
-- 本仓库的机密清单：release keystore 与它的口令、OTA 签名私钥、bootstrap 签名私钥、
-  `.env.local` / `.env.tenant` 里的路径与口令、测试钱包助记词。构建脚本打印的每一行
-  MUST 先确认不含这些——Gradle 失败时很乐意把整条命令行打出来。
+- 本仓库的机密清单：开发自测测试密钥与它的口令文件（`~/.rn-test-keys/` 或
+  `RN_TEST_KEYS_DIR`）、OTA 签名私钥、bootstrap 签名私钥、`.env.local` / `.env.tenant`
+  里的路径与口令、测试钱包助记词。租户的 Android 签名密钥不在任何开发机上，只有签名闸
+  解得开。构建脚本打印的每一行 MUST 先确认不含这些——Gradle 失败时很乐意把整条命令行打出来。
 - 取口令 MUST 只取那一个值，MUST NOT `cat` 整个 `.env.local` 或口令文件。默认不开
   `set -x`、不用 `curl -v`、不把口令放命令行参数（`ps` 看得到）。
 - 需要人工执行的取密动作 MUST 在他自己的终端里跑，MUST NOT 用会把输出送回对话的通道。

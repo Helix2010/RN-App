@@ -1,12 +1,19 @@
 const { spawnSync } = require("node:child_process");
 const { existsSync, readdirSync } = require("node:fs");
 const { join } = require("node:path");
+const { readZipDirectory, readZipEntry } = require("./apk-zip");
 
 /**
- * Release APK 身份门禁（安全评审 N1 / N16 / N18 / N20）。
- * 构建脚本与 CI 在复制产物前调用：签名者必须等于 tenant.json 登记的生产密钥指纹，
- * 永远拒绝 React Native 模板的公开 debug 密钥；包名、versionCode、versionName 与租户一致；
- * 不得出现被禁止的权限。任一不符即失败，不复制、不上传。
+ * Release APK 身份门禁（安全评审 N1 / N16 / N18 / N20；签名闸设计 android-signing-gate-2026-09-16）。
+ *
+ * 两种包，两套检查：
+ * - **未签名包**（`pnpm android:release` 的产物，构建机交给签名闸的就是它）：断言没有任何
+ *   签名，再查包名、版本、权限与内嵌配置。这些只是早期反馈——签名闸会独立再查一遍，
+ *   它不采信构建机说的话。
+ * - **已签名包**（签名闸产出、从控制台下载的包，`pnpm android:verify` 复核）：签名者必须
+ *   等于 tenant.json 登记的证书指纹，永远拒绝 React Native 模板的公开 debug 密钥，
+ *   其余同上。
+ * 任一不符即失败，不复制、不上传。
  */
 
 /** React Native 模板 debug.keystore 的证书指纹：谁都有这把钥匙。 */
@@ -121,28 +128,9 @@ function parseBadging(output) {
   };
 }
 
-function assertReleaseIdentity({ signers, badging, tenant }) {
+/** 包名、版本、权限：已签名与未签名两种包共用的那一半。返回问题列表，空 = 通过。 */
+function packageIdentityProblems({ badging, tenant }) {
   const problems = [];
-  if (signers.length !== 1)
-    // 0 个签名者或多个（含 v3.1 轮换链）都拒绝：直发渠道当前只接受单一生产密钥
-    problems.push(
-      `expected exactly one signer certificate, found ${signers.length}`,
-    );
-  if (signers.includes(DEBUG_SIGNER_SHA256))
-    problems.push(
-      "APK is signed with the public React Native debug keystore (fac61745…); release builds must use the tenant production key",
-    );
-  if (
-    typeof tenant.signerSha256 !== "string" ||
-    !SHA256_HEX.test(tenant.signerSha256)
-  )
-    problems.push(
-      "tenant.json signerSha256 must be the production certificate SHA-256 (64 lowercase hex chars)",
-    );
-  else if (signers.length === 1 && signers[0] !== tenant.signerSha256)
-    problems.push(
-      `signer ${signers[0]} does not match tenant.json signerSha256 ${tenant.signerSha256}`,
-    );
   if (badging.packageName !== tenant.androidPackage)
     problems.push(
       `package ${badging.packageName} does not match tenant androidPackage ${tenant.androidPackage}`,
@@ -167,11 +155,126 @@ function assertReleaseIdentity({ signers, badging, tenant }) {
     problems.push(
       `permissions not on the allow list (a dependency probably added them; confirm each one, then add it to ALLOWED_PERMISSIONS with a reason): ${unexpected.join(", ")}`,
     );
+  return problems;
+}
+
+/** 已签名包（签名闸产出）：签名者 = tenant.json 登记的指纹，外加包名、版本、权限。 */
+function assertReleaseIdentity({ signers, badging, tenant }) {
+  const problems = [];
+  if (signers.length !== 1)
+    // 0 个签名者或多个（含 v3.1 轮换链）都拒绝：直发渠道当前只接受单一生产密钥
+    problems.push(
+      `expected exactly one signer certificate, found ${signers.length}`,
+    );
+  if (signers.includes(DEBUG_SIGNER_SHA256))
+    problems.push(
+      "APK is signed with the public React Native debug keystore (fac61745…); release builds must use the tenant production key",
+    );
+  if (
+    typeof tenant.signerSha256 !== "string" ||
+    !SHA256_HEX.test(tenant.signerSha256)
+  )
+    problems.push(
+      "tenant.json signerSha256 must be the production certificate SHA-256 (64 lowercase hex chars)",
+    );
+  else if (signers.length === 1 && signers[0] !== tenant.signerSha256)
+    problems.push(
+      `signer ${signers[0]} does not match tenant.json signerSha256 ${tenant.signerSha256}`,
+    );
+  problems.push(...packageIdentityProblems({ badging, tenant }));
   if (problems.length > 0)
     throw new Error(
       `Release identity check failed:\n- ${problems.join("\n- ")}`,
     );
   return { signer: signers[0], ...badging };
+}
+
+/** v1（JAR）签名文件：直接放在 META-INF/ 下的 .SF 与签名块文件。 */
+const V1_SIGNATURE_ENTRY = /^META-INF\/[^/]+\.(SF|RSA|DSA|EC)$/i;
+
+/**
+ * 从 ZIP 结构里找签名痕迹，不需要 Android SDK：v1 签名文件，以及中央目录前的
+ * APK Signing Block（v2/v3/v3.1 签名都在里面）。返回每条痕迹的说明，空 = 没有。
+ */
+function signatureEvidence(apkPath) {
+  const { entries, hasApkSigningBlock } = readZipDirectory(apkPath);
+  const evidence = entries
+    .filter((entry) => V1_SIGNATURE_ENTRY.test(entry.name))
+    .map((entry) => `v1 signature file ${entry.name}`);
+  if (hasApkSigningBlock)
+    evidence.push("APK Signing Block before the central directory");
+  return evidence;
+}
+
+/**
+ * `apksigner verify` 对一个没签名的包必须失败，而且失败原因必须是“验证不通过”——
+ * 工具本身跑不起来（没有 java、找不到 jar）也是非 0 退出，那不能算作“没有签名”的证据。
+ * 返回问题列表，空 = 确实验证不通过。
+ */
+function apksignerVerifyProblems({ apkPath, sdkRoot, env }) {
+  const binary = findBuildTool(sdkRoot, "apksigner");
+  const result = spawnSync(binary, ["verify", apkPath], {
+    encoding: "utf8",
+    env,
+  });
+  if (result.error) throw result.error;
+  const output = `${result.stdout}\n${result.stderr}`;
+  if (result.status === 0)
+    return [
+      "apksigner verify accepts this APK, so it carries a valid signature",
+    ];
+  if (!output.includes("DOES NOT VERIFY"))
+    throw new Error(
+      `apksigner verify could not examine ${apkPath} (exit ${result.status}); that is not evidence the APK is unsigned: ${output.trim().slice(0, 2000)}`,
+    );
+  return [];
+}
+
+/**
+ * 断言 APK 没有任何签名：ZIP 结构里没有签名痕迹，且 `apksigner verify` 验证不通过。
+ * release 构建只出未签名包，签名只在签名闸上做。
+ */
+function unsignedProblems({ apkPath, sdkRoot, env }) {
+  const evidence = signatureEvidence(apkPath);
+  if (evidence.length > 0)
+    return [
+      `APK is already signed (${evidence.join("; ")}); release builds must be unsigned — only the signing gate signs`,
+    ];
+  return apksignerVerifyProblems({ apkPath, sdkRoot, env });
+}
+
+function assertApkUnsigned({ apkPath, sdkRoot, env }) {
+  if (!existsSync(apkPath)) throw new Error(`APK not found: ${apkPath}`);
+  const problems = unsignedProblems({ apkPath, sdkRoot, env });
+  if (problems.length > 0)
+    throw new Error(`Unsigned APK check failed:\n- ${problems.join("\n- ")}`);
+}
+
+/** APK 内嵌的 `assets/app.config`（expo-constants 在构建时写进去的那份）。 */
+function readEmbeddedAppConfig(apkPath) {
+  const raw = readZipEntry(apkPath, "assets/app.config");
+  if (raw === null) throw new Error("APK has no embedded assets/app.config");
+  return JSON.parse(raw.toString("utf8"));
+}
+
+/**
+ * 内嵌配置与这次构建期望的是否一致：租户域名、渠道、应用身份、版本、Build、OTA、runtimeVersion。
+ * `expected.extra` 逐键比对，`expected.runtimeVersion` 必须相等，OTA 必须开启。
+ */
+function embeddedConfigProblems({ appConfig, expected }) {
+  const problems = [];
+  for (const [key, value] of Object.entries(expected.extra))
+    if (appConfig.extra?.[key] !== value)
+      problems.push(
+        `embedded app.config ${key}: expected ${value}, received ${appConfig.extra?.[key] ?? "missing"}`,
+      );
+  if (!appConfig.updates?.enabled)
+    problems.push("embedded app.config must enable production OTA updates");
+  if (appConfig.runtimeVersion !== expected.runtimeVersion)
+    problems.push(
+      `embedded app.config runtimeVersion ${appConfig.runtimeVersion} does not match Expo config ${expected.runtimeVersion}`,
+    );
+  return problems;
 }
 
 /** 最高版本 build-tools 目录里的工具；找不到就报错，不去 PATH 里碰运气。 */
@@ -191,8 +294,8 @@ function findBuildTool(sdkRoot, tool) {
   throw new Error(`${tool} not found in any ${root}/<version>/`);
 }
 
-function runTool(binary, args) {
-  const result = spawnSync(binary, args, { encoding: "utf8" });
+function runTool(binary, args, env) {
+  const result = spawnSync(binary, args, { encoding: "utf8", env });
   if (result.error) throw result.error;
   if (result.status !== 0)
     throw new Error(
@@ -201,24 +304,59 @@ function runTool(binary, args) {
   return `${result.stdout}\n${result.stderr}`;
 }
 
-function inspectApk({ apkPath, sdkRoot }) {
+/** `aapt dump badging`：包名、版本与权限清单。 */
+function inspectBadging({ apkPath, sdkRoot, env }) {
   if (!existsSync(apkPath)) throw new Error(`APK not found: ${apkPath}`);
-  const signers = parseSignerDigests(
-    runTool(findBuildTool(sdkRoot, "apksigner"), [
-      "verify",
-      "--print-certs",
-      apkPath,
-    ]),
+  return parseBadging(
+    runTool(findBuildTool(sdkRoot, "aapt"), ["dump", "badging", apkPath], env),
   );
-  const badging = parseBadging(
-    runTool(findBuildTool(sdkRoot, "aapt"), ["dump", "badging", apkPath]),
-  );
-  return { signers, badging };
 }
 
-function verifyReleaseApk({ apkPath, tenant, sdkRoot }) {
-  const inspected = inspectApk({ apkPath, sdkRoot });
-  return assertReleaseIdentity({ ...inspected, tenant });
+/** `apksigner verify --print-certs`：签名证书 SHA-256；验证不通过直接报错。 */
+function inspectSigners({ apkPath, sdkRoot, env }) {
+  if (!existsSync(apkPath)) throw new Error(`APK not found: ${apkPath}`);
+  return parseSignerDigests(
+    runTool(
+      findBuildTool(sdkRoot, "apksigner"),
+      ["verify", "--print-certs", apkPath],
+      env,
+    ),
+  );
+}
+
+/**
+ * 未签名 release 包的早期反馈：没有签名、包名/版本/权限与租户一致、内嵌配置与这次构建一致。
+ * 全部问题一次报出。
+ */
+function verifyUnsignedReleaseApk({
+  apkPath,
+  tenant,
+  sdkRoot,
+  expectedConfig,
+  env,
+}) {
+  if (!existsSync(apkPath)) throw new Error(`APK not found: ${apkPath}`);
+  const problems = unsignedProblems({ apkPath, sdkRoot, env });
+  const badging = inspectBadging({ apkPath, sdkRoot, env });
+  problems.push(...packageIdentityProblems({ badging, tenant }));
+  problems.push(
+    ...embeddedConfigProblems({
+      appConfig: readEmbeddedAppConfig(apkPath),
+      expected: expectedConfig,
+    }),
+  );
+  if (problems.length > 0)
+    throw new Error(
+      `Unsigned release check failed:\n- ${problems.join("\n- ")}`,
+    );
+  return badging;
+}
+
+/** 已签名包（签名闸产出）的复核：`pnpm android:verify`。 */
+function verifySignedReleaseApk({ apkPath, tenant, sdkRoot, env }) {
+  const signers = inspectSigners({ apkPath, sdkRoot, env });
+  const badging = inspectBadging({ apkPath, sdkRoot, env });
+  return assertReleaseIdentity({ signers, badging, tenant });
 }
 
 module.exports = {
@@ -227,11 +365,16 @@ module.exports = {
   DIRECT_ONLY_PERMISSIONS,
   FORBIDDEN_PERMISSIONS,
   allowedPermissionsFor,
-  SHA256_HEX,
+  assertApkUnsigned,
   assertReleaseIdentity,
+  embeddedConfigProblems,
   findBuildTool,
-  inspectApk,
+  inspectBadging,
+  inspectSigners,
   parseBadging,
   parseSignerDigests,
-  verifyReleaseApk,
+  readEmbeddedAppConfig,
+  signatureEvidence,
+  verifySignedReleaseApk,
+  verifyUnsignedReleaseApk,
 };

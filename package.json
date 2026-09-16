@@ -13,7 +13,7 @@
     "android": "expo run:android",
     "android:release": "node scripts/build-android-release.mjs",
     "android:verify": "node scripts/verify-android-release.mjs",
-    "android:keystore": "bash scripts/generate-release-keystore.sh",
+    "android:dev-signed": "node scripts/android-dev-signed.mjs",
     "ota:keygen": "bash scripts/generate-ota-signing-key.sh",
     "ios": "expo run:ios",
     "prebuild": "expo prebuild",

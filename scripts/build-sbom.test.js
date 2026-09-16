@@ -1,4 +1,5 @@
 const { spawnSync } = require("node:child_process");
+const { createHash } = require("node:crypto");
 const {
   mkdirSync,
   mkdtempSync,
@@ -9,6 +10,7 @@ const {
 const { tmpdir } = require("node:os");
 const { join, resolve } = require("node:path");
 const { expect, test } = require("@jest/globals");
+const { syntheticApk } = require("./lib/apk-test-fixture");
 
 const script = resolve(process.cwd(), "scripts/build-sbom.mjs");
 const anyfun = JSON.parse(
@@ -47,9 +49,14 @@ function syftOutput({
   };
 }
 
-function run(report, extraArgs = []) {
+function run(report, extraArgs = [], { apk } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "rn-sbom-"));
   try {
+    const apkPath = join(dir, "artifacts", "anyfun-release-unsigned.apk");
+    if (apk) {
+      mkdirSync(join(dir, "artifacts"), { recursive: true });
+      writeFileSync(apkPath, apk);
+    }
     mkdirSync(join(dir, "tenants", "anyfun"), { recursive: true });
     writeFileSync(
       join(dir, "tenants", "anyfun", "tenant.json"),
@@ -71,6 +78,7 @@ function run(report, extraArgs = []) {
         input,
         "--out",
         out,
+        ...(apk ? ["--apk", apkPath] : []),
         ...extraArgs,
       ],
       { encoding: "utf8" },
@@ -150,4 +158,35 @@ test("refuses an --apk path that does not exist", () => {
   const { status, stderr } = run(syftOutput(), ["--apk", "/nonexistent.apk"]);
   expect(status).not.toBe(0);
   expect(stderr).toMatch(/不存在/);
+});
+
+// 构建机只产出未签名包，签名闸签完 sha256 就变了：SBOM 绑的是未签名包，并在文件里写明
+test("binds to the unsigned APK and says so in the file", () => {
+  const apk = syntheticApk({ packageName: anyfun.androidPackage });
+  const { status, stderr, sbom } = run(syftOutput(), [], { apk });
+  expect(stderr).toBe("");
+  expect(status).toBe(0);
+  expect(sbom.metadata.component.hashes).toEqual([
+    {
+      alg: "SHA-256",
+      content: createHash("sha256").update(apk).digest("hex"),
+    },
+  ]);
+  const properties = Object.fromEntries(
+    sbom.metadata.properties.map((item) => [item.name, item.value]),
+  );
+  expect(properties["rn-app:artifact"]).toBe("anyfun-release-unsigned.apk");
+  expect(properties["rn-app:artifact-signing"]).toBe("unsigned");
+  expect(properties["rn-app:artifact-signing-note"]).toMatch(/unsignedSha256/);
+});
+
+test("refuses to bind a signed APK", () => {
+  const { status, stderr } = run(syftOutput(), [], {
+    apk: syntheticApk({
+      packageName: anyfun.androidPackage,
+      signingBlock: true,
+    }),
+  });
+  expect(status).not.toBe(0);
+  expect(stderr).toMatch(/已经带签名[\s\S]*未签名包/);
 });

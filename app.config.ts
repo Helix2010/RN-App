@@ -278,9 +278,15 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     "./plugins/with-wallet-deep-links.js",
     // Gradle wrapper 分发包校验和（安全评审 N28）
     "./plugins/with-gradle-distribution-checksum.js",
-    // Gradle 依赖校验清单（安全评审 N28）。默认不安装，GRADLE_DEPENDENCY_VERIFICATION=1
-    // 才把 gradle/verification-metadata.xml 放进去；关着时确保工程里不残留旧清单
-    "./plugins/with-gradle-dependency-verification.js",
+    // Gradle 依赖校验清单（安全评审 N28）。非 development 渠道一律安装、没有开关；
+    // development 渠道不装，并确保工程里不残留旧清单
+    [
+      "./plugins/with-gradle-dependency-verification.js",
+      { distributionChannel },
+    ],
+    // release buildType 一律不签名：正式签名只在签名闸上做，开发自测用
+    // `pnpm android:dev-signed` 给开发包名签本机测试密钥
+    "./plugins/with-release-signing.js",
     // jitpack 排在 google/mavenCentral 之后，解析不到的坐标都会落到它身上，
     // 而它的内容随作者仓库可变。清单里没有一个组件来自它（安全评审 N28）
     "./plugins/with-pinned-maven-repositories.js",
@@ -291,11 +297,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ],
     ...(distributionChannel === "development"
       ? []
-      : [
-          "./plugins/with-production-android-optimizations.js",
-          // release 签名只来自环境变量注入的生产密钥，缺失即 prebuild 失败（安全评审 N1）
-          "./plugins/with-release-signing.js",
-        ]),
+      : ["./plugins/with-production-android-optimizations.js"]),
   ],
   // OTA records are explicitly bound to an APK version. Server and client
   // additionally verify buildNumber so two native builds cannot share an OTA.

@@ -29,12 +29,21 @@
  * N28 里另一项欠账——给 Gradle 加 `verification-metadata.xml`，那份文件本身就是
  * 权威的 Android 依赖列表。在那之前，这份 SBOM 的 `coverage` 属性会如实写着
  * `javascript-only`，不要把它当成完整的物料清单。
+ *
+ * ## 绑定的是未签名包
+ *
+ * 构建机只产出未签名包（`pnpm android:release`），正式签名在签名闸上做，签名后的
+ * 文件 sha256 与未签名包不同。所以这份 SBOM 绑定的是**未签名包**的文件名与 sha256，
+ * 并在属性 `rn-app:artifact-signing` 里写明 `unsigned`；发布记录的
+ * `file_metadata.unsignedSha256` 把它和签名闸交回的已签名包连起来。`--apk` 指向的
+ * 包带签名痕迹就拒绝：那说明拿错了文件，或者构建链路里有东西在签名。
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { signatureEvidence } from "./lib/android-release-identity.js";
 
 /**
  * 组件数低于这个值就认定是扫描失败而不是"依赖真的很少"。
@@ -97,6 +106,16 @@ export function bindToArtifact(input, artifact) {
     { name: "rn-app:tenant", value: artifact.tenant },
     { name: "rn-app:buildNumber", value: String(artifact.buildNumber) },
     { name: "rn-app:artifact", value: artifact.fileName },
+    ...(artifact.sha256
+      ? [
+          { name: "rn-app:artifact-signing", value: "unsigned" },
+          {
+            name: "rn-app:artifact-signing-note",
+            value:
+              "The hash above is the unsigned APK handed to the signing gate. The signed APK users install has a different sha256; the release record links them via file_metadata.unsignedSha256.",
+          },
+        ]
+      : []),
     // 覆盖范围写进文件里，而不是只写在文档里：拿到这份 SBOM 的人未必读过 runbook
     { name: "rn-app:coverage", value: COVERAGE },
     {
@@ -213,6 +232,21 @@ function main(argv) {
   if (apkPath && !artifact.sha256) {
     console.error(`--apk 指向的文件不存在：${apkPath}`);
     return 1;
+  }
+  if (apkPath) {
+    let evidence;
+    try {
+      evidence = signatureEvidence(apkPath);
+    } catch (error) {
+      console.error(`--apk 不是可读的 APK：${error.message}`);
+      return 1;
+    }
+    if (evidence.length > 0) {
+      console.error(
+        `--apk 指向的包已经带签名（${evidence.join("；")}）：SBOM 绑定的是构建机产出的未签名包`,
+      );
+      return 1;
+    }
   }
 
   const bound = bindToArtifact(document, artifact);

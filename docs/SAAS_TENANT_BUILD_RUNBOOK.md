@@ -20,7 +20,7 @@ tenants/<tenant-slug>/tenant.json
 - `iconBackgroundColor`
 - `icon.icon`、`icon.androidForeground`、`icon.androidBackground`、`icon.androidMonochrome`
 
-`app.config.ts`、`eas.json`、CI workflow 和命令行不得复制租户域名、包名、applicationId、版本或 Build。构建环境只选择租户 slug；签名证书、`google-services.json`、OTA 私钥和推送凭证只能使用 Secret。
+`app.config.ts`、`eas.json`、CI workflow 和命令行不得复制租户域名、包名、applicationId、版本或 Build。构建环境只选择租户 slug；`google-services.json`、OTA 私钥和推送凭证只能使用 Secret。Android 签名密钥不进任何构建环境，只有签名闸解得开（§3.1）。
 
 机器级构建输入统一放在 git 忽略的 `.env.local`（模板见 `.env.example`），不写进 tenant.json，也不在命令行传。Firebase 文件可以放在项目内 git 忽略的 `secrets/<tenant>/`，也可以放在仓库外：
 
@@ -48,7 +48,9 @@ EXPO_PUBLIC_TENANT=<slug> pnpm exec expo config --json
 
 ## 3. Android Release APK
 
-统一使用：
+**正式包（装到用户手机上的包）只由签名闸产出。** 在控制台「发布中心 → 打包任务」排 Android 安装包任务：构建机出未签名包，签名闸检查后签名，服务端落「待发布」。设计见 RN-Server `docs/design/android-signing-gate-2026-09-16.md`。仓库里没有正式签名模式——本地、CI、构建机都签不出租户的正式包。
+
+构建机与本地复现统一使用：
 
 ```bash
 pnpm android:release <tenant-slug>
@@ -74,65 +76,53 @@ expo prebuild
 ```text
 读取 tenant.json
 → 生成 Expo 配置
-→ 清理并生成 Android 原生工程
-→ Gradle assembleRelease
-→ 读取 APK 内嵌 app.config
-→ 校验域名 / 渠道 / applicationId / 版本 / Build / OTA / runtimeVersion
-→ 校验通过后输出租户命名的 APK
+→ 清理并生成 Android 原生工程（依赖校验清单随之装入）
+→ 确认依赖校验会执行（清单在位、组件数不低于下限）
+→ Gradle assembleRelease（release buildType 没有 signingConfig）
+→ 断言产物没有签名
+→ 校验包名 / 版本 / 权限；读取 APK 内嵌 app.config，校验域名 / 渠道 / applicationId / 版本 / Build / OTA / runtimeVersion
+→ 校验通过后输出租户命名的未签名 APK
 ```
 
 输出示例：
 
 ```text
-artifacts/anyfun-1.2.1-build15-release.apk
+artifacts/anyfun-1.3.16-build46-release-unsigned.apk
 ```
 
-构建失败时不得上传或发布旧产物。脚本在复制产物前已执行签名者、包名、版本与权限门禁（见 §3.2）；上传后服务端再按租户比对一次。
+这个包没有签名，装不上设备；它是构建机交给签名闸的输入。构建失败时不得上传旧产物。本地开发要一个装得上设备的包，见 §3.4。
 
-### 3.1 生产签名密钥（安全评审 N1）
+### 3.1 签名只在签名闸上做
 
-Release 永远不用模板 `debug.keystore`。`plugins/with-release-signing.js` 在 prebuild 时把 release signingConfig 指向四个环境变量，缺任一个 prebuild 与 Gradle 直接失败：
-
-```bash
-export ANDROID_RELEASE_KEYSTORE_PATH=/abs/path/to/<slug>-release.jks   # 必须是绝对路径；可放 .env.local（只是路径）
-export ANDROID_RELEASE_STORE_PASSWORD=...                           # 只能来自密钥管理服务 / CI secret
-export ANDROID_RELEASE_KEY_ALIAS=...
-export ANDROID_RELEASE_KEY_PASSWORD=...
-```
-
-生成与登记（一次性，由密钥保管人在干净机器上执行）。推荐用脚本，它会生成 PKCS12 keystore、提取 64 位小写指纹、把口令与 CI 用的 base64 写成 0600 文件而不上屏，并可选写入 tenant.json：
-
-```bash
-pnpm android:keystore --tenant <slug> --out /secure/keys/<slug>
-```
-
-手动等价步骤：
-
-```bash
-keytool -genkeypair -v -keystore <slug>-release.jks -alias <slug> -keyalg RSA -keysize 4096 -validity 10000
-keytool -list -v -keystore <slug>-release.jks -alias <slug> | grep SHA256
-```
-
-把 SHA-256 指纹（去掉冒号、小写）写进 `tenants/<slug>/tenant.json` 的 `signerSha256`，并在 RN-Server 管理端为该租户登记同一指纹与包名。keystore 与口令进密钥管理服务并离线加密备份两份；仓库、`.env`、tenant.json 都不放密钥本体。密钥丢失等于全员重装。
+- `plugins/with-release-signing.js` 在 prebuild 时删掉模板 release buildType 里的 `signingConfig signingConfigs.debug`，不注入任何 signingConfig、不读任何签名相关的环境变量，AGP 因此产出 `app-release-unsigned.apk`。debug buildType 保持模板的 debug 签名（`expo run:android` 要用）。
+- 租户签名密钥在离线机器上生成，只以密文存进服务端，只有签名闸解得开；RN-App 仓库、开发机、构建机、CI 都不持有任何租户的签名密钥。生成、上传、签名闸确认与重置流程见设计文档「密钥生成与上传」「现有租户的签名密钥重置」。
+- `tenants/<slug>/tenant.json` 的 `signerSha256` 是该租户登记证书的 SHA-256，**只用于**本地 `pnpm android:verify` 核对签名闸产出的包（§3.2）。构建不读它；构建任务里的 tenant.json 由服务端按登记的指纹合成。
+- 密钥重置后要把 `signerSha256` 改成新指纹，见 `docs/RELEASE_SIGNING_ROLLOUT.md`。
 
 无租户的开发构建使用 `tenants/development-identity.json` 声明的 `.dev` 包名与 Bundle ID；`pnpm config:check` 会拒绝任何与之相同、或租户之间重复的包名 / Bundle ID / scheme。
 
-### 3.2 产物身份门禁
+### 3.2 产物检查
 
-`pnpm android:release <slug>` 在复制产物前运行 `apksigner verify --print-certs` 与 `aapt dump badging`，要求：签名者 = `tenant.json.signerSha256`；永远拒绝 RN 模板 debug 指纹 `fac61745…1033b9c`；包名 / versionCode / versionName 与 tenant.json 一致；不含 `android.permission.SYSTEM_ALERT_WINDOW`。对任意已有 APK 复跑：
+**未签名包**：`pnpm android:release <slug>` 在复制产物前检查，任一不符即失败。这些是早期反馈，签名闸会独立再查一遍，它不采信构建机说的话。
+
+- 没有签名：ZIP 里没有 `META-INF/*.SF|RSA|EC|DSA`，中央目录前没有 APK Signing Block，并且 `apksigner verify` 必须验证不通过（工具本身跑不起来不算）。Gradle 若产出的是 `app-release.apk`，说明有东西注入了签名配置，直接失败。
+- 包名 / versionCode / versionName 与 tenant.json 一致；不含 `android.permission.SYSTEM_ALERT_WINDOW`；权限都在 `scripts/lib/android-release-identity.js` 的 `ALLOWED_PERMISSIONS` 里。**签名闸内嵌了同一份允许列表，改这份列表必须和签名闸在同一次变更里一起改。**
+- 内嵌 app.config（从 APK 里读 `assets/app.config`）与本次构建一致。
+
+**签名闸产出的正式包**：从控制台下载后复核。
 
 ```bash
-pnpm android:verify artifacts/<slug>-<version>-build<code>-release.apk <slug>
+pnpm android:verify <下载的 apk> <slug>
 ```
 
-正式包一律由打包机产出（控制台发起任务），GitHub Actions 里那个 `android-release-gate` job 已于 2026-09-12 撤掉：它要求把裸密钥库和三个口令放进 GitHub secrets，而 direct 分发下签名密钥泄漏没有补救办法。
+要求签名者 = `tenant.json.signerSha256`，永远拒绝 RN 模板 debug 指纹 `fac61745…1033b9c`，包名 / 版本 / 权限同上。
 
 `EXPO_UPDATES_CODE_SIGNING_CERTIFICATE` 一旦设置，`app.config.ts` 会先确认那个路径真的存在（相对仓库根解析，与 expo-updates 一致）——拼错的路径原本会一路沉默到运行时才表现为"更新没有验签"。
 
-**SBOM 由打包机生成**（2026-09-12 从 CI 挪过来）。构建代理在产物校验通过、worktree 还在的时候调 `scripts/build-sbom.mjs`，扫的是这次构建自己的 `pnpm-lock.yaml`，绑的是刚算出来的那个 APK sha256，随产物一起传回服务端，记在发布记录的 `file_metadata.sbom`（`objectKey` 指向对象存储里的那一份）。生成失败整个构建任务失败——一个静默跳过的门禁比没有门禁更坏。打包机上的 syft 用 `RN-Server/deploy/amos/install-syft.sh` 装，版本与 sha256 都写死在脚本里。本地复现：
+**SBOM 由构建机生成**（2026-09-12 从 CI 挪过来）。构建机在产物检查通过、worktree 还在的时候调 `scripts/build-sbom.mjs`，扫的是这次构建自己的 `pnpm-lock.yaml`，绑定的是**未签名包**的文件名与 sha256，并在属性 `rn-app:artifact-signing` 里写明 `unsigned`。签名闸签完之后文件 sha256 会变，发布记录的 `file_metadata.unsignedSha256` 把 SBOM 与已签名包连起来。`--apk` 指向带签名的包时脚本拒绝。生成失败整个构建任务失败——一个静默跳过的门禁比没有门禁更坏。构建机上的 syft 用 `RN-Server/deploy/amos/install-syft.sh` 装，版本与 sha256 都写死在脚本里。本地复现：
 
 ```bash
-pnpm sbom --tenant <slug> --apk artifacts/<slug>-<version>-build<code>-release.apk
+pnpm sbom --tenant <slug> --apk artifacts/<slug>-<version>-build<code>-release-unsigned.apk
 ```
 
 需要 syft（固定版本 + sha256，不进 `package.json`）。**这份 SBOM 只覆盖 JS 依赖**：APK 里是 dex 不是 jar，原生那一半扫不出来；文件自己的 `rn-app:coverage` 属性会如实写着 `javascript-only`。原生依赖的清单在 `gradle/verification-metadata.xml`（见 §3.2.3），两份合起来才是完整的物料清单。
@@ -216,30 +206,48 @@ pnpm ota:keygen --tenant <slug> --out /secure/keys/<slug>-ota --rebuild-body --e
 
 ### 3.2.3 Gradle 依赖校验（安全评审 N28）
 
-`gradle/verification-metadata.xml` 给每一个 Android 依赖记了 sha256（当前 1313 个组件）。`GRADLE_DEPENDENCY_VERIFICATION=1` 时，`plugins/with-gradle-dependency-verification.js` 在 prebuild 把它装进 `android/gradle/`，Gradle 会在**下载之后、使用之前**逐个比对——被顶替的 maven 仓库、被改写的缓存、下毒的传递依赖都会当场失败，而不是安静地进 APK。
+`gradle/verification-metadata.xml` 给每一个 Android 依赖记了 sha256（当前 1313 个组件）。`plugins/with-gradle-dependency-verification.js` 在 prebuild 把它装进 `android/gradle/`，Gradle 会在**下载之后、使用之前**逐个比对——被顶替的 maven 仓库、被改写的缓存、下毒的传递依赖都会当场失败，而不是安静地进 APK。
 
-**为什么默认关闭**：Gradle 的依赖校验靠"文件在不在"生效，没有 lenient 档。清单里少任何一条都会让构建失败，而升一个 Expo 小版本、加一个原生模块、甚至 AGP 换个变体都会引入清单里没有的坐标。这条路径是发布门禁，让它在无人预期的时候变红，结果一定是有人为了发版把校验关掉、然后再也不打开。先用开关在 CI 上跑一段时间，确认"改依赖 → 重新生成"这条流程真的走得通，再把默认改成开。
+**所有非 development 渠道的构建强制执行，没有开关。** release 包由构建机产出，构建机执行几千个第三方依赖的代码；依赖校验是交给签名闸之前唯一挡得住"被顶替的依赖"的地方，不能留一个能关掉它的环境变量。Gradle 的依赖校验成功时一个字都不打，所以 `pnpm android:release` 在 prebuild 之后、Gradle 之前先确认清单在位、组件数不低于 1000，否则不构建。
 
-依赖变了就必须重新生成，否则开着开关的构建会直接失败：
+development 渠道（`expo run:android`、`pnpm android:dev-signed`）不装清单，并删掉工程里残留的旧清单：开发构建链接 expo-dev-client 一系，解析到的坐标和清单不是同一套，而开发包不分发。
+
+Gradle 的依赖校验靠"文件在不在"生效，没有 lenient 档：清单里少任何一条都会让 release 构建失败。升 Expo、加原生模块、AGP 换变体都会引入新坐标，改依赖就必须连带重新生成清单——这是预期行为，不要靠删清单绕过去：
 
 ```bash
 pnpm android:verification-metadata <slug>
 ```
 
-它跑一次**真实的 release 构建**并让 Gradle 记下全部解析结果——只有真实构建才覆盖得到所有配置（buildscript 类路径、各个 Expo 子工程、变体相关的依赖）；`:app:dependencies` 只解析依赖图，取不到 `.aar`。生成期间脚本会强制把校验关掉，否则就是拿旧清单去校验、再用校验失败的结果写新清单。写出前校验组件数不低于 1000，一份残缺的清单比没有更坏——它会被强制执行，然后在别人手里炸成"依赖校验失败"。
+它跑一次**真实的 release 构建**并让 Gradle 记下全部解析结果——只有真实构建才覆盖得到所有配置（buildscript 类路径、各个 Expo 子工程、变体相关的依赖）；`:app:dependencies` 只解析依赖图，取不到 `.aar`。生成时脚本会先删掉 prebuild 装进去的旧清单，否则就是拿旧清单去校验、再把旧条目并进新清单。写出前校验组件数不低于 1000，一份残缺的清单比没有更坏——它会被强制执行，然后在别人手里炸成"依赖校验失败"。
 
-**脚本会自己建一个临时的 `GRADLE_USER_HOME`，在冷缓存下生成，完事删掉。** 这不是保险起见：暖缓存里 Gradle 用的是已解析的模块元数据，不会重读原始 `.pom` / `.module`，那些文件就不会被记进清单。2026-09-11 第一次用开发机缓存生成的清单，在冷缓存下差一条 `guava-parent-33.3.1-jre.pom` 就把构建打挂了——而 CI 的 runner 每次都是冷的。代价是重新生成要把依赖整套下一遍（约 1 GB / 十几分钟）。
+**脚本会自己建一个临时的 `GRADLE_USER_HOME`，在冷缓存下生成，完事删掉。** 这不是保险起见：暖缓存里 Gradle 用的是已解析的模块元数据，不会重读原始 `.pom` / `.module`，那些文件就不会被记进清单。2026-09-11 第一次用开发机缓存生成的清单，在冷缓存下差一条 `guava-parent-33.3.1-jre.pom` 就把构建打挂了。代价是重新生成要把依赖整套下一遍（约 1 GB / 十几分钟）。
 
-### 3.3 已装机用户从 debug 签名迁移
+### 3.3 签名密钥重置后的已装机用户
 
-完整的分步执行手册（角色、命令、预期输出、错误对照、迁移与收尾）见 `docs/RELEASE_SIGNING_ROLLOUT.md`。
+完整的分步执行手册（角色、命令、预期输出、迁移与收尾）见 `docs/RELEASE_SIGNING_ROLLOUT.md`。
 
-Android 不允许签名不同的 APK 覆盖安装；旧密钥公开，也不能走 v3 轮换。第一个生产签名版本发布时：
+Android 按"包名 + 签名证书"认升级，证书一换，系统就认为这是另一个 App。2026-09 起现有租户的签名密钥全部重置、沿用原包名，所以已装机用户必须先卸载旧 App 再装签名闸产出的新包，本机钱包数据随卸载清空，用助记词恢复：
 
-1. 建议改用新包名（并排安装，用户先在旧 App 备份助记词、在新 App 导入、确认后再卸旧 App）；沿用旧包名则用户必须先卸载，卸载即清空本地钱包。
-2. 给旧 runtime 发最后一个 OTA：全屏迁移引导（备份 → 下载 → 导入 → 卸载）。
-3. bootstrap 提高 `minSupportedVersion`，`releaseNotes` 写迁移说明；旧包下载链接保留一段时间以便回退。
-4. 客服口径：卸载前必须备份；未备份的钱包无法找回。
+1. 发布说明与客服口径写清：卸载前确认助记词已备份；未备份的钱包无法找回。
+2. bootstrap 提高 `minSupportedVersion`，`releaseNotes` 写迁移步骤；设备已装包与目标发布的签名指纹不一致时，服务端自动对这台设备关闭 `directUpdateEnabled`，避免应用内安装失败循环。
+3. 旧指纹由服务端永久拒绝，不提供回退。
+
+### 3.4 开发自测（开发包名 + 本机测试密钥）
+
+本地要一个能装上设备的 release 包，只能用开发包名 `com.anyfun.foundation.dev`（`tenants/development-identity.json`）和这台开发机自己生成的测试密钥：
+
+```bash
+pnpm android:dev-signed keygen                 # 每台开发机一次：生成测试密钥
+pnpm android:dev-signed                        # 无租户 prebuild + assembleRelease，签本机测试密钥
+pnpm android:dev-signed --apk <未签名开发包>     # 只给一个已构建好的未签名开发包签名
+```
+
+- 测试密钥放在仓库外：默认 `~/.rn-test-keys/`（目录 0700），可用 `RN_TEST_KEYS_DIR`（绝对路径，可放 `.env.local`）改；脚本拒绝把密钥放进仓库。口令随机生成，只写进 0600 文件，不打印、不进命令行参数（keytool 用 `-storepass:file`，apksigner 用 `--ks-pass file:`）；目录或文件对其他用户可读时脚本拒绝签名。
+- 包名不是开发包名时脚本拒绝签名，例如设置了 `EXPO_PUBLIC_TENANT`（进程环境或 `.env.local`），或 `--apk` 传入了租户包。开发包名不是任何租户的登记身份，服务端上传门禁天然拒收，签出来的包只能装在自己的设备上。
+- 输出 `artifacts/com.anyfun.foundation.dev-<version>-build<code>-test-signed.apk`，用 `adb install` 安装。
+- 开发包连的是 `EXPO_PUBLIC_API_BASE_URL`（默认本机服务），不装依赖校验清单（§3.2.3），不分发。
+
+**需要验证正式包行为**（例如对正式基线的热更新、App Links、直装升级、正式签名下的安装与覆盖升级）：在控制台排构建任务，从签名闸产出的包下载安装。不要试图在本地给租户包签名。
 
 ## 4. EAS 构建
 
@@ -250,7 +258,7 @@ EXPO_PUBLIC_TENANT=<slug> eas build --profile android-direct
 EXPO_PUBLIC_TENANT=<slug> eas build --profile production-store
 ```
 
-若使用 CI，租户 slug 作为 workflow 输入或环境变量，敏感信息使用 GitHub Secrets。EAS 的 `staging`、`android-direct` 等非 development profile 会执行 `with-release-signing` 插件，同样需要在 EAS 环境里配置四个 `ANDROID_RELEASE_*` 变量，否则 prebuild 失败。任何版本变更都必须同时更新 `version` 和对应平台递增的 Build。
+若使用 CI，租户 slug 作为 workflow 输入或环境变量，敏感信息使用 GitHub Secrets。**EAS 不是 Android 正式包的发布路径**：release buildType 没有 signingConfig，而 EAS 托管签名会绕开签名闸；Android 正式包只由签名闸产出（§3）。任何版本变更都必须同时更新 `version` 和对应平台递增的 Build。
 
 ## 5. 版本和升级边界
 
@@ -264,10 +272,9 @@ EXPO_PUBLIC_TENANT=<slug> eas build --profile production-store
 
 ```bash
 pnpm check
-pnpm android:release <tenant-slug>
 ```
 
-至少确认：
+然后在控制台排构建任务，等签名闸产出待发布记录，下载该包执行 `pnpm android:verify <apk> <tenant-slug>`。至少确认：
 
 - APK 内 API 地址不是 localhost；
 - applicationId、包名、渠道和租户一致；
@@ -275,7 +282,7 @@ pnpm android:release <tenant-slug>
 - OTA URL 和 channel 指向当前租户；
 - 清装后能完成远程 Bootstrap；
 - 覆盖安装满足签名和版本递增要求；
-- `pnpm android:verify` 对产物通过：签名者 = 租户 `signerSha256`，不是 debug keystore，不含 `SYSTEM_ALERT_WINDOW`；
+- `pnpm android:verify` 对签名闸产出的包通过：签名者 = 租户 `signerSha256`，不是 debug keystore，不含 `SYSTEM_ALERT_WINDOW`；
 - RN-Server 管理端已登记该租户的包名与签名指纹，上传未被 `RELEASE_SIGNER_*` 拒绝。
 
 ## 7. 回滚

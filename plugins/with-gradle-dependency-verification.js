@@ -9,16 +9,18 @@ const { dirname, join } = require("node:path");
  * 文件在位时 Gradle 会在**下载之后、使用之前**逐个比对，对不上就停——被顶替的
  * maven 仓库、被改写的缓存、下毒的传递依赖都会当场失败，而不是安静地进 APK。
  *
- * ## 为什么要一个开关，而不是永远开着
+ * ## 什么时候装
  *
- * Gradle 的依赖校验是靠"文件在不在"生效的，没有 lenient 档。一旦开着，**清单里
- * 少任何一条都会让构建失败**——升一个 Expo 小版本、加一个原生模块、甚至 AGP 换个
- * 变体，都会引入清单里没有的坐标。而这条路径是发布门禁：让它在无人预期的时候变红，
- * 结果一定是有人为了发版把校验关掉，然后再也不打开。
+ * **所有非 development 渠道的构建都装，没有开关**（签名闸设计 android-signing-gate-2026-09-16）。
+ * release 包由构建机产出，构建机执行几千个第三方依赖的代码；依赖校验是它交给签名闸
+ * 之前唯一挡得住"被顶替的依赖"的地方，不能留一个能关掉它的环境变量。
  *
- * 所以默认不安装：`GRADLE_DEPENDENCY_VERIFICATION=1` 才把文件放进 `android/`。
- * 先在 CI 上用这个开关跑一段时间，确认"改依赖 → 重新生成"这条流程真的走得通，
- * 再把默认改成开。
+ * development 渠道（`expo run:android`、开发包名自测）不装，并删掉工程里残留的清单：
+ * 开发构建会链接 expo-dev-client 一系，解析到的坐标和清单不是同一套，而开发包不分发。
+ *
+ * Gradle 的依赖校验靠"文件在不在"生效，没有 lenient 档：清单里少任何一条都会让构建
+ * 失败。改依赖（升 Expo、加原生模块、AGP 换变体）就必须连带重新生成清单，这是预期
+ * 行为，不要靠删清单绕过去。
  *
  * ## 重新生成
  *
@@ -38,31 +40,40 @@ const SOURCE_RELATIVE_PATH = "gradle/verification-metadata.xml";
 /** 装进 Android 工程里的位置——Gradle 只认这一个路径。 */
 const TARGET_RELATIVE_PATH = "gradle/verification-metadata.xml";
 
-/** 开关：只有明确打开才安装。值的写法与仓库里其它开关一致。 */
-function verificationRequested(env = process.env) {
-  return /^(1|true|yes|on)$/i.test(env.GRADLE_DEPENDENCY_VERIFICATION ?? "");
-}
+const DISTRIBUTION_CHANNELS = [
+  "development",
+  "staging",
+  "store",
+  "direct",
+  "mdm",
+];
 
 /**
  * 决定这次 prebuild 要做什么。抽成纯函数是为了能直接测：
- * - `install`：把清单复制进去
- * - `remove`：开关没开，确保工程里不残留上一次装进去的清单
- *   （残留会让 Gradle 在没人打算开校验的时候突然开始校验）
+ * - `install`：非 development 渠道，把清单复制进去
+ * - `remove`：development 渠道，确保工程里不残留上一次装进去的清单
+ *   （残留会让开发构建拿一份不对应的清单去校验）
+ * - `fail`：渠道不认识，或者该装的时候仓库里没有清单
  */
-function verificationAction({ requested, sourceExists }) {
-  if (!requested) return { kind: "remove" };
+function verificationAction({ distributionChannel, sourceExists }) {
+  if (!DISTRIBUTION_CHANNELS.includes(distributionChannel))
+    return {
+      kind: "fail",
+      message: `Gradle dependency verification needs the distribution channel; received ${distributionChannel}`,
+    };
+  if (distributionChannel === "development") return { kind: "remove" };
   if (!sourceExists)
     return {
       kind: "fail",
       message:
-        `GRADLE_DEPENDENCY_VERIFICATION is on but ${SOURCE_RELATIVE_PATH} is missing. ` +
-        `Generate it with \`pnpm android:verification-metadata <tenant>\`, or turn the switch off.`,
+        `${distributionChannel} builds enforce Gradle dependency verification but ${SOURCE_RELATIVE_PATH} is missing. ` +
+        `Generate it with \`pnpm android:verification-metadata <tenant>\`.`,
     };
   return { kind: "install" };
 }
 
 /**
- * 开关开着时，构建前检查"校验真的会发生"。
+ * release 构建前检查"校验真的会发生"。
  *
  * Gradle 的依赖校验**成功时完全静默**——日志里既不说校验已开启，也不说校验了多少个。
  * 于是「清单没装进去」和「装进去且全部通过」在 CI 上长得一模一样：都是绿的。一个
@@ -73,7 +84,7 @@ function verificationAction({ requested, sourceExists }) {
 function enforcementProblem({ installed, components, floor }) {
   if (!installed)
     return (
-      `GRADLE_DEPENDENCY_VERIFICATION is on but prebuild left no ${TARGET_RELATIVE_PATH} ` +
+      `Gradle dependency verification is mandatory for release builds but prebuild left no ${TARGET_RELATIVE_PATH} ` +
       `in android/; Gradle would resolve every dependency without checking a single one`
     );
   if (components < floor)
@@ -94,7 +105,10 @@ function applyVerificationAction(action, { source, target }) {
   copyFileSync(source, target);
 }
 
-function withGradleDependencyVerification(config) {
+function withGradleDependencyVerification(
+  config,
+  { distributionChannel } = {},
+) {
   return withDangerousMod(config, [
     "android",
     (result) => {
@@ -105,7 +119,7 @@ function withGradleDependencyVerification(config) {
       );
       applyVerificationAction(
         verificationAction({
-          requested: verificationRequested(),
+          distributionChannel,
           sourceExists: existsSync(source),
         }),
         { source, target },
@@ -121,4 +135,3 @@ module.exports.TARGET_RELATIVE_PATH = TARGET_RELATIVE_PATH;
 module.exports.applyVerificationAction = applyVerificationAction;
 module.exports.enforcementProblem = enforcementProblem;
 module.exports.verificationAction = verificationAction;
-module.exports.verificationRequested = verificationRequested;

@@ -1,9 +1,11 @@
 /* global describe, it, expect */
 
+const { readFileSync } = require("node:fs");
+const { resolve } = require("node:path");
 const {
-  assertReleaseNotDebugSigned,
-  injectReleaseSigning,
-  missingReleaseSigningEnv,
+  UNSIGNED_RELEASE_MARKER,
+  assertReleaseUnsigned,
+  stripReleaseSigning,
 } = require("./with-release-signing");
 
 // 与 expo prebuild 生成的 android/app/build.gradle 相同的片段
@@ -35,71 +37,82 @@ const TEMPLATE = `android {
 }
 `;
 
-describe("release signing plugin", () => {
-  it("adds an environment-backed release signingConfig and points buildTypes.release at it", () => {
-    const result = injectReleaseSigning(TEMPLATE);
+/** buildTypes { release { … } } 的文本 */
+function releaseBuildType(contents) {
+  const buildTypes = contents.indexOf("buildTypes {");
+  const start = contents.indexOf("release {", buildTypes);
+  return contents.slice(start, contents.indexOf("}", start) + 1);
+}
 
-    expect(result).toContain("release {");
-    expect(result).toContain('System.getenv("ANDROID_RELEASE_KEYSTORE_PATH")');
-    expect(result).toContain("signingConfig signingConfigs.release");
-    // debug buildType 仍用 debug 签名（本地 expo run:android 需要）
+describe("release signing plugin: release APKs are unsigned", () => {
+  it("leaves the release buildType without any signingConfig, so Gradle produces app-release-unsigned.apk", () => {
+    const result = stripReleaseSigning(TEMPLATE);
+    const release = releaseBuildType(result);
+
+    expect(release).not.toMatch(/signingConfig/);
+    expect(release).toContain(UNSIGNED_RELEASE_MARKER);
+    // 其余 release 设置原样保留
+    expect(release).toContain("shrinkResources false");
+    expect(release).toContain("minifyEnabled enableMinifyInReleaseBuilds");
+    // 模板里误导性的注释被移除
+    expect(result).not.toContain("Caution! In production");
+    expect(() => assertReleaseUnsigned(result)).not.toThrow();
+  });
+
+  it("keeps the debug buildType on the template debug keystore (expo run:android needs it)", () => {
+    const result = stripReleaseSigning(TEMPLATE);
     const debugType = result.slice(
       result.indexOf("buildTypes {"),
       result.indexOf("release {", result.indexOf("buildTypes {")),
     );
     expect(debugType).toContain("signingConfig signingConfigs.debug");
-    // 模板里误导性的注释被移除
-    expect(result).not.toContain("Caution! In production");
-    expect(() => assertReleaseNotDebugSigned(result)).not.toThrow();
   });
 
-  it("never writes a password or keystore path into the file", () => {
-    const result = injectReleaseSigning(TEMPLATE);
-    const releaseSigning = result.slice(
-      result.indexOf("AnyFun release signing"),
+  it("injects no release signingConfig and reads no signing environment", () => {
+    const result = stripReleaseSigning(TEMPLATE);
+    const signingConfigs = result.slice(
+      result.indexOf("signingConfigs {"),
       result.indexOf("buildTypes {"),
     );
-    expect(releaseSigning).not.toMatch(/storePassword\s+'/);
-    expect(releaseSigning).not.toMatch(/keyPassword\s+'/);
-    expect(releaseSigning).not.toMatch(/file\('/);
+    expect(signingConfigs).not.toMatch(/release\s*\{/);
+    expect(result).not.toMatch(/getenv|ANDROID_RELEASE_/);
+    const source = readFileSync(
+      resolve(process.cwd(), "plugins/with-release-signing.js"),
+      "utf8",
+    );
+    expect(source).not.toMatch(/process\.env|getenv|ANDROID_RELEASE_/);
+  });
+
+  it("strips any form of signingConfig from the release buildType", () => {
+    for (const line of [
+      "signingConfig signingConfigs.release",
+      "signingConfig = signingConfigs.debug",
+      "signingConfig signingConfigs.upload",
+    ]) {
+      const input = TEMPLATE.replace(
+        "signingConfig signingConfigs.debug\n            shrink",
+        `${line}\n            shrink`,
+      );
+      expect(releaseBuildType(input)).toContain(line);
+      const result = stripReleaseSigning(input);
+      expect(releaseBuildType(result)).not.toMatch(/signingConfig/);
+    }
   });
 
   it("is idempotent", () => {
-    const once = injectReleaseSigning(TEMPLATE);
-    expect(injectReleaseSigning(once)).toBe(once);
+    const once = stripReleaseSigning(TEMPLATE);
+    expect(stripReleaseSigning(once)).toBe(once);
   });
 
-  it("rejects a release buildType that still uses the debug keystore", () => {
-    expect(() => assertReleaseNotDebugSigned(TEMPLATE)).toThrow(
-      /still references signingConfigs.debug/,
+  it("rejects a release buildType that still declares a signingConfig", () => {
+    expect(() => assertReleaseUnsigned(TEMPLATE)).toThrow(
+      /release buildType still declares a signingConfig/,
     );
   });
 
-  it("refuses templates without a replaceable release signingConfig", () => {
+  it("refuses a build.gradle without a buildTypes.release block", () => {
     expect(() =>
-      injectReleaseSigning(
-        TEMPLATE.replace(
-          "            signingConfig signingConfigs.debug\n            shrinkResources",
-          "            shrinkResources",
-        ),
-      ),
-    ).toThrow(/no signingConfig to replace/);
-  });
-
-  it("lists every missing signing variable", () => {
-    expect(missingReleaseSigningEnv({})).toEqual([
-      "ANDROID_RELEASE_KEYSTORE_PATH",
-      "ANDROID_RELEASE_STORE_PASSWORD",
-      "ANDROID_RELEASE_KEY_ALIAS",
-      "ANDROID_RELEASE_KEY_PASSWORD",
-    ]);
-    expect(
-      missingReleaseSigningEnv({
-        ANDROID_RELEASE_KEYSTORE_PATH: "/tmp/k.jks",
-        ANDROID_RELEASE_STORE_PASSWORD: "x",
-        ANDROID_RELEASE_KEY_ALIAS: "  ",
-        ANDROID_RELEASE_KEY_PASSWORD: "y",
-      }),
-    ).toEqual(["ANDROID_RELEASE_KEY_ALIAS"]);
+      stripReleaseSigning("android {\n    buildTypes {\n    }\n}\n"),
+    ).toThrow(/no release \{ block|buildTypes.release block not found/);
   });
 });
