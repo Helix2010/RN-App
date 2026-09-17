@@ -3147,6 +3147,9 @@
          <artifact name="yearclass-2.1.0.aar">
             <sha256 value="6d40ab4fefb0c0c5ed2331caff29ad9b851f0ee9c432e5a751b4d92d62896d0a" origin="Maven Central（与它公布的 .sha1 对过）"/>
          </artifact>
+         <artifact name="yearclass-2.1.0.jar">
+            <sha256 value="eb18972a0b79b5d010858caeddd3d7ee368a9982678967180447c06382ea7173" origin="Maven Central（与它公布的 .sha1 对过）"/>
+         </artifact>
          <artifact name="yearclass-2.1.0.pom">
             <sha256 value="83f4e4e1b28c6f80b134bba32218fef1f78ce7d0453e655e2930c7f2c4bfcbfd" origin="Maven Central（与它公布的 .sha1 对过）"/>
          </artifact>
