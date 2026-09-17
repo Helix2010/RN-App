@@ -55,6 +55,25 @@ export function readTenantConfig(slug) {
       throw new Error(`tenant.json missing ${key}`);
     }
   }
+  // iOS build 号：Info.plist 的 CFBundleVersion，Apple 要求同一个版本里严格递增，
+  // 而且**必须是数字串**——写成 "9.1" 或 "build9" 时上传会被 App Store Connect
+  // 在处理阶段退回，那时包已经打完、传完，反馈来得非常晚
+  if (!/^[1-9]\d*$/.test(String(config.iosBuildNumber))) {
+    throw new Error(
+      `tenant.json iosBuildNumber must be a positive integer string, received ${JSON.stringify(config.iosBuildNumber)}`,
+    );
+  }
+  // Apple 开发者团队号：只有 iOS 构建需要，所以可以不填；填了就必须是那 10 位。
+  // 它和 signerSha256 一样是公开的身份指纹，不是秘密
+  if (
+    config.appleTeamId !== undefined &&
+    (typeof config.appleTeamId !== "string" ||
+      !/^[A-Z0-9]{10}$/.test(config.appleTeamId))
+  ) {
+    throw new Error(
+      "tenant.json appleTeamId must be the 10-character Apple Developer Team ID",
+    );
+  }
   // 登记的签名证书指纹（安全评审 N1）：只给 `pnpm android:verify` 核对签名闸产出的包用，构建不需要它；这里只校验格式
   if (
     config.signerSha256 !== undefined &&

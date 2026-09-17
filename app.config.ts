@@ -15,6 +15,13 @@ type TenantBuildConfig = {
    * 没有这一项的租户还没开签名，客户端按"没配就不验"处理。
    */
   bootstrapSignerAddress?: string;
+  /**
+   * Apple 开发者团队号（10 位）。iOS 正式构建要用它做 `DEVELOPMENT_TEAM`，也决定
+   * `/.well-known/apple-app-site-association` 里声明的 `<teamId>.<bundleId>`。
+   * 和 `signerSha256` 平行：公开的身份指纹，不是秘密。
+   * 只有 iOS 构建需要，没有 iOS 流水线的租户可以不填（`pnpm ios:release` 会要求）。
+   */
+  appleTeamId?: string;
   applicationId: string;
   distributionChannel: "development" | "staging" | "store" | "direct" | "mdm";
   otaChannel: "development" | "staging" | "production";
@@ -212,6 +219,16 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     // 无租户的开发构建身份：不得与任何生产租户相同（安全评审 N20；check-build-profiles 校验）
     bundleIdentifier: tenant?.iosBundleId ?? developmentIdentity.iosBundleId,
     buildNumber: iosBuildNumber,
+    ...(tenant?.appleTeamId ? { appleTeamId: tenant.appleTeamId } : {}),
+    // 通用链接（安全评审 N13 的 iOS 一半）。服务端一直在发
+    // `/.well-known/apple-app-site-association`，客户端不声明这一项的话它完全不
+    // 生效：WalletConnect 回跳退回谁都能抢注的自定义 scheme，邀请链接也打不开 App。
+    //
+    // 与 Android 的 intentFilters 同源（都来自 apiBaseUrl 的 host），但两边的粒度
+    // 不一样：iOS 这里声明的是**域名**，具体哪些路径归 App 由服务端那份 AASA 决定；
+    // Android 的 pathPrefix 写在客户端。所以加一条新深链路径时，iOS 改服务端、
+    // Android 改这里——这不对称，容易漏，见 release_identity_apple.go 的同名注释。
+    ...(appLinkHost ? { associatedDomains: [`applinks:${appLinkHost}`] } : {}),
   },
   android: {
     package: tenant?.androidPackage ?? developmentIdentity.androidPackage,
@@ -284,6 +301,17 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
           "Allow $(PRODUCT_NAME) to use the camera to scan wallet address QR codes.",
         microphonePermission: false,
         recordAudioAndroid: false,
+      },
+    ],
+    // 生物识别解锁。**不配这一项 iOS 会直接崩**：系统要求调用 Face ID 之前
+    // Info.plist 里有 NSFaceIDUsageDescription，没有就是运行时终止，不是弹窗拒绝。
+    // Android 侧这个插件只加 USE_BIOMETRIC / USE_FINGERPRINT，而那两条本来就由
+    // 库自己的 manifest 合并进来，所以对 Android 产物没有变化。
+    [
+      "expo-local-authentication",
+      {
+        faceIDPermission:
+          "Allow $(PRODUCT_NAME) to use Face ID to unlock your wallet.",
       },
     ],
     // 外部钱包的 package visibility 声明：开发包也要，否则本地调不通深链

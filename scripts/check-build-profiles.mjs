@@ -121,6 +121,16 @@ for (const tenant of tenants) {
   ) {
     throw new Error(`${slug}: androidVersionCode must be a positive integer`);
   }
+  // iosBuildNumber 的格式由 readTenantConfig 保证，这里只管两平台之间的关系：
+  // 两个 build 号各走各的序列（Apple 与 Google 互不相干），所以**不要求**相等。
+  // 但 app.config.ts 靠 EXPO_OS 决定 extra.buildNumber 取哪一个，环境变量漏设时
+  // 两者相等会让错误完全看不出来——所以这里显式记下差异，让人知道这条闸有意义。
+  if (String(tenant.androidVersionCode) === tenant.iosBuildNumber) {
+    console.log(
+      `${slug}: androidVersionCode 与 iosBuildNumber 恰好相等（${tenant.iosBuildNumber}），` +
+        "这会掩盖 EXPO_OS 漏设的症状；iOS 产物门禁仍会独立核对 CFBundleVersion",
+    );
+  }
 }
 
 console.log(
