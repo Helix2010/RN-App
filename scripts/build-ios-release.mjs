@@ -196,9 +196,12 @@ const infoPlist = readPlist(resolve(appDirectory, "Info.plist"));
 const entitlements = readPlist(
   (() => {
     const path = resolve(buildDirectory, "entitlements.plist");
+    // `--xml` 是必须的：不带它的老写法（`--entitlements :-`）在 Xcode 11 之前会在
+    // plist 前面加一段二进制魔数，而这里是按 utf8 收 stdout 的——那几个字节会被解码
+    // 坏掉，然后 plutil 报一个与真正原因无关的解析错误。
     writeFileSync(
       path,
-      run("codesign", ["-d", "--entitlements", ":-", appDirectory], {
+      run("codesign", ["-d", "--entitlements", "-", "--xml", appDirectory], {
         capture: true,
       }),
     );
