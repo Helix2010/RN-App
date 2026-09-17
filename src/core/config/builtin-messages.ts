@@ -1068,6 +1068,8 @@ const zhCN = {
   "update.downloading": "下载中 {percent}%",
   "update.downloadFailed": "下载失败，请检查网络后重试",
   "update.openedStore": "已打开更新页面",
+  "update.openTestFlight": "前往 TestFlight",
+  "update.openedTestFlight": "已打开 TestFlight，按页面提示安装新版本",
   "update.none": "当前已经是最新版本",
   "update.optional": "发现可选更新",
   "update.recommended": "建议升级到最新版本",
@@ -2448,6 +2450,9 @@ const enUS: Record<keyof typeof zhCN, string> = {
   "update.downloading": "Downloading {percent}%",
   "update.downloadFailed": "Download failed. Check your network and try again.",
   "update.openedStore": "Opened the update page",
+  "update.openTestFlight": "Open TestFlight",
+  "update.openedTestFlight":
+    "Opened TestFlight; follow the page to install the new build",
   "update.none": "You already have the latest version",
   "update.optional": "An optional update is available",
   "update.recommended": "Updating to the latest version is recommended",

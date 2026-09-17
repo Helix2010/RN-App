@@ -1,6 +1,6 @@
 import { act, fireEvent, screen } from "@testing-library/react-native";
 import { useState } from "react";
-import { Pressable, Text } from "react-native";
+import { Linking, Pressable, Text } from "react-native";
 import {
   RuntimeContext,
   useFoundationRuntime,
@@ -227,5 +227,45 @@ describe("UpdateModal (S-07)", () => {
       size: 90_596_966,
     });
     expect(await screen.findByText(runtime.t("update.install"))).toBeTruthy();
+  });
+
+  // iOS 的 store 包拿到的 actionUrl 是一个 TestFlight 公开链接：点下去跳的是
+  // TestFlight App，不是系统安装器。按钮写"立即更新"会让人以为点完就装好了。
+  it("sends an iOS TestFlight build to TestFlight instead of offering an in-app install", async () => {
+    const openURL = jest
+      .spyOn(Linking, "openURL")
+      .mockResolvedValue(undefined as never);
+    const { runtime } = await renderWithProviders(<UpdateModal />, {
+      config: (config: BootstrapConfig) => {
+        const withTestFlight = withUpdate("recommended", {
+          full: {
+            ...config.update.full,
+            actionUrl: "https://testflight.apple.com/join/ABCD1234",
+            // 产物在 Apple 那边：没有发布 ID、没有摘要、没有大小
+            releaseId: null,
+            sha256: null,
+            size: null,
+          },
+        })(config);
+        return {
+          ...withTestFlight,
+          app: {
+            ...withTestFlight.app,
+            platform: "ios" as const,
+            distribution: "store" as const,
+          },
+        };
+      },
+    });
+    const button = await screen.findByTestId("update-modal-now");
+    expect(screen.getByText(runtime.t("update.openTestFlight"))).toBeTruthy();
+    expect(screen.queryByText(runtime.t("update.now"))).toBeNull();
+    await fireEvent.press(button);
+    expect(openURL).toHaveBeenCalledWith(
+      "https://testflight.apple.com/join/ABCD1234",
+    );
+    // 应用内直装那条分支要求 distribution=direct，iOS 的 store 包进不去
+    expect(screen.queryByTestId("update-modal-progress")).toBeNull();
+    openURL.mockRestore();
   });
 });

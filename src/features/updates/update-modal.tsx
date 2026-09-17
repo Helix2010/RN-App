@@ -60,6 +60,13 @@ export function UpdateModal() {
   const forced = update.decision === "required";
   const hasUpdate =
     update.decision !== "none" && Boolean(update.full.actionUrl);
+  // TestFlight 的安装入口是一个 Apple 的网页，点下去跳的是 TestFlight App，不是系统
+  // 安装器。按钮写"立即更新"会让人以为点完就装好了，然后在 TestFlight 里再找一次。
+  // 判据取 actionUrl 的 host 而不是新加一个下发字段：host 已经把这件事说清楚了，
+  // 存两份就有了一个能自相矛盾的地方（设计 ios-testflight §4.7）。
+  const isTestFlight = (update.full.actionUrl ?? "").startsWith(
+    "https://testflight.apple.com/",
+  );
   const canDirectInstall =
     config.app.platform === "android" &&
     config.app.distribution === "direct" &&
@@ -121,7 +128,10 @@ export function UpdateModal() {
       }
       if (!canDirectInstall) {
         await Linking.openURL(update.full.actionUrl);
-        toast(t("update.openedStore"), "info");
+        toast(
+          t(isTestFlight ? "update.openedTestFlight" : "update.openedStore"),
+          "info",
+        );
         return;
       }
       const manager = getApkDownloadManager();
@@ -150,7 +160,9 @@ export function UpdateModal() {
           ? t("update.resume")
           : phase === "failed"
             ? t("update.retryDownload")
-            : t("update.now");
+            : isTestFlight
+              ? t("update.openTestFlight")
+              : t("update.now");
   const statusLine =
     phase === "paused" && sameRelease && download.phase === "paused"
       ? download.retriesLeft > 0 && download.reason === "network"
