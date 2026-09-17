@@ -1,7 +1,7 @@
 import {
+  copyFileSync,
   mkdirSync,
   readdirSync,
-  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -247,7 +247,8 @@ const artifact = resolve(
   artifactDirectory,
   `${tenant.slug}-${tenant.version}-build${tenant.iosBuildNumber}.ipa`,
 );
-writeFileSync(artifact, readFileSync(exported));
+// copyFileSync 而不是读进内存再写：.ipa 动辄上百 MB
+copyFileSync(exported, artifact);
 console.log(`iOS release IPA: ${artifact}`);
 
 // ---- 上传 App Store Connect ----
