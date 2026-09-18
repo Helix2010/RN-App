@@ -127,6 +127,29 @@ test("exportOptionsPlist 只产出 app-store-connect，并要求合法团队号"
   }
 });
 
+// 打包机上是手工签名：证书与描述文件由人放在机器上，构建一把 App Store Connect Key 都不拿。
+// `xcodebuild -exportArchive` **只有 manual 才认** provisioningProfiles 这个字典——传了
+// profileName 却留着 automatic，导出会去找 Xcode 账户，在无人值守的机器上卡住。
+test("exportOptionsPlist 给了描述文件名就切到 manual 并写进映射", () => {
+  const plist = exportOptionsPlist({
+    teamId: "AB12CD34EF",
+    bundleId: "com.anyfun.foundation",
+    profileName: "AnyFun App Store",
+  });
+  expect(plist).toContain("<string>manual</string>");
+  expect(plist).not.toContain("<string>automatic</string>");
+  expect(plist).toContain("<key>provisioningProfiles</key>");
+  expect(plist).toContain("<key>com.anyfun.foundation</key>");
+  expect(plist).toContain("<string>AnyFun App Store</string>");
+  // bundle id 是这个字典的键，少了它这份 plist 写不出来——不能默默产出一份半截的
+  expect(() =>
+    exportOptionsPlist({
+      teamId: "AB12CD34EF",
+      profileName: "AnyFun App Store",
+    }),
+  ).toThrow();
+});
+
 test("appLinkHostOf 与 app.config.ts 同源，http 没有通用链接", () => {
   expect(appLinkHostOf("https://api.anyfun.win")).toBe("api.anyfun.win");
   expect(appLinkHostOf("https://api.anyfun.win/v1/")).toBe("api.anyfun.win");

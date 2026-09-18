@@ -338,6 +338,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ...(distributionChannel === "development"
       ? []
       : ["./plugins/with-production-android-optimizations.js"]),
+    // Pods 一律不签名。手工签名时 App target 带着 PROVISIONING_PROFILE_SPECIFIER，
+    // 而 Xcode 14 起资源 bundle 不再默认关签名，Expo 模块的资源 bundle 会因此报
+    // "does not support provisioning profiles"（expo/expo#29526）。SDK 57 的模板
+    // Podfile 只关了 React-Core 一个 pod，所以这一条缺了就构建不出来
+    "./plugins/with-ios-pods-unsigned.js",
   ],
   // OTA records are explicitly bound to an APK version. Server and client
   // additionally verify buildNumber so two native builds cannot share an OTA.

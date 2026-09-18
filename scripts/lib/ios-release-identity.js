@@ -18,14 +18,43 @@
  * enterprise 都不是普通用户能扫码装的东西（设计 §2），留在这里只会让人以为可以选。
  *
  * uploadSymbols 开着：崩溃日志没有符号表等于没有。
- * signingStyle 用 automatic：证书与描述文件由 Xcode 用 ASC API Key 申请与续期，
- * 少一次 .p12 跨机搬运就少一处私钥泄露面（设计 §4.3）。
+ *
+ * ## signingStyle 为什么从 automatic 改成 manual
+ *
+ * automatic 的前提是 Xcode 手里有一把能申请描述文件的 App Store Connect Key。而打包机上
+ * 跑构建的那个进程要执行几千个第三方依赖——一把能申请描述文件的 Key 同时也能上传 build、
+ * 注册设备、建 Ad Hoc 描述文件，于是"这台机器只能签、不能发"就不成立了
+ * （RN-Server 设计 ios-mac-builders-home-network-2026-09-18 §4.3）。
+ *
+ * 所以证书与描述文件改成由人放到机器上，构建过程一把 Key 都不拿。手工签名时
+ * `xcodebuild -exportArchive` **只有 manual 才认** provisioningProfiles 这个字典：
+ * 传了 profileName 却留着 automatic，导出会去找 Xcode 账户、在无人值守的机器上卡住。
+ *
+ * 开发者在自己的 Mac 上手工跑时不传 profileName，仍然是 automatic。
+ *
+ * @param {object} args
+ * @param {string} args.teamId       10 位 Apple Team ID
+ * @param {string} [args.bundleId]   手工签名时必给：描述文件按 bundle id 索引
+ * @param {string} [args.profileName] 描述文件的**名字**（不是文件名），手工签名时必给
  */
-export function exportOptionsPlist({ teamId }) {
+export function exportOptionsPlist({ teamId, bundleId, profileName }) {
   if (!/^[A-Z0-9]{10}$/.test(String(teamId ?? "")))
     throw new Error(
       "exportOptionsPlist requires the 10-character Apple Developer Team ID",
     );
+  const manual = Boolean(profileName);
+  if (manual && !bundleId)
+    throw new Error(
+      "exportOptionsPlist needs the bundle id to map it to the provisioning profile",
+    );
+  const provisioning = manual
+    ? `  <key>provisioningProfiles</key>
+  <dict>
+    <key>${bundleId}</key>
+    <string>${profileName}</string>
+  </dict>
+`
+    : "";
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -35,8 +64,8 @@ export function exportOptionsPlist({ teamId }) {
   <key>teamID</key>
   <string>${teamId}</string>
   <key>signingStyle</key>
-  <string>automatic</string>
-  <key>uploadSymbols</key>
+  <string>${manual ? "manual" : "automatic"}</string>
+${provisioning}  <key>uploadSymbols</key>
   <true/>
   <key>stripSwiftSymbols</key>
   <true/>

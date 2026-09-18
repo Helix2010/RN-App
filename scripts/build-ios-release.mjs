@@ -14,9 +14,12 @@ import {
   exportOptionsPlist,
   iosArtifactProblems,
 } from "./lib/ios-release-identity.js";
+// 从 `expo/config-plugins` 引，不是 `@expo/config-plugins`：pnpm 的严格模式下后者不是
+// 直接依赖，解析不到（2026-09-18 在本仓核实）
+import { IOSConfig } from "expo/config-plugins";
 
 /**
- * iOS release 构建：`pnpm ios:release <slug> [--upload]`。
+ * iOS release 构建：`pnpm ios:release <slug> [--signing-dir <目录>] [--upload]`。
  *
  * 产物是 `artifacts/<slug>-<version>-build<n>.ipa`，出口是 TestFlight
  * （设计 RN-Server docs/design/ios-testflight-distribution-2026-09-17.md）。
@@ -27,6 +30,17 @@ import {
  * iOS 做不到：`xcodebuild -exportArchive` 时签名就已经发生，这台 Mac 必然同时持有
  * 源码和签名身份。补偿在 Apple 侧——证书随时可吊销、分发通道由 Apple 托管、用户装
  * 的那一份由 Apple 重新签名——但不等于零风险（设计 §4.2、§8.4）。
+ *
+ * ## --signing-dir：打包机上的手工签名
+ *
+ * 带上它就是**手工签名**：证书在那个目录下的钥匙串里，描述文件在 profiles/<TEAMID>/ 下，
+ * 这次构建一把 App Store Connect Key 都不拿。打包机上必须这样——跑构建的那个进程要执行
+ * 几千个第三方依赖，而一把能自动申请描述文件的 Key 同时也能上传 build、注册设备、建
+ * Ad Hoc 描述文件，于是"这台机器只能签、不能发"就不成立了
+ * （RN-Server 设计 ios-mac-builders-home-network-2026-09-18 §4.3）。
+ *
+ * 不带它就是 Xcode 的自动签名，给开发者在自己的 Mac 上手工跑。两种情况都**不传**
+ * `-allowProvisioningUpdates`：这个脚本不申请、也不续期任何描述文件。
  *
  * ## 为什么要显式设 EXPO_OS
  *
@@ -59,9 +73,18 @@ loadMachineEnv(
 
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(name);
+const option = (name) => {
+  const index = args.indexOf(name);
+  return index >= 0 ? args[index + 1] : undefined;
+};
+const signingDir = option("--signing-dir");
+if (signingDir !== undefined && (!signingDir || signingDir.startsWith("--")))
+  throw new Error("--signing-dir 要跟一个目录");
 const tenantSlug =
-  args.find((value) => !value.startsWith("--")) ??
-  process.env.EXPO_PUBLIC_TENANT;
+  args.find(
+    (value, index) =>
+      !value.startsWith("--") && args[index - 1] !== "--signing-dir",
+  ) ?? process.env.EXPO_PUBLIC_TENANT;
 const tenant = readTenantConfig(tenantSlug);
 
 if (tenant.distributionChannel === "development")
@@ -168,6 +191,75 @@ rmSync(buildDirectory, { recursive: true, force: true });
 mkdirSync(buildDirectory, { recursive: true });
 const archivePath = resolve(buildDirectory, `${tenant.slug}.xcarchive`);
 
+/**
+ * 找这个租户该用的描述文件，返回它的**名字**（不是文件名）。
+ *
+ * 按文件里的 `application-identifier` 认，不按文件名认：文件名是人起的，而
+ * PROVISIONING_PROFILE_SPECIFIER 要的是描述文件里的 Name——两者对不上时 Xcode 报的是
+ * "没有匹配的描述文件"，完全看不出是名字写错了。
+ */
+const findProvisioningProfile = () => {
+  const directory = resolve(signingDir, "profiles", tenant.appleTeamId);
+  let entries;
+  try {
+    entries = readdirSync(directory).filter((entry) =>
+      entry.endsWith(".mobileprovision"),
+    );
+  } catch {
+    throw new Error(
+      `${directory} 读不到：手工签名要求这个 Team 的描述文件放在那里（RN-Server 设计 §4.2）`,
+    );
+  }
+  const wanted = `${tenant.appleTeamId}.${tenant.iosBundleId}`;
+  const expired = [];
+  for (const entry of entries) {
+    const path = resolve(directory, entry);
+    // .mobileprovision 是 CMS 签名块，里面包着一份 plist
+    const decoded = resolve(buildDirectory, "profile.plist");
+    writeFileSync(
+      decoded,
+      run("security", ["cms", "-D", "-i", path], { capture: true }),
+    );
+    const profile = readPlist(decoded);
+    if (profile.Entitlements?.["application-identifier"] !== wanted) continue;
+    // 过期的描述文件签出来的包 Apple 直接拒，而报错发生在上传那一步——十几分钟之后
+    if (new Date(profile.ExpirationDate).getTime() <= Date.now()) {
+      expired.push(`${entry}（${profile.ExpirationDate}）`);
+      continue;
+    }
+    return profile.Name;
+  }
+  throw new Error(
+    `${directory} 下没有 ${wanted} 的可用描述文件` +
+      (expired.length > 0 ? `；已过期的：${expired.join("、")}` : "") +
+      "。把这个 App 的 App Store 描述文件放进去再重试。",
+  );
+};
+
+const archiveSettings = [`DEVELOPMENT_TEAM=${tenant.appleTeamId}`];
+let profileName;
+if (signingDir) {
+  profileName = findProvisioningProfile();
+  // 只改 App target 的 Release：命令行上的 PROVISIONING_PROFILE_SPECIFIER 会作用到
+  // **每一个** target，包括 Pods 的资源 bundle，而那些 bundle 报的是
+  // "does not support provisioning profiles"（expo/expo#29526）。Pods 那一半由
+  // plugins/with-ios-pods-unsigned.js 负责关签名
+  IOSConfig.ProvisioningProfile.setProvisioningProfileForPbxproj(projectRoot, {
+    targetName: scheme,
+    profileName,
+    appleTeamId: tenant.appleTeamId,
+    buildConfiguration: "Release",
+    // 这个参数的默认值是旧的 iPhone Distribution，现在签发的证书都是 Apple Distribution
+    codeSignIdentity: "Apple Distribution",
+  });
+  // 钥匙串显式传给 xcodebuild：执行进程的 HOME 是每个任务自己的目录，不赌搜索列表
+  // 能被 $HOME 带过去（RN-Server 设计 §4.2）
+  archiveSettings.push(
+    `OTHER_CODE_SIGN_FLAGS=--keychain ${resolve(signingDir, "rn-signing.keychain-db")}`,
+  );
+  console.log(`manual signing: profile ${profileName}`);
+}
+
 run("xcodebuild", [
   "-workspace",
   workspace,
@@ -179,9 +271,9 @@ run("xcodebuild", [
   "generic/platform=iOS",
   "-archivePath",
   archivePath,
-  // 证书与描述文件由 Xcode 用 ASC API Key 申请与续期，不手工搬 .p12（设计 §4.3）
-  "-allowProvisioningUpdates",
-  `DEVELOPMENT_TEAM=${tenant.appleTeamId}`,
+  // **不传 -allowProvisioningUpdates**：这个脚本不申请、也不续期任何描述文件。
+  // 手工签名时证书与描述文件由人放在机器上（设计 §4.3、§4.4）
+  ...archiveSettings,
   "archive",
 ]);
 
@@ -226,7 +318,11 @@ console.log(
 const exportOptions = resolve(buildDirectory, "ExportOptions.plist");
 writeFileSync(
   exportOptions,
-  exportOptionsPlist({ teamId: tenant.appleTeamId }),
+  exportOptionsPlist({
+    teamId: tenant.appleTeamId,
+    bundleId: profileName ? tenant.iosBundleId : undefined,
+    profileName,
+  }),
 );
 const exportDirectory = resolve(buildDirectory, "export");
 run("xcodebuild", [
@@ -237,7 +333,6 @@ run("xcodebuild", [
   exportOptions,
   "-exportPath",
   exportDirectory,
-  "-allowProvisioningUpdates",
 ]);
 const exported = readdirSync(exportDirectory)
   .filter((entry) => entry.endsWith(".ipa"))
@@ -258,6 +353,10 @@ console.log(`iOS release IPA: ${artifact}`);
 //
 // 必须显式 --upload。上传是一个**对外可见**的动作：包一旦进了 App Store Connect
 // 就能被分发给测试员，而且撤不回来，只能再出一个 build 顶掉它。默认不做。
+//
+// **打包机不走这条路**：那边的上传由另一个账户（_rnuploader）用独立的上传 Key 做，
+// 跑构建的这个进程一把 App Store Connect Key 都没有（RN-Server 设计 §4.3）。
+// 这里留着的是开发者在自己的 Mac 上手工发一版的路径。
 if (!flag("--upload")) {
   console.log(
     "未上传（加 --upload 才传 App Store Connect）。上传后记下过期日：每个 TestFlight build 90 天后失效。",
