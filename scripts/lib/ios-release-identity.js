@@ -205,6 +205,28 @@ export function iosArtifactProblems({
  * 入参是按 **latin1** 读进来的字符串：latin1 是字节到码位的一一映射，切出来再以 latin1
  * 写回去字节不变；用 utf8 读会把前后那些二进制字节换成替换字符。
  */
+/**
+ * prebuildArgs 给第 n 次 `expo prebuild` 组参数。
+ *
+ * **只有第一次带 `--clean`。** prebuild 里的 `pod install` 要从 github.com clone 几十个
+ * 仓库（trunk 上的 podspec 写的就是 `source: {git: …, tag: …}`），跨度将近二十分钟；
+ * 链路抖一下整条构建就作废——2026-09-20 真机上三次里死了两次，都是
+ *
+ *   fatal: unable to access 'https://github.com/…':
+ *     Failed to connect to github.com port 443 after 75017 ms
+ *
+ * 重试时**不能**再带 `--clean`：它会把已经装好的 Pods 连同缓存目录一起删掉，等于每次
+ * 从零开始，那样重试反而更容易再撞上一个坏窗口。不带 `--clean` 时 prebuild 复用已有的
+ * `ios/`，`pod install` 只补没下完的那几个，通常几十秒就完。
+ *
+ * （Podfile 不会被改两遍：with-ios-pods-unsigned 插件按标记判重。）
+ */
+export function prebuildArgs(attempt) {
+  const args = ["exec", "expo", "prebuild", "--platform", "ios"];
+  if (attempt === 1) args.push("--clean");
+  return args;
+}
+
 export function embeddedPlist(raw, path = ".mobileprovision") {
   const start = raw.indexOf("<?xml");
   const end = raw.lastIndexOf("</plist>");

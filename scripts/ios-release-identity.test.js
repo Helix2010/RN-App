@@ -6,6 +6,7 @@ const {
   embeddedPlist,
   exportOptionsPlist,
   iosArtifactProblems,
+  prebuildArgs,
 } = require("./lib/ios-release-identity.js");
 
 const tenant = {
@@ -186,4 +187,29 @@ test("plist 找不到时说清楚是哪份文件", () => {
   ).toThrow(/a\.mobileprovision/);
   // 只有开头没有结尾，也不能返回半截
   expect(() => embeddedPlist('<?xml version="1.0"?><plist>')).toThrow();
+});
+
+// 只有第一次 prebuild 带 --clean。重试时再带，会把已经装好的 Pods 删掉，等于每次从零
+// 开始——而每次从零就是再赌一次二十分钟里 github.com 一次都不抖（2026-09-20 真机上
+// 三次构建死了两次，都是 pod install 中途 clone 超时）。
+test("prebuild 只有第一次清空 ios/", () => {
+  expect(prebuildArgs(1)).toEqual([
+    "exec",
+    "expo",
+    "prebuild",
+    "--platform",
+    "ios",
+    "--clean",
+  ]);
+  for (const attempt of [2, 3]) {
+    expect(prebuildArgs(attempt)).not.toContain("--clean");
+    // 其余参数不能跟着变，否则重试跑的就不是同一件事
+    expect(prebuildArgs(attempt)).toEqual([
+      "exec",
+      "expo",
+      "prebuild",
+      "--platform",
+      "ios",
+    ]);
+  }
 });
