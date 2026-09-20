@@ -192,7 +192,10 @@ test("plist 找不到时说清楚是哪份文件", () => {
 // 只有第一次 prebuild 带 --clean。重试时再带，会把已经装好的 Pods 删掉，等于每次从零
 // 开始——而每次从零就是再赌一次二十分钟里 github.com 一次都不抖（2026-09-20 真机上
 // 三次构建死了两次，都是 pod install 中途 clone 超时）。
-test("prebuild 只有第一次清空 ios/", () => {
+// 名字别写成「只有第一次清空 ios/」：那不是这段代码能保证的事。expo 在 ios/ 残缺时
+// 自己就会清（非交互模式下默认清 malformed 工程），重试时不带 --clean 拦不住它。
+// 这里断言的只是「--clean 只出现在第一次」——省掉的是上个任务的残留，不是 pod 缓存。
+test("prebuild 只有第一次带 --clean", () => {
   expect(prebuildArgs(1)).toEqual([
     "exec",
     "expo",

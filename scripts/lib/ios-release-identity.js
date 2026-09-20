@@ -215,9 +215,15 @@ export function iosArtifactProblems({
  *   fatal: unable to access 'https://github.com/…':
  *     Failed to connect to github.com port 443 after 75017 ms
  *
- * 重试时**不能**再带 `--clean`：它会把已经装好的 Pods 连同缓存目录一起删掉，等于每次
- * 从零开始，那样重试反而更容易再撞上一个坏窗口。不带 `--clean` 时 prebuild 复用已有的
- * `ios/`，`pod install` 只补没下完的那几个，通常几十秒就完。
+ * 重试时不再带 `--clean`，但**别指望它能保住 `ios/`**：2026-09-20 真机日志显示第 2、3 次
+ * 照样打 `Clearing ios`。看了 `@expo/cli` 的实现才明白——`--clean` 只决定走不走
+ * `clearNativeFolder()`；不带它时走的是 `promptToClearMalformedNativeProjectsAsync()`，
+ * 而 `pod install` 失败后 `ios/` 缺必需文件、正好被判成 malformed，非交互模式下的默认
+ * 行为就是**直接清掉**（`clearNativeFolder.js:194` 的注释写得很明白）。
+ *
+ * 真正让重试便宜下来的是 **CocoaPods 自己的缓存**（`~/Library/Caches/CocoaPods`）：它不在
+ * `ios/` 里面，清不掉，所以已经下好的 pod 不用重下。同一次构建的实测：第 1 次约 10 分钟，
+ * 第 2、3 次各 1–3 分钟。`--clean` 留在第 1 次是为了不继承上一个任务的残留，不是为了缓存。
  *
  * （Podfile 不会被改两遍：with-ios-pods-unsigned 插件按标记判重。）
  */
