@@ -15,6 +15,7 @@ import {
   embeddedPlist,
   exportOptionsPlist,
   iosArtifactProblems,
+  plistDate,
   prebuildArgs,
 } from "./lib/ios-release-identity.js";
 // 从 `expo/config-plugins` 引，不是 `@expo/config-plugins`：pnpm 的严格模式下后者不是
@@ -171,11 +172,50 @@ const run = (command, commandArgs, options = {}) => {
   return result.stdout;
 };
 
-/** plist（二进制或 XML）读成对象。macOS 自带 plutil，不引第三方解析器。 */
+/**
+ * plist（二进制或 XML）读成对象。macOS 自带 plutil，不引第三方解析器。
+ *
+ * **只能用在 JSON 表示得了的 plist 上**——也就是整份里没有 `<data>` 与 `<date>`。
+ * `Info.plist` 与 codesign 回来的 entitlements 都满足；`.mobileprovision` 不满足，
+ * 那份走 readProfileFields()。
+ */
 const readPlist = (path) =>
   JSON.parse(
     run("plutil", ["-convert", "json", "-o", "-", path], { capture: true }),
   );
+
+/**
+ * 从描述文件内嵌的 plist 里取我们要的那三个字段。
+ *
+ * **不能整份转 JSON。** 描述文件里 `DeveloperCertificates` 与 `DER-Encoded-Profile`
+ * 是 `<data>`、`ExpirationDate` 是 `<date>`，这两种类型 JSON 都表示不了，plutil 直接拒绝：
+ *
+ *   /…/ios/build/profile.plist: Invalid object in plist for JSON format
+ *
+ * （2026-09-20 真机上撞到，那次 CocoaPods 刚第一次装成功。）所以按 keypath 逐个取。
+ * 日期走 `xml1` 而不是 `raw`：XML plist 里的 `<date>` 恒为 ISO-8601 带 Z，格式确定，
+ * 而 `raw` 对日期打什么没有承诺。
+ *
+ * 取不到的键回 null 而不是终止：这个函数要在一堆描述文件上循环，形状不对的那份应该被
+ * 跳过，由调用方统一报「没有可用的描述文件」，而不是让第一份坏文件打死整条构建。
+ */
+const readProfileFields = (path) => {
+  const extract = (keypath, format) => {
+    const result = spawnSync(
+      "plutil",
+      ["-extract", keypath, format, "-o", "-", path],
+      { env, encoding: "utf8" },
+    );
+    if (result.error) throw result.error;
+    return result.status === 0 ? result.stdout : null;
+  };
+  return {
+    applicationIdentifier:
+      extract("Entitlements.application-identifier", "raw")?.trim() || null,
+    name: extract("Name", "raw")?.trim() || null,
+    expirationDate: plistDate(extract("ExpirationDate", "xml1")),
+  };
+};
 
 const expoConfig = JSON.parse(
   run("pnpm", ["exec", "expo", "config", "--json"], { capture: true }),
@@ -274,18 +314,32 @@ const findProvisioningProfile = () => {
       embeddedPlist(readFileSync(path, "latin1"), path),
       "latin1",
     );
-    const profile = readPlist(decoded);
-    if (profile.Entitlements?.["application-identifier"] !== wanted) continue;
-    // 过期的描述文件签出来的包 Apple 直接拒，而报错发生在上传那一步——十几分钟之后
-    if (new Date(profile.ExpirationDate).getTime() <= Date.now()) {
-      expired.push(`${entry}（${profile.ExpirationDate}）`);
+    const profile = readProfileFields(decoded);
+    if (profile.applicationIdentifier !== wanted) continue;
+    // 过期的描述文件签出来的包 Apple 直接拒，而报错发生在上传那一步——十几分钟之后。
+    // 读不到日期也算不可用：原先写的是 `new Date(undefined).getTime() <= Date.now()`，
+    // 那是 `NaN <= …`，恒为 false——缺 ExpirationDate 的文件会被当成没过期直接用掉
+    const expiresAt = profile.expirationDate
+      ? new Date(profile.expirationDate).getTime()
+      : Number.NaN;
+    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+      expired.push(
+        `${entry}（${profile.expirationDate ?? "读不出 ExpirationDate"}）`,
+      );
       continue;
     }
-    return profile.Name;
+    if (!profile.name)
+      throw new Error(
+        `${path} 匹配上了 ${wanted}，但读不出 Name——xcodebuild 的 ` +
+          "PROVISIONING_PROFILE_SPECIFIER 要的就是这个值，缺了它签名必然失败",
+      );
+    return profile.name;
   }
   throw new Error(
     `${directory} 下没有 ${wanted} 的可用描述文件` +
-      (expired.length > 0 ? `；已过期的：${expired.join("、")}` : "") +
+      (expired.length > 0
+        ? `；已过期或读不出有效期的：${expired.join("、")}`
+        : "") +
       "。把这个 App 的 App Store 描述文件放进去再重试。",
   );
 };

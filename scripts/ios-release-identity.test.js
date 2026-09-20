@@ -6,6 +6,7 @@ const {
   embeddedPlist,
   exportOptionsPlist,
   iosArtifactProblems,
+  plistDate,
   prebuildArgs,
 } = require("./lib/ios-release-identity.js");
 
@@ -215,4 +216,31 @@ test("prebuild 只有第一次带 --clean", () => {
       "ios",
     ]);
   }
+});
+
+// 真机 2026-09-20：整份描述文件转 JSON 会被 plutil 拒（`Invalid object in plist for
+// JSON format`），因为里面有 <data> 与 <date>。改成按 keypath 取，日期这一格走 xml1。
+test("从 plutil -extract xml1 的输出里切出日期", () => {
+  const xml = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+    '<plist version="1.0">',
+    "<date>2027-09-20T03:03:38Z</date>",
+    "</plist>",
+    "",
+  ].join("\n");
+  expect(plistDate(xml)).toBe("2027-09-20T03:03:38Z");
+  // 切出来的东西必须真的是个日期——否则过期检查会退化成 NaN 比较，恒为"没过期"
+  expect(Number.isFinite(new Date(plistDate(xml)).getTime())).toBe(true);
+});
+
+test("读不出日期时回 null，不回 undefined 也不抛", () => {
+  // plutil 取不到键时 readProfileFields 传进来的就是 null
+  for (const input of [
+    null,
+    undefined,
+    "",
+    '<plist version="1.0"><string>x</string></plist>',
+  ])
+    expect(plistDate(input)).toBeNull();
 });

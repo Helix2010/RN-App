@@ -243,6 +243,20 @@ export function embeddedPlist(raw, path = ".mobileprovision") {
   return raw.slice(start, end + "</plist>".length);
 }
 
+/**
+ * plistDate 从 `plutil -extract <键> xml1` 的输出里切出那个日期。
+ *
+ * 为什么不用 `raw`：plutil 对日期在 `raw` 下打什么没有承诺，而 XML plist 里的 `<date>`
+ * 按规范恒为 ISO-8601 带 Z（`2027-09-20T03:03:38Z`），`new Date()` 吃得准。
+ *
+ * 取不到回 null——调用方要把"读不出有效期"与"已过期"一样当作不可用，别让它退化成
+ * `new Date(undefined)`，那是 NaN，跟任何数比都是 false，等于把过期检查整个跳过。
+ */
+export function plistDate(xml) {
+  const matched = /<date>([^<]+)<\/date>/.exec(String(xml ?? ""));
+  return matched ? matched[1].trim() : null;
+}
+
 export function appLinkHostOf(apiBaseUrl) {
   if (!String(apiBaseUrl ?? "").startsWith("https://")) return "";
   return new URL(apiBaseUrl).host;
