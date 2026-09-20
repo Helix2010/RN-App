@@ -2,6 +2,7 @@ import {
   copyFileSync,
   mkdirSync,
   readdirSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -11,6 +12,7 @@ import { readTenantConfig, tenantEnvironment } from "./tenant-config.mjs";
 import { loadMachineEnv } from "./lib/machine-env.js";
 import {
   appLinkHostOf,
+  embeddedPlist,
   exportOptionsPlist,
   iosArtifactProblems,
 } from "./lib/ios-release-identity.js";
@@ -226,11 +228,12 @@ const findProvisioningProfile = () => {
   const expired = [];
   for (const entry of entries) {
     const path = resolve(directory, entry);
-    // .mobileprovision 是 CMS 签名块，里面包着一份 plist
     const decoded = resolve(buildDirectory, "profile.plist");
+    // 前后是二进制、中间是 XML：latin1 读写保证字节原样（见 embeddedPlist）
     writeFileSync(
       decoded,
-      run("security", ["cms", "-D", "-i", path], { capture: true }),
+      embeddedPlist(readFileSync(path, "latin1"), path),
+      "latin1",
     );
     const profile = readPlist(decoded);
     if (profile.Entitlements?.["application-identifier"] !== wanted) continue;

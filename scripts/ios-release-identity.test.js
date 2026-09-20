@@ -1,7 +1,9 @@
 const { expect, test } = require("@jest/globals");
+const { Buffer } = require("node:buffer");
 
 const {
   appLinkHostOf,
+  embeddedPlist,
   exportOptionsPlist,
   iosArtifactProblems,
 } = require("./lib/ios-release-identity.js");
@@ -155,4 +157,33 @@ test("appLinkHostOf 与 app.config.ts 同源，http 没有通用链接", () => {
   expect(appLinkHostOf("https://api.anyfun.win/v1/")).toBe("api.anyfun.win");
   expect(appLinkHostOf("http://localhost:3000")).toBe("");
   expect(appLinkHostOf(undefined)).toBe("");
+});
+
+// 描述文件的 plist 从 CMS 块里切出来，不走 `security cms -D`——那条命令会往默认钥匙串里
+// 导签名者证书，而构建跑在任务自己的 HOME 下，没有 login 钥匙串：
+//   security: cert import failed: Write permissions error.
+//   security: problem decoding
+// （2026-09-20 真机，CocoaPods 装完之后的下一步）
+test("从 .mobileprovision 的字节里切出 plist，字节不动", () => {
+  const xml =
+    '<?xml version="1.0" encoding="UTF-8"?>' +
+    '<plist version="1.0"><dict><key>Name</key><string>AnyFun 生产环境</string></dict></plist>';
+  // 真文件前后都是二进制：CMS 头与签名尾
+  const blob = Buffer.concat([
+    Buffer.from([0x30, 0x82, 0x0b, 0x2a, 0x06, 0x09, 0xff, 0xfe]),
+    Buffer.from(xml, "utf8"),
+    Buffer.from([0x00, 0x01, 0x80, 0x81]),
+  ]);
+
+  const cut = embeddedPlist(blob.toString("latin1"));
+  // 以 latin1 写回去之后必须与原始 XML 逐字节相同（中文在这里最容易坏）
+  expect(Buffer.from(cut, "latin1").toString("utf8")).toBe(xml);
+});
+
+test("plist 找不到时说清楚是哪份文件", () => {
+  expect(() =>
+    embeddedPlist("no plist here", "/var/x/a.mobileprovision"),
+  ).toThrow(/a\.mobileprovision/);
+  // 只有开头没有结尾，也不能返回半截
+  expect(() => embeddedPlist('<?xml version="1.0"?><plist>')).toThrow();
 });
