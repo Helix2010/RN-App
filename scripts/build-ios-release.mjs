@@ -15,8 +15,20 @@ import {
   iosArtifactProblems,
 } from "./lib/ios-release-identity.js";
 // 从 `expo/config-plugins` 引，不是 `@expo/config-plugins`：pnpm 的严格模式下后者不是
-// 直接依赖，解析不到（2026-09-18 在本仓核实）
-import { IOSConfig } from "expo/config-plugins";
+// 直接依赖，解析不到（2026-09-18 在本仓核实）。
+//
+// 两处写法都是被真机逼出来的（2026-09-20 第一次在 Mac 上跑到这个脚本）：
+//
+//  1. 扩展名不能省。`expo` 这个包没有 exports 字段，ESM 下裸规格名不会自动补 `.js`：
+//     Cannot find module '.../node_modules/expo/config-plugins'
+//  2. 不能用具名导入。`expo/config-plugins.js` 是 `module.exports = require('@expo/config-plugins')`
+//     这么一层转发壳，Node 的 CJS 词法分析看不穿它：
+//     SyntaxError: Named export 'IOSConfig' not found.
+//
+// 所以是"默认导入 + 取属性"。
+import expoConfigPlugins from "expo/config-plugins.js";
+
+const { IOSConfig } = expoConfigPlugins;
 
 /**
  * iOS release 构建：`pnpm ios:release <slug> [--signing-dir <目录>] [--upload]`。
