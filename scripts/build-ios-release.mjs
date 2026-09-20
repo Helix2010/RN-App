@@ -15,6 +15,7 @@ import {
   embeddedPlist,
   exportOptionsPlist,
   iosArtifactProblems,
+  prebuildArgs,
 } from "./lib/ios-release-identity.js";
 // 从 `expo/config-plugins` 引，不是 `@expo/config-plugins`：pnpm 的严格模式下后者不是
 // 直接依赖，解析不到（2026-09-18 在本仓核实）。
@@ -187,7 +188,34 @@ if (String(expoConfig.extra?.buildNumber) !== tenant.iosBuildNumber)
       "EXPO_OS=ios 没有传到 expo config（见 app.config.ts 里 buildNumber 的取值）",
   );
 
-run("pnpm", ["exec", "expo", "prebuild", "--platform", "ios", "--clean"]);
+// prebuild 里的 pod install 要从 github.com clone 几十个仓库，跨度将近二十分钟；
+// 链路抖一下整条构建就作废。重试很便宜：已经下好的 pod 在这次任务的 CocoaPods 缓存里
+// （HOME 是任务自己的目录），第二次只补没下完的那些。见 prebuildArgs 里为什么只有
+// 第一次带 --clean。
+const PREBUILD_ATTEMPTS = 3;
+for (let attempt = 1; ; attempt++) {
+  const result = spawnSync("pnpm", prebuildArgs(attempt), {
+    cwd: projectRoot,
+    env,
+    stdio: "inherit",
+  });
+  if (result.error) throw result.error;
+  if (result.status === 0) break;
+  if (attempt === PREBUILD_ATTEMPTS) {
+    console.error(
+      `expo prebuild 连续失败 ${PREBUILD_ATTEMPTS} 次。` +
+        "上面最后一段里如果是 `unable to access 'https://github.com/…'`，那是这台机器出网" +
+        "的问题：CocoaPods 装每一个 pod 都要 clone 它的 git 源。要走代理的话写进 " +
+        "/var/rn-build-agent/env（那里留了注释掉的示例），shell 里 export 传不进构建。",
+    );
+    process.exit(result.status ?? 1);
+  }
+  const wait = attempt * 15;
+  console.log(
+    `expo prebuild 失败（第 ${attempt} 次），${wait} 秒后重试；已经下好的 pod 会被复用`,
+  );
+  spawnSync("sleep", [String(wait)], { stdio: "ignore" });
+}
 
 const iosDirectory = resolve(projectRoot, "ios");
 const workspace = readdirSync(iosDirectory)
