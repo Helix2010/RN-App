@@ -188,6 +188,33 @@ export function iosArtifactProblems({
  * appLinkHostOf 从 apiBaseUrl 推通用链接的域名，与 app.config.ts 同源。
  * 非 https 返回空串：本地开发没有通用链接。
  */
+/**
+ * embeddedPlist 从 `.mobileprovision` 的字节里切出那份 XML plist。
+ *
+ * 它是个 CMS 签名块，中间包着一份 plist。**不用 `security cms -D`**：那条命令会把签名者
+ * 证书往**默认钥匙串**里导，而构建跑在任务自己的 HOME 下、那里没有 login 钥匙串，于是
+ * （2026-09-20 真机，CocoaPods 装完之后的下一步）：
+ *
+ *   security: cert import failed: Write permissions error.
+ *   security: problem decoding
+ *
+ * 也不需要验那个签名：描述文件是 root 以 0600 装进签名区的，来源已经可信，而原先那条
+ * 命令的输出本来也是照单全收。构建机那一侧的盘点就是这么读的
+ * （RN-Server `cmd/build-agent/ios_inventory.go`）。
+ *
+ * 入参是按 **latin1** 读进来的字符串：latin1 是字节到码位的一一映射，切出来再以 latin1
+ * 写回去字节不变；用 utf8 读会把前后那些二进制字节换成替换字符。
+ */
+export function embeddedPlist(raw, path = ".mobileprovision") {
+  const start = raw.indexOf("<?xml");
+  const end = raw.lastIndexOf("</plist>");
+  if (start < 0 || end < 0 || end < start)
+    throw new Error(
+      `${path} 里找不到描述文件的 plist：它应当是一个 CMS 签名块，中间包着 <?xml … </plist>`,
+    );
+  return raw.slice(start, end + "</plist>".length);
+}
+
 export function appLinkHostOf(apiBaseUrl) {
   if (!String(apiBaseUrl ?? "").startsWith("https://")) return "";
   return new URL(apiBaseUrl).host;
