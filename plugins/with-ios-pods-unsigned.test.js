@@ -43,10 +43,16 @@ target 'AnyFun' do
 end
 `;
 
-test("给 Podfile 追加一段关掉所有 Pods 签名的 post_install", () => {
+const hookCount = (podfile) =>
+  (podfile.match(/^\s*post_install do /gm) || []).length;
+
+test("关签名那几行插进模板已有的 post_install 里，不另开一个", () => {
   const ios = newProject(TEMPLATE_PODFILE);
   runMod(ios);
   const podfile = readFileSync(resolve(ios, "Podfile"), "utf8");
+  // CocoaPods 只允许一个：多一个就是 `[!] Specifying multiple post_install hooks
+  // is unsupported.`，pod install 直接失败（2026-09-20 真机上第一次跑到就撞上了）
+  expect(hookCount(podfile)).toBe(1);
   // 模板原来的内容不能被动
   expect(podfile).toContain("react_native_post_install(installer");
   for (const setting of [
@@ -57,6 +63,27 @@ test("给 Podfile 追加一段关掉所有 Pods 签名的 post_install", () => {
     expect(podfile).toContain(setting);
   }
   expect(podfile).toContain("installer.pods_project.targets.each");
+});
+
+// 模板哪天不再自带钩子时，这一段仍然要落地——那时才该自己开一个
+test("Podfile 里没有 post_install 时自己开一个", () => {
+  const ios = newProject("platform :ios, '15.1'\n\ntarget 'AnyFun' do\nend\n");
+  runMod(ios);
+  const podfile = readFileSync(resolve(ios, "Podfile"), "utf8");
+  expect(hookCount(podfile)).toBe(1);
+  expect(podfile).toContain("CODE_SIGNING_ALLOWED");
+});
+
+// 块参数不叫 installer 时，插进去的那几行也要用它的名字，否则 Ruby 里是个未定义变量
+test("跟着已有块参数的名字走", () => {
+  const ios = newProject(
+    "target 'AnyFun' do\n  post_install do |inst|\n    react_native_post_install(inst, config[:reactNativePath])\n  end\nend\n",
+  );
+  runMod(ios);
+  const podfile = readFileSync(resolve(ios, "Podfile"), "utf8");
+  expect(hookCount(podfile)).toBe(1);
+  expect(podfile).toContain("inst.pods_project.targets.each");
+  expect(podfile).not.toContain("installer.pods_project.targets.each");
 });
 
 // prebuild 不带 --clean 时不会重新生成 Podfile：加两遍 post_install 会让 CocoaPods
