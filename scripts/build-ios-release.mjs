@@ -14,6 +14,7 @@ import {
   appLinkHostOf,
   embeddedPlist,
   exportOptionsPlist,
+  hasIosSdk,
   iosArtifactProblems,
   plistDate,
   prebuildArgs,
@@ -217,6 +218,23 @@ const readProfileFields = (path) => {
   };
 };
 
+// 装了 Xcode 不等于装了 iOS 平台：Xcode 26 起各平台 SDK 是可下载组件，缺了它
+// `xcodebuild … archive` 会在**最后**倒下，而前面的 pnpm install 与 pod install 已经
+// 烧掉二十多分钟（2026-09-21 真机就是这样）：
+//
+//   xcodebuild: error: Unable to find a destination matching the provided destination
+//   specifier: { generic:1, platform:iOS }
+//     … error:iOS 26.5 is not installed. Please download and install the platform
+//       from Xcode > Settings > Components.
+//
+// 一秒钟能判定的事不该等二十分钟，所以放在这里。
+if (!hasIosSdk(run("xcodebuild", ["-showsdks"], { capture: true })))
+  throw new Error(
+    "这台机器的 Xcode 没有装 iOS 平台，archive 到最后一定失败。" +
+      "补装：`sudo xcodebuild -downloadPlatform iOS`（几 G，要下一会儿），" +
+      "装完 `xcodebuild -showsdks | grep -i iphoneos` 应当能列出来。",
+  );
+
 const expoConfig = JSON.parse(
   run("pnpm", ["exec", "expo", "config", "--json"], { capture: true }),
 );
@@ -368,6 +386,20 @@ if (signingDir) {
   console.log(`manual signing: profile ${profileName}`);
 }
 
+// DerivedData 显式落在任务目录里，不交给 Xcode 自己挑。
+//
+// **Xcode 不认 `$HOME`。** 执行进程的 HOME 是每个任务自己的目录（RN-Server 的
+// `jobspec.go` 里 `HOME=<work>/home`），但 xcodebuild 与它底下那些框架取的是目录服务里
+// 这个账户的家目录——`_rnbuilder` 的是 `/var/empty`，谁都写不进去。2026-09-21 真机日志：
+//
+//   IDELogStore: Failed to open log store at
+//     /var/empty/Library/Developer/Xcode/DerivedData/AnyFun-…/Logs/Build
+//     (513) You don't have permission to save the file "Build" in the folder "Logs"
+//
+// 那次是先倒在 destination 上，这些只是警告；真编译起来 DerivedData 写不进去就是硬失败。
+// 放进任务目录还顺带满足了「任务之间不共享状态、用完随任务一起删」。
+const derivedDataPath = resolve(buildDirectory, "DerivedData");
+
 run("xcodebuild", [
   "-workspace",
   workspace,
@@ -379,6 +411,8 @@ run("xcodebuild", [
   "generic/platform=iOS",
   "-archivePath",
   archivePath,
+  "-derivedDataPath",
+  derivedDataPath,
   // **不传 -allowProvisioningUpdates**：这个脚本不申请、也不续期任何描述文件。
   // 手工签名时证书与描述文件由人放在机器上（设计 §4.3、§4.4）
   ...archiveSettings,
