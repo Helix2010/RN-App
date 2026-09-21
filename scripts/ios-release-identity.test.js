@@ -5,7 +5,6 @@ const {
   appLinkHostOf,
   embeddedPlist,
   exportOptionsPlist,
-  hasIosSdk,
   iosArtifactProblems,
   plistDate,
   prebuildArgs,
@@ -244,30 +243,4 @@ test("读不出日期时回 null，不回 undefined 也不抛", () => {
     '<plist version="1.0"><string>x</string></plist>',
   ])
     expect(plistDate(input)).toBeNull();
-});
-
-// 2026-09-21 真机：装了 Xcode 不等于装了 iOS 平台（Xcode 26 起 SDK 是可下载组件）。
-// 那次在 pnpm install + pod install 烧掉二十多分钟之后才倒在 destination 上。
-test("只装了模拟器 SDK 不算装了 iOS 平台", () => {
-  const withDevice = [
-    "iOS SDKs:",
-    "\tiOS 26.5                      \t-sdk iphoneos26.5",
-    "",
-    "iOS Simulator SDKs:",
-    "\tSimulator - iOS 26.5          \t-sdk iphonesimulator26.5",
-  ].join("\n");
-  expect(hasIosSdk(withDevice)).toBe(true);
-
-  // 只有模拟器：archive 照样出不来，必须判成"没装"
-  const simulatorOnly = [
-    "iOS Simulator SDKs:",
-    "\tSimulator - iOS 26.5          \t-sdk iphonesimulator26.5",
-    "",
-    "macOS SDKs:",
-    "\tmacOS 26.0                    \t-sdk macosx26.0",
-  ].join("\n");
-  expect(hasIosSdk(simulatorOnly)).toBe(false);
-
-  for (const empty of ["", null, undefined])
-    expect(hasIosSdk(empty)).toBe(false);
 });

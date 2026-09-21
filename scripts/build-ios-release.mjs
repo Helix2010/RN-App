@@ -14,7 +14,6 @@ import {
   appLinkHostOf,
   embeddedPlist,
   exportOptionsPlist,
-  hasIosSdk,
   iosArtifactProblems,
   plistDate,
   prebuildArgs,
@@ -218,22 +217,15 @@ const readProfileFields = (path) => {
   };
 };
 
-// 装了 Xcode 不等于装了 iOS 平台：Xcode 26 起各平台 SDK 是可下载组件，缺了它
-// `xcodebuild … archive` 会在**最后**倒下，而前面的 pnpm install 与 pod install 已经
-// 烧掉二十多分钟（2026-09-21 真机就是这样）：
+// 这里**故意没有**「iOS 平台装没装」的前置检查，别再加回来。2026-09-21 加过一版，
+// 判据是 `xcodebuild -showsdks` 里有没有 `-sdk iphoneosN`——**它抓不到**：平台没装时
+// 那一行照样在（SDK 一直在 Xcode 包里，缺的是可下载的平台组件），检查原样放行，
+// 构建仍然倒在 `Unable to find a destination matching { generic:1, platform:iOS }`。
 //
-//   xcodebuild: error: Unable to find a destination matching the provided destination
-//   specifier: { generic:1, platform:iOS }
-//     … error:iOS 26.5 is not installed. Please download and install the platform
-//       from Xcode > Settings > Components.
-//
-// 一秒钟能判定的事不该等二十分钟，所以放在这里。
-if (!hasIosSdk(run("xcodebuild", ["-showsdks"], { capture: true })))
-  throw new Error(
-    "这台机器的 Xcode 没有装 iOS 平台，archive 到最后一定失败。" +
-      "补装：`sudo xcodebuild -downloadPlatform iOS`（几 G，要下一会儿），" +
-      "装完 `xcodebuild -showsdks | grep -i iphoneos` 应当能列出来。",
-  );
+// 而且当时的根因就判错了：archive 在平台缺失时 10 秒内就失败，贵的是它前面那 30 分钟的
+// `pod install`——那是**缓存每任务一份**的代价（见 RN-Server 设计文档），不是少了一道
+// 前置检查。平台装没装是装机时验一次的事，不是每次构建都验的事，所以挪进了运维手册
+// （`sudo xcodebuild -downloadPlatform iOS`，幂等，已装会直接返回）。
 
 const expoConfig = JSON.parse(
   run("pnpm", ["exec", "expo", "config", "--json"], { capture: true }),

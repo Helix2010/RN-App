@@ -244,18 +244,6 @@ export function embeddedPlist(raw, path = ".mobileprovision") {
 }
 
 /**
- * hasIosSdk 判断 `xcodebuild -showsdks` 的输出里有没有**真机** iOS SDK。
- *
- * 认的是 `-sdk iphoneos<版本>` 这个形式。不能只找 "iOS"：模拟器那一段写的是
- * `iOS 26.5 Simulator … -sdk iphonesimulator26.5`，只装了模拟器照样 archive 不出东西，
- * 而 archive 要的恰恰是 `iphoneos`。也不能找 "iphoneos" 子串了事——`iphonesimulator`
- * 里不含它，但将来多一个别的 SDK 就说不准了，所以钉死在 `-sdk iphoneosN`。
- */
-export function hasIosSdk(showSdksOutput) {
-  return /-sdk\s+iphoneos\d/.test(String(showSdksOutput ?? ""));
-}
-
-/**
  * plistDate 从 `plutil -extract <键> xml1` 的输出里切出那个日期。
  *
  * 为什么不用 `raw`：plutil 对日期在 `raw` 下打什么没有承诺，而 XML plist 里的 `<date>`
