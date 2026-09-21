@@ -6,7 +6,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { basename, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { readTenantConfig, tenantEnvironment } from "./tenant-config.mjs";
 import { loadMachineEnv } from "./lib/machine-env.js";
@@ -17,6 +17,7 @@ import {
   iosArtifactProblems,
   plistDate,
   prebuildArgs,
+  provisioningProfilePaths,
 } from "./lib/ios-release-identity.js";
 // 从 `expo/config-plugins` 引，不是 `@expo/config-plugins`：pnpm 的严格模式下后者不是
 // 直接依赖，解析不到（2026-09-18 在本仓核实）。
@@ -213,8 +214,45 @@ const readProfileFields = (path) => {
     applicationIdentifier:
       extract("Entitlements.application-identifier", "raw")?.trim() || null,
     name: extract("Name", "raw")?.trim() || null,
+    uuid: extract("UUID", "raw")?.trim() || null,
     expirationDate: plistDate(extract("ExpirationDate", "xml1")),
   };
+};
+
+/**
+ * 把描述文件装到 Xcode 会去翻的目录里，返回装进去的那些路径。
+ *
+ * **只把名字写进工程是不够的。** `PROVISIONING_PROFILE_SPECIFIER` 给的是描述文件的
+ * Name，而 Xcode 拿这个名字去它**自己的已安装目录**里找；我们的文件躺在
+ * `/var/rn-build-signing/profiles/<TEAMID>/` 下，它根本不知道有这么个文件。
+ * 2026-09-21 真机第一次编译起来就倒在这里：
+ *
+ *   error: No profile for team 'J4JDFC8LCC' matching 'com.anyfun.foundation AppStore 2026'
+ *   found: Xcode couldn't find any provisioning profiles matching …
+ *   Install the profile (by dragging and dropping it onto Xcode's dock item)…
+ *
+ * 两个目录都装：Xcode 16 起用 `Developer/Xcode/UserData/Provisioning Profiles`，
+ * 更早的版本用 `MobileDevice/Provisioning Profiles`，装两份省得跟版本较劲。
+ *
+ * 文件名用 UUID：这是 Xcode 一贯的命名约定，重复执行会原样覆盖，不会在目录里堆出
+ * 一堆同一份描述文件的副本。
+ *
+ * 装在 `$HOME` 底下而不是别处——这里的 HOME 是**每个任务自己的目录**，任务做完随目录
+ * 一起删，不会在机器上留下一份谁都能读的描述文件。（描述文件本身不是密钥，但没有理由
+ * 让它比任务活得久。）
+ */
+const installProvisioningProfile = (profilePath, uuid) => {
+  const home = env.HOME;
+  if (!home)
+    throw new Error(
+      "环境里没有 HOME，没法把描述文件装进 Xcode 的目录：手工签名一定会失败",
+    );
+  const targets = provisioningProfilePaths(home, uuid);
+  for (const target of targets) {
+    mkdirSync(dirname(target), { recursive: true });
+    copyFileSync(profilePath, target);
+  }
+  return targets;
 };
 
 // 这里**故意没有**「iOS 平台装没装」的前置检查，别再加回来。2026-09-21 加过一版，
@@ -343,7 +381,11 @@ const findProvisioningProfile = () => {
         `${path} 匹配上了 ${wanted}，但读不出 Name——xcodebuild 的 ` +
           "PROVISIONING_PROFILE_SPECIFIER 要的就是这个值，缺了它签名必然失败",
       );
-    return profile.name;
+    if (!profile.uuid)
+      throw new Error(
+        `${path} 匹配上了 ${wanted}，但读不出 UUID——装进 Xcode 的描述文件目录时要用它做文件名`,
+      );
+    return { name: profile.name, uuid: profile.uuid, path };
   }
   throw new Error(
     `${directory} 下没有 ${wanted} 的可用描述文件` +
@@ -357,7 +399,9 @@ const findProvisioningProfile = () => {
 const archiveSettings = [`DEVELOPMENT_TEAM=${tenant.appleTeamId}`];
 let profileName;
 if (signingDir) {
-  profileName = findProvisioningProfile();
+  const profile = findProvisioningProfile();
+  profileName = profile.name;
+  const installed = installProvisioningProfile(profile.path, profile.uuid);
   // 只改 App target 的 Release：命令行上的 PROVISIONING_PROFILE_SPECIFIER 会作用到
   // **每一个** target，包括 Pods 的资源 bundle，而那些 bundle 报的是
   // "does not support provisioning profiles"（expo/expo#29526）。Pods 那一半由
@@ -375,7 +419,12 @@ if (signingDir) {
   archiveSettings.push(
     `OTHER_CODE_SIGN_FLAGS=--keychain ${resolve(signingDir, "rn-signing.keychain-db")}`,
   );
-  console.log(`manual signing: profile ${profileName}`);
+  // 把装到哪儿也打出来：下次再出 "couldn't find any provisioning profiles" 时，
+  // 这一行能立刻分清是"没装上"还是"装了但 Xcode 没往这儿找"
+  console.log(
+    `manual signing: profile ${profileName} (${profile.uuid})\n` +
+      installed.map((path) => `  installed: ${path}`).join("\n"),
+  );
 }
 
 // DerivedData 显式落在任务目录里，不交给 Xcode 自己挑。

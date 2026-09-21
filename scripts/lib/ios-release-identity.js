@@ -244,6 +244,26 @@ export function embeddedPlist(raw, path = ".mobileprovision") {
 }
 
 /**
+ * provisioningProfilePaths 给出这份描述文件该装到哪几个绝对路径。
+ *
+ * **两个目录都要**：Xcode 16 起翻的是 `Developer/Xcode/UserData/Provisioning Profiles`，
+ * 更早的版本翻 `MobileDevice/Provisioning Profiles`。装两份省得跟 Xcode 版本较劲，
+ * 代价只是多一次文件拷贝。
+ *
+ * **文件名必须是 UUID**：这是 Xcode 一贯的命名约定，也让重复执行原样覆盖，不会在目录里
+ * 堆出同一份描述文件的一堆副本。
+ */
+export function provisioningProfilePaths(home, uuid) {
+  if (!home) throw new Error("没有 HOME，定不了描述文件该装到哪里");
+  if (!/^[0-9A-Fa-f-]{36}$/.test(String(uuid ?? "")))
+    throw new Error(`描述文件的 UUID 形状不对：${JSON.stringify(uuid)}`);
+  return [
+    "Library/Developer/Xcode/UserData/Provisioning Profiles",
+    "Library/MobileDevice/Provisioning Profiles",
+  ].map((relative) => `${home}/${relative}/${uuid}.mobileprovision`);
+}
+
+/**
  * plistDate 从 `plutil -extract <键> xml1` 的输出里切出那个日期。
  *
  * 为什么不用 `raw`：plutil 对日期在 `raw` 下打什么没有承诺，而 XML plist 里的 `<date>`

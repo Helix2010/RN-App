@@ -8,6 +8,7 @@ const {
   iosArtifactProblems,
   plistDate,
   prebuildArgs,
+  provisioningProfilePaths,
 } = require("./lib/ios-release-identity.js");
 
 const tenant = {
@@ -243,4 +244,27 @@ test("读不出日期时回 null，不回 undefined 也不抛", () => {
     '<plist version="1.0"><string>x</string></plist>',
   ])
     expect(plistDate(input)).toBeNull();
+});
+
+// 2026-09-21 真机：第一次编译起来就倒在这里——描述文件读到了、名字也对，但 Xcode 按
+// 名字找的是它自己的已安装目录，我们的文件躺在 /var/rn-build-signing 下它看不见：
+//   error: No profile for team 'J4JDFC8LCC' matching '…' found: Xcode couldn't find
+//   any provisioning profiles matching … Install the profile …
+test("描述文件装进 Xcode 的两个候选目录，文件名用 UUID", () => {
+  const uuid = "7B69482C-C050-4980-B41B-47670BE74050";
+  const paths = provisioningProfilePaths("/var/jobs/x/work/home", uuid);
+
+  // 两个目录都要：Xcode 16 起用 UserData 那个，更早的用 MobileDevice 那个
+  expect(paths).toEqual([
+    `/var/jobs/x/work/home/Library/Developer/Xcode/UserData/Provisioning Profiles/${uuid}.mobileprovision`,
+    `/var/jobs/x/work/home/Library/MobileDevice/Provisioning Profiles/${uuid}.mobileprovision`,
+  ]);
+
+  // 没有 HOME 就定不了位置，不能默默装到某个默认路径去
+  expect(() => provisioningProfilePaths("", uuid)).toThrow();
+  expect(() => provisioningProfilePaths(undefined, uuid)).toThrow();
+
+  // UUID 形状不对时当场报错：拼进路径的东西不能是 undefined 或带斜杠的串
+  for (const bad of [undefined, null, "", "not-a-uuid", "../../etc/passwd"])
+    expect(() => provisioningProfilePaths("/home/x", bad)).toThrow();
 });
