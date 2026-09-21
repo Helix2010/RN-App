@@ -8,6 +8,8 @@ import {
 } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+// userInfo() 走 getpwuid，不看 $HOME——os.homedir() 会先看 $HOME，这里要的正是另一个
+import { userInfo } from "node:os";
 import { readTenantConfig, tenantEnvironment } from "./tenant-config.mjs";
 import { loadMachineEnv } from "./lib/machine-env.js";
 import {
@@ -237,20 +239,47 @@ const readProfileFields = (path) => {
  * 文件名用 UUID：这是 Xcode 一贯的命名约定，重复执行会原样覆盖，不会在目录里堆出
  * 一堆同一份描述文件的副本。
  *
- * 装在 `$HOME` 底下而不是别处——这里的 HOME 是**每个任务自己的目录**，任务做完随目录
- * 一起删，不会在机器上留下一份谁都能读的描述文件。（描述文件本身不是密钥，但没有理由
- * 让它比任务活得久。）
+ * **两个"家"都要装。** `$HOME` 与密码数据库里的家目录在打包机上不是同一个东西：任务的
+ * `HOME` 是 `<work>/home`（RN-Server 的 `jobspec.go` 设的），而 `_rnbuilder` 在
+ * `dscl` 里的 `NFSHomeDirectory` 是 `/var/empty`。2026-09-21 的日志显示 **xcodebuild
+ * 自己的进程**把默认 DerivedData 算在了 `/var/empty/Library/Developer/Xcode/…` 下——
+ * 也就是说它读的是密码数据库那一个，不是 `$HOME`。两个都装就不必赌是哪一个。
+ *
+ * `os.userInfo().homedir` 走的是 `getpwuid`，**不看 `$HOME`**（`os.homedir()` 会先看
+ * `$HOME`，所以这里不能用它）——正好就是 Xcode 读的那一个。
+ *
+ * 写不进去**当场失败**，别硬撑：装不上的唯一后果就是二十多分钟后的
+ * `** ARCHIVE FAILED **`，那时再报错纯属浪费。报错里直接给出补救命令。
  */
 const installProvisioningProfile = (profilePath, uuid) => {
-  const home = env.HOME;
-  if (!home)
+  const homes = [];
+  if (env.HOME) homes.push(env.HOME);
+  try {
+    const passwordDatabaseHome = userInfo().homedir;
+    if (passwordDatabaseHome && !homes.includes(passwordDatabaseHome))
+      homes.push(passwordDatabaseHome);
+  } catch {
+    // 取不到就只用 $HOME——不该因为读不出密码数据库而拦住构建
+  }
+  if (homes.length === 0)
     throw new Error(
-      "环境里没有 HOME，没法把描述文件装进 Xcode 的目录：手工签名一定会失败",
+      "既没有 HOME 也读不出密码数据库里的家目录，没法把描述文件装进 Xcode 的目录",
     );
-  const targets = provisioningProfilePaths(home, uuid);
+
+  const targets = homes.flatMap((home) => provisioningProfilePaths(home, uuid));
   for (const target of targets) {
-    mkdirSync(dirname(target), { recursive: true });
-    copyFileSync(profilePath, target);
+    try {
+      mkdirSync(dirname(target), { recursive: true });
+      copyFileSync(profilePath, target);
+    } catch (error) {
+      throw new Error(
+        `描述文件装不进 ${target}：${error.message}\n` +
+          "Xcode 按名字找描述文件时翻的就是这些目录，装不上 archive 必然失败。\n" +
+          "如果失败的是 /var/empty 底下那一份，说明这个账户的家目录不可写，在 Mac 上补：\n" +
+          "  sudo install -d -o _rnbuilder -g _rnbuildjobs -m 0700 /var/rn-build-home\n" +
+          "  sudo dscl . -create /Users/_rnbuilder NFSHomeDirectory /var/rn-build-home",
+      );
+    }
   }
   return targets;
 };
