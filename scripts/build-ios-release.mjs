@@ -318,28 +318,60 @@ const installProvisioningProfile = (profilePath, uuid) => {
  * 输出里只有证书指纹和名字，不是机密。
  */
 const putKeychainOnXcodeSearchList = (keychain) => {
-  for (const home of accountHomes()) {
-    const result = spawnSync(
-      "security",
-      ["list-keychains", "-d", "user", "-s", keychain],
-      { env: { ...env, HOME: home }, encoding: "utf8" },
-    );
+  const security = (home, securityArgs) => {
+    const result = spawnSync("security", securityArgs, {
+      env: { ...env, HOME: home },
+      encoding: "utf8",
+    });
     if (result.error) throw result.error;
-    if (result.status !== 0)
-      throw new Error(
-        `签名钥匙串写不进 ${home} 的搜索列表：${(result.stderr || result.stdout).trim()}`,
-      );
+    return {
+      ok: result.status === 0,
+      text: (result.stdout || result.stderr || "").trim(),
+    };
+  };
+  for (const home of accountHomes()) {
+    // 搜索列表存在 ~/Library/Preferences/com.apple.security.plist。2026-09-23 build 21：
+    // `list-keychains -s` 返回 0，紧接着 find-identity 却报 0 个身份——/var/rn-build-home
+    // 是新建的空目录，没有 Library/Preferences，推测是写不进去又不报错。先把目录建好
+    mkdirSync(resolve(home, "Library/Preferences"), {
+      recursive: true,
+      mode: 0o700,
+    });
+    const set = security(home, [
+      "list-keychains",
+      "-d",
+      "user",
+      "-s",
+      keychain,
+    ]);
+    if (!set.ok)
+      throw new Error(`签名钥匙串写不进 ${home} 的搜索列表：${set.text}`);
+    // 回读一遍打出来：返回 0 不等于写进去了，上面那条就是教训
+    const listed = security(home, ["list-keychains", "-d", "user"]);
+    console.log(
+      `keychain search list (${home}): ${listed.text.replace(/\s+/g, " ") || "(empty)"}`,
+    );
   }
   const home = passwordDatabaseHome() ?? env.HOME;
-  const found = spawnSync(
-    "security",
-    ["find-identity", "-v", "-p", "codesigning"],
-    { env: { ...env, HOME: home }, encoding: "utf8" },
-  );
+  const found = security(home, ["find-identity", "-v", "-p", "codesigning"]);
   console.log(
     `codesigning identities (search list of ${home}):\n` +
-      (found.stdout || found.stderr || "").trim().replace(/^/gm, "  "),
+      found.text.replace(/^/gm, "  "),
   );
+  if (/^\s*0 valid identities found/m.test(found.text)) {
+    // 不带 -v 会连无效的一起列，并写明无效的原因（比如信任链建不起来）——
+    // 分得清是"钥匙串没进搜索列表"还是"证书在但不被信任"
+    const all = security(home, [
+      "find-identity",
+      "-p",
+      "codesigning",
+      keychain,
+    ]);
+    console.log(
+      `codesigning identities in ${keychain} (valid or not):\n` +
+        all.text.replace(/^/gm, "  "),
+    );
+  }
 };
 
 // 这里**故意没有**「iOS 平台装没装」的前置检查，别再加回来。2026-09-21 加过一版，
