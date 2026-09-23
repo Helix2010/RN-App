@@ -318,10 +318,11 @@ const installProvisioningProfile = (profilePath, uuid) => {
  * 输出里只有证书指纹和名字，不是机密。
  */
 const putKeychainOnXcodeSearchList = (keychain) => {
-  const security = (home, securityArgs) => {
+  const security = (home, securityArgs, input) => {
     const result = spawnSync("security", securityArgs, {
       env: { ...env, HOME: home },
       encoding: "utf8",
+      input,
     });
     if (result.error) throw result.error;
     return {
@@ -359,18 +360,78 @@ const putKeychainOnXcodeSearchList = (keychain) => {
       found.text.replace(/^/gm, "  "),
   );
   if (/^\s*0 valid identities found/m.test(found.text)) {
-    // 不带 -v 会连无效的一起列，并写明无效的原因（比如信任链建不起来）——
-    // 分得清是"钥匙串没进搜索列表"还是"证书在但不被信任"
-    const all = security(home, [
-      "find-identity",
+    // 下面全是诊断，只打不拦。2026-09-23 build 22：搜索列表回读是对的，钥匙串里也列得出
+    // Apple Distribution 身份，但它不算"有效"——而同一台机器、同一个账户上 agent 的盘点
+    // （控制台上 J4JDFC8LCC 在列）判它有效。差别只能在信任评估上，这几行把它逼出来
+    const show = (label, result) =>
+      console.log(
+        `${label}:\n${result.text.replace(/^/gm, "  ") || "  (no output)"}`,
+      );
+    show(
+      `codesigning identities in ${keychain} (valid or not)`,
+      security(home, ["find-identity", "-p", "codesigning", keychain]),
+    );
+    // agent 盘点的原样做法（RN-Server iosinventory.go）：同一个 security 进程里先设
+    // 搜索列表再问。这里有效、上面无效，说明问题出在跨进程读到的搜索列表上
+    show(
+      "inventory recipe (security -i: list-keychains -s + find-identity -v)",
+      security(
+        home,
+        ["-i"],
+        `list-keychains -s ${keychain}\nfind-identity -v -p codesigning ${keychain}\n`,
+      ),
+    );
+    show(
+      `certificates in ${keychain}`,
+      security(home, ["find-certificate", "-a", keychain]),
+    );
+    const leaf = security(home, [
+      "find-certificate",
+      "-c",
+      "Apple Distribution",
       "-p",
-      "codesigning",
       keychain,
     ]);
-    console.log(
-      `codesigning identities in ${keychain} (valid or not):\n` +
-        all.text.replace(/^/gm, "  "),
-    );
+    if (leaf.ok && leaf.text.includes("BEGIN CERTIFICATE")) {
+      // 证书是公开的，落到任务的临时目录里无妨
+      const leafPath = resolve(env.TMPDIR || "/tmp", "rn-signing-leaf.pem");
+      writeFileSync(leafPath, `${leaf.text}\n`);
+      const openssl = spawnSync(
+        "openssl",
+        ["x509", "-in", leafPath, "-noout", "-subject", "-issuer", "-dates"],
+        { env, encoding: "utf8" },
+      );
+      show("leaf certificate", {
+        text: (openssl.stdout || openssl.stderr || "").trim(),
+      });
+      // verify-cert 会说出**为什么**不信任；-L 只用本地证书、不上网——
+      // 两次结果不同，就是网络（吊销检查或按 AIA 取中间证书）在作怪
+      show(
+        "verify-cert -p codeSign",
+        security(home, [
+          "verify-cert",
+          "-c",
+          leafPath,
+          "-p",
+          "codeSign",
+          "-k",
+          keychain,
+        ]),
+      );
+      show(
+        "verify-cert -p codeSign -L (local only)",
+        security(home, [
+          "verify-cert",
+          "-c",
+          leafPath,
+          "-p",
+          "codeSign",
+          "-k",
+          keychain,
+          "-L",
+        ]),
+      );
+    }
   }
 };
 
