@@ -347,12 +347,35 @@ const putKeychainOnXcodeSearchList = (keychain) => {
     ]);
     if (!set.ok)
       throw new Error(`签名钥匙串写不进 ${home} 的搜索列表：${set.text}`);
+    // 默认钥匙串也指过去。这个账户从没有过登录钥匙串，默认钥匙串指向一个不存在的文件。
+    // 2026-09-23 build 23：指定钥匙串问 find-identity -v 是 1 个有效，按搜索列表问却是 0；
+    // 同一条命令在桌面终端里 sudo -u 过去跑是 1（清空环境变量也是 1）。剩下的差别是
+    // 后台服务的会话——推测在那里打不开默认钥匙串会让按搜索列表的查找整个落空
+    const setDefault = security(home, [
+      "default-keychain",
+      "-d",
+      "user",
+      "-s",
+      keychain,
+    ]);
+    if (!setDefault.ok)
+      throw new Error(
+        `签名钥匙串设不成 ${home} 的默认钥匙串：${setDefault.text}`,
+      );
     // 回读一遍打出来：返回 0 不等于写进去了，上面那条就是教训
     const listed = security(home, ["list-keychains", "-d", "user"]);
+    const defaulted = security(home, ["default-keychain", "-d", "user"]);
     console.log(
-      `keychain search list (${home}): ${listed.text.replace(/\s+/g, " ") || "(empty)"}`,
+      `keychain search list (${home}): ${listed.text.replace(/\s+/g, " ") || "(empty)"}\n` +
+        `default keychain (${home}): ${defaulted.text.replace(/\s+/g, " ") || "(none)"}`,
     );
   }
+  // 不带 -d 的是这个进程**实际生效**的那份，和上面按域回读的对照着看
+  const effectiveHome = passwordDatabaseHome() ?? env.HOME;
+  const effective = security(effectiveHome, ["list-keychains"]);
+  console.log(
+    `effective keychain search list: ${effective.text.replace(/\s+/g, " ") || "(empty)"}`,
+  );
   const home = passwordDatabaseHome() ?? env.HOME;
   const found = security(home, ["find-identity", "-v", "-p", "codesigning"]);
   console.log(
