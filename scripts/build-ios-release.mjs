@@ -196,7 +196,7 @@ const readPlist = (path) =>
  * **不能整份转 JSON。** 描述文件里 `DeveloperCertificates` 与 `DER-Encoded-Profile`
  * 是 `<data>`、`ExpirationDate` 是 `<date>`，这两种类型 JSON 都表示不了，plutil 直接拒绝：
  *
- *   /…/ios/build/profile.plist: Invalid object in plist for JSON format
+ *   /…/ios/build/profile.plist: Invalid object in plist for JSON format（当时产物目录还是 ios/build）
  *
  * （2026-09-20 真机上撞到，那次 CocoaPods 刚第一次装成功。）所以按 keypath 逐个取。
  * 日期走 `xml1` 而不是 `raw`：XML plist 里的 `<date>` 恒为 ISO-8601 带 Z，格式确定，
@@ -530,7 +530,11 @@ for (let attempt = 1; ; attempt++) {
 // scheme 名与 workspace 同名，是 prebuild 从 app.config.ts 的 name 生成的
 const scheme = basename(workspace, ".xcworkspace");
 
-const buildDirectory = resolve(projectRoot, "ios", "build");
+// **不能用 ios/build。** React Native 的 codegen 在 pod install 时把生成的源码写进
+// `ios/build/generated/ios/`，这里要是清掉 ios/build，archive 就报
+// "Build input file cannot be found: …/ios/build/generated/ios/ReactCodegen/…-generated.mm"
+// （2026-09-23 build 28，签名刚打通就撞上）。本脚本自己的产物单独放一个目录
+const buildDirectory = resolve(projectRoot, "ios", "rn-release");
 rmSync(buildDirectory, { recursive: true, force: true });
 mkdirSync(buildDirectory, { recursive: true });
 const archivePath = resolve(buildDirectory, `${tenant.slug}.xcarchive`);
