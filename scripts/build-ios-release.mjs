@@ -1,6 +1,8 @@
 import {
+  closeSync,
   copyFileSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
   rmSync,
@@ -20,6 +22,7 @@ import {
   plistDate,
   prebuildArgs,
   provisioningProfilePaths,
+  xcodebuildDigest,
 } from "./lib/ios-release-identity.js";
 // 从 `expo/config-plugins` 引，不是 `@expo/config-plugins`：pnpm 的严格模式下后者不是
 // 直接依赖，解析不到（2026-09-18 在本仓核实）。
@@ -470,7 +473,47 @@ if (signingDir) {
 // 放进任务目录还顺带满足了「任务之间不共享状态、用完随任务一起删」。
 const derivedDataPath = resolve(buildDirectory, "DerivedData");
 
-run("xcodebuild", [
+/**
+ * 跑 xcodebuild，完整输出写进任务目录里的文件，控制台只打摘要。
+ *
+ * 控制台的构建日志只留最后 200 行，一次 archive 却有上万行——不这么做，失败时真正的
+ * `error:` 行和这个脚本自己的诊断行都会被挤出窗口（见 xcodebuildDigest 的注释）。
+ *
+ * 输出直接落到文件描述符上，不经过这个进程的内存：`spawnSync` 收 stdout 有 maxBuffer
+ * 上限，超了会把子进程杀掉，而 archive 的输出轻易上几十 MB。
+ *
+ * 这段时间控制台上是安静的，不要紧：打包机按心跳判断存活，不看有没有输出。
+ */
+const runXcodebuild = (label, xcodebuildArgs) => {
+  mkdirSync(buildDirectory, { recursive: true });
+  const logPath = resolve(buildDirectory, `xcodebuild-${label}.log`);
+  console.log(`xcodebuild ${label} 开始；完整输出写进 ${logPath}`);
+  const fd = openSync(logPath, "w");
+  let result;
+  try {
+    result = spawnSync("xcodebuild", xcodebuildArgs, {
+      cwd: projectRoot,
+      env,
+      stdio: ["ignore", fd, fd],
+    });
+  } finally {
+    closeSync(fd);
+  }
+  if (result.error) throw result.error;
+  const output = readFileSync(logPath, "utf8");
+  if (result.status !== 0) {
+    console.error(
+      `xcodebuild ${label} 失败（退出码 ${result.status}）\n${xcodebuildDigest(output)}`,
+    );
+    process.exit(result.status ?? 1);
+  }
+  const banner = output.match(/\*\* [A-Z ]+ SUCCEEDED \*\*/)?.[0] ?? "";
+  console.log(
+    `xcodebuild ${label} 完成 ${banner}（${output.split("\n").length} 行输出）`,
+  );
+};
+
+runXcodebuild("archive", [
   "-workspace",
   workspace,
   "-scheme",
@@ -537,7 +580,7 @@ writeFileSync(
   }),
 );
 const exportDirectory = resolve(buildDirectory, "export");
-run("xcodebuild", [
+runXcodebuild("export", [
   "-exportArchive",
   "-archivePath",
   archivePath,

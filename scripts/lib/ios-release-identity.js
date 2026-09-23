@@ -244,6 +244,43 @@ export function embeddedPlist(raw, path = ".mobileprovision") {
 }
 
 /**
+ * xcodebuildDigest 从 xcodebuild 的完整输出里挑出失败时真正要看的东西。
+ *
+ * **为什么要有它**：控制台的构建日志只保留最后 200 行（RN-Server 的 logTail），而一次
+ * archive 能打出上万行。2026-09-21 连着两轮，脚本自己打的诊断行（描述文件装到了哪儿）
+ * 都被 xcodebuild 的输出挤出了窗口，只能靠推断判断发生了什么——每轮 30 分钟外加一次人工
+ * 签名，看不清就是在白烧轮次。
+ *
+ * 取两段：所有 `error:` 行与 `** … FAILED **` 横幅（去重、有上限），加上最后若干行。
+ * 两段合起来不到 80 行，给窗口里其它诊断留足余地。
+ */
+export function xcodebuildDigest(
+  text,
+  { maxErrors = 40, tailLines = 30 } = {},
+) {
+  const lines = String(text ?? "")
+    .replace(/\n+$/, "")
+    .split("\n");
+  const errors = [];
+  const seen = new Set();
+  for (const line of lines) {
+    if (!/\berror:|\*\* [A-Z ]+ FAILED \*\*/.test(line)) continue;
+    const key = line.trim();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    errors.push(line);
+    if (errors.length >= maxErrors) break;
+  }
+  const tail = lines.slice(-tailLines);
+  return [
+    `—— error 行（去重，最多 ${maxErrors} 条；这次 ${errors.length} 条）——`,
+    ...(errors.length > 0 ? errors : ["（没有 error: 行）"]),
+    `—— 最后 ${tail.length} 行 ——`,
+    ...tail,
+  ].join("\n");
+}
+
+/**
  * provisioningProfilePaths 给出这份描述文件该装到哪几个绝对路径。
  *
  * **两个目录都要**：Xcode 16 起翻的是 `Developer/Xcode/UserData/Provisioning Profiles`，

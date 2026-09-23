@@ -9,6 +9,7 @@ const {
   plistDate,
   prebuildArgs,
   provisioningProfilePaths,
+  xcodebuildDigest,
 } = require("./lib/ios-release-identity.js");
 
 const tenant = {
@@ -267,4 +268,54 @@ test("描述文件装进 Xcode 的两个候选目录，文件名用 UUID", () =>
   // UUID 形状不对时当场报错：拼进路径的东西不能是 undefined 或带斜杠的串
   for (const bad of [undefined, null, "", "not-a-uuid", "../../etc/passwd"])
     expect(() => provisioningProfilePaths("/home/x", bad)).toThrow();
+});
+
+// 控制台只留最后 200 行，一次 archive 上万行——2026-09-21 连着两轮，脚本自己的诊断行
+// 被挤出窗口。摘要要保证：真正的 error 行一定在，而且总长度远小于 200。
+test("xcodebuild 摘要保留 error 行与横幅，去重，且篇幅有上限", () => {
+  const noise = Array.from({ length: 5000 }, (_, i) => `CompileC file${i}.m`);
+  const err =
+    "/x/AnyFun.xcodeproj: error: No profile for team 'J4JDFC8LCC' matching 'P' found";
+  const output = [
+    ...noise.slice(0, 2500),
+    err,
+    ...noise.slice(2500),
+    err, // 同一条错误 xcodebuild 常常打两遍
+    "** ARCHIVE FAILED **",
+    "",
+  ].join("\n");
+
+  const digest = xcodebuildDigest(output);
+  const lines = digest.split("\n");
+  // 埋在第 2500 行的那条错误必须被捞出来，而且只出现在 error 段一次（尾段里另算）
+  const errorSection = lines.slice(
+    0,
+    lines.indexOf(lines.find((l) => l.startsWith("—— 最后"))),
+  );
+  expect(errorSection.filter((l) => l === err)).toHaveLength(1);
+  expect(errorSection).toContain("** ARCHIVE FAILED **");
+  // 尾段是真正的最后几行，末尾的空行不算
+  expect(lines.at(-1)).toBe("** ARCHIVE FAILED **");
+  // 篇幅：40 条 error + 30 行尾 + 2 行标题，留足窗口给别的诊断
+  expect(lines.length).toBeLessThanOrEqual(72);
+});
+
+test("xcodebuild 摘要在没有 error 行时说清楚，而不是给一段空白", () => {
+  const digest = xcodebuildDigest("line 1\nline 2\n");
+  expect(digest).toContain("（没有 error: 行）");
+  expect(digest).toContain("line 2");
+  for (const empty of ["", null, undefined])
+    expect(() => xcodebuildDigest(empty)).not.toThrow();
+});
+
+test("xcodebuild 摘要的 error 段有上限：几百条级联错误不能把窗口占满", () => {
+  const many = Array.from(
+    { length: 500 },
+    (_, i) => `f${i}.swift:1: error: e${i}`,
+  ).join("\n");
+  const lines = xcodebuildDigest(many).split("\n");
+  expect(
+    lines.filter((l) => /: error: e\d+$/.test(l)).length,
+  ).toBeLessThanOrEqual(40 + 30);
+  expect(lines.length).toBeLessThanOrEqual(72);
 });
