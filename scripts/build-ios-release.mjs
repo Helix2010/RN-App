@@ -254,22 +254,32 @@ const readProfileFields = (path) => {
  * 写不进去**当场失败**，别硬撑：装不上的唯一后果就是二十多分钟后的
  * `** ARCHIVE FAILED **`，那时再报错纯属浪费。报错里直接给出补救命令。
  */
-const installProvisioningProfile = (profilePath, uuid) => {
-  const homes = [];
-  if (env.HOME) homes.push(env.HOME);
+const passwordDatabaseHome = () => {
   try {
-    const passwordDatabaseHome = userInfo().homedir;
-    if (passwordDatabaseHome && !homes.includes(passwordDatabaseHome))
-      homes.push(passwordDatabaseHome);
+    return userInfo().homedir || null;
   } catch {
     // 取不到就只用 $HOME——不该因为读不出密码数据库而拦住构建
+    return null;
   }
+};
+
+/** `$HOME` 与密码数据库里的家目录，去重。为什么两个都要，见 installProvisioningProfile()。 */
+const accountHomes = () => {
+  const homes = [];
+  if (env.HOME) homes.push(env.HOME);
+  const home = passwordDatabaseHome();
+  if (home && !homes.includes(home)) homes.push(home);
   if (homes.length === 0)
     throw new Error(
-      "既没有 HOME 也读不出密码数据库里的家目录，没法把描述文件装进 Xcode 的目录",
+      "既没有 HOME 也读不出密码数据库里的家目录，没法把签名材料装进 Xcode 的目录",
     );
+  return homes;
+};
 
-  const targets = homes.flatMap((home) => provisioningProfilePaths(home, uuid));
+const installProvisioningProfile = (profilePath, uuid) => {
+  const targets = accountHomes().flatMap((home) =>
+    provisioningProfilePaths(home, uuid),
+  );
   for (const target of targets) {
     try {
       mkdirSync(dirname(target), { recursive: true });
@@ -285,6 +295,51 @@ const installProvisioningProfile = (profilePath, uuid) => {
     }
   }
   return targets;
+};
+
+/**
+ * 把签名钥匙串写进 Xcode 读的那份搜索列表，并打出 Xcode 看得到的签名身份。
+ *
+ * 与描述文件是同一个坑：RN-Server 的执行进程在任务开始时 `list-keychains -d user -s`
+ * 过一次，但那条命令跑在**任务 HOME** 下，设置落进 `<work>/home/Library/Preferences/`；
+ * xcodebuild 按密码数据库里的家目录去读，那里的搜索列表是空的。2026-09-23 build 20，
+ * 描述文件刚装对，archive 就换成了这一句：
+ *
+ *   error: No signing certificate "iOS Distribution" found: No "iOS Distribution"
+ *   signing certificate matching team ID "J4JDFC8LCC" with a private key was found.
+ *
+ * `OTHER_CODE_SIGN_FLAGS=--keychain` 救不了：它只管最后那次 codesign，而 Xcode 在那之前
+ * 就按搜索列表挑证书了。`-exportArchive` 连这个参数都不收，只能靠搜索列表。
+ *
+ * 不用解锁：解锁状态在 securityd 里，不跟着 HOME 走，执行进程已经解过了。
+ *
+ * find-identity 的结果只打出来、不拿来拦：它自己也要按搜索列表建信任链，算错了会
+ * 把一台好机器拦下；以 xcodebuild 的报错为准，这一行是给那时候对照用的。
+ * 输出里只有证书指纹和名字，不是机密。
+ */
+const putKeychainOnXcodeSearchList = (keychain) => {
+  for (const home of accountHomes()) {
+    const result = spawnSync(
+      "security",
+      ["list-keychains", "-d", "user", "-s", keychain],
+      { env: { ...env, HOME: home }, encoding: "utf8" },
+    );
+    if (result.error) throw result.error;
+    if (result.status !== 0)
+      throw new Error(
+        `签名钥匙串写不进 ${home} 的搜索列表：${(result.stderr || result.stdout).trim()}`,
+      );
+  }
+  const home = passwordDatabaseHome() ?? env.HOME;
+  const found = spawnSync(
+    "security",
+    ["find-identity", "-v", "-p", "codesigning"],
+    { env: { ...env, HOME: home }, encoding: "utf8" },
+  );
+  console.log(
+    `codesigning identities (search list of ${home}):\n` +
+      (found.stdout || found.stderr || "").trim().replace(/^/gm, "  "),
+  );
 };
 
 // 这里**故意没有**「iOS 平台装没装」的前置检查，别再加回来。2026-09-21 加过一版，
@@ -446,11 +501,10 @@ if (signingDir) {
     // 这个参数的默认值是旧的 iPhone Distribution，现在签发的证书都是 Apple Distribution
     codeSignIdentity: "Apple Distribution",
   });
-  // 钥匙串显式传给 xcodebuild：执行进程的 HOME 是每个任务自己的目录，不赌搜索列表
-  // 能被 $HOME 带过去（RN-Server 设计 §4.2）
-  archiveSettings.push(
-    `OTHER_CODE_SIGN_FLAGS=--keychain ${resolve(signingDir, "rn-signing.keychain-db")}`,
-  );
+  const keychain = resolve(signingDir, "rn-signing.keychain-db");
+  putKeychainOnXcodeSearchList(keychain);
+  // 钥匙串再显式传给最后那次 codesign（RN-Server 设计 §4.2）；挑证书靠的是上面的搜索列表
+  archiveSettings.push(`OTHER_CODE_SIGN_FLAGS=--keychain ${keychain}`);
   // 把装到哪儿也打出来：下次再出 "couldn't find any provisioning profiles" 时，
   // 这一行能立刻分清是"没装上"还是"装了但 Xcode 没往这儿找"
   console.log(
