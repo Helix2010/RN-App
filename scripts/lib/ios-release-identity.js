@@ -19,6 +19,11 @@
  *
  * uploadSymbols 开着：崩溃日志没有符号表等于没有。
  *
+ * generateAppStoreInformation 开着：导出时多生成一份 AppStoreInfo.plist。Windows / Linux 上用
+ * Apple 的 iTMSTransporter 命令行上传必须带它（`-assetDescription`），Mac 上的 Transporter
+ * 不需要。平台的「自助上传」租户可能没有 Mac（RN-Server 设计 ios-tenant-delivery-tiers-2026-09-24
+ * §3.3、§3.7），所以两种交付方式都生成，由平台决定交不交给租户。
+ *
  * ## signingStyle 为什么从 automatic 改成 manual
  *
  * automatic 的前提是 Xcode 手里有一把能申请描述文件的 App Store Connect Key。而打包机上
@@ -66,6 +71,8 @@ export function exportOptionsPlist({ teamId, bundleId, profileName }) {
   <key>signingStyle</key>
   <string>${manual ? "manual" : "automatic"}</string>
 ${provisioning}  <key>uploadSymbols</key>
+  <true/>
+  <key>generateAppStoreInformation</key>
   <true/>
   <key>stripSwiftSymbols</key>
   <true/>

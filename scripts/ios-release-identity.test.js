@@ -125,6 +125,8 @@ test("exportOptionsPlist 只产出 app-store-connect，并要求合法团队号"
   expect(plist).toContain("<string>app-store-connect</string>");
   expect(plist).toContain("<string>AB12CD34EF</string>");
   expect(plist).toContain("<string>automatic</string>");
+  // Windows / Linux 上用 iTMSTransporter 上传要带 AppStoreInfo.plist，导出时就得生成
+  expect(plist).toMatch(/<key>generateAppStoreInformation<\/key>\s*<true\/>/);
   // ad-hoc / enterprise 都不是普通用户能扫码装的东西，不该出现在这里
   expect(plist).not.toContain("ad-hoc");
   expect(plist).not.toContain("enterprise");
