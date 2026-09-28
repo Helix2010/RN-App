@@ -8,7 +8,7 @@ const {
   iosArtifactProblems,
   iosReleaseArgs,
   plistDate,
-  prebuildArgs,
+  PREBUILD_ARGS,
   provisioningProfilePaths,
   xcodebuildDigest,
 } = require("./lib/ios-release-identity.js");
@@ -338,32 +338,19 @@ test("plist 找不到时说清楚是哪份文件", () => {
   expect(() => embeddedPlist('<?xml version="1.0"?><plist>')).toThrow();
 });
 
-// 只有第一次 prebuild 带 --clean。重试时再带，会把已经装好的 Pods 删掉，等于每次从零
-// 开始——而每次从零就是再赌一次二十分钟里 github.com 一次都不抖（2026-09-20 真机上
-// 三次构建死了两次，都是 pod install 中途 clone 超时）。
-// 名字别写成「只有第一次清空 ios/」：那不是这段代码能保证的事。expo 在 ios/ 残缺时
-// 自己就会清（非交互模式下默认清 malformed 工程），重试时不带 --clean 拦不住它。
-// 这里断言的只是「--clean 只出现在第一次」——省掉的是上个任务的残留，不是 pod 缓存。
-test("prebuild 只有第一次带 --clean", () => {
-  expect(prebuildArgs(1)).toEqual([
+// prebuild 只生成 ios/、不装 CocoaPods：Podfile 要先加上钉住的 pod 再 pod install，
+// 而 pod install 的重试不能再把 ios/ 清掉重来（见 PREBUILD_ARGS 的注释）
+test("prebuild 只跑一次：--clean 且 --no-install", () => {
+  expect(PREBUILD_ARGS).toEqual([
     "exec",
     "expo",
     "prebuild",
     "--platform",
     "ios",
     "--clean",
+    "--no-install",
   ]);
-  for (const attempt of [2, 3]) {
-    expect(prebuildArgs(attempt)).not.toContain("--clean");
-    // 其余参数不能跟着变，否则重试跑的就不是同一件事
-    expect(prebuildArgs(attempt)).toEqual([
-      "exec",
-      "expo",
-      "prebuild",
-      "--platform",
-      "ios",
-    ]);
-  }
+  expect(Object.isFrozen(PREBUILD_ARGS)).toBe(true);
 });
 
 // 真机 2026-09-20：整份描述文件转 JSON 会被 plutil 拒（`Invalid object in plist for

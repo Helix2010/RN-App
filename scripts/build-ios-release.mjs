@@ -23,10 +23,17 @@ import {
   iosArtifactProblems,
   iosReleaseArgs,
   plistDate,
-  prebuildArgs,
+  PREBUILD_ARGS,
   provisioningProfilePaths,
   xcodebuildDigest,
 } from "./lib/ios-release-identity.js";
+import {
+  packagePodspec,
+  PINNED_PODS,
+  PINNED_PODS_DIRECTORY,
+  pinnedPodProblems,
+  pinPodfile,
+} from "./lib/ios-pinned-pods.js";
 // 从 `expo/config-plugins` 引，不是 `@expo/config-plugins`：pnpm 的严格模式下后者不是
 // 直接依赖，解析不到（2026-09-18 在本仓核实）。
 //
@@ -485,48 +492,67 @@ if (String(expoConfig.extra?.buildNumber) !== tenant.iosBuildNumber)
 const iosDirectory = resolve(projectRoot, "ios");
 
 /** `ios/*.xcworkspace`——只有 `pod install` 真的装完了 CocoaPods 才会生成它。 */
-const findWorkspace = () => {
-  let entries;
-  try {
-    entries = readdirSync(iosDirectory);
-  } catch {
-    return undefined; // prebuild 连 ios/ 都没建出来
-  }
-  return entries
+const findWorkspace = () =>
+  readdirSync(iosDirectory)
     .filter((entry) => entry.endsWith(".xcworkspace"))
     .map((entry) => resolve(iosDirectory, entry))[0];
-};
 
-// prebuild 里的 pod install 要从 github.com clone 几十个仓库，跨度将近二十分钟；
-// 链路抖一下整条构建就作废。重试很便宜：已经下好的 pod 在这次任务的 CocoaPods 缓存里
-// （HOME 是任务自己的目录），第二次只补没下完的那些。见 prebuildArgs 里为什么只有
-// 第一次带 --clean。
-//
-// **判据是产物，不是退出码。** `expo prebuild` 把 `pod install` 的失败当成 warning，
-// 自己照样 exit 0（2026-09-20 真机：⚠️ Something went wrong running `pod install` …
-// 之后退出码是 0）。按退出码判会当场跳出循环，重试形同虚设。
-const PREBUILD_ATTEMPTS = 3;
+// 钉住的 pod 与依赖真正要的版本对不上，一秒钟就能判定，别等 prebuild 与 pod install 跑完
+const pinProblems = pinnedPodProblems(PINNED_PODS, (packageName) =>
+  packagePodspec(projectRoot, packageName),
+);
+if (pinProblems.length > 0)
+  throw new Error(
+    `钉住的 CocoaPods 依赖过期了：\n- ${pinProblems.join("\n- ")}`,
+  );
+
+// prebuild 只生成 ios/，不装 CocoaPods（为什么拆开见 PREBUILD_ARGS）
+run("pnpm", [...PREBUILD_ARGS]);
+
+// 让 CocoaPods 用我们生成的 podspec：固定地址下载、sha256 校验（lib/ios-pinned-pods.js）
+const pinnedDirectory = resolve(iosDirectory, PINNED_PODS_DIRECTORY);
+mkdirSync(pinnedDirectory, { recursive: true });
+for (const pin of PINNED_PODS)
+  writeFileSync(
+    resolve(pinnedDirectory, `${pin.name}.podspec`),
+    pin.podspec(pin),
+  );
+const podfile = resolve(iosDirectory, "Podfile");
+writeFileSync(podfile, pinPodfile(readFileSync(podfile, "utf8"), PINNED_PODS));
+console.log(
+  PINNED_PODS.map(
+    (pin) =>
+      `pinned pod: ${pin.name} ${pin.version} from ${pin.url} (sha256 ${pin.sha256})`,
+  ).join("\n"),
+);
+
+// pod install 要从 github.com clone 几十个仓库（trunk 上的 podspec 写的就是 git 源），跨度十几二十分钟，
+// 链路抖一下就失败（2026-09-20 真机三次里死两次：Failed to connect to github.com port 443）。
+// 重试很便宜：已经下好的 pod 在这次任务的 CocoaPods 缓存里（~/Library/Caches/CocoaPods，HOME 是
+// 任务自己的目录），第二次只补没下完的——同一次构建实测第 1 次约 10 分钟，第 2、3 次各 1–3 分钟。
+const POD_INSTALL_ATTEMPTS = 3;
 let workspace;
 for (let attempt = 1; ; attempt++) {
-  const result = spawnSync("pnpm", prebuildArgs(attempt), {
-    cwd: projectRoot,
+  const result = spawnSync("pod", ["install"], {
+    cwd: iosDirectory,
     env,
     stdio: "inherit",
   });
   if (result.error) throw result.error;
-  workspace = findWorkspace();
+  workspace = result.status === 0 ? findWorkspace() : undefined;
   if (workspace) break;
-  if (attempt === PREBUILD_ATTEMPTS) {
+  if (attempt === POD_INSTALL_ATTEMPTS) {
     throw new Error(
-      `expo prebuild 连续 ${PREBUILD_ATTEMPTS} 次没有产出 ios/*.xcworkspace：CocoaPods 没装或 pod install 失败。\n` +
+      `pod install 连续 ${POD_INSTALL_ATTEMPTS} 次没装成（最后一次退出码 ${result.status}）。\n` +
         "上面最后一段里如果是 `unable to access 'https://github.com/…'`，那是这台机器出网的问题：" +
         "CocoaPods 装每一个 pod 都要 clone 它的 git 源。要走代理的话写进 /var/rn-build-agent/env" +
-        "（那里留了注释掉的示例），在 shell 里 export 传不进构建。",
+        "（那里留了注释掉的示例），在 shell 里 export 传不进构建。" +
+        "如果是 libyttrium.xcframework.zip 的 sha256 对不上，见 scripts/lib/ios-pinned-pods.js。",
     );
   }
   const wait = attempt * 15;
   console.log(
-    `expo prebuild 没装成 CocoaPods（第 ${attempt} 次），${wait} 秒后重试；已经下好的 pod 会被复用`,
+    `pod install 没装成（第 ${attempt} 次，退出码 ${result.status}），${wait} 秒后重试；已经下好的 pod 会被复用`,
   );
   spawnSync("sleep", [String(wait)], { stdio: "ignore" });
 }

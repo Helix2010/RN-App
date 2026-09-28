@@ -299,6 +299,33 @@ export function iosArtifactProblems({
  * 非 https 返回空串：本地开发没有通用链接。
  */
 /**
+ * PREBUILD_ARGS：`expo prebuild` 只跑一次，`--clean` 且 `--no-install`；`pod install` 由
+ * build-ios-release.mjs 自己跑、自己重试。
+ *
+ * **以前是把整个 prebuild 重试三次**（`pod install` 在 prebuild 里面，要从 github.com clone
+ * 几十个仓库，2026-09-20 真机三次里死两次）。那样重试时 `ios/` 照样被清掉：`--clean` 只决定走不走
+ * `clearNativeFolder()`，不带它时走 `promptToClearMalformedNativeProjectsAsync()`，而 `pod install`
+ * 失败后的 `ios/` 正好被判成 malformed，非交互模式下直接清（`clearNativeFolder.js:194`）。而且
+ * prebuild 把 `pod install` 的失败当 warning、自己 exit 0，只能按产物判断。
+ *
+ * 拆开之后：prebuild 本身不联网（模板是本地的 `expo/template.tgz`），跑一次、按退出码判；`ios/` 不再
+ * 被重复生成，`pod install` 单独重试。拆开的直接原因是 Podfile 要在 `pod install` 之前加上钉住的 pod
+ * （lib/ios-pinned-pods.js），而那一步不能写成 config plugin（插件文件进原生指纹）。
+ *
+ * `--no-install` 也跳过装 npm 依赖：打包机在跑这个脚本之前已经装好了，prebuild 对本仓的
+ * package.json 也不改依赖（2026-09-28 本地核对：`Updated package.json | no changes`）。
+ */
+export const PREBUILD_ARGS = Object.freeze([
+  "exec",
+  "expo",
+  "prebuild",
+  "--platform",
+  "ios",
+  "--clean",
+  "--no-install",
+]);
+
+/**
  * embeddedPlist 从 `.mobileprovision` 的字节里切出那份 XML plist。
  *
  * 它是个 CMS 签名块，中间包着一份 plist。**不用 `security cms -D`**：那条命令会把签名者
@@ -315,34 +342,6 @@ export function iosArtifactProblems({
  * 入参是按 **latin1** 读进来的字符串：latin1 是字节到码位的一一映射，切出来再以 latin1
  * 写回去字节不变；用 utf8 读会把前后那些二进制字节换成替换字符。
  */
-/**
- * prebuildArgs 给第 n 次 `expo prebuild` 组参数。
- *
- * **只有第一次带 `--clean`。** prebuild 里的 `pod install` 要从 github.com clone 几十个
- * 仓库（trunk 上的 podspec 写的就是 `source: {git: …, tag: …}`），跨度将近二十分钟；
- * 链路抖一下整条构建就作废——2026-09-20 真机上三次里死了两次，都是
- *
- *   fatal: unable to access 'https://github.com/…':
- *     Failed to connect to github.com port 443 after 75017 ms
- *
- * 重试时不再带 `--clean`，但**别指望它能保住 `ios/`**：2026-09-20 真机日志显示第 2、3 次
- * 照样打 `Clearing ios`。看了 `@expo/cli` 的实现才明白——`--clean` 只决定走不走
- * `clearNativeFolder()`；不带它时走的是 `promptToClearMalformedNativeProjectsAsync()`，
- * 而 `pod install` 失败后 `ios/` 缺必需文件、正好被判成 malformed，非交互模式下的默认
- * 行为就是**直接清掉**（`clearNativeFolder.js:194` 的注释写得很明白）。
- *
- * 真正让重试便宜下来的是 **CocoaPods 自己的缓存**（`~/Library/Caches/CocoaPods`）：它不在
- * `ios/` 里面，清不掉，所以已经下好的 pod 不用重下。同一次构建的实测：第 1 次约 10 分钟，
- * 第 2、3 次各 1–3 分钟。`--clean` 留在第 1 次是为了不继承上一个任务的残留，不是为了缓存。
- *
- * （Podfile 不会被改两遍：with-ios-pods-unsigned 插件按标记判重。）
- */
-export function prebuildArgs(attempt) {
-  const args = ["exec", "expo", "prebuild", "--platform", "ios"];
-  if (attempt === 1) args.push("--clean");
-  return args;
-}
-
 export function embeddedPlist(raw, path = ".mobileprovision") {
   const start = raw.indexOf("<?xml");
   const end = raw.lastIndexOf("</plist>");
