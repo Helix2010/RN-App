@@ -6,6 +6,7 @@ const {
   embeddedPlist,
   exportOptionsPlist,
   iosArtifactProblems,
+  iosReleaseArgs,
   plistDate,
   prebuildArgs,
   provisioningProfilePaths,
@@ -156,6 +157,126 @@ test("exportOptionsPlist 给了描述文件名就切到 manual 并写进映射",
       profileName: "AnyFun App Store",
     }),
   ).toThrow();
+});
+
+const SHA1 = "0123456789ABCDEF0123456789ABCDEF01234567";
+
+// 同一个 Team 下两个租户各有一张 Apple Distribution 时，导出按名字挑会挑错，所以按 SHA-1 钉死
+// （RN-Server 设计 ios-tenant-owned-signing-material-2026-09-25 §4.3）。
+test("exportOptionsPlist 给了证书指纹就写进 signingCertificate", () => {
+  const plist = exportOptionsPlist({
+    teamId: "AB12CD34EF",
+    bundleId: "com.anyfun.foundation",
+    profileName: "AnyFun App Store",
+    signingCertificate: SHA1,
+  });
+  expect(plist).toMatch(
+    new RegExp(`<key>signingCertificate</key>\\s*<string>${SHA1}</string>`),
+  );
+  expect(plist).toContain("<string>manual</string>");
+  // 只收大写的 40 位 SHA-1：大小写由命令行那一层统一，这里不猜
+  for (const bad of [SHA1.toLowerCase(), SHA1.slice(1), "Apple Distribution"]) {
+    expect(() =>
+      exportOptionsPlist({
+        teamId: "AB12CD34EF",
+        bundleId: "com.anyfun.foundation",
+        profileName: "AnyFun App Store",
+        signingCertificate: bad,
+      }),
+    ).toThrow();
+  }
+  // 自动签名不认这个键的这种用法：钉证书只在手工签名时有意义
+  expect(() =>
+    exportOptionsPlist({ teamId: "AB12CD34EF", signingCertificate: SHA1 }),
+  ).toThrow();
+});
+
+// 旧打包机不传新参数，打包机也会先于服务端迁移用到这一版：不给指纹时一个字节都不能变
+test("exportOptionsPlist 不给证书指纹时与以前逐字节相同", () => {
+  const manual = {
+    teamId: "AB12CD34EF",
+    bundleId: "com.anyfun.foundation",
+    profileName: "AnyFun App Store",
+  };
+  const plist = exportOptionsPlist(manual);
+  expect(plist).not.toContain("signingCertificate");
+  expect(exportOptionsPlist({ ...manual, signingCertificate: undefined })).toBe(
+    plist,
+  );
+  expect(plist).toMatch(
+    /<string>manual<\/string>\n {2}<key>provisioningProfiles<\/key>/,
+  );
+});
+
+test("iosReleaseArgs 不给新参数时与以前的解析相同", () => {
+  // 打包机现在的调用（RN-Server build-runner 的 buildIPA）
+  expect(
+    iosReleaseArgs(["anyfun", "--signing-dir", "/var/rn-build-signing"]),
+  ).toEqual({
+    signingDir: "/var/rn-build-signing",
+    profilesDir: undefined,
+    signingCertificate: undefined,
+    tenantSlug: "anyfun",
+  });
+  // --signing-dir 的值不是租户；参数顺序不限
+  expect(
+    iosReleaseArgs(["--signing-dir", "/var/rn-build-signing", "anyfun"]),
+  ).toMatchObject({
+    signingDir: "/var/rn-build-signing",
+    tenantSlug: "anyfun",
+  });
+  // 开发者在自己的 Mac 上：自动签名，租户可以不给（退回 EXPO_PUBLIC_TENANT）
+  expect(iosReleaseArgs(["--upload"])).toEqual({
+    signingDir: undefined,
+    profilesDir: undefined,
+    signingCertificate: undefined,
+    tenantSlug: undefined,
+  });
+  expect(() => iosReleaseArgs(["anyfun", "--signing-dir", "--upload"])).toThrow(
+    "--signing-dir 要跟一个目录",
+  );
+});
+
+test("iosReleaseArgs 收租户的描述文件目录与证书指纹，它们的值不当成租户", () => {
+  expect(
+    iosReleaseArgs([
+      "--profiles-dir",
+      "/var/rn-build-signing/profiles/tenants/1000000001",
+      "--signing-certificate",
+      SHA1.toLowerCase(),
+      "--signing-dir",
+      "/var/rn-build-signing",
+      "anyfun",
+    ]),
+  ).toEqual({
+    signingDir: "/var/rn-build-signing",
+    profilesDir: "/var/rn-build-signing/profiles/tenants/1000000001",
+    // 小写也收，统一成大写：导出选项与 find-identity 的输出都是大写
+    signingCertificate: SHA1,
+    tenantSlug: "anyfun",
+  });
+});
+
+test("iosReleaseArgs 对新参数从严：缺值、重复、指纹不对、没有 --signing-dir 都报错", () => {
+  const base = ["anyfun", "--signing-dir", "/var/rn-build-signing"];
+  for (const extra of [
+    ["--profiles-dir"], // 缺值
+    ["--profiles-dir", "--upload"], // 后面紧跟另一个参数
+    ["--profiles-dir", "/a", "--profiles-dir", "/b"], // 给两次，不猜哪个算数
+    ["--signing-certificate"],
+    ["--signing-certificate", SHA1, "--signing-certificate", SHA1],
+    ["--signing-certificate", "Apple Distribution"], // 名字不行，只收指纹
+    ["--signing-certificate", SHA1.slice(1)],
+  ]) {
+    expect(() => iosReleaseArgs([...base, ...extra])).toThrow();
+  }
+  // 自动签名时这两个没有意义，给了说明调用方搞错了
+  expect(() => iosReleaseArgs(["anyfun", "--profiles-dir", "/p"])).toThrow(
+    "--signing-dir",
+  );
+  expect(() =>
+    iosReleaseArgs(["anyfun", "--signing-certificate", SHA1]),
+  ).toThrow("--signing-dir");
 });
 
 test("appLinkHostOf 与 app.config.ts 同源，http 没有通用链接", () => {

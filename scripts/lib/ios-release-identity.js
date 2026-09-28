@@ -12,6 +12,68 @@
  */
 
 /**
+ * iosReleaseArgs 解析 `pnpm ios:release` 的命令行，返回
+ * `{ signingDir, profilesDir, signingCertificate, tenantSlug }`（没给的是 undefined）。
+ *
+ * `--signing-dir` 的解析一字未改：打包机会先于服务端迁移用到这一版，旧打包机也不传新参数，
+ * 不给新参数时必须与以前完全一样（RN-Server 设计 ios-tenant-owned-signing-material-2026-09-25 §4.3）。
+ *
+ * 两个新参数是打包机按租户取签名材料时给的（同一份设计 §12.5、§12.6）：
+ *
+ * - `--profiles-dir`：在 `<它>/<TEAMID>/` 下找描述文件，不给时是 `<signing-dir>/profiles`。
+ *   打包机传的是这个租户自己的目录，别的租户同名的描述文件不在里面；
+ * - `--signing-certificate`：签名证书的 SHA-1，钉进 CODE_SIGN_IDENTITY 与导出选项。
+ *
+ * 它们比 `--signing-dir` 严：必须跟值、值不能以 `--` 开头、不能重复，并且只在手工签名
+ * （有 `--signing-dir`）时收——少了值或多给一次都当场报错，不猜哪一个算数。
+ *
+ * @param {string[]} args `process.argv.slice(2)`
+ */
+export function iosReleaseArgs(args) {
+  const signingDirIndex = args.indexOf("--signing-dir");
+  const signingDir =
+    signingDirIndex >= 0 ? args[signingDirIndex + 1] : undefined;
+  if (signingDir !== undefined && (!signingDir || signingDir.startsWith("--")))
+    throw new Error("--signing-dir 要跟一个目录");
+  const strict = (name, what) => {
+    const positions = args.flatMap((value, index) =>
+      value === name ? [index] : [],
+    );
+    if (positions.length === 0) return undefined;
+    if (positions.length > 1) throw new Error(`${name} 只能给一次`);
+    const value = args[positions[0] + 1];
+    if (!value || value.startsWith("--"))
+      throw new Error(`${name} 要跟${what}`);
+    return value;
+  };
+  const profilesDir = strict("--profiles-dir", "一个目录");
+  const certificate = strict(
+    "--signing-certificate",
+    "签名证书的 SHA-1（40 位十六进制）",
+  );
+  if (certificate !== undefined && !/^[0-9A-Fa-f]{40}$/.test(certificate))
+    throw new Error(
+      `--signing-certificate 要是签名证书的 SHA-1（40 位十六进制），收到的是 ${JSON.stringify(certificate)}`,
+    );
+  if ((profilesDir !== undefined || certificate !== undefined) && !signingDir)
+    throw new Error(
+      "--profiles-dir 与 --signing-certificate 只用于打包机上的手工签名，要和 --signing-dir 一起给",
+    );
+  // 带值参数后面那一个是它的值，不是租户
+  const valued = ["--signing-dir", "--profiles-dir", "--signing-certificate"];
+  const tenantSlug = args.find(
+    (value, index) =>
+      !value.startsWith("--") && !valued.includes(args[index - 1]),
+  );
+  return {
+    signingDir,
+    profilesDir,
+    signingCertificate: certificate?.toUpperCase(),
+    tenantSlug,
+  };
+}
+
+/**
  * exportOptionsPlist 生成 `xcodebuild -exportArchive` 的导出选项。
  *
  * 只支持 app-store-connect：这套流程的出口就是 TestFlight / App Store。ad-hoc 与
@@ -37,12 +99,26 @@
  *
  * 开发者在自己的 Mac 上手工跑时不传 profileName，仍然是 automatic。
  *
+ * ## signingCertificate：按证书指纹钉死
+ *
+ * 不给它，manual 导出按证书类型自己挑一张"Apple Distribution"。同一个 Team 下两个租户可以
+ * 各交各的证书（Apple 允许一个 Team 同时有多张），打包机的钥匙串里于是有两张同类型的身份，
+ * 挑中的未必是这个租户那张（RN-Server 设计 ios-tenant-owned-signing-material-2026-09-25 §4.3）。
+ * Apple 的导出选项说明里写明这个键收证书名、SHA-1 或自动选择器；这里只收 SHA-1——名字
+ * 在两张证书之间可能一样。
+ *
  * @param {object} args
  * @param {string} args.teamId       10 位 Apple Team ID
  * @param {string} [args.bundleId]   手工签名时必给：描述文件按 bundle id 索引
  * @param {string} [args.profileName] 描述文件的**名字**（不是文件名），手工签名时必给
+ * @param {string} [args.signingCertificate] 签名证书的 SHA-1（40 位大写十六进制），只用于手工签名
  */
-export function exportOptionsPlist({ teamId, bundleId, profileName }) {
+export function exportOptionsPlist({
+  teamId,
+  bundleId,
+  profileName,
+  signingCertificate,
+}) {
   if (!/^[A-Z0-9]{10}$/.test(String(teamId ?? "")))
     throw new Error(
       "exportOptionsPlist requires the 10-character Apple Developer Team ID",
@@ -52,6 +128,21 @@ export function exportOptionsPlist({ teamId, bundleId, profileName }) {
     throw new Error(
       "exportOptionsPlist needs the bundle id to map it to the provisioning profile",
     );
+  if (signingCertificate !== undefined) {
+    if (!manual)
+      throw new Error(
+        "exportOptionsPlist: signingCertificate only applies to manual signing (give profileName too)",
+      );
+    if (!/^[0-9A-F]{40}$/.test(String(signingCertificate)))
+      throw new Error(
+        "exportOptionsPlist: signingCertificate must be the certificate's SHA-1, 40 upper-case hex characters",
+      );
+  }
+  const certificate = signingCertificate
+    ? `  <key>signingCertificate</key>
+  <string>${signingCertificate}</string>
+`
+    : "";
   const provisioning = manual
     ? `  <key>provisioningProfiles</key>
   <dict>
@@ -70,7 +161,7 @@ export function exportOptionsPlist({ teamId, bundleId, profileName }) {
   <string>${teamId}</string>
   <key>signingStyle</key>
   <string>${manual ? "manual" : "automatic"}</string>
-${provisioning}  <key>uploadSymbols</key>
+${certificate}${provisioning}  <key>uploadSymbols</key>
   <true/>
   <key>generateAppStoreInformation</key>
   <true/>

@@ -21,6 +21,7 @@ import {
   embeddedPlist,
   exportOptionsPlist,
   iosArtifactProblems,
+  iosReleaseArgs,
   plistDate,
   prebuildArgs,
   provisioningProfilePaths,
@@ -43,7 +44,8 @@ import expoConfigPlugins from "expo/config-plugins.js";
 const { IOSConfig } = expoConfigPlugins;
 
 /**
- * iOS release 构建：`pnpm ios:release <slug> [--signing-dir <目录>] [--upload]`。
+ * iOS release 构建：
+ * `pnpm ios:release <slug> [--signing-dir <目录> [--profiles-dir <目录>] [--signing-certificate <SHA-1>]] [--upload]`。
  *
  * 产物是 `artifacts/<slug>-<version>-build<n>.ipa`，出口是 TestFlight
  * （设计 RN-Server docs/design/ios-testflight-distribution-2026-09-17.md）。
@@ -65,6 +67,15 @@ const { IOSConfig } = expoConfigPlugins;
  *
  * 不带它就是 Xcode 的自动签名，给开发者在自己的 Mac 上手工跑。两种情况都**不传**
  * `-allowProvisioningUpdates`：这个脚本不申请、也不续期任何描述文件。
+ *
+ * ## --profiles-dir 与 --signing-certificate：按租户的签名材料
+ *
+ * 签名材料改由租户自己交之后，同一个 Team 下的两个租户可能各有一张证书、各有一份同名的
+ * 描述文件（RN-Server 设计 ios-tenant-owned-signing-material-2026-09-25 §4.3）。打包机于是
+ * 多给两个参数：`--profiles-dir` 指向这个租户自己的描述文件目录（在 `<它>/<TEAMID>/` 下找，
+ * 不给时是 `<signing-dir>/profiles`）；`--signing-certificate` 是这个租户那张证书的 SHA-1，
+ * 写进 CODE_SIGN_IDENTITY 与导出选项，不再按"Apple Distribution"这个名字挑。两个都不给时
+ * 与以前完全一样：旧打包机不传它们。解析与校验见 lib/ios-release-identity.js 的 iosReleaseArgs。
  *
  * ## 为什么要显式设 EXPO_OS
  *
@@ -97,19 +108,9 @@ loadMachineEnv(
 
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(name);
-const option = (name) => {
-  const index = args.indexOf(name);
-  return index >= 0 ? args[index + 1] : undefined;
-};
-const signingDir = option("--signing-dir");
-if (signingDir !== undefined && (!signingDir || signingDir.startsWith("--")))
-  throw new Error("--signing-dir 要跟一个目录");
-const tenantSlug =
-  args.find(
-    (value, index) =>
-      !value.startsWith("--") && args[index - 1] !== "--signing-dir",
-  ) ?? process.env.EXPO_PUBLIC_TENANT;
-const tenant = readTenantConfig(tenantSlug);
+const { signingDir, profilesDir, signingCertificate, tenantSlug } =
+  iosReleaseArgs(args);
+const tenant = readTenantConfig(tenantSlug ?? process.env.EXPO_PUBLIC_TENANT);
 
 if (tenant.distributionChannel === "development")
   throw new Error("iOS release cannot use the development channel");
@@ -549,7 +550,10 @@ const archivePath = resolve(buildDirectory, `${tenant.slug}.xcarchive`);
  * "没有匹配的描述文件"，完全看不出是名字写错了。
  */
 const findProvisioningProfile = () => {
-  const directory = resolve(signingDir, "profiles", tenant.appleTeamId);
+  const directory = resolve(
+    profilesDir ?? resolve(signingDir, "profiles"),
+    tenant.appleTeamId,
+  );
   let entries;
   try {
     entries = readdirSync(directory).filter((entry) =>
@@ -620,8 +624,10 @@ if (signingDir) {
     profileName,
     appleTeamId: tenant.appleTeamId,
     buildConfiguration: "Release",
-    // 这个参数的默认值是旧的 iPhone Distribution，现在签发的证书都是 Apple Distribution
-    codeSignIdentity: "Apple Distribution",
+    // 打包机给了证书指纹就按指纹钉死：同一个 Team 下可能有好几张 Apple Distribution，按名字挑
+    // 会挑到别的租户那张（见文件头）。没给时照旧按名字——这个参数的默认值是旧的
+    // iPhone Distribution，现在签发的证书都是 Apple Distribution
+    codeSignIdentity: signingCertificate ?? "Apple Distribution",
   });
   const keychain = resolve(signingDir, "rn-signing.keychain-db");
   putKeychainOnXcodeSearchList(keychain);
@@ -630,7 +636,9 @@ if (signingDir) {
   // 把装到哪儿也打出来：下次再出 "couldn't find any provisioning profiles" 时，
   // 这一行能立刻分清是"没装上"还是"装了但 Xcode 没往这儿找"
   console.log(
-    `manual signing: profile ${profileName} (${profile.uuid})\n` +
+    `manual signing: profile ${profileName} (${profile.uuid})` +
+      (signingCertificate ? `, certificate ${signingCertificate}` : "") +
+      "\n" +
       installed.map((path) => `  installed: ${path}`).join("\n"),
   );
 }
@@ -753,6 +761,7 @@ writeFileSync(
     teamId: tenant.appleTeamId,
     bundleId: profileName ? tenant.iosBundleId : undefined,
     profileName,
+    signingCertificate,
   }),
 );
 const exportDirectory = resolve(buildDirectory, "export");
