@@ -533,6 +533,28 @@ for (let attempt = 1; ; attempt++) {
 // scheme 名与 workspace 同名，是 prebuild 从 app.config.ts 的 name 生成的
 const scheme = basename(workspace, ".xcworkspace");
 
+// ---- 出口合规：租户在控制台声明过才写（RN-Server 设计 ios-platform-testflight-upload §9）----
+// 写在 prebuild 生成的 Info.plist 上，**不经过 app.config.ts**：整份 Expo 配置都进原生指纹（@expo/fingerprint，
+// 打包机在 prebuild 之前算），写进配置的话租户改一次声明，已经发出去的 Android 包也会对不上热更新。这里只动 iOS 工程。
+// 产物门禁（iosArtifactProblems）再按声明核对一遍 archive 里的值
+if (typeof tenant.iosUsesNonExemptEncryption === "boolean") {
+  const projectInfoPlist = resolve(projectRoot, "ios", scheme, "Info.plist");
+  if (!existsSync(projectInfoPlist))
+    throw new Error(
+      `prebuild 没有生成 ${projectInfoPlist}，写不了租户声明的出口合规`,
+    );
+  run("plutil", [
+    "-replace",
+    "ITSAppUsesNonExemptEncryption",
+    "-bool",
+    tenant.iosUsesNonExemptEncryption ? "YES" : "NO",
+    projectInfoPlist,
+  ]);
+  console.log(
+    `export compliance: ITSAppUsesNonExemptEncryption=${tenant.iosUsesNonExemptEncryption} (declared by the tenant)`,
+  );
+}
+
 // **不能用 ios/build。** React Native 的 codegen 在 pod install 时把生成的源码写进
 // `ios/build/generated/ios/`，这里要是清掉 ios/build，archive 就报
 // "Build input file cannot be found: …/ios/build/generated/ios/ReactCodegen/…-generated.mm"

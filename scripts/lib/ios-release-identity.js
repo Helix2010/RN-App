@@ -273,10 +273,22 @@ export function iosArtifactProblems({
     );
 
   // ---- 出口合规：值由租户法务给，工程不替它回答（设计 §8.2）----
-  if (infoPlist && "ITSAppUsesNonExemptEncryption" in infoPlist)
+  // 租户在控制台声明过，tenant.json 才带 iosUsesNonExemptEncryption，构建脚本在 prebuild 之后照写进 Info.plist；
+  // 没声明就必须没有这个键，每次上传在 App Store Connect 网页上人工回答（RN-Server 设计 ios-platform-testflight-upload §9）
+  const declared = tenant?.iosUsesNonExemptEncryption;
+  const written =
+    infoPlist && "ITSAppUsesNonExemptEncryption" in infoPlist
+      ? infoPlist.ITSAppUsesNonExemptEncryption
+      : undefined;
+  if (typeof declared === "boolean") {
+    if (written !== declared)
+      problems.push(
+        `Info.plist 的 ITSAppUsesNonExemptEncryption 是 ${JSON.stringify(written)}，应为租户在控制台声明的 ${declared}`,
+      );
+  } else if (written !== undefined)
     problems.push(
-      "Info.plist 写死了 ITSAppUsesNonExemptEncryption：这是租户的法务判断，错误声明的后果落在租户主体上。" +
-        "拿到书面答复之前留空，每次上传在 App Store Connect 网页上人工回答（设计 §8.2）",
+      "Info.plist 写死了 ITSAppUsesNonExemptEncryption，而租户没有在控制台声明出口合规：这是租户的法务判断，" +
+        "错误声明的后果落在租户主体上。没声明就留空，每次上传在 App Store Connect 网页上人工回答（设计 §8.2）",
     );
 
   return problems;

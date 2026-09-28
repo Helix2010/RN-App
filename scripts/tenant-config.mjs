@@ -84,6 +84,16 @@ export function readTenantConfig(slug) {
       "tenant.json signerSha256 must be 64 lowercase hex characters (apksigner verify --print-certs)",
     );
   }
+  // 出口合规（Info.plist 的 ITSAppUsesNonExemptEncryption）：租户在控制台声明过，服务端合成 tenant.json 时才带上；
+  // 没有就不写这个键，每个 build 在 App Store Connect 上人工回答（RN-Server 设计 ios-platform-testflight-upload §9）
+  if (
+    config.iosUsesNonExemptEncryption !== undefined &&
+    typeof config.iosUsesNonExemptEncryption !== "boolean"
+  ) {
+    throw new Error(
+      "tenant.json iosUsesNonExemptEncryption must be true or false when present",
+    );
+  }
   const icon = config.icon;
   for (const key of [
     "icon",

@@ -104,12 +104,35 @@ test("没有 applinks entitlement 时通用链接不生效，必须拦住", () =
 });
 
 // 出口合规是租户的法务判断，错误声明的后果落在租户主体上（设计 §8.2）
-test("工程里写死出口合规答复要被拦住", () => {
+test("租户没声明时工程里写死出口合规答复要被拦住", () => {
   const problems = check({
     infoPlist: { ...goodInfoPlist, ITSAppUsesNonExemptEncryption: false },
   });
   expect(problems).toHaveLength(1);
   expect(problems[0]).toContain("ITSAppUsesNonExemptEncryption");
+});
+
+// 租户在控制台声明过（tenant.json 的 iosUsesNonExemptEncryption），构建脚本照写进 Info.plist；
+// 门禁核对 archive 里的值和声明一致——false 也是一个声明（RN-Server 设计 ios-platform-testflight-upload §9）
+test("租户声明过的出口合规必须原样出现在 Info.plist 里", () => {
+  const declaredFalse = { ...tenant, iosUsesNonExemptEncryption: false };
+  expect(
+    check({
+      tenant: declaredFalse,
+      infoPlist: { ...goodInfoPlist, ITSAppUsesNonExemptEncryption: false },
+    }),
+  ).toEqual([]);
+  // 声明了却没写进去：ASC 还会每个 build 问，声明等于白做
+  const missing = check({ tenant: declaredFalse });
+  expect(missing).toHaveLength(1);
+  expect(missing[0]).toContain("应为租户在控制台声明的 false");
+  // 写的和声明的相反
+  const opposite = check({
+    tenant: { ...tenant, iosUsesNonExemptEncryption: true },
+    infoPlist: { ...goodInfoPlist, ITSAppUsesNonExemptEncryption: false },
+  });
+  expect(opposite).toHaveLength(1);
+  expect(opposite[0]).toContain("应为租户在控制台声明的 true");
 });
 
 // 关掉更新的包没有 OTA 请求头，不该因此报错
